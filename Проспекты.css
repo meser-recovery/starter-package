@@ -114,7 +114,12 @@
 }
 
 @media (max-width: 991px) {
+  .u-section-1 .u-text-1 {
+    margin-top: 0;
+  }
+
   .u-section-1 .u-btn-1 {
+    margin-top: 71px;
     margin-left: auto;
   }
 
@@ -143,13 +148,13 @@
 @media (max-width: 767px) {
   .u-section-1 .u-text-1 {
     width: auto;
-    margin-top: 81px;
+    margin-top: 52px;
     margin-left: 15px;
     margin-right: 15px;
   }
 
   .u-section-1 .u-btn-1 {
-    margin-top: 65px;
+    margin-top: 52px;
   }
 }
 
@@ -162,7 +167,7 @@
 
   .u-section-1 .u-btn-1 {
     font-size: 0.75rem;
-    margin-top: 47px;
+    margin-top: 25px;
     padding-left: 101px;
     padding-right: 101px;
   }
