@@ -1,0 +1,279 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8" />
+  <title>БТ6 — аудиокнига</title>
+  <style>
+    body {
+      margin: 0;
+      padding: 0;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #1f3a56;
+      color: #f8f8f8;
+    }
+
+    .player-wrap {
+      max-width: 900px;
+      margin: 20px auto 40px;
+      padding: 20px;
+      background: #264766;
+      border-radius: 16px;
+      box-shadow: 0 12px 30px rgba(0, 0, 0, 0.4);
+    }
+
+    h1 {
+      font-size: 22px;
+      margin: 0 0 10px;
+      text-align: center;
+    }
+
+    .now-playing {
+      margin: 8px 0 12px;
+      font-size: 14px;
+      opacity: 0.9;
+      text-align: center;
+    }
+
+    audio {
+      width: 100%;
+      margin-bottom: 12px;
+    }
+
+    #playlist {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      max-height: 520px;
+      overflow-y: auto;
+      border-radius: 10px;
+      background: #203852;
+    }
+
+    #playlist li {
+      padding: 6px 10px;
+      font-size: 13px;
+      border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: background 0.15s, color 0.15s;
+      white-space: nowrap;
+      text-overflow: ellipsis;
+      overflow: hidden;
+    }
+
+    #playlist li:last-child {
+      border-bottom: none;
+    }
+
+    #playlist li span.index {
+      opacity: 0.7;
+      min-width: 34px;
+      text-align: right;
+      font-variant-numeric: tabular-nums;
+    }
+
+    #playlist li span.title {
+      flex: 1;
+    }
+
+    #playlist li:hover {
+      background: #305b82;
+    }
+
+    #playlist li.active {
+      background: #f1f5f9;
+      color: #102437;
+      font-weight: 600;
+    }
+
+    #playlist li.active span.index {
+      opacity: 1;
+    }
+  </style>
+</head>
+<body>
+  <div class="player-wrap">
+    <h1>Базовый Текст (Синяя Книга), Издание 6</h1>
+    <audio id="audio" controls preload="none"></audio>
+    <div class="now-playing" id="nowPlaying"></div>
+    <ul id="playlist"></ul>
+  </div>
+
+  <script nonce="MjkxNjk1OTUzNiwzMjUyNjA5NTY0">
+    // Папка с файлами в R2
+    const BASE_URL = "audio/bt6/";
+
+    // Список файлов ИМЕННО ТАК, как они лежат в R2:
+    const tracks = [
+      "БТ6 - 001 НАШ СИМВОЛ.mp3",
+      "БТ6 - 002 ПРЕДИСЛОВИЕ К ШЕСТОМУ ИЗДАНИЮ.mp3",
+      "БТ6 - 003 ПРЕДИСЛОВИЕ К ПЕРВОМУ ИЗДАНИЮ.mp3",
+      "БТ6 - 004 ВВЕДЕНИЕ.mp3",
+      "БТ6 - 005 НАША ПРОГРАММА АНОНИМНЫЕ НАРКОМАНЫ.mp3",
+      "БТ6 - 006 Глава 1 КТО ТАКОЙ ЗАВИСИМЫЙ.mp3",
+      "БТ6 - 007 Глава 2 ЧТО ТАКОЕ ПРОГРАММА АНОНИМНЫЕ НАРКОМАНЫ.mp3",
+      "БТ6 - 008 Глава 3 ПОЧЕМУ МЫ ЗДЕСЬ.mp3",
+      "БТ6 - 009 Глава 4 КАК ЭТО РАБОТАЕТ.mp3",
+      "БТ6 - 010 Шаг Первый.mp3",
+      "БТ6 - 011 Шаг Второй.mp3",
+      "БТ6 - 012 Шаг Третий.mp3",
+      "БТ6 - 013 Шаг Четвертый.mp3",
+      "БТ6 - 014 Шаг Пятый.mp3",
+      "БТ6 - 015 Шаг Шестой.mp3",
+      "БТ6 - 016 Шаг Седьмой.mp3",
+      "БТ6 - 017 Шаг Восьмой.mp3",
+      "БТ6 - 018 Шаг Девятый.mp3",
+      "БТ6 - 019 Шаг Десятый.mp3",
+      "БТ6 - 020 Шаг Одиннадцатый.mp3",
+      "БТ6 - 021 Шаг Двенадцатый.mp3",
+      "БТ6 - 022 Глава 5 ЧТО Я МОГУ СДЕЛАТЬ.mp3",
+      "БТ6 - 023 Глава 6 ДВЕНАДЦАТЬ ТРАДИЦИЙ АН.mp3",
+      "БТ6 - 024 Традиция Первая.mp3",
+      "БТ6 - 025 Традиция Вторая.mp3",
+      "БТ6 - 026 Традиция Третья.mp3",
+      "БТ6 - 027 Традиция Четвёртая.mp3",
+      "БТ6 - 028 Традиция Пятая.mp3",
+      "БТ6 - 029 Традиция Шестая.mp3",
+      "БТ6 - 030 Традиция Седьмая.mp3",
+      "БТ6 - 031 Традиция Восьмая.mp3",
+      "БТ6 - 032 Традиция Девятая.mp3",
+      "БТ6 - 033 Традиция Десятая.mp3",
+      "БТ6 - 034 Традиция Одиннадцатая.mp3",
+      "БТ6 - 035 Традиция Двенадцатая.mp3",
+      "БТ6 - 036 Глава 7 ВЫЗДОРОВЛЕНИЕ И СРЫВ.mp3",
+      "БТ6 - 037 Глава 8 МЫ ДЕЙСТВИТЕЛЬНО ВЫЗДОРАВЛИВАЕМ.mp3",
+      "БТ6 - 038 Глава 9 ТОЛЬКО СЕГОДНЯ – ЖИТЬ ПРОГРАММОЙ.mp3",
+      "БТ6 - 039 Глава 10 МНОГОЕ ОТКРОЕТСЯ.mp3",
+      "БТ6 - 040 ЛИЧНЫЕ ИСТОРИИ.mp3",
+      "БТ6 - 041 Предисловие.mp3",
+      "БТ6 - 042 ИСТОКИ.mp3",
+      "БТ6 - 043 Высказывания.mp3",
+      "БТ6 - 044 Я нашел единственное в мире собрание АН.mp3",
+      "БТ6 - 045 Умиротворение посреди Тихого океана.mp3",
+      "БТ6 - 046 Если у тебя есть желание обрести то, что есть у нас.mp3",
+      "БТ6 - 047 Мама, жившая в страхе.mp3",
+      "БТ6 - 048 Тюрьмы, больницы и выздоровление.mp3",
+      "БТ6 - 049 Я был другим.mp3",
+      "БТ6 - 050 ДОРОГА ДОМОЙ.mp3",
+      "БТ6 - 051 Высказывания.mp3",
+      "БТ6 - 052 Открой группу, они придут.mp3",
+      "БТ6 - 053 Точка.mp3",
+      "БТ6 - 054 Нести весть.mp3",
+      "БТ6 - 055 Юная зависимая взрослеет вместе с сообществом АН.mp3",
+      "БТ6 - 056 Спокойная радость.mp3",
+      "БТ6 - 057 Единственное условие.mp3",
+      "БТ6 - 058 Возвращение достоинства.mp3",
+      "БТ6 - 059 Второй шанс.mp3",
+      "БТ6 - 060 Посеять семя.mp3",
+      "БТ6 - 061 Бутерброд.mp3",
+      "БТ6 - 062 Дух служения.mp3",
+      "БТ6 - 063 Бразильское днище!.mp3",
+      "БТ6 - 064 Шанс на ещё одну жизнь.mp3",
+      "БТ6 - 065 Достигнув дна.mp3",
+      "БТ6 - 066 НЕЗАВИСИМО ОТ….mp3",
+      "БТ6 - 067 Высказывания.mp3",
+      "БТ6 - 068 Наконец-то я не одна.mp3",
+      "БТ6 - 069 Один Третий Шаг для меня и огромный скачок для моего выздоровления.mp3",
+      "БТ6 - 070 Kia Ora Koutou.mp3",
+      "БТ6 - 071 Расти вместе с АН.mp3",
+      "БТ6 - 072 Безмятежное сердце.mp3",
+      "БТ6 - 073 Главарь банды становится ведущим собрания.mp3",
+      "БТ6 - 074 Неизлечимо уникальная.mp3",
+      "БТ6 - 075 Типичная история.mp3",
+      "БТ6 - 076 Атеисты тоже выздоравливают.mp3",
+      "БТ6 - 077 Одиночество кончилось.mp3",
+      "БТ6 - 078 Независимо от возраста.mp3",
+      "БТ6 - 079 Дипломированный зависимый.mp3",
+      "БТ6 - 080 Что делает меня счастливой сегодня.mp3",
+      "БТ6 - 081 К сожалению, он не дожил до момента публикации.mp3",
+      "БТ6 - 082 ЖИЗНЬ, КАК ОНА ЕСТЬ.mp3",
+      "БТ6 - 083 Высказывания.mp3",
+      "БТ6 - 084 Жизнь и смерть в АН.mp3",
+      "БТ6 - 085 Дыхание жизни.mp3",
+      "БТ6 - 086 Просто скажи да.mp3",
+      "БТ6 - 087 Внутренняя работа.mp3",
+      "БТ6 - 088 И вошел Бог.mp3",
+      "БТ6 - 089 Одна картофелина.mp3",
+      "БТ6 - 090 Мозаика.mp3",
+      "БТ6 - 091 Семейная болезнь, семейное выздоровление.mp3",
+      "БТ6 - 092 С меня хватит!.mp3",
+      "БТ6 - 093 Оно того стоит.mp3",
+      "БТ6 - 094 Обретая целостность.mp3",
+      "БТ6 - 095 Добрые дела.mp3",
+      "БТ6 - 096 Сокровища внутри нас.mp3",
+      "БТ6 - 097 Как же я благодарен за то, что Бог все-таки слышит молитву зависимого.mp3",
+      "БТ6 - 098 Говоря начистоту.mp3",
+      "БТ6 - 099 АН – путеводитель по жизни.mp3",
+      "БТ6 - 100 Найти причины быть благодарным.mp3"
+    ];
+
+    const audio = document.getElementById("audio");
+    const playlistEl = document.getElementById("playlist");
+    const nowPlayingEl = document.getElementById("nowPlaying");
+
+    let currentIndex = 0;
+
+    // Одна функция для красивого названия
+    function formatTitle(file) {
+      return file
+        .replace(".mp3", "")
+        .replace(/^БТ6\s*-\s*/, "")  // убрать "БТ6 - "
+        .replace(/^\d+\s*/, "");     // убрать ведущие цифры "001 "
+    }
+
+    function buildPlaylist() {
+      tracks.forEach((file, i) => {
+        const li = document.createElement("li");
+
+        const indexSpan = document.createElement("span");
+        indexSpan.className = "index";
+        indexSpan.textContent = String(i + 1).padStart(3, "0");
+
+        const titleSpan = document.createElement("span");
+        titleSpan.className = "title";
+        titleSpan.textContent = formatTitle(file);
+
+        li.appendChild(indexSpan);
+        li.appendChild(titleSpan);
+
+        li.addEventListener("click", () => loadTrack(i, true));
+        playlistEl.appendChild(li);
+      });
+    }
+
+    function highlightActive() {
+      Array.from(playlistEl.children).forEach((li, i) => {
+        li.classList.toggle("active", i === currentIndex);
+      });
+    }
+
+    function loadTrack(index, autoplay = false) {
+      if (index < 0 || index >= tracks.length) return;
+      currentIndex = index;
+      const file = tracks[index];
+      const url = BASE_URL + file;
+      audio.src = url;
+
+      nowPlayingEl.textContent = "Сейчас играет: " + formatTitle(file);
+
+      highlightActive();
+      if (autoplay) {
+        audio.play().catch(() => {
+          // Браузер может запретить автозапуск — ничего страшного
+        });
+      }
+    }
+
+    audio.addEventListener("ended", () => {
+      if (currentIndex + 1 < tracks.length) {
+        loadTrack(currentIndex + 1, true);
+      }
+    });
+
+    buildPlaylist();
+    loadTrack(0, false);
+  </script>
+</body>
+</html>
