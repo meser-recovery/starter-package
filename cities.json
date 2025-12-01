@@ -2,6 +2,39 @@
   "results": {
     "towns": [
       {
+        "id": 10171,
+        "satellites": [
+          10168,
+          10164,
+          10170,
+          10169,
+          10163,
+          10166,
+          10165,
+          10167
+        ],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Star",
+        "slug": "star",
+        "old_slugs": [],
+        "name_prefix": "МКО",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": null,
+        "general_town": null,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
+        ]
+      },
+      {
         "id": 55,
         "satellites": [],
         "separate_site_url": "",
@@ -380,6 +413,30 @@
         ],
         "localities": [
           45
+        ]
+      },
+      {
+        "id": 10168,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Армавир",
+        "slug": "armavir",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 23,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
         ]
       },
       {
@@ -2801,6 +2858,30 @@
         ]
       },
       {
+        "id": 10164,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Ессентуки",
+        "slug": "essentuki",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 26,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
+        ]
+      },
+      {
         "id": 10014,
         "satellites": [],
         "separate_site_url": "",
@@ -2822,6 +2903,30 @@
         ],
         "localities": [
           10328
+        ]
+      },
+      {
+        "id": 10170,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Железноводск",
+        "slug": "zheleznovodsk",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 26,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
         ]
       },
       {
@@ -3412,7 +3517,7 @@
           "kavkaz-10133",
           "mko-kavkaz"
         ],
-        "name_prefix": "Местность",
+        "name_prefix": "Местности",
         "phone": "",
         "whatsapp_phone": "",
         "is_big": false,
@@ -3491,8 +3596,8 @@
         "localities": [
           10311,
           25,
-          49,
-          24
+          24,
+          49
         ]
       },
       {
@@ -4843,6 +4948,30 @@
         "redirect_url": "https://an-sibiri.ru"
       },
       {
+        "id": 10169,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Лермонтов",
+        "slug": "lermontov",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 26,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
+        ]
+      },
+      {
         "id": 12,
         "satellites": [],
         "separate_site_url": "",
@@ -5303,14 +5432,13 @@
         "yandex_maps_town_id": null,
         "yandex_maps_network_id": 105076300611,
         "geographic_region": 26,
-        "general_town": null,
+        "general_town": 10171,
         "service_regions": [
           4
         ],
         "localities": [
           10319
-        ],
-        "redirect_url": "https://rko-na.ru"
+        ]
       },
       {
         "id": 10093,
@@ -5737,6 +5865,30 @@
         ],
         "localities": [
           50
+        ]
+      },
+      {
+        "id": 10166,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Нальчик",
+        "slug": "nalchik",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 7,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
         ]
       },
       {
@@ -7169,6 +7321,30 @@
         ],
         "localities": [
           10237
+        ]
+      },
+      {
+        "id": 10165,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Пятигорск",
+        "slug": "piatigorsk",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 26,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
         ]
       },
       {
@@ -9547,6 +9723,30 @@
         ]
       },
       {
+        "id": 10167,
+        "satellites": [],
+        "separate_site_url": "",
+        "telegram_url": "",
+        "timezone": "Europe/Moscow",
+        "name": "Черкесск",
+        "slug": "cherkessk",
+        "old_slugs": [],
+        "name_prefix": "",
+        "phone": "",
+        "whatsapp_phone": "",
+        "is_big": false,
+        "yandex_maps_town_id": null,
+        "yandex_maps_network_id": 105076300611,
+        "geographic_region": 9,
+        "general_town": 10171,
+        "service_regions": [
+          4
+        ],
+        "localities": [
+          10319
+        ]
+      },
+      {
         "id": 10068,
         "satellites": [],
         "separate_site_url": "",
@@ -10901,8 +11101,8 @@
       },
       {
         "id": 7,
-        "name": "Кабардино-Балкарсая Респ",
-        "slug": "kabardino-balkarsaia-resp-7",
+        "name": "Кабардино-Балкарская Республика",
+        "slug": "kabardino-balkarskaia-respublika",
         "country": 1
       },
       {
