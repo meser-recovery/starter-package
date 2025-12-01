@@ -287,7 +287,7 @@ def build_html(on_date, meetings_by_town, cities_by_id):
 
             line = f'    <li><strong>{group_name}</strong> — {time}'
             if duration:
-                line += f" ({duration})"
+                line += f" (продолжительность собрания: {duration})"
             line += f" — {addr}</li>"
             lines.append(line)
 

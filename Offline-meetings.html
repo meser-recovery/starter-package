@@ -58,25 +58,49 @@
       <div class="u-clearfix u-sheet u-sheet-1">
         <div class="u-clearfix u-custom-html u-expanded-width u-custom-html-1"><!-- === ФИЛЬТР ПО ГОРОДАМ === -->
           <div class="na-filter">
-            <label for="cityFilter">
-              <strong>Выберите город:</strong>&nbsp;
-            </label>
-            <select id="cityFilter">
-              <option value="all">Все города</option>
-            </select>
-          </div><!-- Сюда загружается na_meetings_live.html -->
+            <div class="na-select-wrap">
+              <select id="cityFilter"><!-- плейсхолдер -->
+                <option value="" selected="" disabled="" hidden="">Выберите город</option><!-- вариант показать все города -->
+                <option value="all">Все города</option>
+              </select>
+            </div>
+          </div><!-- сюда загружается na_meetings_live.html -->
           <section class="na-meetings">
             <p id="na-loading">Загружаем данные…</p>
           </section>
           <style> /* === ФИЛЬТР === */
   .na-filter {
-    margin: 20px 0;
+    margin: 30px 0 10px;
     font-size: 16px;
+    text-align: center;
+  }
+  .na-select-wrap {
+    position: relative;
+    display: inline-block;
   }
   .na-filter select {
-    padding: 6px 10px;
+    padding: 8px 36px 8px 12px;
     font-size: 16px;
-    border-radius: 6px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.6);
+    min-width: 220px;
+    background-color: #ffffff;
+    color: #000;
+    cursor: pointer;
+    -webkit-appearance: none;
+    -moz-appearance: none;
+    appearance: none;
+  }
+  /* стрелочка вниз */
+  .na-select-wrap::after {
+    content: "▾";
+    position: absolute;
+    right: 12px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 12px;
+    color: #555;
+    pointer-events: none;
   }
   /* === ГЛАВНЫЙ ЗАГОЛОВОК (H1) === */
   .na-meetings h1 {
@@ -85,22 +109,22 @@
     margin-top: 20px;
     margin-bottom: 20px;
     font-weight: 600;
-    text-align: center; /* центрирование */
+    text-align: center;
   }
   .na-meetings h1 .na-subtitle {
     display: block;
     font-size: 20px;
     font-weight: 400;
     margin-top: 8px;
-    text-align: center; /* центрирование */
+    text-align: center;
   }
   /* === ЗАГОЛОВКИ ГОРОДОВ (H2) === */
   .na-meetings h2 {
     margin-top: 25px;
     margin-bottom: 10px;
-    color: #fff; /* можно менять под свой фон */
-    text-align: center;           /* центрирование */
-    font-size: 26px !important;   /* аккуратный размер */
+    color: #fff;
+    text-align: center;
+    font-size: 26px !important;
     font-weight: 600;
   }
   /* === ТЕКСТ === */
@@ -118,6 +142,9 @@
     .na-meetings h2 {
       font-size: 22px !important;
     }
+    .na-filter select {
+      width: 90%;
+    }
   }
   @media (max-width: 480px) {
     .na-meetings h1 {
@@ -134,7 +161,6 @@
   const section    = document.querySelector(".na-meetings");
   const loadingEl  = document.getElementById("na-loading");
   const cityFilter = document.getElementById("cityFilter");
-  // Файл будет лежать рядом со страницей на GitHub Pages
   const MEETINGS_URL = "na_meetings_live.html";
   /* === 1. ПОДГРУЖАЕМ ФАЙЛ === */
   fetch(MEETINGS_URL)
@@ -144,8 +170,8 @@
     })
     .then(html => {
       section.innerHTML = html;
-      tweakHeader();  // меняем вид заголовка
-      initFilter();   // включаем фильтр
+      tweakHeader();
+      initFilter();
     })
     .catch(err => {
       console.error("Ошибка загрузки na_meetings_live.html:", err);
@@ -164,14 +190,15 @@
     }
     if (formattedDate) {
       h1.innerHTML =
-        'Живые группы АН - Россия' +
-        `<br><span class="na-subtitle">Актуально на ${formattedDate}</span>`;
+        "Живые группы АН - Россия" +
+        `<br><span class="na-subtitle">Расписание собраний на ${formattedDate}</span>`;
     } else {
-      h1.textContent = "Живые группы АН - Россия";
+      h1.textContent = "Живые группы Анонимных Наркоманов - Россия";
     }
   }
-  /* === 3. ФИЛЬТРАЦИЯ ПО ГОРОДАМ === */
+  /* === 3. ФИЛЬТР ПО ГОРОДАМ === */
   function initFilter() {
+    if (!cityFilter) return;
     const headings   = Array.from(section.querySelectorAll("h2"));
     const cityBlocks = [];
     const cityNames  = new Set();
@@ -182,11 +209,10 @@
       cityBlocks.push({ cityName, h2, ul });
       cityNames.add(cityName);
     });
-    // очищаем select (кроме "Все города")
-    for (let i = cityFilter.options.length - 1; i >= 1; i--) {
+    // сохраняем первые два пункта (плейсхолдер и "Все города")
+    for (let i = cityFilter.options.length - 1; i >= 2; i--) {
       cityFilter.remove(i);
     }
-    // добавляем города
     Array.from(cityNames)
       .sort((a, b) => a.localeCompare(b, "ru"))
       .forEach(cityName => {
@@ -197,8 +223,9 @@
       });
     function applyFilter() {
       const value = cityFilter.value;
+      const showAll = value === "" || value === "all";
       cityBlocks.forEach(({ cityName, h2, ul }) => {
-        const show = value === "all" || value === cityName;
+        const show = showAll || value === cityName;
         h2.style.display = show ? "" : "none";
         ul.style.display = show ? "" : "none";
       });
