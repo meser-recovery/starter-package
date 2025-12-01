@@ -199,17 +199,22 @@
   /* === 3. ФИЛЬТР ПО ГОРОДАМ === */
   function initFilter() {
     if (!cityFilter) return;
+    // 3.1. Собираем блоки городов: h2 + все последующие элементы до следующего h2
     const headings   = Array.from(section.querySelectorAll("h2"));
     const cityBlocks = [];
     const cityNames  = new Set();
     headings.forEach(h2 => {
-      const ul = h2.nextElementSibling;
-      if (!ul || ul.tagName.toLowerCase() !== "ul") return;
       const cityName = h2.textContent.trim();
-      cityBlocks.push({ cityName, h2, ul });
+      const nodes = [h2];
+      let node = h2.nextElementSibling;
+      while (node && node.tagName.toLowerCase() !== "h2") {
+        nodes.push(node);
+        node = node.nextElementSibling;
+      }
+      cityBlocks.push({ cityName, nodes });
       cityNames.add(cityName);
     });
-    // сохраняем первые два пункта (плейсхолдер и "Все города")
+    // 3.2. Заполняем <select> (сохраняем первые два пункта — плейсхолдер и "Все города")
     for (let i = cityFilter.options.length - 1; i >= 2; i--) {
       cityFilter.remove(i);
     }
@@ -221,16 +226,20 @@
         opt.textContent = cityName;
         cityFilter.appendChild(opt);
       });
+    // 3.3. Применяем фильтр
     function applyFilter() {
       const value = cityFilter.value;
       const showAll = value === "" || value === "all";
-      cityBlocks.forEach(({ cityName, h2, ul }) => {
+      cityBlocks.forEach(({ cityName, nodes }) => {
         const show = showAll || value === cityName;
-        h2.style.display = show ? "" : "none";
-        ul.style.display = show ? "" : "none";
+        nodes.forEach(node => {
+          node.style.display = show ? "" : "none";
+        });
       });
     }
     cityFilter.addEventListener("change", applyFilter);
+    // начальное состояние — показываем все города
+    applyFilter();
   }
 }); </script>
         </div>
