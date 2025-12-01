@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html style="font-size: 16px;" lang="en"><head>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="utf-8">
+    <meta name="keywords" content="Стартовый набор для новичка">
+    <meta name="description" content="">
+    <title>Живые собрания</title>
+    <link rel="stylesheet" href="nicepage.css" media="screen">
+<link rel="stylesheet" href="Живые-собрания.css" media="screen">
+    <script class="u-script" type="text/javascript" src="jquery.js" defer=""></script>
+    <script class="u-script" type="text/javascript" src="nicepage.js" defer=""></script>
+    <meta name="generator" content="Nicepage 8.0.6, nicepage.com">
+    
+    
+    
+    <link id="u-page-google-font" rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&amp;family=Roboto:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&amp;family=Open+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,300;1,400;1,500;1,600;1,700;1,800">
+    <script type="application/ld+json">{
+		"@context": "http://schema.org",
+		"@type": "Organization",
+		"name": "StarterPack",
+		"logo": "images/NALogo.png"
+}</script>
+    <meta name="theme-color" content="#478ac9">
+    <meta property="og:title" content="Живые собрания">
+    <meta property="og:description" content="">
+    <meta property="og:type" content="website">
+  <meta data-intl-tel-input-cdn-path="intlTelInput/"></head>
+  <body data-path-to-root="./" data-include-products="false" class="u-body u-clearfix u-xl-mode" data-lang="en"><header class="u-clearfix u-header u-header" id="header"><div class="u-clearfix u-sheet u-valign-middle-lg u-sheet-1">
+        <a href="#" class="u-image u-logo u-image-1" data-image-width="3000" data-image-height="3000">
+          <img src="images/NALogo.png" class="u-logo-image u-logo-image-1">
+        </a>
+        <h2 class="u-align-center-xs u-custom-font u-font-georgia u-subtitle u-text u-text-default u-text-palette-1-base u-text-1">Стартовый набор для новичка</h2>
+        <nav class="u-menu u-menu-one-level u-offcanvas u-menu-1" role="navigation" aria-label="Menu navigation">
+          <div class="menu-collapse" style="font-size: 1rem; letter-spacing: 0px;">
+            <a class="u-button-style u-custom-left-right-menu-spacing u-custom-padding-bottom u-custom-top-bottom-menu-spacing u-hamburger-link u-nav-link u-text-active-palette-1-base u-text-hover-palette-2-base" href="#" tabindex="-1" aria-label="Open menu" aria-controls="9c22">
+              <svg class="u-svg-link" viewBox="0 0 24 24"><use xlink:href="#menu-hamburger"></use></svg>
+              <svg class="u-svg-content" version="1.1" id="menu-hamburger" viewBox="0 0 16 16" x="0px" y="0px" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg"><g><rect y="1" width="16" height="2"></rect><rect y="7" width="16" height="2"></rect><rect y="13" width="16" height="2"></rect>
+</g></svg>
+            </a>
+          </div>
+          <div class="u-nav-container"></div>
+          <div class="u-nav-container-collapse" id="9c22" role="region" aria-label="Menu panel">
+            <div class="u-black u-container-style u-inner-container-layout u-opacity u-opacity-95 u-sidenav">
+              <div class="u-inner-container-layout u-sidenav-overflow">
+                <div class="u-menu-close" tabindex="-1" aria-label="Close menu"></div>
+                <ul class="u-align-center u-nav u-popupmenu-items u-unstyled u-nav-1"><li class="u-nav-item"><a class="u-button-style u-nav-link" href="./">About</a>
+</li><li class="u-nav-item"><a class="u-button-style u-nav-link" href="Живые-собрания.html">Живые собрания</a>
+</li><li class="u-nav-item"><a class="u-button-style u-nav-link" href="Базовый-Текст.html">Базовый Текст</a>
+</li><li class="u-nav-item"><a class="u-button-style u-nav-link" href="Проспекты.html">Проспекты</a>
+</li></ul>
+              </div>
+            </div>
+            <div class="u-black u-menu-overlay u-opacity u-opacity-70"></div>
+          </div>
+        </nav>
+      </div></header>
+    <section class="u-clearfix u-palette-1-dark-1 u-section-1" id="block-1">
+      <div class="u-clearfix u-sheet u-sheet-1">
+        <div class="u-clearfix u-custom-html u-expanded-width u-custom-html-1"><!-- === ФИЛЬТР === -->
+          <div class="na-filter">
+            <label for="cityFilter">
+              <strong>Выберите город:</strong>&nbsp;
+            </label>
+            <select id="cityFilter">
+              <option value="all">Все города</option>
+            </select>
+          </div><!-- сюда подгрузится na_meetings_live.html -->
+          <section class="na-meetings">
+            <p id="na-loading">Загружаем данные…</p>
+          </section>
+          <style> .na-filter {
+    margin: 20px 0;
+    font-size: 16px;
+  }
+  .na-filter select {
+    padding: 6px 10px;
+    font-size: 16px;
+    border-radius: 6px;
+  }
+  .na-meetings h2 {
+    margin-top: 25px;
+    color: #fff; /* под твой фон, при необходимости поменяй */
+  }
+  .na-meetings p {
+    color: #fff;
+  } </style>
+          <script> document.addEventListener("DOMContentLoaded", function () {
+  const section    = document.querySelector(".na-meetings");
+  const loadingEl  = document.getElementById("na-loading");
+  const cityFilter = document.getElementById("cityFilter");
+  // Варианты пути к файлу — сперва относительно страницы, потом от корня
+  const CANDIDATE_URLS = [
+    "na_meetings_live.html",
+    "/na_meetings_live.html"
+  ];
+  // Пытаемся по очереди
+  function tryFetch(index) {
+    if (index >= CANDIDATE_URLS.length) {
+      console.error("Не удалось загрузить ни один из вариантов URL:", CANDIDATE_URLS);
+      if (loadingEl) {
+        loadingEl.textContent = "Ошибка загрузки данных. Попробуйте позже.";
+      } else {
+        section.innerHTML = "<p>Ошибка загрузки данных. Попробуйте позже.</p>";
+      }
+      return;
+    }
+    const url = CANDIDATE_URLS[index];
+    console.log("Пробуем загрузить встречи по URL:", url);
+    fetch(url)
+      .then(response => {
+        if (!response.ok) {
+          console.warn("Ответ не OK для", url, "->", response.status, response.statusText);
+          throw new Error("HTTP " + response.status + " " + response.statusText);
+        }
+        return response.text();
+      })
+      .then(html => {
+        console.log("Успешно загружено:", url);
+        section.innerHTML = html;
+        initFilter();
+      })
+      .catch(err => {
+        console.error("Ошибка при загрузке", url, ":", err);
+        // Пробуем следующий вариант
+        tryFetch(index + 1);
+      });
+  }
+  tryFetch(0);
+  function initFilter() {
+    const headings   = Array.from(section.querySelectorAll("h2"));
+    const cityBlocks = [];
+    const cityNames  = new Set();
+    headings.forEach(h2 => {
+      const ul = h2.nextElementSibling;
+      if (!ul || ul.tagName.toLowerCase() !== "ul") return;
+      const cityName = h2.textContent.trim();
+      cityBlocks.push({ cityName, h2, ul });
+      cityNames.add(cityName);
+    });
+    // очищаем select, кроме "Все города"
+    for (let i = cityFilter.options.length - 1; i >= 1; i--) {
+      cityFilter.remove(i);
+    }
+    // добавляем города
+    Array.from(cityNames)
+      .sort((a, b) => a.localeCompare(b, "ru"))
+      .forEach(cityName => {
+        const opt = document.createElement("option");
+        opt.value = cityName;
+        opt.textContent = cityName;
+        cityFilter.appendChild(opt);
+      });
+    function applyFilter() {
+      const value = cityFilter.value;
+      cityBlocks.forEach(({ cityName, h2, ul }) => {
+        const show = value === "all" || value === cityName;
+        h2.style.display = show ? "" : "none";
+        ul.style.display = show ? "" : "none";
+      });
+    }
+    cityFilter.addEventListener("change", applyFilter);
+  }
+}); </script>
+        </div>
+      </div>
+    </section>
+    
+    
+    
+    <footer class="u-align-center u-clearfix u-container-align-center u-footer u-grey-80 u-footer" id="footer"><div class="u-clearfix u-sheet u-sheet-1"></div></footer>
+    <section class="u-backlink u-clearfix u-grey-80"></section>
+  
+</body></html>
