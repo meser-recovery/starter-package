@@ -56,7 +56,7 @@
       </div></header>
     <section class="u-clearfix u-palette-1-dark-1 u-section-1" id="block-1">
       <div class="u-clearfix u-sheet u-sheet-1">
-        <div class="u-clearfix u-custom-html u-expanded-width u-custom-html-1"><!-- === ФИЛЬТР === -->
+        <div class="u-clearfix u-custom-html u-expanded-width u-custom-html-1"><!-- === ФИЛЬТР ПО ГОРОДАМ === -->
           <div class="na-filter">
             <label for="cityFilter">
               <strong>Выберите город:</strong>&nbsp;
@@ -64,11 +64,12 @@
             <select id="cityFilter">
               <option value="all">Все города</option>
             </select>
-          </div><!-- сюда подгрузится na_meetings_live.html -->
+          </div><!-- Сюда загружается na_meetings_live.html -->
           <section class="na-meetings">
             <p id="na-loading">Загружаем данные…</p>
           </section>
-          <style> .na-filter {
+          <style> /* === ФИЛЬТР === */
+  .na-filter {
     margin: 20px 0;
     font-size: 16px;
   }
@@ -77,55 +78,99 @@
     font-size: 16px;
     border-radius: 6px;
   }
+  /* === ГЛАВНЫЙ ЗАГОЛОВОК (H1) === */
+  .na-meetings h1 {
+    font-size: 36px !important;
+    line-height: 1.2 !important;
+    margin-top: 20px;
+    margin-bottom: 20px;
+    font-weight: 600;
+    text-align: center; /* центрирование */
+  }
+  .na-meetings h1 .na-subtitle {
+    display: block;
+    font-size: 20px;
+    font-weight: 400;
+    margin-top: 8px;
+    text-align: center; /* центрирование */
+  }
+  /* === ЗАГОЛОВКИ ГОРОДОВ (H2) === */
   .na-meetings h2 {
     margin-top: 25px;
-    color: #fff; /* под твой фон, при необходимости поменяй */
+    margin-bottom: 10px;
+    color: #fff; /* можно менять под свой фон */
+    text-align: center;           /* центрирование */
+    font-size: 26px !important;   /* аккуратный размер */
+    font-weight: 600;
   }
+  /* === ТЕКСТ === */
   .na-meetings p {
     color: #fff;
+  }
+  /* === АДАПТИВ === */
+  @media (max-width: 768px) {
+    .na-meetings h1 {
+      font-size: 28px !important;
+    }
+    .na-meetings h1 .na-subtitle {
+      font-size: 18px;
+    }
+    .na-meetings h2 {
+      font-size: 22px !important;
+    }
+  }
+  @media (max-width: 480px) {
+    .na-meetings h1 {
+      font-size: 24px !important;
+    }
+    .na-meetings h1 .na-subtitle {
+      font-size: 16px;
+    }
+    .na-meetings h2 {
+      font-size: 20px !important;
+    }
   } </style>
           <script> document.addEventListener("DOMContentLoaded", function () {
   const section    = document.querySelector(".na-meetings");
   const loadingEl  = document.getElementById("na-loading");
   const cityFilter = document.getElementById("cityFilter");
-  // Варианты пути к файлу — сперва относительно страницы, потом от корня
-  const CANDIDATE_URLS = [
-    "na_meetings_live.html",
-    "/na_meetings_live.html"
-  ];
-  // Пытаемся по очереди
-  function tryFetch(index) {
-    if (index >= CANDIDATE_URLS.length) {
-      console.error("Не удалось загрузить ни один из вариантов URL:", CANDIDATE_URLS);
-      if (loadingEl) {
-        loadingEl.textContent = "Ошибка загрузки данных. Попробуйте позже.";
-      } else {
-        section.innerHTML = "<p>Ошибка загрузки данных. Попробуйте позже.</p>";
-      }
-      return;
+  // Файл будет лежать рядом со страницей на GitHub Pages
+  const MEETINGS_URL = "na_meetings_live.html";
+  /* === 1. ПОДГРУЖАЕМ ФАЙЛ === */
+  fetch(MEETINGS_URL)
+    .then(response => {
+      if (!response.ok) throw new Error("HTTP " + response.status);
+      return response.text();
+    })
+    .then(html => {
+      section.innerHTML = html;
+      tweakHeader();  // меняем вид заголовка
+      initFilter();   // включаем фильтр
+    })
+    .catch(err => {
+      console.error("Ошибка загрузки na_meetings_live.html:", err);
+      section.innerHTML = "<p>Ошибка загрузки данных. Попробуйте позже.</p>";
+    });
+  /* === 2. ПЕРЕПИСЫВАЕМ ГЛАВНЫЙ ЗАГОЛОВОК === */
+  function tweakHeader() {
+    const h1 = section.querySelector("h1");
+    if (!h1) return;
+    const text = h1.textContent || "";
+    const m = text.match(/(\d{4})-(\d{2})-(\d{2})/);
+    let formattedDate = "";
+    if (m) {
+      const year = m[1], month = m[2], day = m[3];
+      formattedDate = `${day}-${month}-${year}`;
     }
-    const url = CANDIDATE_URLS[index];
-    console.log("Пробуем загрузить встречи по URL:", url);
-    fetch(url)
-      .then(response => {
-        if (!response.ok) {
-          console.warn("Ответ не OK для", url, "->", response.status, response.statusText);
-          throw new Error("HTTP " + response.status + " " + response.statusText);
-        }
-        return response.text();
-      })
-      .then(html => {
-        console.log("Успешно загружено:", url);
-        section.innerHTML = html;
-        initFilter();
-      })
-      .catch(err => {
-        console.error("Ошибка при загрузке", url, ":", err);
-        // Пробуем следующий вариант
-        tryFetch(index + 1);
-      });
+    if (formattedDate) {
+      h1.innerHTML =
+        'Живые группы АН - Россия' +
+        `<br><span class="na-subtitle">Актуально на ${formattedDate}</span>`;
+    } else {
+      h1.textContent = "Живые группы АН - Россия";
+    }
   }
-  tryFetch(0);
+  /* === 3. ФИЛЬТРАЦИЯ ПО ГОРОДАМ === */
   function initFilter() {
     const headings   = Array.from(section.querySelectorAll("h2"));
     const cityBlocks = [];
@@ -137,7 +182,7 @@
       cityBlocks.push({ cityName, h2, ul });
       cityNames.add(cityName);
     });
-    // очищаем select, кроме "Все города"
+    // очищаем select (кроме "Все города")
     for (let i = cityFilter.options.length - 1; i >= 1; i--) {
       cityFilter.remove(i);
     }
