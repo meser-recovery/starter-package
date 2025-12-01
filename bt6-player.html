@@ -101,11 +101,28 @@
     <ul id="playlist"></ul>
   </div>
 
-  <script nonce="MjkxNjk1OTUzNiwzMjUyNjA5NTY0">
-    // Папка с файлами в R2
+  <script>
+    // Папка с файлами на GitHub Pages
     const BASE_URL = "audio/bt6/";
 
-    // Список файлов ИМЕННО ТАК, как они лежат в R2:
+    // Для некоторых треков имя файла на диске отличается от "красивого" имени
+    // (чтобы избежать проблем с Unicode в именах файлов).
+    const fileOverrides = {
+      "БТ6 - 010 Шаг Первый.mp3":       "bt6_step01.mp3",
+      "БТ6 - 011 Шаг Второй.mp3":       "bt6_step02.mp3",
+      "БТ6 - 012 Шаг Третий.mp3":       "bt6_step03.mp3",
+      "БТ6 - 013 Шаг Четвертый.mp3":    "bt6_step04.mp3",
+      "БТ6 - 014 Шаг Пятый.mp3":        "bt6_step05.mp3",
+      "БТ6 - 015 Шаг Шестой.mp3":       "bt6_step06.mp3",
+      "БТ6 - 016 Шаг Седьмой.mp3":      "bt6_step07.mp3",
+      "БТ6 - 017 Шаг Восьмой.mp3":      "bt6_step08.mp3",
+      "БТ6 - 018 Шаг Девятый.mp3":      "bt6_step09.mp3",
+      "БТ6 - 019 Шаг Десятый.mp3":      "bt6_step10.mp3",
+      "БТ6 - 020 Шаг Одиннадцатый.mp3": "bt6_step11.mp3",
+      "БТ6 - 021 Шаг Двенадцатый.mp3":  "bt6_step12.mp3",
+    };
+
+    // Список файлов ИМЕННО ТАК, как они логически называются (оригинальные русские имена)
     const tracks = [
       "БТ6 - 001 НАШ СИМВОЛ.mp3",
       "БТ6 - 002 ПРЕДИСЛОВИЕ К ШЕСТОМУ ИЗДАНИЮ.mp3",
@@ -253,9 +270,16 @@
       if (index < 0 || index >= tracks.length) return;
       currentIndex = index;
       const file = tracks[index];
-      const url = BASE_URL + file;
+
+      // Если для этого "красивого" имени есть отдельный файл на диске —
+      // используем его, иначе берём имя как есть.
+      const realFile = fileOverrides[file] || file;
+
+      const url = BASE_URL + realFile;
       audio.src = url;
 
+      // Для отображения используем оригинальное имя (через форматтер),
+      // чтобы все названия были по-русски и "как в книге".
       nowPlayingEl.textContent = "Сейчас играет: " + formatTitle(file);
 
       highlightActive();
