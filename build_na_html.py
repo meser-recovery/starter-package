@@ -163,18 +163,26 @@ def get_meetings_for_town(town_id, on_date):
 def build_data(on_date):
     """
     1) Получаем список городов РФ
-    2) Для каждого – тянем встречи
+    2) Для каждого – тянем встречи (кроме городов с внешним сайтом)
     3) Возвращаем:
        - meetings_by_town: { town_id: [meeting, ...] }
        - cities_by_id: { town_id: town_obj }
+       - external_sites: { town_id: url }
     """
     cities = load_cities()
 
     cities_by_id = {}
+    external_sites = {}
+
     for c in cities:
         cid = c.get("id")
-        if cid is not None:
-            cities_by_id[cid] = c
+        if cid is None:
+            continue
+        cities_by_id[cid] = c
+
+        ext_url = c.get("redirect_url") or c.get("separate_site_url")
+        if ext_url:
+            external_sites[cid] = ext_url
 
     if PRINT_CITIES:
         print("Первые несколько городов РФ:")
@@ -182,11 +190,18 @@ def build_data(on_date):
             print(f"  id={c.get('id')} — {c.get('name')}")
         print("...")
 
+    print(f"[INFO] Городов с внешними сайтами: {len(external_sites)}")
+
     meetings_by_town = {}
 
     for c in cities:
         town_id = c.get("id")
         town_name = c.get("name", f"Город id={town_id}")
+
+        # Если у города есть внешний сайт — не тянем для него встречи
+        if town_id in external_sites:
+            print(f"\nПропускаю загрузку встреч для {town_name} (id={town_id}), есть внешний сайт.")
+            continue
 
         print(f"\nСобираю встречи для: {town_name} (id={town_id})")
         try:
@@ -209,7 +224,7 @@ def build_data(on_date):
             real_town_id = loc.get("town_id", town_id)
             meetings_by_town.setdefault(real_town_id, []).append(m)
 
-    return meetings_by_town, cities_by_id
+    return meetings_by_town, cities_by_id, external_sites
 
 
 def guess_city_name_from_address(address):
@@ -225,13 +240,16 @@ def guess_city_name_from_address(address):
     return None
 
 
-def build_html(on_date, meetings_by_town, cities_by_id):
+def build_html(on_date, meetings_by_town, cities_by_id, external_sites):
     lines = []
     lines.append('<section class="na-meetings">')
     lines.append(f"  <h1>Живые группы АН (РФ, на {on_date})</h1>")
     lines.append("")
 
-    # Сортируем города по имени (если имени нет — по "Город id=...")
+    # Все города, которые надо показать: с встречами ИЛИ с внешним сайтом
+    all_town_ids = set(meetings_by_town.keys()) | set(external_sites.keys())
+
+    # Сортируем города по имени
     def town_sort_key(town_id):
         city_obj = cities_by_id.get(town_id, {})
         if isinstance(city_obj, dict):
@@ -240,14 +258,14 @@ def build_html(on_date, meetings_by_town, cities_by_id):
             name = None
         return name or f"Город id={town_id}"
 
-    for town_id in sorted(meetings_by_town.keys(), key=town_sort_key):
+    for town_id in sorted(all_town_ids, key=town_sort_key):
         city_obj = cities_by_id.get(town_id, {})
         if isinstance(city_obj, dict):
             city_name = city_obj.get("name")
         else:
             city_name = None
 
-        meetings = meetings_by_town[town_id]
+        meetings = meetings_by_town.get(town_id, [])
 
         # Если имя города отсутствует — пробуем угадать по адресу первой встречи
         if not city_name and meetings:
@@ -271,6 +289,19 @@ def build_html(on_date, meetings_by_town, cities_by_id):
             city_name = f"Город id={town_id}"
 
         lines.append(f"  <h2>{city_name}</h2>")
+
+        ext_url = external_sites.get(town_id)
+
+        if ext_url:
+            # Город с отдельным сайтом — показываем заглушку и ссылку
+            lines.append(
+                f'  <p>Город {city_name} имеет отдельный сайт, на котором вы можете посмотреть расписание собраний. '
+                f'<a href="{ext_url}" target="_blank" rel="noopener noreferrer">Перейти на сайт</a></p>'
+            )
+            lines.append("")
+            continue
+
+        # Обычный город: выводим список встреч
         lines.append("  <ul>")
 
         # сортируем встречи по времени
@@ -287,7 +318,7 @@ def build_html(on_date, meetings_by_town, cities_by_id):
 
             line = f'    <li><strong>{group_name}</strong> — {time}'
             if duration:
-                line += f" (продолжительность собрания: {duration})"
+                line += f" (продолжительность {duration})"
             line += f" — {addr}</li>"
             lines.append(line)
 
@@ -305,8 +336,8 @@ if __name__ == "__main__":
         on_date = date.today().isoformat()
 
     print(f"Дата: {on_date}")
-    meetings_by_town, cities_by_id = build_data(on_date)
-    html = build_html(on_date, meetings_by_town, cities_by_id)
+    meetings_by_town, cities_by_id, external_sites = build_data(on_date)
+    html = build_html(on_date, meetings_by_town, cities_by_id, external_sites)
 
     output_file = Path("na_meetings_live.html")
     output_file.write_text(html, encoding="utf-8")
