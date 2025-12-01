@@ -101,11 +101,12 @@
     <ul id="playlist"></ul>
   </div>
 
-  <script>
-    // Папка с файлами на GitHub Pages
-    const BASE_URL = "audio/bt6/";
+  <script nonce="MjkxNjk1OTUzNiwzMjUyNjA5NTY0">
+    // Папка с файлами в R2
+    const BASE_URL =
+      "https://pub-b64f64e8306f46f4844925da4fa295fe.r2.dev/АНОНИМНЫЕ НАРКОМАНЫ (озвучено членами АН, mp3)/";
 
-    // Логические имена треков (оригинальные русские)
+    // Список файлов ИМЕННО ТАК, как они лежат в R2:
     const tracks = [
       "БТ6 - 001 НАШ СИМВОЛ.mp3",
       "БТ6 - 002 ПРЕДИСЛОВИЕ К ШЕСТОМУ ИЗДАНИЮ.mp3",
@@ -116,18 +117,18 @@
       "БТ6 - 007 Глава 2 ЧТО ТАКОЕ ПРОГРАММА АНОНИМНЫЕ НАРКОМАНЫ.mp3",
       "БТ6 - 008 Глава 3 ПОЧЕМУ МЫ ЗДЕСЬ.mp3",
       "БТ6 - 009 Глава 4 КАК ЭТО РАБОТАЕТ.mp3",
-      "БТ6 - 010 Шаг Первый.mp3",       // индекс 9
-      "БТ6 - 011 Шаг Второй.mp3",       // индекс 10
-      "БТ6 - 012 Шаг Третий.mp3",       // индекс 11
-      "БТ6 - 013 Шаг Четвертый.mp3",    // индекс 12
-      "БТ6 - 014 Шаг Пятый.mp3",        // индекс 13
-      "БТ6 - 015 Шаг Шестой.mp3",       // индекс 14
-      "БТ6 - 016 Шаг Седьмой.mp3",      // индекс 15
-      "БТ6 - 017 Шаг Восьмой.mp3",      // индекс 16
-      "БТ6 - 018 Шаг Девятый.mp3",      // индекс 17
-      "БТ6 - 019 Шаг Десятый.mp3",      // индекс 18
-      "БТ6 - 020 Шаг Одиннадцатый.mp3", // индекс 19
-      "БТ6 - 021 Шаг Двенадцатый.mp3",  // индекс 20
+      "БТ6 - 010 Шаг Первый.mp3",
+      "БТ6 - 011 Шаг Второй.mp3",
+      "БТ6 - 012 Шаг Третий.mp3",
+      "БТ6 - 013 Шаг Четвертый.mp3",
+      "БТ6 - 014 Шаг Пятый.mp3",
+      "БТ6 - 015 Шаг Шестой.mp3",
+      "БТ6 - 016 Шаг Седьмой.mp3",
+      "БТ6 - 017 Шаг Восьмой.mp3",
+      "БТ6 - 018 Шаг Девятый.mp3",
+      "БТ6 - 019 Шаг Десятый.mp3",
+      "БТ6 - 020 Шаг Одиннадцатый.mp3",
+      "БТ6 - 021 Шаг Двенадцатый.mp3",
       "БТ6 - 022 Глава 5 ЧТО Я МОГУ СДЕЛАТЬ.mp3",
       "БТ6 - 023 Глава 6 ДВЕНАДЦАТЬ ТРАДИЦИЙ АН.mp3",
       "БТ6 - 024 Традиция Первая.mp3",
@@ -209,37 +210,18 @@
       "БТ6 - 100 Найти причины быть благодарным.mp3"
     ];
 
-    // Реальные имена файлов на диске (по индексам)
-    const realFiles = tracks.map((file, index) => {
-      switch (index) {
-        case 9:  return "bt6_step01.mp3"; // 010 Шаг Первый
-        case 10: return "bt6_step02.mp3"; // 011 Шаг Второй
-        case 11: return "bt6_step03.mp3"; // 012 Шаг Третий
-        case 12: return "bt6_step04.mp3"; // 013 Шаг Четвёртый
-        case 13: return "bt6_step05.mp3"; // 014 Шаг Пятый
-        case 14: return "bt6_step06.mp3"; // 015 Шаг Шестой
-        case 15: return "bt6_step07.mp3"; // 016 Шаг Седьмой
-        case 16: return "bt6_step08.mp3"; // 017 Шаг Восьмой
-        case 17: return "bt6_step09.mp3"; // 018 Шаг Девятый
-        case 18: return "bt6_step10.mp3"; // 019 Шаг Десятый
-        case 19: return "bt6_step11.mp3"; // 020 Шаг Одиннадцатый
-        case 20: return "bt6_step12.mp3"; // 021 Шаг Двенадцатый
-        default:
-          return file; // остальные совпадают с логическим именем
-      }
-    });
-
     const audio = document.getElementById("audio");
     const playlistEl = document.getElementById("playlist");
     const nowPlayingEl = document.getElementById("nowPlaying");
 
     let currentIndex = 0;
 
+    // Одна функция для красивого названия
     function formatTitle(file) {
       return file
         .replace(".mp3", "")
-        .replace(/^БТ6\s*-\s*/, "")
-        .replace(/^\d+\s*/, "");
+        .replace(/^БТ6\s*-\s*/, "")  // убрать "БТ6 - "
+        .replace(/^\d+\s*/, "");     // убрать ведущие цифры "001 "
     }
 
     function buildPlaylist() {
@@ -271,18 +253,16 @@
     function loadTrack(index, autoplay = false) {
       if (index < 0 || index >= tracks.length) return;
       currentIndex = index;
-
-      const displayName = tracks[index];
-      const realFile = realFiles[index];
-      const url = BASE_URL + realFile;
-
+      const file = tracks[index];
+      const url = BASE_URL + file;
       audio.src = url;
-      nowPlayingEl.textContent = "Сейчас играет: " + formatTitle(displayName);
+
+      nowPlayingEl.textContent = "Сейчас играет: " + formatTitle(file);
 
       highlightActive();
       if (autoplay) {
         audio.play().catch(() => {
-          // браузер мог запретить автозапуск — это ок
+          // Браузер может запретить автозапуск — ничего страшного
         });
       }
     }
