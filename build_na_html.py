@@ -1,7 +1,7 @@
 import json
 import re
 from pathlib import Path
-from datetime import date
+from datetime import datetime, timedelta
 
 import requests
 
@@ -19,6 +19,9 @@ CITIES_CACHE_FILE = Path("cities.json")
 
 # Можно задать конкретную дату "ГГГГ-ММ-ДД". Если None — берётся сегодня.
 CUSTOM_DATE = None
+
+# Смещение Московского времени относительно UTC (Россия сейчас постоянно UTC+3)
+MOSCOW_OFFSET = timedelta(hours=3)
 
 # Печатать ли список первых городов (для проверки)
 PRINT_CITIES = True
@@ -200,7 +203,9 @@ def build_data(on_date):
 
         # Если у города есть внешний сайт — не тянем для него встречи
         if town_id in external_sites:
-            print(f"\nПропускаю загрузку встреч для {town_name} (id={town_id}), есть внешний сайт.")
+            print(
+                f"\nПропускаю загрузку встреч для {town_name} (id={town_id}), есть внешний сайт."
+            )
             continue
 
         print(f"\nСобираю встречи для: {town_name} (id={town_id})")
@@ -390,7 +395,8 @@ if __name__ == "__main__":
     if CUSTOM_DATE:
         on_date = CUSTOM_DATE
     else:
-        on_date = date.today().isoformat()
+        # Берём "сейчас" в UTC и прибавляем +3 часа → текущий день по Москве
+        on_date = (datetime.utcnow() + MOSCOW_OFFSET).date().isoformat()
 
     print(f"Дата: {on_date}")
     meetings_by_town, cities_by_id, external_sites = build_data(on_date)

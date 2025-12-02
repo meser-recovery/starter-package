@@ -1,0 +1,51 @@
+name: Build NA HTML daily
+
+on:
+  schedule:
+    # Каждый день в 21:00 UTC = 00:00 по Москве
+    - cron: "0 21 * * *"
+  workflow_dispatch:
+
+
+permissions:
+  contents: write  # нужно, чтобы workflow мог делать commit и push
+
+jobs:
+  build-and-commit:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      # Если зависимостей нет, этот шаг можно удалить
+      - name: Install dependencies (optional)
+        run: |
+          if [ -f requirements.txt ]; then
+            pip install -r requirements.txt
+          fi
+
+      - name: Run build script
+        run: |
+          python build_na_html.py
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Проверяем, есть ли изменения
+          if [ -n "$(git status --porcelain)" ]; then
+            # Добавь сюда точный путь к файлу, если нужно не всё коммитить
+            git add na_meetings_live.html
+
+            git commit -m "Auto-update NA meetings HTML [skip ci]" || echo "Nothing to commit"
+            git push
+          else
+            echo "No changes detected, nothing to commit."
+          fi
