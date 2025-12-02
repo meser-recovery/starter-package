@@ -5,15 +5,16 @@ from datetime import date
 
 import requests
 
-BASE = "https://na-russia.org/api"
+API_BASE = "https://na-russia.org/api"
+SITE_BASE = "https://na-russia.org"
 
 # Эндпоинты, откуда пробуем брать города
 CITIES_URLS = [
-    f"{BASE}/bff/cities",
-    f"{BASE}/bff/cities/",
+    f"{API_BASE}/bff/cities",
+    f"{API_BASE}/bff/cities/",
 ]
 
-# Локальный кэш (пример того cities.json, который ты дал)
+# Локальный кэш cities.json
 CITIES_CACHE_FILE = Path("cities.json")
 
 # Можно задать конкретную дату "ГГГГ-ММ-ДД". Если None — берётся сегодня.
@@ -116,7 +117,6 @@ def load_cities():
         for t in towns:
             reg_id = t.get("geographic_region")
             if reg_id is None:
-                # Если регион не указан — пропускаем
                 continue
             region = region_by_id.get(reg_id)
             if not region:
@@ -131,7 +131,7 @@ def load_cities():
 
 def get_meetings_for_town(town_id, on_date):
     """Берём все встречи для одного города на указанную дату."""
-    url = f"{BASE}/scheduled-meetings/merged/"
+    url = f"{API_BASE}/scheduled-meetings/merged/"
     params = {
         "town": town_id,
         "page": 1,
@@ -240,6 +240,35 @@ def guess_city_name_from_address(address):
     return None
 
 
+def deduplicate_meetings(meetings):
+    """
+    Убираем дубли встреч по ключу:
+    (id группы, время, длительность, адрес).
+    Оставляем первую запись с таким ключом.
+    """
+    seen = set()
+    unique = []
+
+    for m in meetings:
+        g = m.get("group", {})
+        loc = g.get("location", {})
+
+        key = (
+            g.get("id"),
+            m.get("time"),
+            m.get("duration"),
+            loc.get("address"),
+        )
+
+        if key in seen:
+            continue
+
+        seen.add(key)
+        unique.append(m)
+
+    return unique
+
+
 def build_html(on_date, meetings_by_town, cities_by_id, external_sites):
     lines = []
     lines.append('<section class="na-meetings">')
@@ -276,7 +305,6 @@ def build_html(on_date, meetings_by_town, cities_by_id, external_sites):
             guessed = guess_city_name_from_address(addr)
             if guessed:
                 city_name = guessed
-                # Сохраняем в cities_by_id, чтобы не гадать заново
                 if isinstance(city_obj, dict):
                     city_obj["name"] = guessed
                     cities_by_id[town_id] = city_obj
@@ -302,9 +330,9 @@ def build_html(on_date, meetings_by_town, cities_by_id, external_sites):
             continue
 
         # Обычный город: выводим список встреч
+        meetings = deduplicate_meetings(meetings)
         lines.append("  <ul>")
 
-        # сортируем встречи по времени
         meetings_sorted = sorted(meetings, key=lambda m: (m.get("time") or ""))
 
         for m in meetings_sorted:
@@ -313,13 +341,42 @@ def build_html(on_date, meetings_by_town, cities_by_id, external_sites):
 
             group_name = group.get("name", "Без названия")
             addr = loc.get("address", "Адрес не указан")
-            time = (m.get("time") or "")[:5]       # 19:00:00 -> 19:00
-            duration = (m.get("duration") or "")[:5]  # 01:15:00 -> 01:15
+            time = (m.get("time") or "")[:5]
+            duration = (m.get("duration") or "")[:5]
 
-            line = f'    <li><strong>{group_name}</strong> — {time}'
+            # Строим URL страницы группы, если возможно
+            group_id = group.get("id")
+            real_town_id = loc.get("town_id", town_id)
+            city_obj_for_group = cities_by_id.get(real_town_id, {})
+            slug = city_obj_for_group.get("slug")
+            group_url = None
+            if slug and group_id:
+                group_url = f"{SITE_BASE}/{slug}/group/{group_id}"
+
+            # Разметка:
+            # строка 1 — название группы
+            # строка 2 — "сайт группы" (если есть ссылка)
+            # строка 3 — время / продолжительность / адрес
+            line_parts = []
+
+            # строка 1
+            line_parts.append(f"<strong>{group_name}</strong>")
+
+            # строка 2 (опционально)
+            if group_url:
+                line_parts.append(
+                    f'<a href="{group_url}" target="_blank" '
+                    f'rel="noopener noreferrer">сайт группы</a>'
+                )
+
+            # строка 3
+            time_part = time
             if duration:
-                line += f" (продолжительность {duration})"
-            line += f" — {addr}</li>"
+                time_part += f" (продолжительность {duration})"
+            line_parts.append(f"{time_part} — {addr}")
+
+            # собираем li с переносами строк
+            line = "    <li>" + "<br>".join(line_parts) + "</li>"
             lines.append(line)
 
         lines.append("  </ul>")
