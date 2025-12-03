@@ -266,7 +266,7 @@
 
 @media (max-width: 575px) {
   .u-section-1 .u-sheet-1 {
-    min-height: 604px;
+    min-height: 450px;
   }
 
   .u-section-1 .u-text-1 {
@@ -275,46 +275,37 @@
   }
 
   .u-section-1 .u-btn-1 {
-    margin-top: 63px;
-    padding-left: 89px;
-    padding-right: 89px;
+    margin-top: 39px;
+    padding: 10px 89px 11px;
   }
 
   .u-section-1 .u-btn-2 {
-    margin-top: 13px;
-    margin-left: 0;
-    margin-right: 0;
-    padding-right: 95px;
-    padding-left: 94px;
+    margin-top: 19px;
+    padding: 10px 95px 10px 94px;
   }
 
   .u-section-1 .u-btn-3 {
-    margin-top: 13px;
+    margin-top: 19px;
     margin-left: 0;
     margin-right: 0;
-    padding-right: 37px;
-    padding-left: 35px;
+    padding: 10px 36px;
   }
 
   .u-section-1 .u-btn-4 {
-    margin-top: 13px;
-    padding-right: 68px;
-    padding-left: 67px;
+    margin-top: 19px;
+    padding: 9px 68px 11px 67px;
   }
 
   .u-section-1 .u-btn-5 {
-    margin-top: 13px;
-    padding-right: 49px;
-    padding-left: 47px;
+    margin-top: 19px;
+    padding: 9px 49px 11px 47px;
   }
 
   .u-section-1 .u-btn-6 {
-    margin-top: 13px;
+    margin-top: 19px;
     margin-left: 0;
     margin-right: 0;
-    padding-left: 128px;
-    padding-right: 128px;
-    padding-bottom: 16px;
+    padding: 10px 129px 10px 127px;
   }
 
   .u-section-1 .u-text-2 {
