@@ -298,23 +298,22 @@
       min-height: 110px;
     }
   }
-  /* ===== Mobile polish + FIX center shift (iPhone) ===== */
+  /* ===== Mobile: no vw widths (prevents clipping inside Nicepage containers) ===== */
   @media (max-width: 520px){
+    /* Гаттеры делаем на обёртке, чтобы card был ровно 100% родителя */
     .cp-widget{
-      overflow-x: hidden; /* убирает любой микровыезд вправо/влево */
+      padding-left: calc(12px + env(safe-area-inset-left));
+      padding-right: calc(12px + env(safe-area-inset-right));
+      overflow-x: hidden; /* на всякий случай убираем микровыезд */
     }
     .cp-card{
-      width: min(92vw, 520px);
-      margin-left: auto;
-      margin-right: auto;
+      width: 100%;
+      max-width: 520px;
+      margin: 0 auto;
       border-width: 2px;
       border-radius: 18px;
-      /* Safe area: прибавляем к базовому паддингу */
       padding: 18px 14px 20px;
-      padding-left: calc(14px + env(safe-area-inset-left));
-      padding-right: calc(14px + env(safe-area-inset-right));
-      /* помогает Safari иногда не "дрожать" по пикселям */
-      transform: translateZ(0);
+      transform: translateZ(0); /* стабилизирует Safari */
     }
     .cp-title{
       font-size: clamp(26px, 7.5vw, 34px);
@@ -330,7 +329,6 @@
     }
     .cp-days-num{ font-size: clamp(44px, 14vw, 60px); }
     .cp-days-label{ font-size: clamp(16px, 5vw, 22px); }
-    /* 3 блока в ряд */
     .cp-stats{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -361,7 +359,8 @@
       border-radius: 14px;
     }
     .cp-modal-panel{
-      width: min(92vw, 520px);
+      width: calc(100% - 24px);
+      max-width: 520px;
       margin: 12vh auto 0;
       padding: 16px 14px 14px;
       border-radius: 16px;
