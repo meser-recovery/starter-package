@@ -87,9 +87,13 @@
               <div class="cp-modal-backdrop" id="cp-closeBackdrop"></div>
               <div class="cp-modal-panel" role="document">
                 <button class="cp-modal-close" id="cp-closeModal" type="button" aria-label="Закрыть">✕</button>
-                <div class="cp-modal-title">Выбери дату начала</div>
-                <label class="cp-label" for="cp-dateInput">Дата</label><!-- type=text для flatpickr + fallback на type=date если CDN не загрузится -->
-                <input class="cp-input" id="cp-dateInput" type="text" placeholder="ГГГГ-ММ-ДД" inputmode="numeric" autocomplete="off">
+                <div class="cp-modal-title">Выбери дату начала</div><!-- iOS-like wheel picker -->
+                <div class="cp-wheels" id="cp-wheels" aria-label="Выбор даты">
+                  <div class="cp-wheel" id="cp-wheel-day" aria-label="День"></div>
+                  <div class="cp-wheel" id="cp-wheel-month" aria-label="Месяц"></div>
+                  <div class="cp-wheel" id="cp-wheel-year" aria-label="Год"></div>
+                  <div class="cp-wheel-band" aria-hidden="true"></div>
+                </div>
                 <div class="cp-modal-actions">
                   <button class="cp-btn cp-btn-secondary" id="cp-today" type="button">Сегодня</button>
                   <button class="cp-btn" id="cp-save" type="button">Сохранить</button>
@@ -236,7 +240,7 @@
     font-size: 22px;
     font-weight: 900;
     color:#23308f;
-    margin: 6px 0 10px;
+    margin: 6px 0 12px;
   }
   .cp-modal-close{
     position:absolute;
@@ -249,30 +253,64 @@
     opacity:.65;
   }
   .cp-modal-close:hover{ opacity:1; }
-  .cp-label{
-    display:block;
-    font-size: 13px;
-    color: rgba(0,0,0,.65);
-    margin: 10px 0 6px;
-    font-weight: 700;
+  /* ===== iOS-like wheels ===== */
+  .cp-wheels{
+    --wheel-h: 176px;
+    --item-h: 44px;
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr 1.4fr 1fr;
+    gap: 12px;
+    align-items: stretch;
+    margin-top: 6px;
   }
-  /* Input visibility fix for Nicepage */
-  .cp-input{
-    width: 100%;
-    padding: 14px 12px;
+  .cp-wheel{
+    height: var(--wheel-h);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    scroll-snap-type: y mandatory;
+    padding-top: calc(var(--wheel-h)/2 - var(--item-h)/2);
+    padding-bottom: calc(var(--wheel-h)/2 - var(--item-h)/2);
     border-radius: 12px;
-    border: 2px solid rgba(35,48,143,.25);
-    font-size: 16px;
-    outline: none;
-    background: #fff !important;
-    color: #111 !important;
-    -webkit-text-fill-color: #111 !important;
-    caret-color: #111 !important;
+    background: #fff;
   }
-  .cp-input::placeholder{ color: rgba(0,0,0,.35); }
-  .cp-input:focus{
-    border-color: rgba(35,48,143,.65);
-    box-shadow: 0 0 0 4px rgba(35,48,143,.10);
+  .cp-wheel::-webkit-scrollbar{ width: 0; height: 0; }
+  .cp-wheel-item{
+    height: var(--item-h);
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    font-size: 34px;
+    font-weight: 800;
+    color: rgba(0,0,0,.28);
+    scroll-snap-align: center;
+    user-select: none;
+    -webkit-user-select: none;
+    cursor: pointer;
+    padding: 0 10px;
+  }
+  .cp-wheel-item.is-active{
+    color: #111;
+    font-weight: 900;
+  }
+  /* align like iOS: day left, month center, year right */
+  #cp-wheel-day .cp-wheel-item{ justify-content:flex-start; padding-left: 14px; }
+  #cp-wheel-month .cp-wheel-item{
+    justify-content:center;
+    font-size: 30px;
+    letter-spacing: .2px;
+  }
+  #cp-wheel-year .cp-wheel-item{ justify-content:flex-end; padding-right: 14px; }
+  .cp-wheel-band{
+    position:absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    transform: translateY(-50%);
+    height: var(--item-h);
+    border-top: 4px solid rgba(35,48,143,.22);
+    border-bottom: 4px solid rgba(35,48,143,.22);
+    pointer-events: none;
   }
   .cp-modal-actions{
     display:flex;
@@ -286,25 +324,21 @@
     border-width: 3px;
     border-radius: 14px;
   }
-  /* ===== Tablet-ish: make stats always 3 columns ===== */
+  /* ===== Tablet-ish: make stats 3 columns ===== */
   @media (min-width: 521px) and (max-width: 760px){
     .cp-stats{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 12px;
     }
-    .cp-stat{
-      width: auto;
-      min-height: 110px;
-    }
+    .cp-stat{ width: auto; min-height: 110px; }
   }
-  /* ===== Mobile: no vw widths (prevents clipping inside Nicepage containers) ===== */
+  /* ===== Mobile ===== */
   @media (max-width: 520px){
-    /* Гаттеры делаем на обёртке, чтобы card был ровно 100% родителя */
     .cp-widget{
       padding-left: calc(12px + env(safe-area-inset-left));
       padding-right: calc(12px + env(safe-area-inset-right));
-      overflow-x: hidden; /* на всякий случай убираем микровыезд */
+      overflow-x: hidden;
     }
     .cp-card{
       width: 100%;
@@ -313,7 +347,7 @@
       border-width: 2px;
       border-radius: 18px;
       padding: 18px 14px 20px;
-      transform: translateZ(0); /* стабилизирует Safari */
+      transform: translateZ(0);
     }
     .cp-title{
       font-size: clamp(26px, 7.5vw, 34px);
@@ -343,14 +377,8 @@
       box-shadow: 0 8px 18px rgba(0,0,0,.07);
     }
     .cp-stat-num{ font-size: clamp(34px, 10vw, 46px); }
-    .cp-stat-label{
-      font-size: 14px;
-      margin-top: 6px;
-    }
-    .cp-result-line{
-      font-size: 18px;
-      margin: 8px 0 14px;
-    }
+    .cp-stat-label{ font-size: 14px; margin-top: 6px; }
+    .cp-result-line{ font-size: 18px; margin: 8px 0 14px; }
     .cp-btn{
       width: 100%;
       max-width: 420px;
@@ -365,10 +393,23 @@
       padding: 16px 14px 14px;
       border-radius: 16px;
     }
+    /* чуть компактнее колёса на маленьких экранах */
+    .cp-wheels{
+      --wheel-h: 164px;
+      --item-h: 42px;
+      gap: 10px;
+    }
+    .cp-wheel-item{ font-size: 32px; }
+    #cp-wheel-month .cp-wheel-item{ font-size: 28px; }
   } </style>
           <script> (function(){
-  const LS_KEY = "clean_period_start_date_v3"; // YYYY-MM-DD
+  const LS_KEY = "clean_period_start_date_v4"; // YYYY-MM-DD
+  const monthsRu = [
+    "январь","февраль","март","апрель","май","июнь",
+    "июль","август","сентябрь","октябрь","ноябрь","декабрь"
+  ];
   const $ = (id)=>document.getElementById(id);
+  // main UI
   const elTotalDays = $("cp-totalDays");
   const elTotalDaysLabel = $("cp-totalDaysLabel");
   const elYears = $("cp-years");
@@ -376,33 +417,35 @@
   const elDays = $("cp-days");
   const elLine = $("cp-resultLine");
   const elNote = $("cp-note");
+  // modal
   const modal = $("cp-modal");
   const openBtn = $("cp-openPicker");
   const closeBtn = $("cp-closeModal");
   const closeBackdrop = $("cp-closeBackdrop");
-  const dateInput = $("cp-dateInput");
   const saveBtn = $("cp-save");
   const todayBtn = $("cp-today");
+  // wheels
+  const wheelDay = $("cp-wheel-day");
+  const wheelMonth = $("cp-wheel-month");
+  const wheelYear = $("cp-wheel-year");
+  // ===== utils =====
   function pad2(n){ return String(n).padStart(2,"0"); }
-  function todayYMD(){
+  function todayParts(){
     const t = new Date();
-    return `${t.getFullYear()}-${pad2(t.getMonth()+1)}-${pad2(t.getDate())}`;
+    return { y: t.getFullYear(), m: t.getMonth()+1, d: t.getDate() };
   }
-  // UTC midnight date from YYYY-MM-DD
   function utcFromYMD(ymd){
     const [y,m,d] = ymd.split("-").map(Number);
     return new Date(Date.UTC(y, m-1, d));
   }
-  // "1 день" = следующий календарный день
   function diffDaysCalendar(startYMD, endYMD){
     const a = utcFromYMD(startYMD).getTime();
     const b = utcFromYMD(endYMD).getTime();
     return Math.floor((b - a) / 86400000);
   }
-  function daysInMonth(year, monthIndex0){
-    return new Date(Date.UTC(year, monthIndex0 + 1, 0)).getUTCDate();
+  function daysInMonthUTC(year, month1to12){
+    return new Date(Date.UTC(year, month1to12, 0)).getUTCDate();
   }
-  // calendar diff with borrowing
   function calendarYMDdiff(startYMD, endYMD){
     const [sy, sm, sd] = startYMD.split("-").map(Number);
     const [ey, em, ed] = endYMD.split("-").map(Number);
@@ -410,9 +453,9 @@
     let months = em - sm;
     let days = ed - sd;
     if (days < 0){
-      const prevMonth0 = (em - 2 + 12) % 12;
+      const prevMonth1 = em === 1 ? 12 : (em - 1);
       const prevYear = em === 1 ? (ey - 1) : ey;
-      days += daysInMonth(prevYear, prevMonth0);
+      days += daysInMonthUTC(prevYear, prevMonth1);
       months -= 1;
     }
     if (months < 0){
@@ -432,10 +475,6 @@
   }
   function formatLine(parts){
     const {years, months, days} = parts;
-    // rules:
-    // < 1 month => only days
-    // >=1 month and <1 year => months + days
-    // >=1 year => years + months + days
     if (years <= 0 && months <= 0){
       return `${days} ${pluralRu(days, "день", "дня", "дней")}`;
     }
@@ -444,14 +483,29 @@
     }
     return `${years} ${pluralRu(years, "год", "года", "лет")} ${months} ${pluralRu(months, "месяц", "месяца", "месяцев")} ${days} ${pluralRu(days, "день", "дня", "дней")}`;
   }
-  function openModal(){
-    modal.classList.add("is-open");
-    modal.setAttribute("aria-hidden","false");
-    setTimeout(()=>dateInput.focus(), 50);
+  function ymdFromParts(y,m,d){
+    return `${y}-${pad2(m)}-${pad2(d)}`;
   }
-  function closeModal(){
-    modal.classList.remove("is-open");
-    modal.setAttribute("aria-hidden","true");
+  function clampToToday(y,m,d){
+    const t = todayParts();
+    if (y > t.y){ y=t.y; m=t.m; d=t.d; }
+    if (y === t.y && m > t.m){ m=t.m; d=Math.min(d, t.d); }
+    if (y === t.y && m === t.m && d > t.d){ d=t.d; }
+    return {y,m,d};
+  }
+  function normalizeDate(y,m,d){
+    // month days
+    d = Math.min(d, daysInMonthUTC(y,m));
+    // not future
+    ({y,m,d} = clampToToday(y,m,d));
+    // month days again after clamp
+    d = Math.min(d, daysInMonthUTC(y,m));
+    return {y,m,d};
+  }
+  // ===== render main widget =====
+  function todayYMD(){
+    const t = todayParts();
+    return ymdFromParts(t.y, t.m, t.d);
   }
   function renderFromStart(startYMD){
     const endYMD = todayYMD();
@@ -477,32 +531,145 @@
   }
   function setStartDate(startYMD){
     localStorage.setItem(LS_KEY, startYMD);
-    dateInput.value = startYMD;
     renderFromStart(startYMD);
   }
-  // Flatpickr dynamic load + fallback to native date input
-  function loadFlatpickr(){
-    const css = document.createElement("link");
-    css.rel = "stylesheet";
-    css.href = "https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css";
-    document.head.appendChild(css);
-    const s = document.createElement("script");
-    s.src = "https://cdn.jsdelivr.net/npm/flatpickr";
-    s.onload = () => {
-      if (!window.flatpickr) return;
-      window.flatpickr(dateInput, {
-        dateFormat: "Y-m-d",
-        maxDate: todayYMD(),
-        allowInput: true
-      });
-    };
-    s.onerror = () => {
-      // fallback: native date picker
-      dateInput.type = "date";
-      dateInput.max = todayYMD();
-    };
-    document.head.appendChild(s);
+  // ===== Wheel picker =====
+  function getItemHeightPx(){
+    // must match CSS --item-h (44 desktop, 42 mobile). We can read from a real item once created.
+    const item = wheelDay.querySelector(".cp-wheel-item");
+    if (!item) return 44;
+    const h = Math.round(item.getBoundingClientRect().height);
+    return h || 44;
   }
+  function buildWheel(el, values, renderFn){
+    el.innerHTML = values.map(v =>
+      `<div class="cp-wheel-item" data-value="${v}">${renderFn(v)}</div>`
+    ).join("");
+    // click to select
+    const items = el.querySelectorAll(".cp-wheel-item");
+    items.forEach((it, idx)=>{
+      it.addEventListener("click", ()=>{
+        snapTo(el, idx, true);
+        triggerWheelChange(el);
+      });
+    });
+  }
+  function setActiveByIndex(el, idx){
+    const items = el.querySelectorAll(".cp-wheel-item");
+    items.forEach((it,i)=> it.classList.toggle("is-active", i===idx));
+  }
+  function nearestIndex(el){
+    const itemH = getItemHeightPx();
+    const idx = Math.round(el.scrollTop / itemH);
+    const max = el.querySelectorAll(".cp-wheel-item").length - 1;
+    return Math.max(0, Math.min(max, idx));
+  }
+  function snapTo(el, idx, smooth){
+    const itemH = getItemHeightPx();
+    const top = idx * itemH;
+    if (smooth && el.scrollTo){
+      el.scrollTo({ top, behavior: "smooth" });
+    } else {
+      el.scrollTop = top;
+    }
+    setActiveByIndex(el, idx);
+  }
+  function setWheelValue(el, value){
+    const items = Array.from(el.querySelectorAll(".cp-wheel-item"));
+    const idx = items.findIndex(it => String(it.dataset.value) === String(value));
+    if (idx >= 0){
+      snapTo(el, idx, false);
+    }
+  }
+  // current selected state in picker
+  let picker = { y: 2000, m: 1, d: 1 };
+  function rebuildDays(){
+    const maxD = daysInMonthUTC(picker.y, picker.m);
+    const days = Array.from({length: maxD}, (_,i)=> i+1);
+    buildWheel(wheelDay, days, (v)=> pad2(v));
+    // clamp day
+    if (picker.d > maxD) picker.d = maxD;
+    // apply selection
+    requestAnimationFrame(()=> setWheelValue(wheelDay, picker.d));
+  }
+  function triggerWheelChange(el){
+    const idx = nearestIndex(el);
+    setActiveByIndex(el, idx);
+    const items = el.querySelectorAll(".cp-wheel-item");
+    const val = items[idx] ? items[idx].dataset.value : null;
+    if (val == null) return;
+    if (el === wheelYear){
+      picker.y = parseInt(val, 10);
+      const norm = normalizeDate(picker.y, picker.m, picker.d);
+      picker = norm;
+      rebuildDays();
+      requestAnimationFrame(()=>{
+        setWheelValue(wheelMonth, picker.m);
+        setWheelValue(wheelYear, picker.y);
+      });
+      return;
+    }
+    if (el === wheelMonth){
+      picker.m = parseInt(val, 10);
+      const norm = normalizeDate(picker.y, picker.m, picker.d);
+      picker = norm;
+      rebuildDays();
+      requestAnimationFrame(()=>{
+        setWheelValue(wheelMonth, picker.m);
+        setWheelValue(wheelYear, picker.y);
+      });
+      return;
+    }
+    if (el === wheelDay){
+      picker.d = parseInt(val, 10);
+      picker = normalizeDate(picker.y, picker.m, picker.d);
+      requestAnimationFrame(()=>{
+        setWheelValue(wheelDay, picker.d);
+      });
+      return;
+    }
+  }
+  function attachWheel(el){
+    let timer = null;
+    el.addEventListener("scroll", ()=>{
+      if (timer) clearTimeout(timer);
+      timer = setTimeout(()=> triggerWheelChange(el), 80);
+    }, { passive: true });
+  }
+  function initWheelsFromYMD(ymd){
+    const [y,m,d] = ymd.split("-").map(Number);
+    picker = normalizeDate(y,m,d);
+    // years range
+    const t = todayParts();
+    const MIN_YEAR = 1950;
+    const years = [];
+    for (let yy = MIN_YEAR; yy <= t.y; yy++) years.push(yy);
+    // months 1..12
+    const months = Array.from({length:12}, (_,i)=> i+1);
+    buildWheel(wheelYear, years, (v)=> String(v));
+    buildWheel(wheelMonth, months, (v)=> monthsRu[v-1]);
+    rebuildDays();
+    // position wheels
+    requestAnimationFrame(()=>{
+      setWheelValue(wheelYear, picker.y);
+      setWheelValue(wheelMonth, picker.m);
+      setWheelValue(wheelDay, picker.d);
+    });
+  }
+  // ===== modal open/close =====
+  function openModal(){
+    modal.classList.add("is-open");
+    modal.setAttribute("aria-hidden","false");
+    // after open, make sure wheels are positioned
+    requestAnimationFrame(()=>{
+      wheelMonth.focus?.();
+    });
+  }
+  function closeModal(){
+    modal.classList.remove("is-open");
+    modal.setAttribute("aria-hidden","true");
+  }
+  // ===== events =====
   openBtn.addEventListener("click", openModal);
   closeBtn.addEventListener("click", closeModal);
   closeBackdrop.addEventListener("click", closeModal);
@@ -510,27 +677,34 @@
     if (e.key === "Escape" && modal.classList.contains("is-open")) closeModal();
   });
   todayBtn.addEventListener("click", ()=>{
-    dateInput.value = todayYMD();
+    const t = todayParts();
+    picker = { y: t.y, m: t.m, d: t.d };
+    initWheelsFromYMD(ymdFromParts(picker.y, picker.m, picker.d));
   });
   saveBtn.addEventListener("click", ()=>{
-    const v = (dateInput.value || "").trim();
-    if (!/^\d{4}-\d{2}-\d{2}$/.test(v)){
-      elLine.textContent = "Пожалуйста, выбери корректную дату";
+    picker = normalizeDate(picker.y, picker.m, picker.d);
+    const ymd = ymdFromParts(picker.y, picker.m, picker.d);
+    // final safety: not future
+    const totalDays = diffDaysCalendar(ymd, todayYMD());
+    if (totalDays < 0){
+      elLine.textContent = "Дата не может быть в будущем";
       return;
     }
-    setStartDate(v);
+    setStartDate(ymd);
     closeModal();
   });
-  // Init
-  loadFlatpickr();
+  attachWheel(wheelDay);
+  attachWheel(wheelMonth);
+  attachWheel(wheelYear);
+  // ===== init main + picker =====
   const saved = localStorage.getItem(LS_KEY);
+  const initial = (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) ? saved : todayYMD();
+  initWheelsFromYMD(initial);
   if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)){
-    dateInput.value = saved;
     renderFromStart(saved);
   } else {
-    const t = todayYMD();
-    dateInput.value = t;
-    renderFromStart(t);
+    // keep initial "choose date" text
+    renderFromStart(initial);
     elLine.textContent = "Выбери дату начала";
     elNote.textContent = "";
   }
