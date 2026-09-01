@@ -1,6 +1,5 @@
 .hero { padding-block: var(--space-16); background: var(--color-primary-soft); }
 .hero__content { max-width: 70rem; }
-.eyebrow { margin: 0 0 var(--space-2); color: var(--color-primary); font-size: .875rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
 .hero h1 { max-width: 18ch; }
 .hero__lead { max-width: 62ch; margin: var(--space-6) 0 0; color: var(--color-text-muted); font-size: 1.125rem; }
 .hero__actions { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-8); }
