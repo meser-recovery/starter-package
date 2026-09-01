@@ -54,9 +54,18 @@ def main() -> int:
         context.route("**/*", block_external)
         page = context.new_page()
         page.goto(url(base_url, "/"), wait_until="domcontentloaded")
+        homepage_destinations = (
+            "Offline-meetings.html", "Literature.html", "AudioBook.html",
+            "Calculator.html", "Admin-panel.html",
+            "https://na-tranzit.org/gruppy/onlajn-gruppy",
+            "https://na-russia.org/meditation-today", "https://radio-na.ru/",
+            "https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751",
+        )
+        for href in homepage_destinations:
+            if page.locator(f'a[href="{href}"]').count() != 1:
+                raise AssertionError(f"homepage destination must appear exactly once: {href}")
         page.get_by_role("heading", name="Стартовый набор для новичка", level=1).wait_for()
-        skip_link = page.locator('a[href="#main-content"]')
-        if skip_link.count() != 1:
+        if page.locator('a[href="#main-content"]').count() != 1:
             raise AssertionError("homepage skip link is missing")
         click_viewport_link(page, "Offline-meetings.html", "/Offline-meetings.html")
 
@@ -65,20 +74,10 @@ def main() -> int:
         mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
         if mobile.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
             raise AssertionError("homepage has horizontal overflow at mobile viewport")
-        menu_button = mobile.get_by_role("button", name="Меню")
-        menu_button.wait_for(state="visible")
-        if menu_button.get_attribute("aria-expanded") != "false":
-            raise AssertionError("mobile navigation must initially be closed")
-        menu_button.click()
-        if menu_button.get_attribute("aria-expanded") != "true":
-            raise AssertionError("mobile navigation did not open")
-        mobile.keyboard.press("Escape")
-        if menu_button.get_attribute("aria-expanded") != "false":
-            raise AssertionError("Escape did not close mobile navigation")
-        if mobile.evaluate("document.activeElement === document.querySelector('.site-nav__toggle')") is not True:
-            raise AssertionError("Escape did not return focus to mobile menu button")
-        menu_button.click()
-        mobile.locator('#primary-navigation a[href="Literature.html"]').click()
+        mobile.get_by_role("heading", name="Стартовый набор для новичка", level=1).wait_for(state="visible")
+        if mobile.locator('a[href="Literature.html"]').count() != 1:
+            raise AssertionError("homepage Literature destination must appear exactly once")
+        mobile.locator('a[href="Literature.html"]').click()
         mobile.wait_for_url("**/Literature.html", timeout=1500)
         mobile.close()
 

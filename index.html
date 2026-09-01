@@ -3,98 +3,43 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="description" content="Основные ресурсы для начала выздоровления: собрания, литература, аудиоматериалы и инструменты.">
-    <meta name="theme-color" content="#245B85">
+    <meta name="description" content="Стартовый набор для новичка. Ресурсы сообщества АН.">
+    <meta name="theme-color" content="#478ac9">
     <title>Стартовый набор для новичка</title>
     <link rel="stylesheet" href="styles/foundation.css">
     <link rel="stylesheet" href="styles/homepage.css">
-    <script src="scripts/site-nav.js" defer></script>
   </head>
   <body>
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
-    <header class="site-header">
-      <div class="container site-header__content">
-        <a class="site-brand" href="./" aria-label="Стартовый набор — главная">
-          <img src="images/NALogo.png" alt="Логотип АН" width="48" height="48">
-          <span>Стартовый набор</span>
-        </a>
-        <button class="site-nav__toggle" type="button" aria-expanded="false" aria-controls="primary-navigation">Меню</button>
-        <nav id="primary-navigation" class="site-nav" aria-label="Основная навигация">
-          <ul>
-            <li><a href="Offline-meetings.html">Живые собрания</a></li>
-            <li><a href="Literature.html">Литература</a></li>
-            <li><a href="AudioBook.html">Базовый текст</a></li>
-            <li><a href="Admin-panel.html">Для служащих</a></li>
-          </ul>
-        </nav>
-      </div>
-    </header>
-
-    <main id="main-content">
-      <section class="hero">
-        <div class="container hero__content">
-          <h1>Стартовый набор для новичка</h1>
-          <p class="hero__lead">Здесь собраны основные ресурсы, которые могут пригодиться в начале пути: собрания, литература, аудиоматериалы и другие инструменты выздоровления.</p>
-          <div class="hero__actions">
-            <a class="button-link button-link--primary" href="Offline-meetings.html">Найти живое собрание</a>
-            <a class="button-link button-link--secondary" href="https://na-tranzit.org/gruppy/onlajn-gruppy" target="_blank" rel="noopener noreferrer">Онлайн-собрания <span class="sr-only">(откроется в новой вкладке)</span></a>
-          </div>
+    <header class="site-header"><div class="container site-header__content"><img src="images/NALogo.png" alt="Логотип АН" width="56" height="56"></div></header>
+    <main id="main-content" class="homepage-main">
+      <div class="container homepage-content">
+        <h1>Стартовый набор для новичка</h1>
+        <div class="resource-grid">
+          <a class="resource-action" href="Offline-meetings.html">Живые собрания</a>
+          <a class="resource-action" href="https://na-tranzit.org/gruppy/onlajn-gruppy" target="_blank" rel="noopener noreferrer">Онлайн собрания <span class="sr-only">(откроется в новой вкладке)</span></a>
+          <a class="resource-action" href="Literature.html">Информационные проспекты</a>
+          <a class="resource-action" href="AudioBook.html">Базовый текст (аудио)</a>
+          <a class="resource-action" href="https://na-russia.org/meditation-today" target="_blank" rel="noopener noreferrer">Ежедневные размышления <span class="sr-only">(откроется в новой вкладке)</span></a>
+          <a class="resource-action" href="https://radio-na.ru/" target="_blank" rel="noopener noreferrer">Радио NA <span class="sr-only">(откроется в новой вкладке)</span></a>
+          <a class="resource-action" href="https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751" target="_blank" rel="noopener noreferrer">Слушать спикерские NA <span class="sr-only">(откроется в новой вкладке)</span></a>
+          <a class="resource-action" href="Calculator.html">Калькулятор чистого периода</a>
         </div>
-      </section>
-
-      <section class="homepage-section" aria-labelledby="start-heading">
-        <div class="container">
-          <h2 id="start-heading">Начать здесь</h2>
-          <div class="primary-card-grid">
-            <a class="card card--primary" href="Offline-meetings.html"><span>Живые собрания</span><span aria-hidden="true">→</span></a>
-            <a class="card card--primary" href="https://na-tranzit.org/gruppy/onlajn-gruppy" target="_blank" rel="noopener noreferrer"><span>Онлайн-собрания <span class="sr-only">(откроется в новой вкладке)</span></span><span aria-hidden="true">→</span></a>
-            <a class="card card--primary" href="Literature.html"><span>Литература</span><span aria-hidden="true">→</span></a>
-            <a class="card card--primary" href="AudioBook.html"><span>Базовый текст — аудио</span><span aria-hidden="true">→</span></a>
-          </div>
-        </div>
-      </section>
-
-      <section class="homepage-section homepage-section--muted" aria-labelledby="resources-heading">
-        <div class="container">
-          <h2 id="resources-heading">Дополнительные ресурсы</h2>
-          <div class="resource-grid">
-            <a class="card card--resource" href="https://na-russia.org/meditation-today" target="_blank" rel="noopener noreferrer">Ежедневные размышления <span class="sr-only">(откроется в новой вкладке)</span></a>
-            <a class="card card--resource" href="https://radio-na.ru/" target="_blank" rel="noopener noreferrer">Радио NA <span class="sr-only">(откроется в новой вкладке)</span></a>
-            <a class="card card--resource" href="https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751" target="_blank" rel="noopener noreferrer">Спикерские NA <span class="sr-only">(откроется в новой вкладке)</span></a>
-            <a class="card card--resource" href="Calculator.html">Калькулятор чистого периода</a>
-          </div>
-        </div>
-      </section>
-
-      <section class="homepage-section newcomer-section" aria-labelledby="newcomer-heading">
-        <div class="container newcomer-section__content">
+        <section class="newcomer-content" aria-labelledby="newcomer-heading">
           <h2 id="newcomer-heading">Кто такой зависимый?</h2>
-          <div class="prose">
+          <div class="newcomer-prose">
             <p>Большинству из нас не надо особенно задумываться над этим вопросом. Мы знаем! Вся наша жизнь и все наши мысли были сконцентрированы на наркотиках в той или иной форме: как их достать, как употребить и как найти пути и способы достать еще. Мы жили, чтобы употреблять, и употребляли, чтобы жить.</p>
             <p>Проще говоря, зависимый – это мужчина или женщина, чья жизнь подчинена наркотикам. Мы люди, оказавшиеся во власти хронической и прогрессирующей болезни, конец которой всегда один и тот же – тюрьма, больница и смерть.</p>
           </div>
-          <div class="newcomer-section__statements">
+          <div class="recovery-statements">
             <p>Наш опыт показывает, что те, кто продолжает регулярно ходить на наши собрания, остаются чистыми.</p>
             <p>Мы рекомендуем новому другу посетить 90 собраний за 90 дней и взять спонсора</p>
             <p>♡ Любим Тебя — продолжай приходить ♡</p>
           </div>
-        </div>
-      </section>
-
-      <section class="homepage-section service-section" aria-labelledby="service-heading">
-        <div class="container">
-          <div class="service-card">
-            <h2 id="service-heading">Для служащих</h2>
-            <a href="Admin-panel.html">Перейти в раздел для служащих</a>
-          </div>
-        </div>
-      </section>
-    </main>
-
-    <footer class="site-footer">
-      <div class="container">
-        <p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p>
+        </section>
+        <a class="service-link" href="Admin-panel.html">Для служащих</a>
       </div>
-    </footer>
+    </main>
+    <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
   </body>
 </html>
