@@ -67,6 +67,8 @@ def main() -> int:
         page.get_by_role("heading", name="Стартовый набор для новичка", level=1).wait_for()
         if page.locator('a[href="#main-content"]').count() != 1:
             raise AssertionError("homepage skip link is missing")
+        if page.locator('#primary-navigation a[href="Admin-panel.html"]').count() != 1:
+            raise AssertionError("desktop service navigation link is missing or duplicated")
         click_viewport_link(page, "Offline-meetings.html", "/Offline-meetings.html")
 
         mobile = context.new_page()
@@ -75,6 +77,28 @@ def main() -> int:
         if mobile.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
             raise AssertionError("homepage has horizontal overflow at mobile viewport")
         mobile.get_by_role("heading", name="Стартовый набор для новичка", level=1).wait_for(state="visible")
+        menu_button = mobile.get_by_role("button", name="Меню")
+        menu_button.wait_for(state="visible")
+        if menu_button.get_attribute("aria-expanded") != "false":
+            raise AssertionError("mobile navigation must initially be closed")
+        menu_button.click()
+        if menu_button.get_attribute("aria-expanded") != "true":
+            raise AssertionError("mobile navigation did not open")
+        nav = mobile.locator("#primary-navigation")
+        if nav.get_by_role("link", name="Кто такой зависимый?").count() != 1:
+            raise AssertionError("mobile newcomer navigation link is missing")
+        if nav.get_by_role("link", name="Для служащих").count() != 1:
+            raise AssertionError("mobile service navigation link is missing")
+        mobile.keyboard.press("Escape")
+        if menu_button.get_attribute("aria-expanded") != "false":
+            raise AssertionError("Escape did not close mobile navigation")
+        if mobile.evaluate("document.activeElement === document.querySelector('.site-nav__toggle')") is not True:
+            raise AssertionError("Escape did not return focus to mobile menu button")
+        menu_button.click()
+        nav.get_by_role("link", name="Кто такой зависимый?").click()
+        if menu_button.get_attribute("aria-expanded") != "false":
+            raise AssertionError("choosing a mobile navigation link did not close the menu")
+        mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
         if mobile.locator('a[href="Literature.html"]').count() != 1:
             raise AssertionError("homepage Literature destination must appear exactly once")
         mobile.locator('a[href="Literature.html"]').click()
