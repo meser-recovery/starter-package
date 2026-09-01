@@ -71,6 +71,10 @@ def main() -> int:
             raise AssertionError("homepage skip link is missing")
         if page.locator('a[href="Admin-panel.html"]').count() != 1:
             raise AssertionError("desktop service navigation link is missing or duplicated")
+        newcomer_heading = page.get_by_role("heading", name="Кто такой зависимый?", level=2)
+        heading_box = newcomer_heading.bounding_box()
+        if not heading_box or heading_box["y"] >= 900:
+            raise AssertionError("newcomer content begins below the initial desktop viewport")
         click_viewport_link(page, "Offline-meetings.html", "/Offline-meetings.html")
 
         mobile = context.new_page()
