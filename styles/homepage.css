@@ -1,0 +1,29 @@
+.hero { padding-block: var(--space-16); background: var(--color-primary-soft); }
+.hero__content { max-width: 70rem; }
+.eyebrow { margin: 0 0 var(--space-2); color: var(--color-primary); font-size: .875rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; }
+.hero h1 { max-width: 18ch; }
+.hero__lead { max-width: 62ch; margin: var(--space-6) 0 0; color: var(--color-text-muted); font-size: 1.125rem; }
+.hero__actions { display: flex; flex-direction: column; gap: var(--space-3); margin-top: var(--space-8); }
+.homepage-section { padding-block: var(--space-12); }
+.homepage-section--muted { background: var(--color-surface-muted); }
+.homepage-section h2 { margin-bottom: var(--space-6); }
+.primary-card-grid, .resource-grid { display: grid; grid-template-columns: 1fr; gap: var(--space-4); }
+.card--primary { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 7rem; padding: var(--space-6); color: var(--color-text); font-size: 1.1875rem; font-weight: 700; }
+.card--primary span[aria-hidden="true"] { color: var(--color-primary); font-size: 1.5rem; }
+.card--resource { min-height: 44px; padding: var(--space-4); color: var(--color-text); font-weight: 600; }
+.newcomer-section__content { max-width: 70rem; }
+.prose { max-width: 65ch; }
+.prose p { margin: 0 0 var(--space-4); }
+.newcomer-section__statements { max-width: 65ch; margin-top: var(--space-8); padding: var(--space-6); background: var(--color-primary-soft); border-left: .25rem solid var(--color-primary); border-radius: 0 var(--radius-sm) var(--radius-sm) 0; }
+.newcomer-section__statements p { margin: 0; }
+.newcomer-section__statements p + p { margin-top: var(--space-3); }
+.service-section { padding-top: 0; }
+.service-card { padding: var(--space-6); background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: var(--radius-md); }
+.service-card h2 { margin-bottom: var(--space-3); font-size: 1.5rem; }
+.service-card a { font-weight: 700; }
+
+@media (min-width: 48rem) {
+  .hero { padding-block: var(--space-24); }
+  .hero__actions { flex-direction: row; }
+  .primary-card-grid, .resource-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
