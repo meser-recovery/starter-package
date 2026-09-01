@@ -1,0 +1,40 @@
+{
+  "stable_paths": [
+    "/",
+    "/About.html",
+    "/Offline-meetings.html",
+    "/Literature.html",
+    "/AudioBook.html",
+    "/Calculator.html",
+    "/Admin-panel.html",
+    "/Calendar.html",
+    "/Google-Drive.html",
+    "/na_meetings_live.html"
+  ],
+  "homepage_internal_destinations": [
+    "Offline-meetings.html",
+    "Literature.html",
+    "AudioBook.html",
+    "Calculator.html",
+    "Admin-panel.html"
+  ],
+  "homepage_external_destinations": [
+    "https://na-tranzit.org/gruppy/onlajn-gruppy",
+    "https://na-russia.org/meditation-today",
+    "https://radio-na.ru/",
+    "https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751"
+  ],
+  "asset_families": [
+    {
+      "directory": "audio/bt6",
+      "prefix": "bt6_",
+      "start": 1,
+      "end": 100,
+      "padding": 3,
+      "suffix": ".mp3"
+    }
+  ],
+  "optional_missing_assets": [
+    "images/favicon.png"
+  ]
+}

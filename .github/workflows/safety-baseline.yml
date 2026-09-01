@@ -1,0 +1,80 @@
+name: Safety baseline
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "30 21 * * *"
+
+permissions:
+  contents: read
+  pages: read
+
+jobs:
+  local-safety:
+    if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Check repository contract
+        run: python3 tests/safety/check_site.py
+      - name: Install browser test dependency
+        run: pip install -r requirements-test.txt
+      - name: Install Chromium
+        run: python3 -m playwright install --with-deps chromium
+      - name: Run local browser smoke suite
+        run: |
+          python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/site-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+          python3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000
+
+  production-safety:
+    if: github.event_name == 'push' || github.event_name == 'schedule'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+      - name: Wait for the matching Pages deployment
+        env:
+          GH_TOKEN: ${{ github.token }}
+          EXPECTED_SHA: ${{ github.sha }}
+        run: |
+          for attempt in $(seq 1 40); do
+            page_json=$(gh api "repos/${GITHUB_REPOSITORY}/pages") || exit 1
+            build_json=$(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest") || exit 1
+            build_status=$(printf '%s' "$build_json" | jq -r '.status')
+            build_sha=$(printf '%s' "$build_json" | jq -r '.commit')
+            if [ "$build_status" = built ] && [ "$build_sha" = "$EXPECTED_SHA" ]; then
+              break
+            fi
+            if [ "$build_status" = errored ]; then
+              echo "GitHub Pages build failed for commit $build_sha"
+              exit 1
+            fi
+            sleep 15
+          done
+          if [ "$build_status" != built ]; then
+            echo "Timed out waiting for a healthy GitHub Pages build"
+            exit 1
+          fi
+          if [ "$build_sha" != "$EXPECTED_SHA" ]; then
+            echo "Expected Pages build for $EXPECTED_SHA; latest healthy build is $build_sha"
+            exit 1
+          fi
+          printf '%s' "$page_json" | jq -r '.html_url' > pages-url.txt
+      - name: Check deployed URL contract
+        run: python3 tests/safety/check_site.py --base-url "$(cat pages-url.txt)"
+      - name: Install browser test dependency
+        run: pip install -r requirements-test.txt
+      - name: Install Chromium
+        run: python3 -m playwright install --with-deps chromium
+      - name: Run deployed browser smoke suite
+        run: python3 tests/safety/browser_smoke.py --base-url "$(cat pages-url.txt)"
