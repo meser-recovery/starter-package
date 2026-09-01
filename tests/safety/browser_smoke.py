@@ -14,6 +14,21 @@ def url(base: str, path: str) -> str:
     return base.rstrip("/") + path
 
 
+def click_viewport_link(page, href: str) -> None:
+    """Click a visible, interactable link without relying on DOM position/classes."""
+    links = page.locator(f'a[href="{href}"]')
+    viewport_height = (page.viewport_size or {}).get("height", 900)
+    for index in range(links.count()):
+        candidate = links.nth(index)
+        if not candidate.is_visible():
+            continue
+        box = candidate.bounding_box()
+        if box and box["y"] < viewport_height and box["y"] + box["height"] > 0:
+            candidate.click()
+            return
+    raise AssertionError(f"no visible in-viewport link found for {href}")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -33,16 +48,15 @@ def main() -> int:
         context.route("**/*", block_external)
         page = context.new_page()
         page.goto(url(base_url, "/"), wait_until="domcontentloaded")
-        offline_link = page.locator('a[href="Offline-meetings.html"]:visible').first
-        offline_link.wait_for()
-        offline_link.click()
+        page.locator('a[href="Offline-meetings.html"]:visible').first.wait_for()
+        click_viewport_link(page, "Offline-meetings.html")
         page.wait_for_url("**/Offline-meetings.html")
 
         mobile = context.new_page()
         mobile.set_viewport_size({"width": 390, "height": 844})
         mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
         mobile.get_by_label("Open menu").click()
-        mobile.locator('a[href="Literature.html"]:visible').last.click()
+        click_viewport_link(mobile, "Literature.html")
         mobile.wait_for_url("**/Literature.html")
         mobile.close()
 
