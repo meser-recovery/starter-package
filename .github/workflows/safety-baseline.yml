@@ -46,16 +46,13 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           EXPECTED_SHA: ${{ github.sha }}
-          EVENT_NAME: ${{ github.event_name }}
         run: |
           for attempt in $(seq 1 40); do
             page_json=$(gh api "repos/${GITHUB_REPOSITORY}/pages") || exit 1
             build_json=$(gh api "repos/${GITHUB_REPOSITORY}/pages/builds/latest") || exit 1
             build_status=$(printf '%s' "$build_json" | jq -r '.status')
             build_sha=$(printf '%s' "$build_json" | jq -r '.commit')
-            if [ "$EVENT_NAME" = schedule ]; then
-              if [ "$build_status" = built ]; then break; fi
-            elif [ "$build_status" = built ] && [ "$build_sha" = "$EXPECTED_SHA" ]; then
+            if [ "$build_status" = built ] && [ "$build_sha" = "$EXPECTED_SHA" ]; then
               break
             fi
             if [ "$build_status" = errored ]; then
@@ -68,7 +65,7 @@ jobs:
             echo "Timed out waiting for a healthy GitHub Pages build"
             exit 1
           fi
-          if [ "$EVENT_NAME" != schedule ] && [ "$build_sha" != "$EXPECTED_SHA" ]; then
+          if [ "$build_sha" != "$EXPECTED_SHA" ]; then
             echo "Expected Pages build for $EXPECTED_SHA; latest healthy build is $build_sha"
             exit 1
           fi

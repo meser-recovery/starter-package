@@ -33,8 +33,9 @@ def main() -> int:
         context.route("**/*", block_external)
         page = context.new_page()
         page.goto(url(base_url, "/"), wait_until="domcontentloaded")
-        page.wait_for_selector('a[href="Offline-meetings.html"]')
-        page.locator('a[href="Offline-meetings.html"]').first.click()
+        offline_link = page.locator('a[href="Offline-meetings.html"]:visible').first
+        offline_link.wait_for()
+        offline_link.click()
         page.wait_for_url("**/Offline-meetings.html")
 
         mobile = context.new_page()
