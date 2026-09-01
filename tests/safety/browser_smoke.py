@@ -14,18 +14,24 @@ def url(base: str, path: str) -> str:
     return base.rstrip("/") + path
 
 
-def click_viewport_link(page, href: str) -> None:
+def click_viewport_link(page, href: str, expected_path: str) -> None:
     """Click a visible, interactable link without relying on DOM position/classes."""
     links = page.locator(f'a[href="{href}"]')
     viewport_height = (page.viewport_size or {}).get("height", 900)
     for index in range(links.count()):
         candidate = links.nth(index)
-        if not candidate.is_visible():
+        try:
+            candidate.wait_for(state="visible", timeout=1000)
+        except Error:
             continue
         box = candidate.bounding_box()
         if box and box["y"] < viewport_height and box["y"] + box["height"] > 0:
-            candidate.evaluate("(element) => element.click()")
-            return
+            try:
+                candidate.click(timeout=750)
+                page.wait_for_url(f"**{expected_path}", timeout=1500)
+                return
+            except Error:
+                continue
     raise AssertionError(f"no visible in-viewport link found for {href}")
 
 
@@ -48,16 +54,13 @@ def main() -> int:
         context.route("**/*", block_external)
         page = context.new_page()
         page.goto(url(base_url, "/"), wait_until="domcontentloaded")
-        page.locator('a[href="Offline-meetings.html"]:visible').first.wait_for()
-        click_viewport_link(page, "Offline-meetings.html")
-        page.wait_for_url("**/Offline-meetings.html")
+        click_viewport_link(page, "Offline-meetings.html", "/Offline-meetings.html")
 
         mobile = context.new_page()
         mobile.set_viewport_size({"width": 390, "height": 844})
         mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
         mobile.get_by_label("Open menu").click()
-        click_viewport_link(mobile, "Literature.html")
-        mobile.wait_for_url("**/Literature.html")
+        click_viewport_link(mobile, "Literature.html", "/Literature.html")
         mobile.close()
 
         page.goto(url(base_url, "/About.html"), wait_until="domcontentloaded")
