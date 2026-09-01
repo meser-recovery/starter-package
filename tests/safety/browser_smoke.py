@@ -24,7 +24,7 @@ def click_viewport_link(page, href: str) -> None:
             continue
         box = candidate.bounding_box()
         if box and box["y"] < viewport_height and box["y"] + box["height"] > 0:
-            candidate.click()
+            candidate.evaluate("(element) => element.click()")
             return
     raise AssertionError(f"no visible in-viewport link found for {href}")
 
