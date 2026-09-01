@@ -96,7 +96,7 @@ def main() -> int:
         page.goto(url(base_url, "/Admin-panel.html"), wait_until="domcontentloaded")
         password = page.locator('input[type="password"]')
         password.fill("stage-1-invalid-password")
-        page.locator('input[type="submit"]').click()
+        page.locator('form a[href="#"]:visible').click()
         page.wait_for_timeout(250)
         if "Admin-panel.html" not in urlparse(page.url).path or "5ab2b48b" in page.url:
             raise AssertionError("invalid admin password granted access")
