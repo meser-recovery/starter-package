@@ -4,6 +4,7 @@
     "/About.html",
     "/Offline-meetings.html",
     "/Literature.html",
+    "/Literature-reader.html",
     "/AudioBook.html",
     "/Calculator.html",
     "/Admin-panel.html",
@@ -33,8 +34,5 @@
       "padding": 3,
       "suffix": ".mp3"
     }
-  ],
-  "optional_missing_assets": [
-    "images/favicon.png"
   ]
 }
