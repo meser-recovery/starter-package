@@ -71,6 +71,28 @@ def main() -> int:
             raise AssertionError("homepage skip link is missing")
         if page.locator('a[href="Admin-panel.html"]').count() != 1:
             raise AssertionError("desktop service navigation link is missing or duplicated")
+        desktop_service = page.get_by_role("link", name="Для служащих")
+        desktop_heading_box = page.get_by_role("heading", name="Проект Мэсэр", level=1).bounding_box()
+        desktop_header_box = page.locator(".site-header__content").bounding_box()
+        if (not desktop_heading_box or not desktop_header_box or
+                abs((desktop_heading_box["x"] + desktop_heading_box["width"] / 2) -
+                    (desktop_header_box["x"] + desktop_header_box["width"] / 2)) > 1):
+            raise AssertionError("desktop H1 is no longer centered in the header")
+        if not desktop_service.evaluate("""el => {
+            const style = getComputedStyle(el);
+            return style.flexDirection === 'row' && style.whiteSpace === 'nowrap' &&
+                style.textDecorationLine === 'none' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
+        }"""):
+            raise AssertionError("desktop service control lacks its compact control treatment")
+        desktop_actions = page.locator(".resource-action")
+        if desktop_actions.count() != 8:
+            raise AssertionError("desktop homepage must retain eight resource actions")
+        if not desktop_actions.nth(0).evaluate("""el => {
+            const style = getComputedStyle(el);
+            return style.minHeight === '92px' && style.borderRadius === '17px' &&
+                style.transitionDuration.split(', ').every(duration => duration === '0.18s');
+        }"""):
+            raise AssertionError("desktop resource action treatment is not the compact refined style")
         newcomer_heading = page.get_by_role("heading", name="Кто такой зависимый?", level=2)
         heading_box = newcomer_heading.bounding_box()
         if not heading_box or heading_box["y"] >= 900:
@@ -103,6 +125,9 @@ def main() -> int:
             line_boxes = [service.locator("span").nth(i).bounding_box() for i in range(2)]
             if not line_boxes[0] or not line_boxes[1] or line_boxes[1]["y"] <= line_boxes[0]["y"]:
                 raise AssertionError(f"service link lines are not stacked at {width}px")
+            control_center = service_box["x"] + service_box["width"] / 2
+            if any(abs((line["x"] + line["width"] / 2) - control_center) > 2 for line in line_boxes):
+                raise AssertionError(f"service link lines are not centered in the control at {width}px")
             if not service.evaluate("el => getComputedStyle(el).whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth"):
                 raise AssertionError(f"header service link wraps unexpectedly at {width}px")
             if abs(heading_box["y"] - service_box["y"]) > max(heading_box["height"], service_box["height"]):
