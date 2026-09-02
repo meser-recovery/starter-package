@@ -82,6 +82,15 @@ def main() -> int:
                 abs(desktop_line_boxes[0]["y"] - desktop_line_boxes[1]["y"]) > 2 or
                 desktop_line_boxes[1]["x"] <= desktop_line_boxes[0]["x"] + desktop_line_boxes[0]["width"]):
             raise AssertionError("desktop service link words are not visibly separated on one line")
+        desktop_actions = page.locator(".resource-action")
+        if desktop_actions.count() != 8:
+            raise AssertionError("desktop homepage must retain eight resource actions")
+        if not desktop_actions.nth(0).evaluate("""el => {
+            const style = getComputedStyle(el);
+            return style.minHeight === '76px' && style.borderRadius === '17px' &&
+                style.transitionDuration.split(', ').every(duration => duration === '0.18s');
+        }"""):
+            raise AssertionError("desktop resource action treatment is not the compact refined style")
         newcomer_heading = page.get_by_role("heading", name="Кто такой зависимый?", level=2)
         heading_box = newcomer_heading.bounding_box()
         if not heading_box or heading_box["y"] >= 900:
