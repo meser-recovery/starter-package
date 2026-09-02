@@ -157,6 +157,77 @@ def check_audiobook(page, base_url: str, width: int) -> None:
         raise AssertionError(f"AudioBook iframe has excessive unused height at {width}px")
 
 
+def check_offline_meetings(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(url(base_url, "/Offline-meetings.html"), wait_until="domcontentloaded")
+    page.wait_for_function("""() => {
+        const loading = document.getElementById('na-loading');
+        const select = document.getElementById('cityFilter');
+        return loading && loading.hidden && select && select.options.length > 2;
+    }""", timeout=15000)
+    if page.locator("html").get_attribute("lang") != "ru":
+        raise AssertionError("Offline Meetings must use Russian document language")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Живые группы АН - Россия":
+        raise AssertionError("Offline Meetings must retain exactly one outer H1")
+    if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError("Offline Meetings main landmark or skip link is missing")
+    if page.locator(".site-header__identity").count() != 1 or page.locator(".site-header__logo").count() != 1:
+        raise AssertionError("Offline Meetings shared home navigation is missing")
+    if page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+        raise AssertionError("Offline Meetings service control is missing")
+    if not page.locator("body").evaluate("element => getComputedStyle(element).display === 'flex' && element.scrollHeight >= window.innerHeight"):
+        raise AssertionError(f"Offline Meetings shared full-height shell is missing at {width}px")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Offline Meetings has horizontal overflow at {width}px")
+    if page.locator('script[src="scripts/offline-meetings.js"]').count() != 1:
+        raise AssertionError("Offline Meetings dedicated runtime is missing")
+    if page.evaluate("document.documentElement.innerHTML.toLowerCase().includes('nicepage') || document.documentElement.innerHTML.toLowerCase().includes('jquery')"):
+        raise AssertionError("Offline Meetings retains a Nicepage or jQuery dependency")
+    if not page.evaluate("performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.endsWith('/na_meetings_live.html'))"):
+        raise AssertionError("Offline Meetings did not fetch its generated source")
+    source_date = page.evaluate("""async () => {
+        const source = await fetch('na_meetings_live.html').then(response => response.text());
+        const heading = new DOMParser().parseFromString(source, 'text/html').querySelector('.na-meetings h1');
+        const match = (heading?.textContent || '').match(/(\\d{4})-(\\d{2})-(\\d{2})/);
+        return match ? `${match[3]}-${match[2]}-${match[1]}` : '';
+    }""")
+    subtitle = page.locator("#meetings-date")
+    if source_date and (subtitle.is_hidden() or subtitle.inner_text() != f"Расписание собраний на {source_date}"):
+        raise AssertionError("Offline Meetings date subtitle does not match the generated source")
+    city_filter = page.locator("#cityFilter")
+    city_blocks = page.locator("#meetings-content > h2")
+    if city_blocks.count() < 2:
+        raise AssertionError("Offline Meetings did not render generated city headings")
+    if city_blocks.evaluate_all("headings => headings.filter(heading => !heading.hidden).length") < 2:
+        raise AssertionError("Offline Meetings does not initially show all city blocks")
+    selected_city = city_filter.locator("option").nth(2).get_attribute("value")
+    if not selected_city:
+        raise AssertionError("Offline Meetings city names were not dynamically populated")
+    city_filter.select_option(selected_city)
+    if city_blocks.filter(has_text=selected_city).count() != 1 or not city_blocks.filter(has_text=selected_city).is_visible():
+        raise AssertionError("Offline Meetings selected city is not visible")
+    if city_blocks.evaluate_all("headings => headings.filter(heading => !heading.hidden).length") != 1:
+        raise AssertionError("Offline Meetings city filter did not hide other city blocks")
+    city_filter.select_option("all")
+    if city_blocks.evaluate_all("headings => headings.filter(heading => !heading.hidden).length") < 2:
+        raise AssertionError("Offline Meetings all-cities option did not restore city blocks")
+    if page.locator("footer.site-footer").count() != 1:
+        raise AssertionError("Offline Meetings shared footer is missing")
+
+
+def check_offline_meetings_failure(browser, base_url: str) -> None:
+    context = browser.new_context(viewport={"width": 390, "height": 900})
+    context.route("**/na_meetings_live.html", lambda route: route.abort())
+    page = context.new_page()
+    page.goto(url(base_url, "/Offline-meetings.html"), wait_until="domcontentloaded")
+    error = page.locator("#na-loading")
+    error.wait_for(state="visible")
+    page.wait_for_function("document.getElementById('na-loading').textContent.includes('Ошибка загрузки данных')")
+    if error.inner_text() != "Ошибка загрузки данных. Попробуйте позже.":
+        raise AssertionError("Offline Meetings fetch failure does not show the expected Russian error")
+    context.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -281,16 +352,9 @@ def main() -> int:
         page.goto(url(base_url, "/About.html"), wait_until="domcontentloaded")
         page.wait_for_url(base_url + "/", timeout=10000)
 
-        page.goto(url(base_url, "/Offline-meetings.html"), wait_until="domcontentloaded")
-        page.wait_for_function("""() => {
-            const section = document.querySelector('.na-meetings');
-            const select = document.getElementById('cityFilter');
-            return section && !section.querySelector('#na-loading') && select && select.options.length > 2;
-        }""", timeout=15000)
-        city_filter = page.locator("#cityFilter")
-        city_filter.select_option(index=2)
-        if city_filter.input_value() == "":
-            raise AssertionError("meetings city filter did not accept a real option")
+        for width in (320, 390, 768, 1280):
+            check_offline_meetings(page, base_url, width)
+        check_offline_meetings_failure(browser, base_url)
 
         page.goto(url(base_url, "/Calculator.html"), wait_until="domcontentloaded")
         page.locator("#cp-openPicker").click()

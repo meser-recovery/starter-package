@@ -195,6 +195,44 @@ def check_audiobook_contract(errors: list[str]) -> None:
         errors.append("AudioBook.html: Nicepage or jQuery dependency remains")
 
 
+def check_offline_meetings_contract(errors: list[str]) -> None:
+    meetings = ROOT / "Offline-meetings.html"
+    if not meetings.is_file():
+        return
+    source = meetings.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(meetings)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Offline-meetings.html: html lang must be ru")
+    if parser.h1_texts != ["Живые группы АН - Россия"]:
+        errors.append("Offline-meetings.html: expected one H1: Живые группы АН - Россия")
+    if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: shared full-height page shell is missing")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: skip link is missing")
+    if not any(tag == "a" and "site-header__logo" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: shared home-linked logo is missing")
+    if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: shared home-linked identity is missing")
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: shared service link is missing")
+    if not any(tag == "select" and attrs.get("id") == "cityFilter" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: native city filter is missing")
+    if not any(tag == "label" and attrs.get("for") == "cityFilter" for tag, attrs in parser.start_tags):
+        errors.append("Offline-meetings.html: city filter label is missing")
+    scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
+    if scripts != ["scripts/offline-meetings.js"]:
+        errors.append("Offline-meetings.html: expected one dedicated meetings runtime script")
+    lowered = source.lower()
+    if "nicepage" in lowered or "jquery" in lowered:
+        errors.append("Offline-meetings.html: Nicepage or jQuery dependency remains")
+    runtime = ROOT / "scripts" / "offline-meetings.js"
+    if not runtime.is_file() or 'const MEETINGS_URL = "na_meetings_live.html"' not in runtime.read_text(encoding="utf-8", errors="replace"):
+        errors.append("Offline-meetings.html: generated meetings source changed or runtime is missing")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -225,6 +263,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
             errors.append(f"homepage external destination changed or missing: {destination}")
     check_literature_contract(errors)
     check_audiobook_contract(errors)
+    check_offline_meetings_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
