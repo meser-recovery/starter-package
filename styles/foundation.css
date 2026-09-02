@@ -36,5 +36,5 @@ h1, h2 { margin: 0; line-height: 1.2; }
 }
 @media (max-width: 22rem) {
   .site-header h1 { font-size: 1.25rem; }
-  .service-link { font-size: .65rem; }
+  .service-link { padding: .2rem .25rem; font-size: .6rem; }
 }
