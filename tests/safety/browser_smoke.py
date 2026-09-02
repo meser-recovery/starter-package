@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+import time
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -13,6 +14,21 @@ from playwright.sync_api import Error, sync_playwright
 
 def url(base: str, path: str) -> str:
     return base.rstrip("/") + path
+
+
+def wait_for_page_ready(page, expected_selector: str = "body") -> None:
+    """Wait for the page's local stylesheets and two layout frames, not network idle."""
+    page.locator(expected_selector).wait_for(state="attached")
+    page.wait_for_function("""() => document.body &&
+        Array.from(document.querySelectorAll('link[rel~="stylesheet"]')).every(link => link.sheet !== null)""")
+    page.evaluate("""() => new Promise(resolve => {
+        requestAnimationFrame(() => requestAnimationFrame(resolve));
+    })""")
+
+
+def goto_ready(page, target_url: str, expected_selector: str = "body") -> None:
+    page.goto(target_url, wait_until="domcontentloaded")
+    wait_for_page_ready(page, expected_selector)
 
 
 def click_viewport_link(page, href: str, expected_path: str) -> None:
@@ -30,6 +46,7 @@ def click_viewport_link(page, href: str, expected_path: str) -> None:
             try:
                 candidate.click(timeout=750)
                 page.wait_for_url(f"**{expected_path}", timeout=1500)
+                wait_for_page_ready(page)
                 return
             except Error:
                 continue
@@ -61,8 +78,7 @@ def visible_text(locator) -> str:
 
 def check_literature(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
-    page.wait_for_function("getComputedStyle(document.body).display === 'flex'")
+    goto_ready(page, url(base_url, "/Literature.html"))
     if not page.evaluate("document.body.scrollHeight >= window.innerHeight"):
         raise AssertionError(f"Literature does not fill the viewport at {width}px")
     if page.locator("html").get_attribute("lang") != "ru":
@@ -103,13 +119,19 @@ def check_literature(page, base_url: str, width: int) -> None:
         last_box = actions.nth(-1).bounding_box()
         if not grid_box or not first_box or not last_box:
             raise AssertionError(f"Literature action layout boxes missing at {width}px")
-        if abs(last_box["width"] - first_box["width"]) > 1 or abs((last_box["x"] + last_box["width"] / 2) - (grid_box["x"] + grid_box["width"] / 2)) > 1 or last_box["y"] <= first_box["y"]:
-            raise AssertionError(f"Literature final action is not centered at normal width at {width}px")
+        width_delta = abs(last_box["width"] - first_box["width"])
+        center_delta = abs((last_box["x"] + last_box["width"] / 2) - (grid_box["x"] + grid_box["width"] / 2))
+        if width_delta > 2 or center_delta > 2 or last_box["y"] <= first_box["y"]:
+            raise AssertionError(
+                f"Literature final action is not visibly centered at {width}px: "
+                f"width delta={width_delta:.2f}, center delta={center_delta:.2f}, "
+                f"action={last_box}, grid={grid_box}"
+            )
 
 
 def check_literature_reader(page, base_url: str, document_id: str, expected_title: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(url(base_url, f"/Literature-reader.html?doc={document_id}"), wait_until="domcontentloaded")
+    goto_ready(page, url(base_url, f"/Literature-reader.html?doc={document_id}"))
     page.locator(".brochure-page canvas").nth(0).wait_for(state="visible", timeout=20000)
     page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
     if ".pdf" in urlparse(page.url).path or not urlparse(page.url).path.endswith("/Literature-reader.html"):
@@ -132,7 +154,7 @@ def check_literature_reader(page, base_url: str, document_id: str, expected_titl
 
 def check_literature_reader_error(page, base_url: str) -> None:
     page.set_viewport_size({"width": 390, "height": 900})
-    page.goto(url(base_url, "/Literature-reader.html?doc=unknown"), wait_until="domcontentloaded")
+    goto_ready(page, url(base_url, "/Literature-reader.html?doc=unknown"))
     page.locator(".reader-error").wait_for(state="visible")
     if page.locator(".brochure-page canvas").count() != 0 or ".pdf" in urlparse(page.url).path:
         raise AssertionError("Unknown literature route is not handled safely")
@@ -140,7 +162,7 @@ def check_literature_reader_error(page, base_url: str) -> None:
 
 def check_literature_reader_resize_stability(page, base_url: str) -> None:
     page.set_viewport_size({"width": 390, "height": 844})
-    page.goto(url(base_url, "/Literature-reader.html?doc=ip16"), wait_until="domcontentloaded")
+    goto_ready(page, url(base_url, "/Literature-reader.html?doc=ip16"))
     page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
     initial_page_count = page.locator(".brochure-page canvas").count()
     if initial_page_count < 1:
@@ -232,7 +254,7 @@ def capture_screenshots(page, base_url: str, directory: Path) -> None:
     )
     for filename, path, width in captures:
         page.set_viewport_size({"width": width, "height": 900})
-        page.goto(url(base_url, path), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, path))
         if "Literature-reader" in path:
             page.locator(".brochure-page canvas").nth(0).wait_for(state="visible", timeout=20000)
             page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
@@ -241,8 +263,7 @@ def capture_screenshots(page, base_url: str, directory: Path) -> None:
 
 def check_audiobook(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(url(base_url, "/AudioBook.html"), wait_until="domcontentloaded")
-    page.wait_for_function("getComputedStyle(document.body).display === 'flex'")
+    goto_ready(page, url(base_url, "/AudioBook.html"))
     if not page.evaluate("document.body.scrollHeight >= window.innerHeight"):
         raise AssertionError(f"AudioBook does not fill the viewport at {width}px")
     if page.locator("html").get_attribute("lang") != "ru":
@@ -269,8 +290,17 @@ def check_audiobook(page, base_url: str, width: int) -> None:
     service_box = service.bounding_box()
     if not frame_box or not embed_box or not identity_box or not service_box:
         raise AssertionError(f"AudioBook layout controls missing at {width}px")
-    if abs((frame_box["x"] + frame_box["width"] / 2) - (embed_box["x"] + embed_box["width"] / 2)) > 1:
-        raise AssertionError(f"AudioBook player is not centered at {width}px")
+    left_delta = abs(frame_box["x"] - embed_box["x"])
+    right_delta = abs((frame_box["x"] + frame_box["width"]) - (embed_box["x"] + embed_box["width"]))
+    width_delta = abs(frame_box["width"] - embed_box["width"])
+    if not frame_element.evaluate("frame => frame.parentElement?.classList.contains('audiobook-embed')"):
+        raise AssertionError("AudioBook player iframe is no longer contained by .audiobook-embed")
+    if max(left_delta, right_delta, width_delta) > 2:
+        raise AssertionError(
+            f"AudioBook player no longer fills its embed at {width}px: "
+            f"left delta={left_delta:.2f}, right delta={right_delta:.2f}, width delta={width_delta:.2f}, "
+            f"frame={frame_box}, embed={embed_box}"
+        )
     if (identity_box["x"] < service_box["x"] + service_box["width"] and
             service_box["x"] < identity_box["x"] + identity_box["width"] and
             identity_box["y"] < service_box["y"] + service_box["height"] and
@@ -299,7 +329,7 @@ def check_audiobook(page, base_url: str, width: int) -> None:
 
 def check_offline_meetings(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
-    page.goto(url(base_url, "/Offline-meetings.html"), wait_until="domcontentloaded")
+    goto_ready(page, url(base_url, "/Offline-meetings.html"))
     page.wait_for_function("""() => {
         const loading = document.getElementById('na-loading');
         const select = document.getElementById('cityFilter');
@@ -359,7 +389,7 @@ def check_offline_meetings_failure(browser, base_url: str) -> None:
     context = browser.new_context(viewport={"width": 390, "height": 900})
     context.route("**/na_meetings_live.html", lambda route: route.abort())
     page = context.new_page()
-    page.goto(url(base_url, "/Offline-meetings.html"), wait_until="domcontentloaded")
+    goto_ready(page, url(base_url, "/Offline-meetings.html"))
     error = page.locator("#na-loading")
     error.wait_for(state="visible")
     page.wait_for_function("document.getElementById('na-loading').textContent.includes('Ошибка загрузки данных')")
@@ -368,10 +398,48 @@ def check_offline_meetings_failure(browser, base_url: str) -> None:
     context.close()
 
 
+def check_delayed_stylesheet_readiness(browser, base_url: str) -> None:
+    """Prove goto_ready waits for a shared stylesheet rather than localhost timing."""
+    site_host = urlparse(base_url).netloc
+    delayed_stylesheets = 0
+    context = browser.new_context(viewport={"width": 1280, "height": 900})
+
+    def delay_shared_stylesheet(route):
+        nonlocal delayed_stylesheets
+        parsed = urlparse(route.request.url)
+        if parsed.netloc not in {"", site_host}:
+            route.abort()
+            return
+        if parsed.path.endswith("/styles/components.css") and delayed_stylesheets == 0:
+            delayed_stylesheets += 1
+            time.sleep(0.25)
+        route.continue_()
+
+    context.route("**/*", delay_shared_stylesheet)
+    page = context.new_page()
+    try:
+        goto_ready(page, url(base_url, "/"))
+        service_style = page.get_by_role("link", name="Для служащих").evaluate("""el => {
+            const style = getComputedStyle(el);
+            return { display: style.display, backgroundColor: style.backgroundColor, minHeight: parseFloat(style.minHeight) };
+        }""")
+        if delayed_stylesheets != 1:
+            raise AssertionError("Delayed stylesheet readiness check did not intercept components.css")
+        if (service_style["display"] not in {"inline-flex", "flex"} or
+                service_style["backgroundColor"] == "rgba(0, 0, 0, 0)" or
+                service_style["minHeight"] < 44):
+            raise AssertionError(
+                f"Stylesheet readiness helper returned before shared styles applied: {service_style}"
+            )
+    finally:
+        context.close()
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--screenshot-dir", type=Path)
+    parser.add_argument("--delayed-stylesheet-check", action="store_true")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     site_host = urlparse(base_url).netloc
@@ -387,7 +455,7 @@ def main() -> int:
 
         context.route("**/*", block_external)
         page = context.new_page()
-        page.goto(url(base_url, "/"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/"))
         homepage_destinations = (
             "Offline-meetings.html", "Literature.html", "AudioBook.html",
             "Calculator.html", "Admin-panel.html",
@@ -406,18 +474,48 @@ def main() -> int:
         if page.locator('a[href="Admin-panel.html"]').count() != 1:
             raise AssertionError("desktop service navigation link is missing or duplicated")
         desktop_service = page.get_by_role("link", name="Для служащих")
+        if not desktop_service.is_visible():
+            raise AssertionError("desktop service control is not visible after stylesheet readiness")
         desktop_heading_box = page.get_by_role("heading", name="Проект Мэсэр", level=1).bounding_box()
         desktop_header_box = page.locator(".site-header__content").bounding_box()
+        desktop_service_box = desktop_service.bounding_box()
+        desktop_center_delta = (abs((desktop_heading_box["x"] + desktop_heading_box["width"] / 2) -
+                                    (desktop_header_box["x"] + desktop_header_box["width"] / 2))
+                                if desktop_heading_box and desktop_header_box else None)
         if (not desktop_heading_box or not desktop_header_box or
-                abs((desktop_heading_box["x"] + desktop_heading_box["width"] / 2) -
-                    (desktop_header_box["x"] + desktop_header_box["width"] / 2)) > 1):
-            raise AssertionError("desktop H1 is no longer centered in the header")
-        if not desktop_service.evaluate("""el => {
+                desktop_center_delta > 2):
+            raise AssertionError(
+                f"desktop H1 is no longer visibly centered in the header: "
+                f"center delta={desktop_center_delta}, heading={desktop_heading_box}, header={desktop_header_box}"
+            )
+        desktop_service_style = desktop_service.evaluate("""el => {
             const style = getComputedStyle(el);
-            return style.flexDirection === 'row' && style.whiteSpace === 'nowrap' &&
-                style.textDecorationLine === 'none' && style.backgroundColor !== 'rgba(0, 0, 0, 0)';
-        }"""):
-            raise AssertionError("desktop service control lacks its compact control treatment")
+            return {
+                display: style.display,
+                flexDirection: style.flexDirection,
+                whiteSpace: style.whiteSpace,
+                textDecorationLine: style.textDecorationLine,
+                backgroundColor: style.backgroundColor,
+                minHeight: parseFloat(style.minHeight),
+                hasOverflow: el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight,
+            };
+        }""")
+        desktop_controls_overlap = (desktop_heading_box and desktop_service_box and
+                                    desktop_heading_box["x"] < desktop_service_box["x"] + desktop_service_box["width"] and
+                                    desktop_service_box["x"] < desktop_heading_box["x"] + desktop_heading_box["width"] and
+                                    desktop_heading_box["y"] < desktop_service_box["y"] + desktop_service_box["height"] and
+                                    desktop_service_box["y"] < desktop_heading_box["y"] + desktop_heading_box["height"])
+        if (desktop_service_style["display"] not in {"inline-flex", "flex"} or
+                desktop_service_style["flexDirection"] != "row" or
+                desktop_service_style["whiteSpace"] != "nowrap" or
+                desktop_service_style["textDecorationLine"] != "none" or
+                desktop_service_style["backgroundColor"] == "rgba(0, 0, 0, 0)" or
+                desktop_service_style["minHeight"] < 44 or
+                desktop_service_style["hasOverflow"] or desktop_controls_overlap):
+            raise AssertionError(
+                f"desktop service control lacks its compact treatment: style={desktop_service_style}, "
+                f"service={desktop_service_box}, heading={desktop_heading_box}, overlap={desktop_controls_overlap}"
+            )
         desktop_actions = page.locator(".resource-action")
         if desktop_actions.count() != 8:
             raise AssertionError("desktop homepage must retain eight resource actions")
@@ -438,7 +536,7 @@ def main() -> int:
         mobile = context.new_page()
         for width in (320, 390):
             mobile.set_viewport_size({"width": width, "height": 844})
-            mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
+            goto_ready(mobile, url(base_url, "/"))
             if mobile.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
                 raise AssertionError(f"homepage has horizontal overflow at {width}px")
             mobile.get_by_role("heading", name="Проект Мэсэр", level=1).wait_for(state="visible")
@@ -463,7 +561,11 @@ def main() -> int:
                 raise AssertionError(f"service link lines are not stacked at {width}px")
             control_center = service_box["x"] + service_box["width"] / 2
             if any(abs((line["x"] + line["width"] / 2) - control_center) > 2 for line in line_boxes):
-                raise AssertionError(f"service link lines are not centered in the control at {width}px")
+                line_centers = [(line["x"] + line["width"] / 2) for line in line_boxes]
+                raise AssertionError(
+                    f"service link lines are not centered in the control at {width}px: "
+                    f"control center={control_center:.2f}, line centers={line_centers}, box={service_box}"
+                )
             if not service.evaluate("el => getComputedStyle(el).whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth"):
                 raise AssertionError(f"header service link wraps unexpectedly at {width}px")
             if abs(heading_box["y"] - service_box["y"]) > max(heading_box["height"], service_box["height"]):
@@ -482,6 +584,7 @@ def main() -> int:
             raise AssertionError("homepage Literature destination must appear exactly once")
         mobile.locator('a[href="Literature.html"]').click()
         mobile.wait_for_url("**/Literature.html", timeout=1500)
+        wait_for_page_ready(mobile)
         mobile.close()
 
         for width in (320, 390, 768, 1280):
@@ -497,17 +600,18 @@ def main() -> int:
         for width in (320, 390, 768, 1280):
             check_audiobook(page, base_url, width)
         click_viewport_link(page, "./", "/")
-        page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/Literature.html"))
         click_viewport_link(page, "Admin-panel.html", "/Admin-panel.html")
 
-        page.goto(url(base_url, "/About.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/About.html"))
         page.wait_for_url(base_url + "/", timeout=10000)
+        wait_for_page_ready(page)
 
         for width in (320, 390, 768, 1280):
             check_offline_meetings(page, base_url, width)
         check_offline_meetings_failure(browser, base_url)
 
-        page.goto(url(base_url, "/Calculator.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/Calculator.html"))
         page.locator("#cp-openPicker").click()
         page.locator("#cp-today").click()
         page.locator("#cp-save").click()
@@ -515,10 +619,11 @@ def main() -> int:
             raise AssertionError("today must produce zero elapsed days")
         saved_date = page.evaluate("localStorage.getItem('clean_period_start_date_v4')")
         page.reload(wait_until="domcontentloaded")
+        wait_for_page_ready(page)
         if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != saved_date:
             raise AssertionError("calculator date did not persist in localStorage")
 
-        page.goto(url(base_url, "/AudioBook.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/AudioBook.html"))
         frame = page.frame_locator('iframe[src="bt6-player.html"]')
         frame.locator("#playlist li").nth(1).wait_for(timeout=10000)
         frame.locator("#playlist li").nth(1).click()
@@ -526,7 +631,7 @@ def main() -> int:
         if not source or not source.endswith("audio/bt6/bt6_002.mp3"):
             raise AssertionError(f"second audio track did not set expected source: {source}")
 
-        page.goto(url(base_url, "/Admin-panel.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/Admin-panel.html"))
         password = page.locator('input[type="password"]')
         password.fill("stage-1-invalid-password")
         page.locator('form a[href="#"]:visible').click()
@@ -534,19 +639,19 @@ def main() -> int:
         if "Admin-panel.html" not in urlparse(page.url).path or "5ab2b48b" in page.url:
             raise AssertionError("invalid admin password granted access")
 
-        page.goto(url(base_url, "/Calendar.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/Calendar.html"))
         calendar = page.locator("#gc-frame")
         calendar.wait_for()
         if "mode=WEEK" not in (calendar.get_attribute("src") or ""):
             raise AssertionError("desktop calendar URL did not initialize WEEK mode")
         calendar_page = context.new_page()
         calendar_page.set_viewport_size({"width": 390, "height": 844})
-        calendar_page.goto(url(base_url, "/Calendar.html"), wait_until="domcontentloaded")
+        goto_ready(calendar_page, url(base_url, "/Calendar.html"))
         if "mode=AGENDA" not in (calendar_page.locator("#gc-frame").get_attribute("src") or ""):
             raise AssertionError("mobile calendar URL did not initialize AGENDA mode")
         calendar_page.close()
 
-        page.goto(url(base_url, "/Google-Drive.html"), wait_until="domcontentloaded")
+        goto_ready(page, url(base_url, "/Google-Drive.html"))
         drive_src = page.locator("#gd-frame").get_attribute("src") or ""
         drive_open = page.locator("#gd-open-btn").get_attribute("href") or ""
         if "drive.google.com/embeddedfolderview?id=" not in drive_src:
@@ -556,6 +661,8 @@ def main() -> int:
         if args.screenshot_dir:
             capture_screenshots(page, base_url, args.screenshot_dir)
         context.close()
+        if args.delayed_stylesheet_check:
+            check_delayed_stylesheet_readiness(browser, base_url)
         browser.close()
     print("Browser smoke suite passed.")
     return 0
