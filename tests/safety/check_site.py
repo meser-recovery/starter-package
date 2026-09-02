@@ -164,6 +164,37 @@ def check_literature_contract(errors: list[str]) -> None:
             errors.append("Literature.html: target blank resource action lacks safe rel semantics")
 
 
+def check_audiobook_contract(errors: list[str]) -> None:
+    audiobook = ROOT / "AudioBook.html"
+    if not audiobook.is_file():
+        return
+    source = audiobook.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(audiobook)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("AudioBook.html: html lang must be ru")
+    if parser.h1_texts != ["Базовый текст (аудио)"]:
+        errors.append("AudioBook.html: expected one H1: Базовый текст (аудио)")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("AudioBook.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("AudioBook.html: skip link is missing")
+    if not any(tag == "a" and "site-header__logo" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("AudioBook.html: shared home-linked logo is missing")
+    if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("AudioBook.html: shared home-linked identity is missing")
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+        errors.append("AudioBook.html: shared service link is missing")
+    frames = [attrs for tag, attrs in parser.start_tags if tag == "iframe"]
+    if len(frames) != 1 or frames[0].get("src") != "bt6-player.html":
+        errors.append("AudioBook.html: expected one iframe with bt6-player.html source")
+    elif not (frames[0].get("title") or "").strip():
+        errors.append("AudioBook.html: player iframe needs a meaningful title")
+    lowered = source.lower()
+    if "nicepage" in lowered or "jquery" in lowered:
+        errors.append("AudioBook.html: Nicepage or jQuery dependency remains")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -193,6 +224,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
         if destination not in homepage_hrefs:
             errors.append(f"homepage external destination changed or missing: {destination}")
     check_literature_contract(errors)
+    check_audiobook_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:

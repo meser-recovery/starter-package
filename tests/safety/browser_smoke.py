@@ -96,6 +96,52 @@ def check_literature(page, base_url: str, width: int) -> None:
             raise AssertionError(f"Literature final action is not centered at normal width at {width}px")
 
 
+def check_audiobook(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(url(base_url, "/AudioBook.html"), wait_until="domcontentloaded")
+    if page.locator("html").get_attribute("lang") != "ru":
+        raise AssertionError("AudioBook must use Russian document language")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Базовый текст (аудио)":
+        raise AssertionError("AudioBook must retain one correct outer H1")
+    if page.locator("main#main-content").count() != 1:
+        raise AssertionError("AudioBook main landmark is missing")
+    if page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError("AudioBook skip link is missing")
+    if page.locator(".site-header__identity").count() != 1 or page.locator(".site-header__logo").count() != 1:
+        raise AssertionError("AudioBook shared home navigation is missing")
+    service = page.locator('a.service-link[href="Admin-panel.html"]')
+    if service.count() != 1:
+        raise AssertionError("AudioBook service control is missing")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"AudioBook has horizontal overflow at {width}px")
+    frame_element = page.locator('iframe[src="bt6-player.html"]')
+    if frame_element.count() != 1 or not (frame_element.get_attribute("title") or "").strip():
+        raise AssertionError("AudioBook must retain one titled local player iframe")
+    frame_box = frame_element.bounding_box()
+    embed_box = page.locator(".audiobook-embed").bounding_box()
+    identity_box = page.locator(".site-header__identity").bounding_box()
+    service_box = service.bounding_box()
+    if not frame_box or not embed_box or not identity_box or not service_box:
+        raise AssertionError(f"AudioBook layout controls missing at {width}px")
+    if abs((frame_box["x"] + frame_box["width"] / 2) - (embed_box["x"] + embed_box["width"] / 2)) > 1:
+        raise AssertionError(f"AudioBook player is not centered at {width}px")
+    if (identity_box["x"] < service_box["x"] + service_box["width"] and
+            service_box["x"] < identity_box["x"] + identity_box["width"] and
+            identity_box["y"] < service_box["y"] + service_box["height"] and
+            service_box["y"] < identity_box["y"] + identity_box["height"]):
+        raise AssertionError(f"AudioBook header identity overlaps service control at {width}px")
+    frame = page.frame_locator('iframe[src="bt6-player.html"]')
+    frame.locator("#playlist li").nth(0).wait_for(timeout=10000)
+    frame.locator("#audio").wait_for(state="visible")
+    frame.locator(".player-wrap").wait_for(state="visible")
+    if not frame.locator("#playlist").is_visible():
+        raise AssertionError(f"AudioBook playlist is not visible at {width}px")
+    if not frame.locator("html").evaluate("document.documentElement.scrollWidth <= window.innerWidth"):
+        raise AssertionError(f"AudioBook iframe content has horizontal clipping at {width}px")
+    if not frame.locator("html").evaluate("document.documentElement.scrollHeight <= window.innerHeight"):
+        raise AssertionError(f"AudioBook iframe is too short for its player content at {width}px")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -211,6 +257,8 @@ def main() -> int:
 
         for width in (320, 390, 768, 1280):
             check_literature(page, base_url, width)
+        for width in (320, 390, 768, 1280):
+            check_audiobook(page, base_url, width)
         click_viewport_link(page, "./", "/")
         page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
         click_viewport_link(page, "Admin-panel.html", "/Admin-panel.html")
