@@ -32,7 +32,7 @@ h1, h2 { margin: 0; line-height: 1.2; }
   .site-header__content { width: min(100% - 1rem, 70rem); min-height: 5rem; padding-block: .5rem; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); column-gap: .5rem; }
   .site-header img { width: 2.75rem; height: 2.75rem; }
   .site-header h1 { font-size: clamp(1.4rem, 6.5vw, 1.55rem); }
-  .service-link { grid-column: 3; grid-row: 1; justify-self: end; display: inline-flex; flex-direction: column; align-items: center; gap: 0; inline-size: 4.25rem; padding: .2rem; font-size: clamp(.6rem, 3vw, .75rem); line-height: 1.1; white-space: nowrap; }
+  .service-link { grid-column: 3; grid-row: 1; justify-self: end; display: inline-flex; flex-direction: column; align-items: center; gap: 0; inline-size: 4rem; padding: .1rem; font-size: clamp(.6rem, 2.8vw, .7rem); line-height: 1.1; white-space: nowrap; }
 }
 @media (max-width: 22rem) {
   .site-header h1 { font-size: 1.25rem; }
