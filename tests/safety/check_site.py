@@ -200,8 +200,10 @@ def check_literature_reader_contract(errors: list[str]) -> None:
         "ip12": "documents/literature/ip-12-treugolnik-oderzhimosti.pdf",
         "ip13": "documents/literature/ip-13-yunym-zavisimym.pdf",
     }
-    if 'from "../vendor/pdfjs/pdf.mjs"' not in runtime_source or "pdf.worker.mjs" not in runtime_source:
-        errors.append("Literature reader: local PDF.js dependency is missing")
+    if "pdf.legacy.mjs" not in runtime_source or "pdf.worker.legacy.mjs" not in runtime_source:
+        errors.append("Literature reader: local legacy PDF.js dependency is missing")
+    if any(code not in runtime_source for code in ("LIT-BOOT", "LIT-WORKER", "LIT-FETCH", "LIT-PDF", "LIT-RENDER")):
+        errors.append("Literature reader: staged failure diagnostics are incomplete")
     if "getDocument" not in runtime_source or "canvas" not in runtime_source:
         errors.append("Literature reader: PDF rendering output is missing")
     for document_id, filename in expected_files.items():
@@ -210,8 +212,16 @@ def check_literature_reader_contract(errors: list[str]) -> None:
             errors.append(f"Literature reader: invalid local PDF: {filename}")
         if runtime_source.count(filename) != 1 or f"{document_id}:" not in runtime_source:
             errors.append(f"Literature reader: approved mapping is missing or ambiguous for {document_id}")
-    if not (ROOT / "vendor/pdfjs/pdf.mjs").is_file() or not (ROOT / "vendor/pdfjs/pdf.worker.mjs").is_file() or not (ROOT / "vendor/pdfjs/LICENSE").is_file():
-        errors.append("Literature reader: vendored PDF.js runtime or license is missing")
+    legacy_vendor_files = (
+        ROOT / "vendor/pdfjs/pdf.legacy.mjs",
+        ROOT / "vendor/pdfjs/pdf.worker.legacy.mjs",
+        ROOT / "vendor/pdfjs/LICENSE",
+        ROOT / "vendor/pdfjs/README.md",
+    )
+    if not all(path.is_file() for path in legacy_vendor_files):
+        errors.append("Literature reader: vendored legacy PDF.js runtime, metadata, or license is missing")
+    if (ROOT / "vendor/pdfjs/pdf.mjs").exists() or (ROOT / "vendor/pdfjs/pdf.worker.mjs").exists():
+        errors.append("Literature reader: obsolete modern PDF.js runtime remains vendored")
 
 
 def check_homepage_order(errors: list[str]) -> None:

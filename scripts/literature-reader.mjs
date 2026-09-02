@@ -1,4 +1,5 @@
-import * as pdfjsLib from "../vendor/pdfjs/pdf.mjs";
+const PDFJS_MODULE_URL = new URL("../vendor/pdfjs/pdf.legacy.mjs", import.meta.url).href;
+const PDFJS_WORKER_URL = new URL("../vendor/pdfjs/pdf.worker.legacy.mjs", import.meta.url).href;
 
 const BROCHURES = Object.freeze({
   ip07: { title: "Зависимый ли я?", file: "documents/literature/ip-07-zavisimyi-li-ya.pdf" },
@@ -9,7 +10,13 @@ const BROCHURES = Object.freeze({
   ip13: { title: "Юным зависимым от юных зависимых", file: "documents/literature/ip-13-yunym-zavisimym.pdf" },
 });
 
-pdfjsLib.GlobalWorkerOptions.workerSrc = new URL("../vendor/pdfjs/pdf.worker.mjs", import.meta.url).href;
+const ERROR_MESSAGES = Object.freeze({
+  "LIT-BOOT": "Не удалось запустить просмотр проспекта.",
+  "LIT-WORKER": "Не удалось запустить обработку проспекта.",
+  "LIT-FETCH": "Не удалось загрузить проспект.",
+  "LIT-PDF": "Не удалось прочитать проспект.",
+  "LIT-RENDER": "Не удалось показать страницы проспекта.",
+});
 
 const title = document.getElementById("brochure-title");
 const status = document.getElementById("reader-status");
@@ -17,6 +24,8 @@ const error = document.getElementById("reader-error");
 const pages = document.getElementById("brochure-pages");
 const documentId = new URLSearchParams(window.location.search).get("doc");
 const brochure = BROCHURES[documentId];
+let pdfjsLib;
+let pdfWorker;
 let pdfDocument;
 let rerenderTimer;
 let renderInProgress = false;
@@ -30,6 +39,23 @@ function showError(message) {
   status.hidden = true;
   error.textContent = message;
   error.hidden = false;
+}
+
+function errorDetails(cause) {
+  if (cause instanceof Error) {
+    return { name: cause.name || "Error", message: cause.message || "Unknown error" };
+  }
+  return { name: "Error", message: String(cause) };
+}
+
+function logReaderError(stage, cause) {
+  const details = errorDetails(cause);
+  console.error(`[Literature reader] stage=${stage}; name=${details.name}; message=${details.message}`);
+}
+
+function showReaderFailure(stage, code, cause) {
+  logReaderError(stage, cause);
+  showError(`${ERROR_MESSAGES[code]} Код: ${code}. Вернитесь к списку проспектов и попробуйте ещё раз.`);
 }
 
 function pageWidth() {
@@ -54,6 +80,7 @@ async function buildRenderedPages(targetWidth) {
     const canvas = document.createElement("canvas");
     const context = canvas.getContext("2d", { alpha: false });
 
+    if (!context) throw new Error("Canvas 2D context is unavailable");
     surface.className = "brochure-page";
     surface.setAttribute("aria-label", `Страница ${number}`);
     canvas.width = Math.ceil(renderViewport.width);
@@ -83,7 +110,7 @@ async function processRenderQueue() {
       status.textContent = `Показано страниц: ${pdfDocument.numPages}`;
     } catch (renderError) {
       if (lastSuccessfulRenderWidth === undefined) throw renderError;
-      console.error("Literature reader failed to rerender brochure", renderError);
+      logReaderError("canvas/render-responsive", renderError);
     }
   }
 }
@@ -100,6 +127,47 @@ function requestRender(targetWidth) {
   return renderPromise;
 }
 
+async function loadPdfRuntime() {
+  try {
+    pdfjsLib = await import(PDFJS_MODULE_URL);
+    pdfjsLib.GlobalWorkerOptions.workerSrc = PDFJS_WORKER_URL;
+  } catch (bootstrapError) {
+    showReaderFailure("bootstrap", "LIT-BOOT", bootstrapError);
+    return false;
+  }
+
+  try {
+    pdfWorker = pdfjsLib.PDFWorker.create({ name: "literature-reader" });
+    await pdfWorker.promise;
+  } catch (workerError) {
+    showReaderFailure("worker-initialization", "LIT-WORKER", workerError);
+    return false;
+  }
+
+  return true;
+}
+
+async function fetchBrochure() {
+  try {
+    const response = await fetch(brochure.file);
+    if (!response.ok) throw new Error(`PDF request failed with status ${response.status}`);
+    return await response.arrayBuffer();
+  } catch (fetchError) {
+    showReaderFailure("pdf-fetch", "LIT-FETCH", fetchError);
+    return undefined;
+  }
+}
+
+async function parseBrochure(data) {
+  try {
+    pdfDocument = await pdfjsLib.getDocument({ data, worker: pdfWorker }).promise;
+    return true;
+  } catch (pdfError) {
+    showReaderFailure("pdf-parse", "LIT-PDF", pdfError);
+    return false;
+  }
+}
+
 async function loadBrochure() {
   if (!brochure) {
     title.textContent = "Информационный проспект";
@@ -111,17 +179,15 @@ async function loadBrochure() {
   title.textContent = brochure.title;
   document.title = `${brochure.title} — Проект Мэсэр`;
 
+  if (!await loadPdfRuntime()) return;
+  const data = await fetchBrochure();
+  if (!data) return;
+  if (!await parseBrochure(data)) return;
+
   try {
-    const response = await fetch(brochure.file);
-    if (!response.ok) {
-      throw new Error(`PDF request failed with status ${response.status}`);
-    }
-    const data = await response.arrayBuffer();
-    pdfDocument = await pdfjsLib.getDocument({ data }).promise;
     await requestRender(pageWidth());
-  } catch (loadError) {
-    console.error("Literature reader failed to load brochure", loadError);
-    showError("Не удалось открыть проспект. Попробуйте ещё раз позже или вернитесь к списку проспектов.");
+  } catch (renderError) {
+    showReaderFailure("canvas/render", "LIT-RENDER", renderError);
   }
 }
 
@@ -132,7 +198,7 @@ window.addEventListener("resize", () => {
   window.clearTimeout(rerenderTimer);
   rerenderTimer = window.setTimeout(() => {
     requestRender(pageWidth()).catch((renderError) => {
-      console.error("Literature reader failed during resize", renderError);
+      logReaderError("canvas/render-responsive", renderError);
     });
   }, 150);
 });
