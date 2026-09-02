@@ -95,6 +95,28 @@ def main() -> int:
                     heading_box["y"] < service_box["y"] + service_box["height"] and
                     service_box["y"] < heading_box["y"] + heading_box["height"]):
                 raise AssertionError(f"header H1 and service link overlap at {width}px")
+            horizontal_gap = service_box["x"] - (heading_box["x"] + heading_box["width"])
+            if horizontal_gap < 4:
+                raise AssertionError(f"header H1 and service link gap is too small at {width}px: {horizontal_gap}px")
+            if service.locator("span").count() != 2 or [service.locator("span").nth(i).inner_text() for i in range(2)] != ["Для", "служащих"]:
+                raise AssertionError(f"service link does not have the required two lines at {width}px")
+            line_boxes = [service.locator("span").nth(i).bounding_box() for i in range(2)]
+            if not line_boxes[0] or not line_boxes[1] or line_boxes[1]["y"] <= line_boxes[0]["y"]:
+                raise AssertionError(f"service link lines are not stacked at {width}px")
+            if not service.evaluate("el => getComputedStyle(el).whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth"):
+                raise AssertionError(f"header service link wraps unexpectedly at {width}px")
+            if abs(heading_box["y"] - service_box["y"]) > max(heading_box["height"], service_box["height"]):
+                raise AssertionError(f"header controls are not in the same row at {width}px")
+            header_box = mobile.locator(".site-header__content").bounding_box()
+            if not header_box or abs((heading_box["x"] + heading_box["width"] / 2) - (header_box["x"] + header_box["width"] / 2)) > 20:
+                raise AssertionError(f"H1 is not centered in the mobile header at {width}px")
+            if not mobile.evaluate("""() => {
+                const columns = getComputedStyle(document.querySelector('.site-header__content')).gridTemplateColumns.split(' ');
+                return columns.length === 3 && Math.abs(parseFloat(columns[0]) - parseFloat(columns[2])) <= 1;
+            }"""):
+                raise AssertionError(f"mobile header side tracks are not symmetric at {width}px")
+            if not header_box or header_box["height"] > 96:
+                raise AssertionError(f"mobile header is too tall at {width}px")
         if mobile.locator('a[href="Literature.html"]').count() != 1:
             raise AssertionError("homepage Literature destination must appear exactly once")
         mobile.locator('a[href="Literature.html"]').click()
