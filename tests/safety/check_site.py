@@ -132,8 +132,8 @@ def check_literature_contract(errors: list[str]) -> None:
     html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
     if html_attrs.get("lang") != "ru":
         errors.append("Literature.html: html lang must be ru")
-    if parser.h1_texts != ["Информационные Проспекты"]:
-        errors.append("Literature.html: expected one H1: Информационные Проспекты")
+    if parser.h1_texts != ["Информационные проспекты"]:
+        errors.append("Literature.html: expected one H1: Информационные проспекты")
     if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
         errors.append("Literature.html: main#main-content is missing")
     if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
@@ -146,13 +146,13 @@ def check_literature_contract(errors: list[str]) -> None:
         if tag == "a" and "literature-action" in (attrs.get("class") or "").split()
     ]
     expected_actions = [
-        ("зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-        ("новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
+        ("Зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
+        ("Новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
         ("Кто, что, как и почему", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-        ("Добро пожаловатьв Сообщество ан", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
+        ("Добро пожаловать в Сообщество АН", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
         ("Треугольник одержимости", "https://na.org/wp-content/uploads/2024/05/RU3112-IP-12-Russian.pdf"),
         ("Юным зависимым от юных зависимых", "https://na.org/wp-content/uploads/2024/05/RU3113_final_Apr2017-IP-13-Russian.pdf"),
-        ("дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
+        ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
     ]
     action_hrefs = [attrs.get("href") for attrs in actions]
     if action_hrefs != [href for _label, href in expected_actions]:

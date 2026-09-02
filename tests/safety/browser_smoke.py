@@ -36,13 +36,13 @@ def click_viewport_link(page, href: str, expected_path: str) -> None:
 
 
 LITERATURE_ACTIONS = (
-    ("зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-    ("новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
+    ("Зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
+    ("Новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
     ("Кто, что, как и почему", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-    ("Добро пожаловатьв Сообщество ан", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
+    ("Добро пожаловать в Сообщество АН", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
     ("Треугольник одержимости", "https://na.org/wp-content/uploads/2024/05/RU3112-IP-12-Russian.pdf"),
     ("Юным зависимым от юных зависимых", "https://na.org/wp-content/uploads/2024/05/RU3113_final_Apr2017-IP-13-Russian.pdf"),
-    ("дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
+    ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
 )
 
 
@@ -58,7 +58,7 @@ def check_literature(page, base_url: str, width: int) -> None:
     page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
     if page.locator("html").get_attribute("lang") != "ru":
         raise AssertionError("Literature must use Russian document language")
-    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Информационные Проспекты":
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Информационные проспекты":
         raise AssertionError("Literature must retain one correct H1")
     if page.locator("main#main-content").count() != 1:
         raise AssertionError("Literature main landmark is missing")
@@ -86,6 +86,14 @@ def check_literature(page, base_url: str, width: int) -> None:
             raise AssertionError(f"Literature action {index + 1} cannot receive keyboard focus")
         if action.evaluate("element => element.scrollWidth > element.clientWidth"):
             raise AssertionError(f"Literature action {index + 1} label is clipped at {width}px")
+    if width >= 768:
+        grid_box = page.locator(".literature-grid").bounding_box()
+        first_box = actions.nth(0).bounding_box()
+        last_box = actions.nth(-1).bounding_box()
+        if not grid_box or not first_box or not last_box:
+            raise AssertionError(f"Literature action layout boxes missing at {width}px")
+        if abs(last_box["width"] - first_box["width"]) > 1 or abs((last_box["x"] + last_box["width"] / 2) - (grid_box["x"] + grid_box["width"] / 2)) > 1 or last_box["y"] <= first_box["y"]:
+            raise AssertionError(f"Literature final action is not centered at normal width at {width}px")
 
 
 def main() -> int:

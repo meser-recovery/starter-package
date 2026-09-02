@@ -8,6 +8,7 @@
 
 @media (min-width: 48rem) {
   .literature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.125rem; }
+  .literature-action:last-child { grid-column: 1 / -1; justify-self: center; width: calc((100% - 1.125rem) / 2); }
 }
 
 @media (max-width: 47.999rem) {
