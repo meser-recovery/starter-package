@@ -78,11 +78,23 @@ def main() -> int:
         click_viewport_link(page, "Offline-meetings.html", "/Offline-meetings.html")
 
         mobile = context.new_page()
-        mobile.set_viewport_size({"width": 390, "height": 844})
-        mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
-        if mobile.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
-            raise AssertionError("homepage has horizontal overflow at mobile viewport")
-        mobile.get_by_role("heading", name="Проект Мэсэр", level=1).wait_for(state="visible")
+        for width in (320, 390):
+            mobile.set_viewport_size({"width": width, "height": 844})
+            mobile.goto(url(base_url, "/"), wait_until="domcontentloaded")
+            if mobile.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+                raise AssertionError(f"homepage has horizontal overflow at {width}px")
+            mobile.get_by_role("heading", name="Проект Мэсэр", level=1).wait_for(state="visible")
+            service = mobile.locator('a[href="Admin-panel.html"]')
+            service.wait_for(state="visible")
+            heading_box = mobile.get_by_role("heading", name="Проект Мэсэр", level=1).bounding_box()
+            service_box = service.bounding_box()
+            if not heading_box or not service_box:
+                raise AssertionError(f"header controls missing at {width}px")
+            if (heading_box["x"] < service_box["x"] + service_box["width"] and
+                    service_box["x"] < heading_box["x"] + heading_box["width"] and
+                    heading_box["y"] < service_box["y"] + service_box["height"] and
+                    service_box["y"] < heading_box["y"] + heading_box["height"]):
+                raise AssertionError(f"header H1 and service link overlap at {width}px")
         if mobile.locator('a[href="Literature.html"]').count() != 1:
             raise AssertionError("homepage Literature destination must appear exactly once")
         mobile.locator('a[href="Literature.html"]').click()

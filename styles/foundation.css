@@ -26,4 +26,9 @@ h1, h2 { margin: 0; line-height: 1.2; }
 .service-link { justify-self: end; display: inline-flex; align-items: center; min-height: 44px; font-weight: 600; }
 .site-footer { padding-block: var(--space-8); color: #fff; background: var(--color-grey-80); text-align: center; }
 .site-footer p { margin: 0; }
-@media (max-width: 30rem) { .site-header__content { width: min(100% - 1rem, 70rem); min-height: 5rem; } .site-header img { width: 2.75rem; height: 2.75rem; } .site-header h1 { font-size: 1.55rem; } .service-link { font-size: .875rem; } }
+@media (max-width: 30rem) {
+  .site-header__content { width: min(100% - 1rem, 70rem); min-height: 7rem; grid-template-rows: auto auto; row-gap: .25rem; }
+  .site-header img { width: 2.75rem; height: 2.75rem; }
+  .site-header h1 { font-size: 1.55rem; }
+  .service-link { grid-column: 1 / -1; grid-row: 2; justify-self: end; font-size: .875rem; }
+}
