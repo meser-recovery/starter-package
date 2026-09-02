@@ -125,6 +125,9 @@ def main() -> int:
             line_boxes = [service.locator("span").nth(i).bounding_box() for i in range(2)]
             if not line_boxes[0] or not line_boxes[1] or line_boxes[1]["y"] <= line_boxes[0]["y"]:
                 raise AssertionError(f"service link lines are not stacked at {width}px")
+            control_center = service_box["x"] + service_box["width"] / 2
+            if any(abs((line["x"] + line["width"] / 2) - control_center) > 2 for line in line_boxes):
+                raise AssertionError(f"service link lines are not centered in the control at {width}px")
             if not service.evaluate("el => getComputedStyle(el).whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth"):
                 raise AssertionError(f"header service link wraps unexpectedly at {width}px")
             if abs(heading_box["y"] - service_box["y"]) > max(heading_box["height"], service_box["height"]):
