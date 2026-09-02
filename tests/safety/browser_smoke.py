@@ -95,6 +95,11 @@ def main() -> int:
                     heading_box["y"] < service_box["y"] + service_box["height"] and
                     service_box["y"] < heading_box["y"] + heading_box["height"]):
                 raise AssertionError(f"header H1 and service link overlap at {width}px")
+            vertical_gap = service_box["y"] - (heading_box["y"] + heading_box["height"])
+            if vertical_gap < 4:
+                raise AssertionError(f"header service link gap is too small at {width}px: {vertical_gap}px")
+            if not service.evaluate("el => getComputedStyle(el).whiteSpace === 'nowrap' && el.scrollWidth <= el.clientWidth"):
+                raise AssertionError(f"header service link wraps at {width}px")
         if mobile.locator('a[href="Literature.html"]').count() != 1:
             raise AssertionError("homepage Literature destination must appear exactly once")
         mobile.locator('a[href="Literature.html"]').click()
