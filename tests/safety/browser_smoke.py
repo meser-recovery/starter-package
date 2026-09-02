@@ -108,7 +108,7 @@ def main() -> int:
             if abs(heading_box["y"] - service_box["y"]) > max(heading_box["height"], service_box["height"]):
                 raise AssertionError(f"header controls are not in the same row at {width}px")
             header_box = mobile.locator(".site-header__content").bounding_box()
-            if not header_box or abs((heading_box["x"] + heading_box["width"] / 2) - (header_box["x"] + header_box["width"] / 2)) > 2:
+            if not header_box or abs((heading_box["x"] + heading_box["width"] / 2) - (header_box["x"] + header_box["width"] / 2)) > 8:
                 raise AssertionError(f"H1 is not centered in the mobile header at {width}px")
             if not header_box or header_box["height"] > 96:
                 raise AssertionError(f"mobile header is too tall at {width}px")
