@@ -2,7 +2,7 @@
 .site-header__content { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 5.75rem; }
 .site-header img { width: 3.25rem; height: 3.25rem; }
 .site-header__logo { justify-self: start; }
-.site-header__title { color: var(--color-brand); font-size: clamp(1.55rem, 3vw, 2.5rem); text-align: center; white-space: nowrap; }
+.site-header__title { color: var(--color-brand); font-size: clamp(1.55rem, 3vw, 2.5rem); line-height: 1.2; text-align: center; white-space: nowrap; }
 .site-header__identity { color: var(--color-brand); font-weight: 700; text-decoration: none; }
 .service-link { justify-self: end; display: inline-flex; align-items: center; gap: .25rem; min-height: 44px; padding: .5rem .75rem; color: var(--color-text); background: var(--color-action-surface); border: 1px solid var(--color-action-surface-hover); border-radius: var(--radius-sm); box-shadow: 0 .25rem .75rem rgba(1, 58, 91, .12); font-weight: 600; text-decoration: none; white-space: nowrap; }
 .service-link:hover { background: var(--color-action-surface-hover); }
