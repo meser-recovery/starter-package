@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import sys
+from pathlib import Path
 from urllib.parse import urlparse
 
 from playwright.sync_api import Error, sync_playwright
@@ -36,13 +37,18 @@ def click_viewport_link(page, href: str, expected_path: str) -> None:
 
 
 LITERATURE_ACTIONS = (
-    ("Зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-    ("Новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
-    ("Кто, что, как и почему", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-    ("Добро пожаловать в Сообщество АН", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
-    ("Треугольник одержимости", "https://na.org/wp-content/uploads/2024/05/RU3112-IP-12-Russian.pdf"),
-    ("Юным зависимым от юных зависимых", "https://na.org/wp-content/uploads/2024/05/RU3113_final_Apr2017-IP-13-Russian.pdf"),
-    ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
+    ("Зависимый ли я?", "Literature-reader.html?doc=ip07", "Зависимый ли я?"),
+    ("Новичку", "Literature-reader.html?doc=ip16", "Новичку"),
+    ("Кто, что, как и почему", "Literature-reader.html?doc=ip01", "Кто, что, как и почему?"),
+    ("Добро пожаловать в Сообщество АН", "Literature-reader.html?doc=ip22", "Добро пожаловать в Сообщество Анонимные Наркоманы"),
+    ("Треугольник одержимости", "Literature-reader.html?doc=ip12", "Треугольник одержимости своими желаниями"),
+    ("Юным зависимым от юных зависимых", "Literature-reader.html?doc=ip13", "Юным зависимым от юных зависимых"),
+    ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature", None),
+)
+
+HOMEPAGE_ACTION_ORDER = (
+    "Онлайн собрания", "Живые собрания", "Информационные проспекты", "Базовый текст (аудио)",
+    "Ежедневные размышления", "Радио NA", "Слушать спикерские NA", "Калькулятор чистого периода",
 )
 
 
@@ -76,12 +82,14 @@ def check_literature(page, base_url: str, width: int) -> None:
     actions = page.locator("a.literature-action")
     if actions.count() != len(LITERATURE_ACTIONS):
         raise AssertionError("Literature must retain seven resource actions")
-    for index, (label, href) in enumerate(LITERATURE_ACTIONS):
+    for index, (label, href, _title) in enumerate(LITERATURE_ACTIONS):
         action = actions.nth(index)
         if visible_text(action) != label or action.get_attribute("href") != href:
             raise AssertionError(f"Literature action {index + 1} label or href changed")
-        if action.get_attribute("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((action.get_attribute("rel") or "").split())):
-            raise AssertionError(f"Literature action {index + 1} lacks safe external-link semantics")
+        if index < 6 and action.get_attribute("target") is not None:
+            raise AssertionError(f"Literature action {index + 1} must stay in the same tab")
+        if index == 6 and (action.get_attribute("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((action.get_attribute("rel") or "").split()))):
+            raise AssertionError("Literature final action lacks safe external-link semantics")
         if not action.evaluate("element => element.tagName === 'A' && element.tabIndex >= 0"):
             raise AssertionError(f"Literature action {index + 1} is not keyboard accessible")
         action.focus()
@@ -97,6 +105,57 @@ def check_literature(page, base_url: str, width: int) -> None:
             raise AssertionError(f"Literature action layout boxes missing at {width}px")
         if abs(last_box["width"] - first_box["width"]) > 1 or abs((last_box["x"] + last_box["width"] / 2) - (grid_box["x"] + grid_box["width"] / 2)) > 1 or last_box["y"] <= first_box["y"]:
             raise AssertionError(f"Literature final action is not centered at normal width at {width}px")
+
+
+def check_literature_reader(page, base_url: str, document_id: str, expected_title: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(url(base_url, f"/Literature-reader.html?doc={document_id}"), wait_until="domcontentloaded")
+    page.locator(".brochure-page canvas").nth(0).wait_for(state="visible", timeout=20000)
+    page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
+    if ".pdf" in urlparse(page.url).path or not urlparse(page.url).path.endswith("/Literature-reader.html"):
+        raise AssertionError(f"Literature reader navigated to a PDF for {document_id}")
+    if page.locator("html").get_attribute("lang") != "ru" or page.locator("h1").count() != 1:
+        raise AssertionError(f"Literature reader shell is invalid for {document_id}")
+    if page.locator("h1").inner_text() != expected_title:
+        raise AssertionError(f"Literature reader title is wrong for {document_id}")
+    if page.locator('a[href="Literature.html"]').count() != 1:
+        raise AssertionError(f"Literature reader back link is missing for {document_id}")
+    if page.locator(".reader-error").is_visible():
+        raise AssertionError(f"Literature reader showed an error for {document_id}")
+    if page.locator(".brochure-page canvas").count() < 1:
+        raise AssertionError(f"Literature reader did not render a page for {document_id}")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Literature reader has horizontal overflow for {document_id} at {width}px")
+    if not page.evaluate("performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.includes('/documents/literature/'))"):
+        raise AssertionError(f"Literature reader did not request a local PDF for {document_id}")
+
+
+def check_literature_reader_error(page, base_url: str) -> None:
+    page.set_viewport_size({"width": 390, "height": 900})
+    page.goto(url(base_url, "/Literature-reader.html?doc=unknown"), wait_until="domcontentloaded")
+    page.locator(".reader-error").wait_for(state="visible")
+    if page.locator(".brochure-page canvas").count() != 0 or ".pdf" in urlparse(page.url).path:
+        raise AssertionError("Unknown literature route is not handled safely")
+
+
+def capture_screenshots(page, base_url: str, directory: Path) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    captures = (
+        ("homepage-390.png", "/", 390),
+        ("homepage-1280.png", "/", 1280),
+        ("literature-390.png", "/Literature.html", 390),
+        ("literature-1280.png", "/Literature.html", 1280),
+        ("literature-reader-ip07-390.png", "/Literature-reader.html?doc=ip07", 390),
+        ("literature-reader-ip07-1280.png", "/Literature-reader.html?doc=ip07", 1280),
+        ("literature-reader-ip16-390.png", "/Literature-reader.html?doc=ip16", 390),
+    )
+    for filename, path, width in captures:
+        page.set_viewport_size({"width": width, "height": 900})
+        page.goto(url(base_url, path), wait_until="domcontentloaded")
+        if "Literature-reader" in path:
+            page.locator(".brochure-page canvas").nth(0).wait_for(state="visible", timeout=20000)
+            page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
+        page.screenshot(path=str(directory / filename), full_page=False)
 
 
 def check_audiobook(page, base_url: str, width: int) -> None:
@@ -231,6 +290,7 @@ def check_offline_meetings_failure(browser, base_url: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
+    parser.add_argument("--screenshot-dir", type=Path)
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     site_host = urlparse(base_url).netloc
@@ -280,6 +340,8 @@ def main() -> int:
         desktop_actions = page.locator(".resource-action")
         if desktop_actions.count() != 8:
             raise AssertionError("desktop homepage must retain eight resource actions")
+        if [visible_text(desktop_actions.nth(index)) for index in range(desktop_actions.count())] != list(HOMEPAGE_ACTION_ORDER):
+            raise AssertionError("homepage resource actions are not in canonical DOM order")
         if not desktop_actions.nth(0).evaluate("""el => {
             const style = getComputedStyle(el);
             return style.minHeight === '92px' && style.borderRadius === '17px' &&
@@ -343,6 +405,13 @@ def main() -> int:
 
         for width in (320, 390, 768, 1280):
             check_literature(page, base_url, width)
+        for label, href, reader_title in LITERATURE_ACTIONS[:6]:
+            document_id = href.split("doc=", 1)[1]
+            check_literature_reader(page, base_url, document_id, reader_title, 390)
+        for document_id, reader_title in (("ip07", "Зависимый ли я?"),):
+            for width in (320, 768, 1280):
+                check_literature_reader(page, base_url, document_id, reader_title, width)
+        check_literature_reader_error(page, base_url)
         for width in (320, 390, 768, 1280):
             check_audiobook(page, base_url, width)
         click_viewport_link(page, "./", "/")
@@ -402,6 +471,8 @@ def main() -> int:
             raise AssertionError("Drive embed URL did not initialize")
         if not drive_open.startswith("https://accounts.google.com/AccountChooser?continue="):
             raise AssertionError("Drive account chooser URL did not initialize")
+        if args.screenshot_dir:
+            capture_screenshots(page, base_url, args.screenshot_dir)
         context.close()
         browser.close()
     print("Browser smoke suite passed.")

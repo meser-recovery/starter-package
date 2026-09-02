@@ -146,22 +146,97 @@ def check_literature_contract(errors: list[str]) -> None:
         if tag == "a" and "literature-action" in (attrs.get("class") or "").split()
     ]
     expected_actions = [
-        ("Зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-        ("Новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
-        ("Кто, что, как и почему", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
-        ("Добро пожаловать в Сообщество АН", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
-        ("Треугольник одержимости", "https://na.org/wp-content/uploads/2024/05/RU3112-IP-12-Russian.pdf"),
-        ("Юным зависимым от юных зависимых", "https://na.org/wp-content/uploads/2024/05/RU3113_final_Apr2017-IP-13-Russian.pdf"),
-        ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
+        "Literature-reader.html?doc=ip07", "Literature-reader.html?doc=ip16",
+        "Literature-reader.html?doc=ip01", "Literature-reader.html?doc=ip22",
+        "Literature-reader.html?doc=ip12", "Literature-reader.html?doc=ip13",
+        "https://na-russia.org/literatures?category=recovery-literature",
     ]
     action_hrefs = [attrs.get("href") for attrs in actions]
-    if action_hrefs != [href for _label, href in expected_actions]:
+    if action_hrefs != expected_actions:
         errors.append("Literature.html: resource action destinations changed or are out of order")
     if len(actions) != len(expected_actions):
         errors.append("Literature.html: expected seven resource actions")
-    for attrs in actions:
-        if attrs.get("target") == "_blank" and not {"noopener", "noreferrer"}.issubset(set((attrs.get("rel") or "").split())):
-            errors.append("Literature.html: target blank resource action lacks safe rel semantics")
+    for index, attrs in enumerate(actions[:6]):
+        href = attrs.get("href") or ""
+        if not href.startswith("Literature-reader.html?doc=") or href.lower().endswith(".pdf"):
+            errors.append(f"Literature.html: action {index + 1} must use an internal reader route")
+        if attrs.get("target") is not None:
+            errors.append(f"Literature.html: action {index + 1} must not open a new tab")
+    if len(actions) == 7:
+        last = actions[-1]
+        if last.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((last.get("rel") or "").split())):
+            errors.append("Literature.html: external final action lacks safe new-tab semantics")
+
+
+def check_literature_reader_contract(errors: list[str]) -> None:
+    reader = ROOT / "Literature-reader.html"
+    runtime = ROOT / "scripts" / "literature-reader.mjs"
+    if not reader.is_file() or not runtime.is_file():
+        errors.append("Literature reader page or runtime is missing")
+        return
+    parser = parse_page(reader)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Literature-reader.html: html lang must be ru")
+    if len(parser.h1_texts) != 1:
+        errors.append("Literature-reader.html: expected exactly one H1")
+    if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Literature-reader.html: shared page shell is missing")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Literature-reader.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Literature-reader.html: skip link is missing")
+    if not any(tag == "a" and attrs.get("href") == "Literature.html" for tag, attrs in parser.start_tags):
+        errors.append("Literature-reader.html: back-to-Literature link is missing")
+    source = reader.read_text(encoding="utf-8", errors="replace").lower()
+    if any(tag in source for tag in ("<iframe", "<object", "<embed")):
+        errors.append("Literature-reader.html: raw PDF embed markup is not allowed")
+    runtime_source = runtime.read_text(encoding="utf-8", errors="replace")
+    expected_files = {
+        "ip07": "documents/literature/ip-07-zavisimyi-li-ya.pdf",
+        "ip16": "documents/literature/ip-16-novichku.pdf",
+        "ip01": "documents/literature/ip-01-kto-chto-kak-i-pochemu.pdf",
+        "ip22": "documents/literature/ip-22-dobro-pozhalovat.pdf",
+        "ip12": "documents/literature/ip-12-treugolnik-oderzhimosti.pdf",
+        "ip13": "documents/literature/ip-13-yunym-zavisimym.pdf",
+    }
+    if 'from "../vendor/pdfjs/pdf.mjs"' not in runtime_source or "pdf.worker.mjs" not in runtime_source:
+        errors.append("Literature reader: local PDF.js dependency is missing")
+    if "getDocument" not in runtime_source or "canvas" not in runtime_source:
+        errors.append("Literature reader: PDF rendering output is missing")
+    for document_id, filename in expected_files.items():
+        pdf = ROOT / filename
+        if not pdf.is_file() or pdf.stat().st_size == 0 or not pdf.read_bytes().startswith(b"%PDF-"):
+            errors.append(f"Literature reader: invalid local PDF: {filename}")
+        if runtime_source.count(filename) != 1 or f"{document_id}:" not in runtime_source:
+            errors.append(f"Literature reader: approved mapping is missing or ambiguous for {document_id}")
+    if not (ROOT / "vendor/pdfjs/pdf.mjs").is_file() or not (ROOT / "vendor/pdfjs/pdf.worker.mjs").is_file() or not (ROOT / "vendor/pdfjs/LICENSE").is_file():
+        errors.append("Literature reader: vendored PDF.js runtime or license is missing")
+
+
+def check_homepage_order(errors: list[str]) -> None:
+    index = ROOT / "index.html"
+    if not index.is_file():
+        return
+    parser = parse_page(index)
+    actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and "resource-action" in (attrs.get("class") or "").split()]
+    expected_hrefs = [
+        "https://na-tranzit.org/gruppy/onlajn-gruppy", "Offline-meetings.html", "Literature.html", "AudioBook.html",
+        "https://na-russia.org/meditation-today", "https://radio-na.ru/",
+        "https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751", "Calculator.html",
+    ]
+    if [attrs.get("href") for attrs in actions] != expected_hrefs:
+        errors.append("index.html: homepage resource actions are not in canonical DOM order")
+
+
+def check_favicons(errors: list[str]) -> None:
+    favicon = ROOT / "images/favicon.png"
+    if not favicon.is_file() or favicon.stat().st_size == 0 or not favicon.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
+        errors.append("images/favicon.png: valid favicon PNG is missing")
+    for name in ("index.html", "Literature.html", "Literature-reader.html", "AudioBook.html", "Offline-meetings.html"):
+        page = ROOT / name
+        if page.is_file() and 'rel="icon" type="image/png" href="images/favicon.png"' not in page.read_text(encoding="utf-8", errors="replace"):
+            errors.append(f"{name}: explicit favicon markup is missing")
 
 
 def check_audiobook_contract(errors: list[str]) -> None:
@@ -261,7 +336,10 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     for destination in contract["homepage_external_destinations"]:
         if destination not in homepage_hrefs:
             errors.append(f"homepage external destination changed or missing: {destination}")
+    check_homepage_order(errors)
     check_literature_contract(errors)
+    check_literature_reader_contract(errors)
+    check_favicons(errors)
     check_audiobook_contract(errors)
     check_offline_meetings_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}

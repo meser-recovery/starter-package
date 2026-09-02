@@ -4,11 +4,12 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#478ac9">
-    <title>Информационные Проспекты — Проект Мэсэр</title>
+    <title>Просмотр проспекта — Проект Мэсэр</title>
     <link rel="icon" type="image/png" href="images/favicon.png">
     <link rel="stylesheet" href="styles/foundation.css">
     <link rel="stylesheet" href="styles/components.css">
-    <link rel="stylesheet" href="styles/literature.css">
+    <link rel="stylesheet" href="styles/literature-reader.css">
+    <script type="module" src="scripts/literature-reader.mjs"></script>
   </head>
   <body class="site-page">
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
@@ -21,18 +22,13 @@
         <a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
       </div>
     </header>
-    <main id="main-content" class="literature-main">
-      <div class="container literature-content">
-        <h1>Информационные проспекты</h1>
-        <div class="literature-grid">
-          <a class="action-link literature-action" href="Literature-reader.html?doc=ip07">Зависимый ли я?</a>
-          <a class="action-link literature-action" href="Literature-reader.html?doc=ip16">Новичку</a>
-          <a class="action-link literature-action" href="Literature-reader.html?doc=ip01">Кто, что, как и почему</a>
-          <a class="action-link literature-action" href="Literature-reader.html?doc=ip22">Добро пожаловать в Сообщество АН</a>
-          <a class="action-link literature-action" href="Literature-reader.html?doc=ip12">Треугольник одержимости</a>
-          <a class="action-link literature-action" href="Literature-reader.html?doc=ip13">Юным зависимым от юных зависимых</a>
-          <a class="action-link literature-action" href="https://na-russia.org/literatures?category=recovery-literature" target="_blank" rel="noopener noreferrer">Дополнительная литература<span class="sr-only"> (откроется в новой вкладке)</span></a>
-        </div>
+    <main id="main-content" class="literature-reader-main">
+      <div class="container literature-reader-content">
+        <a class="literature-back-link" href="Literature.html">К списку проспектов</a>
+        <h1 id="brochure-title">Информационный проспект</h1>
+        <p id="reader-status" class="reader-status" role="status" aria-live="polite">Загружаем проспект…</p>
+        <div id="brochure-pages" class="brochure-pages" aria-live="polite"></div>
+        <p id="reader-error" class="reader-error" role="alert" hidden></p>
       </div>
     </main>
     <footer class="site-footer">
