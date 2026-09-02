@@ -71,6 +71,17 @@ def main() -> int:
             raise AssertionError("homepage skip link is missing")
         if page.locator('a[href="Admin-panel.html"]').count() != 1:
             raise AssertionError("desktop service navigation link is missing or duplicated")
+        desktop_service = page.locator('a[href="Admin-panel.html"]')
+        if not desktop_service.evaluate("""el => {
+            const style = getComputedStyle(el);
+            return style.flexDirection === 'row' && style.whiteSpace === 'nowrap' && parseFloat(style.columnGap) > 0;
+        }"""):
+            raise AssertionError("desktop service link must show its words on one spaced line")
+        desktop_line_boxes = [desktop_service.locator("span").nth(i).bounding_box() for i in range(2)]
+        if (not desktop_line_boxes[0] or not desktop_line_boxes[1] or
+                abs(desktop_line_boxes[0]["y"] - desktop_line_boxes[1]["y"]) > 2 or
+                desktop_line_boxes[1]["x"] <= desktop_line_boxes[0]["x"] + desktop_line_boxes[0]["width"]):
+            raise AssertionError("desktop service link words are not visibly separated on one line")
         newcomer_heading = page.get_by_role("heading", name="Кто такой зависимый?", level=2)
         heading_box = newcomer_heading.bounding_box()
         if not heading_box or heading_box["y"] >= 900:
