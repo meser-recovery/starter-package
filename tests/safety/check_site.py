@@ -328,6 +328,43 @@ def check_offline_meetings_contract(errors: list[str]) -> None:
         errors.append("Offline-meetings.html: generated meetings source changed or runtime is missing")
 
 
+def check_calculator_contract(errors: list[str]) -> None:
+    calculator = ROOT / "Calculator.html"
+    runtime = ROOT / "scripts" / "calculator.js"
+    if not calculator.is_file():
+        return
+    source = calculator.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(calculator)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Calculator.html: html lang must be ru")
+    if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: shared full-height page shell is missing")
+    if parser.h1_texts != ["Калькулятор чистого периода"]:
+        errors.append("Calculator.html: expected one H1: Калькулятор чистого периода")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: skip link is missing")
+    if not any(tag == "a" and "site-header__logo" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: shared home-linked logo is missing")
+    if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: shared home-linked identity is missing")
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: shared service link is missing")
+    if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Calculator.html: shared footer is missing")
+    scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
+    if scripts != ["scripts/calculator.js"]:
+        errors.append("Calculator.html: expected one dedicated calculator runtime")
+    if "nicepage" in source.lower() or "jquery" in source.lower():
+        errors.append("Calculator.html: Nicepage or jQuery dependency remains")
+    if (ROOT / "Calculator.css").exists():
+        errors.append("Calculator.css: legacy stylesheet should have no remaining consumer")
+    if not runtime.is_file() or 'const LS_KEY = "clean_period_start_date_v4"' not in runtime.read_text(encoding="utf-8", errors="replace"):
+        errors.append("Calculator.html: persistent localStorage key or runtime is missing")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -362,6 +399,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_favicons(errors)
     check_audiobook_contract(errors)
     check_offline_meetings_contract(errors)
+    check_calculator_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
