@@ -35,6 +35,67 @@ def click_viewport_link(page, href: str, expected_path: str) -> None:
     raise AssertionError(f"no visible in-viewport link found for {href}")
 
 
+LITERATURE_ACTIONS = (
+    ("Зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
+    ("Новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
+    ("Кто, что, как и почему", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
+    ("Добро пожаловать в Сообщество АН", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
+    ("Треугольник одержимости", "https://na.org/wp-content/uploads/2024/05/RU3112-IP-12-Russian.pdf"),
+    ("Юным зависимым от юных зависимых", "https://na.org/wp-content/uploads/2024/05/RU3113_final_Apr2017-IP-13-Russian.pdf"),
+    ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
+)
+
+
+def visible_text(locator) -> str:
+    return locator.evaluate("""element => Array.from(element.childNodes)
+        .filter(node => node.nodeType === Node.TEXT_NODE)
+        .map(node => node.textContent)
+        .join(\"\").trim()""")
+
+
+def check_literature(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
+    if page.locator("html").get_attribute("lang") != "ru":
+        raise AssertionError("Literature must use Russian document language")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Информационные проспекты":
+        raise AssertionError("Literature must retain one correct H1")
+    if page.locator("main#main-content").count() != 1:
+        raise AssertionError("Literature main landmark is missing")
+    if page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError("Literature skip link is missing")
+    if page.locator(".site-header__identity").count() != 1 or page.locator(".site-header__logo").count() != 1:
+        raise AssertionError("Literature shared home navigation is missing")
+    if page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+        raise AssertionError("Literature service control is missing")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Literature has horizontal overflow at {width}px")
+    actions = page.locator("a.literature-action")
+    if actions.count() != len(LITERATURE_ACTIONS):
+        raise AssertionError("Literature must retain seven resource actions")
+    for index, (label, href) in enumerate(LITERATURE_ACTIONS):
+        action = actions.nth(index)
+        if visible_text(action) != label or action.get_attribute("href") != href:
+            raise AssertionError(f"Literature action {index + 1} label or href changed")
+        if action.get_attribute("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((action.get_attribute("rel") or "").split())):
+            raise AssertionError(f"Literature action {index + 1} lacks safe external-link semantics")
+        if not action.evaluate("element => element.tagName === 'A' && element.tabIndex >= 0"):
+            raise AssertionError(f"Literature action {index + 1} is not keyboard accessible")
+        action.focus()
+        if not action.evaluate("element => document.activeElement === element"):
+            raise AssertionError(f"Literature action {index + 1} cannot receive keyboard focus")
+        if action.evaluate("element => element.scrollWidth > element.clientWidth"):
+            raise AssertionError(f"Literature action {index + 1} label is clipped at {width}px")
+    if width >= 768:
+        grid_box = page.locator(".literature-grid").bounding_box()
+        first_box = actions.nth(0).bounding_box()
+        last_box = actions.nth(-1).bounding_box()
+        if not grid_box or not first_box or not last_box:
+            raise AssertionError(f"Literature action layout boxes missing at {width}px")
+        if abs(last_box["width"] - first_box["width"]) > 1 or abs((last_box["x"] + last_box["width"] / 2) - (grid_box["x"] + grid_box["width"] / 2)) > 1 or last_box["y"] <= first_box["y"]:
+            raise AssertionError(f"Literature final action is not centered at normal width at {width}px")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -147,6 +208,12 @@ def main() -> int:
         mobile.locator('a[href="Literature.html"]').click()
         mobile.wait_for_url("**/Literature.html", timeout=1500)
         mobile.close()
+
+        for width in (320, 390, 768, 1280):
+            check_literature(page, base_url, width)
+        click_viewport_link(page, "./", "/")
+        page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
+        click_viewport_link(page, "Admin-panel.html", "/Admin-panel.html")
 
         page.goto(url(base_url, "/About.html"), wait_until="domcontentloaded")
         page.wait_for_url(base_url + "/", timeout=10000)

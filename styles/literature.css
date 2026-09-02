@@ -1,0 +1,21 @@
+.literature-main { padding-block: 2.75rem 3.5rem; color: #fff; background: var(--color-brand-surface); }
+.literature-content { max-width: 64rem; }
+.literature-content h1 { font-size: clamp(1.75rem, 4vw, 2.5rem); text-align: center; }
+.literature-grid { display: grid; gap: 1rem; margin: 2.25rem auto 0; max-width: 58rem; }
+.literature-action { min-height: 5.25rem; padding: var(--space-4) 1.25rem; border: 1px solid var(--color-action-surface-hover); box-shadow: var(--shadow-action); line-height: 1.35; transition: transform var(--motion-fast) ease, box-shadow var(--motion-fast) ease, background-color var(--motion-fast) ease; }
+.literature-action:hover { box-shadow: 0 .625rem 1.75rem rgba(1, 58, 91, .18); transform: translateY(-2px); }
+.literature-action:focus-visible { outline-color: #fff; outline-offset: 4px; }
+
+@media (min-width: 48rem) {
+  .literature-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1.125rem; }
+  .literature-action:last-child { grid-column: 1 / -1; justify-self: center; width: calc((100% - 1.125rem) / 2); }
+}
+
+@media (max-width: 47.999rem) {
+  .literature-main { padding-block: 2.25rem 2.5rem; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .literature-action { transition: none; }
+  .literature-action:hover { transform: none; }
+}

@@ -1,8 +1,6 @@
 .homepage-main { padding-block: 2.75rem 2.5rem; color: #fff; background: var(--color-palette-dark-1); }
 .homepage-content { max-width: 70rem; }
 .resource-grid { display: grid; grid-template-columns: 1fr; gap: .875rem; width: 93%; margin-inline: auto; }
-.resource-action { display: flex; align-items: center; justify-content: center; min-height: 4.5rem; padding: var(--space-3) var(--space-4); color: var(--color-grey-80); background: var(--color-palette-light-1); border-radius: 13px; font-size: 1rem; font-weight: 700; text-align: center; text-decoration: none; }
-.resource-action:hover { background: var(--color-palette-light-2); }
 .newcomer-content { max-width: 60rem; margin: 3.75rem auto 0; text-align: center; }
 .newcomer-content h2 { margin-bottom: var(--space-6); font-family: Georgia, "Times New Roman", serif; font-size: clamp(1.5rem, 3vw, 2rem); }
 .newcomer-prose { font-family: Georgia, "Times New Roman", serif; font-size: 1.075rem; font-style: italic; line-height: 1.65; }

@@ -28,9 +28,17 @@ class PageParser(HTMLParser):
         super().__init__(convert_charrefs=True)
         self.references: list[tuple[str, str, str]] = []
         self.anchors: set[str] = set()
+        self.start_tags: list[tuple[str, dict[str, str | None]]] = []
+        self.h1_texts: list[str] = []
+        self._h1_depth = 0
+        self._current_h1: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
+        self.start_tags.append((tag, values))
+        if tag == "h1":
+            self._h1_depth += 1
+            self._current_h1 = []
         anchor = values.get("id") or values.get("name")
         if anchor:
             self.anchors.add(anchor)
@@ -38,6 +46,15 @@ class PageParser(HTMLParser):
             value = values.get(attribute)
             if value is not None:
                 self.references.append((tag, attribute, value))
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag == "h1" and self._h1_depth:
+            self.h1_texts.append("".join(self._current_h1).strip())
+            self._h1_depth -= 1
+
+    def handle_data(self, data: str) -> None:
+        if self._h1_depth:
+            self._current_h1.append(data)
 
 
 def load_contract() -> dict:
@@ -106,6 +123,47 @@ def check_css_references(path: Path, contract: dict, errors: list[str], warnings
         check_reference(value, path, contract, errors, warnings, {})
 
 
+def check_literature_contract(errors: list[str]) -> None:
+    literature = ROOT / "Literature.html"
+    if not literature.is_file():
+        return
+    source = literature.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(literature)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Literature.html: html lang must be ru")
+    if parser.h1_texts != ["Информационные проспекты"]:
+        errors.append("Literature.html: expected one H1: Информационные проспекты")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Literature.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Literature.html: skip link is missing")
+    lowered = source.lower()
+    if "nicepage" in lowered or "jquery" in lowered:
+        errors.append("Literature.html: Nicepage or jQuery dependency remains")
+    actions = [
+        attrs for tag, attrs in parser.start_tags
+        if tag == "a" and "literature-action" in (attrs.get("class") or "").split()
+    ]
+    expected_actions = [
+        ("Зависимый ли я?", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
+        ("Новичку", "https://na.org/wp-content/uploads/2024/05/RU3116-IP-16-Russian.pdf"),
+        ("Кто, что, как и почему", "https://na.org/wp-content/uploads/2024/05/RU3107-IP-7-Russian.pdf"),
+        ("Добро пожаловать в Сообщество АН", "https://na.org/wp-content/uploads/2024/05/RU3122-IP-22-Russian.pdf"),
+        ("Треугольник одержимости", "https://na.org/wp-content/uploads/2024/05/RU3112-IP-12-Russian.pdf"),
+        ("Юным зависимым от юных зависимых", "https://na.org/wp-content/uploads/2024/05/RU3113_final_Apr2017-IP-13-Russian.pdf"),
+        ("Дополнительная литература", "https://na-russia.org/literatures?category=recovery-literature"),
+    ]
+    action_hrefs = [attrs.get("href") for attrs in actions]
+    if action_hrefs != [href for _label, href in expected_actions]:
+        errors.append("Literature.html: resource action destinations changed or are out of order")
+    if len(actions) != len(expected_actions):
+        errors.append("Literature.html: expected seven resource actions")
+    for attrs in actions:
+        if attrs.get("target") == "_blank" and not {"noopener", "noreferrer"}.issubset(set((attrs.get("rel") or "").split())):
+            errors.append("Literature.html: target blank resource action lacks safe rel semantics")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -134,6 +192,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     for destination in contract["homepage_external_destinations"]:
         if destination not in homepage_hrefs:
             errors.append(f"homepage external destination changed or missing: {destination}")
+    check_literature_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
