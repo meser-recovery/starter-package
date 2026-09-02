@@ -76,6 +76,32 @@ def visible_text(locator) -> str:
         .join(\"\").trim()""")
 
 
+def assert_reader_canvases(page, document_id: str) -> int:
+    page.locator(".brochure-page canvas").nth(0).wait_for(state="visible", timeout=20000)
+    page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
+    canvas_count = page.locator(".brochure-page canvas").count()
+    status_count = int(page.locator("#reader-status").inner_text().rsplit(":", 1)[1].strip())
+    if canvas_count < 1 or canvas_count != status_count:
+        raise AssertionError(
+            f"Literature reader did not fully render {document_id}: canvases={canvas_count}, status={status_count}"
+        )
+    if not page.locator(".brochure-page canvas").evaluate_all(
+        """canvases => canvases.every(canvas => canvas.width > 0 && canvas.height > 0)"""
+    ):
+        raise AssertionError(f"Literature reader contains a zero-size canvas for {document_id}")
+    if not page.locator(".brochure-page canvas").nth(0).evaluate("""canvas => {
+        const context = canvas.getContext('2d');
+        const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+        const stride = Math.max(4, Math.floor(pixels.length / 20000 / 4) * 4);
+        for (let index = 0; index < pixels.length; index += stride) {
+            if (pixels[index] < 245 || pixels[index + 1] < 245 || pixels[index + 2] < 245) return true;
+        }
+        return false;
+    }"""):
+        raise AssertionError(f"Literature reader first page appears blank for {document_id}")
+    return canvas_count
+
+
 def check_literature(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     goto_ready(page, url(base_url, "/Literature.html"))
@@ -130,10 +156,18 @@ def check_literature(page, base_url: str, width: int) -> None:
 
 
 def check_literature_reader(page, base_url: str, document_id: str, expected_title: str, width: int) -> None:
+    requested_paths: list[str] = []
+
+    def capture_request(request) -> None:
+        requested_paths.append(urlparse(request.url).path)
+
+    page.on("request", capture_request)
     page.set_viewport_size({"width": width, "height": 900})
-    goto_ready(page, url(base_url, f"/Literature-reader.html?doc={document_id}"))
-    page.locator(".brochure-page canvas").nth(0).wait_for(state="visible", timeout=20000)
-    page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
+    try:
+        goto_ready(page, url(base_url, f"/Literature-reader.html?doc={document_id}"))
+        assert_reader_canvases(page, document_id)
+    finally:
+        page.remove_listener("request", capture_request)
     if ".pdf" in urlparse(page.url).path or not urlparse(page.url).path.endswith("/Literature-reader.html"):
         raise AssertionError(f"Literature reader navigated to a PDF for {document_id}")
     if page.locator("html").get_attribute("lang") != "ru" or page.locator("h1").count() != 1:
@@ -144,12 +178,21 @@ def check_literature_reader(page, base_url: str, document_id: str, expected_titl
         raise AssertionError(f"Literature reader back link is missing for {document_id}")
     if page.locator(".reader-error").is_visible():
         raise AssertionError(f"Literature reader showed an error for {document_id}")
-    if page.locator(".brochure-page canvas").count() < 1:
-        raise AssertionError(f"Literature reader did not render a page for {document_id}")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Literature reader has horizontal overflow for {document_id} at {width}px")
     if not page.evaluate("performance.getEntriesByType('resource').some(entry => new URL(entry.name).pathname.includes('/documents/literature/'))"):
         raise AssertionError(f"Literature reader did not request a local PDF for {document_id}")
+    if not any(path.endswith("/vendor/pdfjs/pdf.legacy.mjs") for path in requested_paths):
+        raise AssertionError(f"Literature reader did not load the legacy PDF.js main bundle for {document_id}")
+    if not any(path.endswith("/vendor/pdfjs/pdf.worker.legacy.mjs") for path in requested_paths):
+        raise AssertionError(f"Literature reader did not load the matching legacy PDF.js worker for {document_id}")
+    if any(path.endswith("/vendor/pdfjs/pdf.mjs") or path.endswith("/vendor/pdfjs/pdf.worker.mjs") for path in requested_paths):
+        raise AssertionError(f"Literature reader loaded an obsolete modern PDF.js bundle for {document_id}")
+    page.evaluate("window.scrollTo(0, document.body.scrollHeight)")
+    page.wait_for_timeout(100)
+    if page.evaluate("document.body.scrollHeight > window.innerHeight && window.scrollY === 0"):
+        raise AssertionError(f"Literature reader did not permit vertical scrolling for {document_id}")
+    assert_reader_canvases(page, document_id)
 
 
 def check_literature_reader_error(page, base_url: str) -> None:
@@ -160,13 +203,24 @@ def check_literature_reader_error(page, base_url: str) -> None:
         raise AssertionError("Unknown literature route is not handled safely")
 
 
-def check_literature_reader_resize_stability(page, base_url: str) -> None:
+def check_literature_reader_resize_stability(page, base_url: str, document_id: str, expected_title: str) -> None:
     page.set_viewport_size({"width": 390, "height": 844})
-    goto_ready(page, url(base_url, "/Literature-reader.html?doc=ip16"))
-    page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
-    initial_page_count = page.locator(".brochure-page canvas").count()
-    if initial_page_count < 1:
-        raise AssertionError("Literature reader resize test has no initial rendered pages")
+    goto_ready(page, url(base_url, f"/Literature-reader.html?doc={document_id}"))
+    if page.locator("h1").inner_text() != expected_title:
+        raise AssertionError(f"Literature reader resize title is wrong for {document_id}")
+    initial_page_count = assert_reader_canvases(page, document_id)
+
+    page.evaluate("document.querySelector('.brochure-page canvas').dataset.resizeProbe = 'portrait-original'")
+    page.set_viewport_size({"width": 844, "height": 390})
+    page.wait_for_function("!document.querySelector(\"canvas[data-resize-probe='portrait-original']\")", timeout=30000)
+    if assert_reader_canvases(page, document_id) != initial_page_count:
+        raise AssertionError(f"Reader page count changed in landscape for {document_id}")
+    page.evaluate("document.querySelector('.brochure-page canvas').dataset.resizeProbe = 'landscape-original'")
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.wait_for_function("!document.querySelector(\"canvas[data-resize-probe='landscape-original']\")", timeout=30000)
+    if assert_reader_canvases(page, document_id) != initial_page_count:
+        raise AssertionError(f"Reader page count changed after returning to portrait for {document_id}")
+
     page.evaluate("""() => {
         const pages = document.getElementById('brochure-pages');
         pages.querySelector('canvas').dataset.resizeProbe = 'height-original';
@@ -194,7 +248,7 @@ def check_literature_reader_resize_stability(page, base_url: str) -> None:
     }""")
     with page.expect_event(
         "console",
-        predicate=lambda message: "Literature reader failed to rerender brochure" in message.text,
+        predicate=lambda message: "stage=canvas/render-responsive" in message.text,
         timeout=10000,
     ):
         page.set_viewport_size({"width": 430, "height": 844})
@@ -226,9 +280,9 @@ def check_literature_reader_resize_stability(page, base_url: str) -> None:
     }""", timeout=30000)
 
     if page.locator(".reader-error").is_visible():
-        raise AssertionError("Reader error became visible during resize lifecycle tests")
+        raise AssertionError(f"Reader error became visible during resize lifecycle tests for {document_id}")
     if page.locator(".brochure-page canvas").count() != initial_page_count:
-        raise AssertionError("Reader page count changed during resize lifecycle tests")
+        raise AssertionError(f"Reader page count changed during resize lifecycle tests for {document_id}")
     if page.evaluate("window.__readerResizeProbe.sawBlank"):
         raise AssertionError("Reader exposed a blank brochure state during atomic replacement")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
@@ -239,6 +293,66 @@ def check_literature_reader_resize_stability(page, base_url: str) -> None:
         raise AssertionError("Literature reader contains an unreadable blank-size canvas after resize")
     if ".pdf" in urlparse(page.url).path or not urlparse(page.url).path.endswith("/Literature-reader.html"):
         raise AssertionError("Literature reader navigated away during resize lifecycle tests")
+
+
+def check_literature_reader_diagnostics(browser, base_url: str) -> None:
+    cases = (
+        ("bootstrap", "LIT-BOOT", "bootstrap", "**/vendor/pdfjs/pdf.legacy.mjs", "abort"),
+        ("worker", "LIT-WORKER", "worker-initialization", "**/vendor/pdfjs/pdf.worker.legacy.mjs", "abort"),
+        ("fetch", "LIT-FETCH", "pdf-fetch", "**/documents/literature/ip-16-novichku.pdf", "abort"),
+        ("pdf", "LIT-PDF", "pdf-parse", "**/documents/literature/ip-16-novichku.pdf", "invalid-pdf"),
+        ("render", "LIT-RENDER", "canvas/render", None, "no-canvas"),
+    )
+    for label, code, stage, pattern, behavior in cases:
+        context = browser.new_context(viewport={"width": 390, "height": 844})
+        page = context.new_page()
+        console_messages: list[str] = []
+        page.on("console", lambda message: console_messages.append(message.text))
+        if behavior == "abort":
+            page.route(pattern, lambda route: route.abort())
+        elif behavior == "invalid-pdf":
+            page.route(pattern, lambda route: route.fulfill(
+                status=200, content_type="application/pdf", body=b"not a PDF"
+            ))
+        elif behavior == "no-canvas":
+            page.add_init_script("HTMLCanvasElement.prototype.getContext = () => null;")
+        try:
+            goto_ready(page, url(base_url, "/Literature-reader.html?doc=ip16"))
+            page.locator(".reader-error").wait_for(state="visible", timeout=20000)
+            error_text = page.locator(".reader-error").inner_text()
+            if code not in error_text:
+                raise AssertionError(f"Literature {label} diagnostic did not expose {code}: {error_text}")
+            if any(fragment in error_text for fragment in ("http://", "https://", "/vendor/", "Error:")):
+                raise AssertionError(f"Literature {label} diagnostic exposed technical internals")
+            if not any(
+                f"stage={stage}" in message and "name=" in message and "message=" in message
+                for message in console_messages
+            ):
+                raise AssertionError(f"Literature {label} diagnostic omitted console stage/name/message")
+        finally:
+            context.close()
+
+
+def check_literature_mobile_compatibility(browser, base_url: str, device: dict, label: str) -> None:
+    context = browser.new_context(**device)
+    site_host = urlparse(base_url).netloc
+
+    def block_external(route):
+        if urlparse(route.request.url).netloc not in {"", site_host}:
+            route.abort()
+        else:
+            route.continue_()
+
+    context.route("**/*", block_external)
+    page = context.new_page()
+    try:
+        for document_id, expected_title in (("ip16", "Новичку"), ("ip07", "Зависимый ли я?")):
+            check_literature_reader(page, base_url, document_id, expected_title, 390)
+            check_literature_reader_resize_stability(page, base_url, document_id, expected_title)
+    except AssertionError as exc:
+        raise AssertionError(f"{label}: {exc}") from exc
+    finally:
+        context.close()
 
 
 def capture_screenshots(page, base_url: str, directory: Path) -> None:
@@ -440,11 +554,24 @@ def main() -> int:
     parser.add_argument("--base-url", required=True)
     parser.add_argument("--screenshot-dir", type=Path)
     parser.add_argument("--delayed-stylesheet-check", action="store_true")
+    parser.add_argument("--browser", choices=("chromium", "webkit"), default="chromium")
+    parser.add_argument("--literature-only", action="store_true")
     args = parser.parse_args()
     base_url = args.base_url.rstrip("/")
     site_host = urlparse(base_url).netloc
     with sync_playwright() as playwright:
-        browser = playwright.chromium.launch()
+        browser = getattr(playwright, args.browser).launch()
+        if args.literature_only:
+            device_name = "iPhone 13" if args.browser == "webkit" else "Pixel 7"
+            check_literature_mobile_compatibility(
+                browser, base_url, playwright.devices[device_name],
+                f"{args.browser} {device_name} compatibility",
+            )
+            browser.close()
+            print(f"Literature compatibility suite passed in {args.browser} ({device_name}).")
+            return 0
+        if args.browser != "chromium":
+            raise AssertionError("The full Safety Baseline is defined for Chromium; use --literature-only with WebKit")
         context = browser.new_context(viewport={"width": 1280, "height": 900})
 
         def block_external(route):
@@ -595,7 +722,7 @@ def main() -> int:
         for document_id, reader_title in (("ip07", "Зависимый ли я?"),):
             for width in (320, 768, 1280):
                 check_literature_reader(page, base_url, document_id, reader_title, width)
-        check_literature_reader_resize_stability(page, base_url)
+        check_literature_reader_resize_stability(page, base_url, "ip16", "Новичку")
         check_literature_reader_error(page, base_url)
         for width in (320, 390, 768, 1280):
             check_audiobook(page, base_url, width)
@@ -661,6 +788,10 @@ def main() -> int:
         if args.screenshot_dir:
             capture_screenshots(page, base_url, args.screenshot_dir)
         context.close()
+        check_literature_mobile_compatibility(
+            browser, base_url, playwright.devices["Pixel 7"], "Chromium Android mobile emulation"
+        )
+        check_literature_reader_diagnostics(browser, base_url)
         if args.delayed_stylesheet_check:
             check_delayed_stylesheet_readiness(browser, base_url)
         browser.close()
