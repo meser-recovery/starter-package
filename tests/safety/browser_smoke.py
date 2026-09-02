@@ -138,6 +138,87 @@ def check_literature_reader_error(page, base_url: str) -> None:
         raise AssertionError("Unknown literature route is not handled safely")
 
 
+def check_literature_reader_resize_stability(page, base_url: str) -> None:
+    page.set_viewport_size({"width": 390, "height": 844})
+    page.goto(url(base_url, "/Literature-reader.html?doc=ip16"), wait_until="domcontentloaded")
+    page.wait_for_function("document.getElementById('reader-status').textContent.includes('Показано страниц:')", timeout=30000)
+    initial_page_count = page.locator(".brochure-page canvas").count()
+    if initial_page_count < 1:
+        raise AssertionError("Literature reader resize test has no initial rendered pages")
+    page.evaluate("""() => {
+        const pages = document.getElementById('brochure-pages');
+        pages.querySelector('canvas').dataset.resizeProbe = 'height-original';
+        window.__readerResizeProbe = { replacements: 0, sawBlank: false };
+        new MutationObserver(records => {
+            window.__readerResizeProbe.replacements += records.filter(
+                record => record.addedNodes.length || record.removedNodes.length
+            ).length;
+            if (!pages.querySelector('canvas')) window.__readerResizeProbe.sawBlank = true;
+        }).observe(pages, { childList: true });
+    }""")
+
+    for height in (700, 820, 740, 844):
+        page.set_viewport_size({"width": 390, "height": height})
+        page.evaluate("window.dispatchEvent(new Event('resize'))")
+    page.wait_for_timeout(500)
+    if page.locator("canvas[data-resize-probe='height-original']").count() != 1:
+        raise AssertionError("Height-only resize unnecessarily replaced the rendered brochure")
+    if page.evaluate("window.__readerResizeProbe.replacements") != 0:
+        raise AssertionError("Height-only resize caused brochure DOM replacement")
+
+    page.evaluate("""() => {
+        window.__originalCanvasGetContext = HTMLCanvasElement.prototype.getContext;
+        HTMLCanvasElement.prototype.getContext = () => { throw new Error('forced responsive render failure'); };
+    }""")
+    with page.expect_event(
+        "console",
+        predicate=lambda message: "Literature reader failed to rerender brochure" in message.text,
+        timeout=10000,
+    ):
+        page.set_viewport_size({"width": 430, "height": 844})
+    if page.locator("canvas[data-resize-probe='height-original']").count() != 1:
+        raise AssertionError("Failed responsive rerender destroyed the existing brochure")
+    if page.locator(".reader-error").is_visible() or page.evaluate("window.__readerResizeProbe.sawBlank"):
+        raise AssertionError("Failed responsive rerender exposed a user-visible or blank error state")
+    page.evaluate("() => { HTMLCanvasElement.prototype.getContext = window.__originalCanvasGetContext; }")
+
+    page.set_viewport_size({"width": 431, "height": 844})
+    page.wait_for_function("!document.querySelector(\"canvas[data-resize-probe='height-original']\")", timeout=30000)
+    if page.evaluate("window.__readerResizeProbe.replacements") != 1:
+        raise AssertionError("One material width change did not produce exactly one atomic brochure replacement")
+    page.evaluate("document.querySelector('.brochure-page canvas').dataset.resizeProbe = 'rapid-original'")
+
+    for viewport in (
+        {"width": 410, "height": 760},
+        {"width": 440, "height": 700},
+        {"width": 400, "height": 820},
+        {"width": 420, "height": 844},
+    ):
+        page.set_viewport_size(viewport)
+        page.evaluate("window.dispatchEvent(new Event('resize'))")
+    page.wait_for_function("""() => {
+        const canvas = document.querySelector('.brochure-page canvas');
+        const pages = document.getElementById('brochure-pages');
+        return canvas && !canvas.matches('[data-resize-probe="rapid-original"]') &&
+            Math.abs(parseFloat(canvas.style.width) - (pages.clientWidth - 16)) <= 1;
+    }""", timeout=30000)
+
+    if page.locator(".reader-error").is_visible():
+        raise AssertionError("Reader error became visible during resize lifecycle tests")
+    if page.locator(".brochure-page canvas").count() != initial_page_count:
+        raise AssertionError("Reader page count changed during resize lifecycle tests")
+    if page.evaluate("window.__readerResizeProbe.sawBlank"):
+        raise AssertionError("Reader exposed a blank brochure state during atomic replacement")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError("Literature reader has horizontal overflow after rapid resize")
+    if not page.locator(".brochure-page canvas").evaluate_all(
+        "canvases => canvases.every(canvas => canvas.width > 0 && canvas.height > 0)"
+    ):
+        raise AssertionError("Literature reader contains an unreadable blank-size canvas after resize")
+    if ".pdf" in urlparse(page.url).path or not urlparse(page.url).path.endswith("/Literature-reader.html"):
+        raise AssertionError("Literature reader navigated away during resize lifecycle tests")
+
+
 def capture_screenshots(page, base_url: str, directory: Path) -> None:
     directory.mkdir(parents=True, exist_ok=True)
     captures = (
@@ -411,6 +492,7 @@ def main() -> int:
         for document_id, reader_title in (("ip07", "Зависимый ли я?"),):
             for width in (320, 768, 1280):
                 check_literature_reader(page, base_url, document_id, reader_title, width)
+        check_literature_reader_resize_stability(page, base_url)
         check_literature_reader_error(page, base_url)
         for width in (320, 390, 768, 1280):
             check_audiobook(page, base_url, width)
