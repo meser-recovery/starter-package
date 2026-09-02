@@ -1,3 +1,6 @@
+.site-page { display: flex; flex-direction: column; min-height: 100svh; }
+.site-page > main { flex: 1; }
+
 .site-header { background: var(--color-surface); border-bottom: 1px solid var(--color-border); }
 .site-header__content { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; min-height: 5.75rem; }
 .site-header img { width: 3.25rem; height: 3.25rem; }

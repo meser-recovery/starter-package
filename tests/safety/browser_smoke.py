@@ -56,6 +56,9 @@ def visible_text(locator) -> str:
 def check_literature(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(url(base_url, "/Literature.html"), wait_until="domcontentloaded")
+    page.wait_for_function("getComputedStyle(document.body).display === 'flex'")
+    if not page.evaluate("document.body.scrollHeight >= window.innerHeight"):
+        raise AssertionError(f"Literature does not fill the viewport at {width}px")
     if page.locator("html").get_attribute("lang") != "ru":
         raise AssertionError("Literature must use Russian document language")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Информационные проспекты":
@@ -99,6 +102,9 @@ def check_literature(page, base_url: str, width: int) -> None:
 def check_audiobook(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     page.goto(url(base_url, "/AudioBook.html"), wait_until="domcontentloaded")
+    page.wait_for_function("getComputedStyle(document.body).display === 'flex'")
+    if not page.evaluate("document.body.scrollHeight >= window.innerHeight"):
+        raise AssertionError(f"AudioBook does not fill the viewport at {width}px")
     if page.locator("html").get_attribute("lang") != "ru":
         raise AssertionError("AudioBook must use Russian document language")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Базовый текст (аудио)":
