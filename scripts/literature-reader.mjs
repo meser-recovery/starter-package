@@ -19,6 +19,12 @@ const documentId = new URLSearchParams(window.location.search).get("doc");
 const brochure = BROCHURES[documentId];
 let pdfDocument;
 let rerenderTimer;
+let renderInProgress = false;
+let renderPromise;
+let pendingRenderWidth;
+let lastSuccessfulRenderWidth;
+
+const WIDTH_CHANGE_TOLERANCE = 1;
 
 function showError(message) {
   status.hidden = true;
@@ -30,14 +36,18 @@ function pageWidth() {
   return Math.max(1, pages.clientWidth - 16);
 }
 
-async function renderPages() {
-  pages.replaceChildren();
+function widthChanged(nextWidth, previousWidth) {
+  return previousWidth === undefined || Math.abs(nextWidth - previousWidth) > WIDTH_CHANGE_TOLERANCE;
+}
+
+async function buildRenderedPages(targetWidth) {
+  const replacement = document.createDocumentFragment();
   const pixelRatio = Math.min(window.devicePixelRatio || 1, 2);
 
   for (let number = 1; number <= pdfDocument.numPages; number += 1) {
     const pdfPage = await pdfDocument.getPage(number);
     const originalViewport = pdfPage.getViewport({ scale: 1 });
-    const cssScale = pageWidth() / originalViewport.width;
+    const cssScale = targetWidth / originalViewport.width;
     const cssViewport = pdfPage.getViewport({ scale: cssScale });
     const renderViewport = pdfPage.getViewport({ scale: cssScale * pixelRatio });
     const surface = document.createElement("article");
@@ -51,9 +61,43 @@ async function renderPages() {
     canvas.style.width = `${Math.ceil(cssViewport.width)}px`;
     canvas.style.height = `${Math.ceil(cssViewport.height)}px`;
     surface.append(canvas);
-    pages.append(surface);
+    replacement.append(surface);
     await pdfPage.render({ canvasContext: context, viewport: renderViewport }).promise;
   }
+
+  return replacement;
+}
+
+async function processRenderQueue() {
+  while (pendingRenderWidth !== undefined) {
+    const targetWidth = pendingRenderWidth;
+    pendingRenderWidth = undefined;
+
+    if (!widthChanged(targetWidth, lastSuccessfulRenderWidth)) continue;
+
+    try {
+      const replacement = await buildRenderedPages(targetWidth);
+      if (pendingRenderWidth !== undefined && widthChanged(pendingRenderWidth, targetWidth)) continue;
+      pages.replaceChildren(replacement);
+      lastSuccessfulRenderWidth = targetWidth;
+      status.textContent = `Показано страниц: ${pdfDocument.numPages}`;
+    } catch (renderError) {
+      if (lastSuccessfulRenderWidth === undefined) throw renderError;
+      console.error("Literature reader failed to rerender brochure", renderError);
+    }
+  }
+}
+
+function requestRender(targetWidth) {
+  pendingRenderWidth = targetWidth;
+  if (!renderInProgress) {
+    renderInProgress = true;
+    renderPromise = processRenderQueue().finally(() => {
+      renderInProgress = false;
+      renderPromise = undefined;
+    });
+  }
+  return renderPromise;
 }
 
 async function loadBrochure() {
@@ -74,8 +118,7 @@ async function loadBrochure() {
     }
     const data = await response.arrayBuffer();
     pdfDocument = await pdfjsLib.getDocument({ data }).promise;
-    await renderPages();
-    status.textContent = `Показано страниц: ${pdfDocument.numPages}`;
+    await requestRender(pageWidth());
   } catch (loadError) {
     console.error("Literature reader failed to load brochure", loadError);
     showError("Не удалось открыть проспект. Попробуйте ещё раз позже или вернитесь к списку проспектов.");
@@ -84,11 +127,12 @@ async function loadBrochure() {
 
 window.addEventListener("resize", () => {
   if (!pdfDocument) return;
+  const availableWidth = pageWidth();
+  if (!widthChanged(availableWidth, lastSuccessfulRenderWidth)) return;
   window.clearTimeout(rerenderTimer);
   rerenderTimer = window.setTimeout(() => {
-    renderPages().catch((renderError) => {
-      console.error("Literature reader failed to rerender brochure", renderError);
-      showError("Не удалось обновить отображение проспекта. Попробуйте ещё раз позже.");
+    requestRender(pageWidth()).catch((renderError) => {
+      console.error("Literature reader failed during resize", renderError);
     });
   }, 150);
 });
