@@ -140,6 +140,15 @@ def check_audiobook(page, base_url: str, width: int) -> None:
         raise AssertionError(f"AudioBook iframe content has horizontal clipping at {width}px")
     if not frame.locator("html").evaluate("document.documentElement.scrollHeight <= window.innerHeight"):
         raise AssertionError(f"AudioBook iframe is too short for its player content at {width}px")
+    content_height = frame.locator("body").evaluate("""() => {
+        const player = document.querySelector('.player-wrap');
+        if (!player) return 0;
+        const styles = getComputedStyle(player);
+        return player.getBoundingClientRect().bottom + parseFloat(styles.marginBottom);
+    }""")
+    frame_height = frame.locator("html").evaluate("window.innerHeight")
+    if not content_height or frame_height < content_height or frame_height - content_height > 48:
+        raise AssertionError(f"AudioBook iframe has excessive unused height at {width}px")
 
 
 def main() -> int:
