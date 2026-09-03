@@ -10,7 +10,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -419,7 +419,6 @@ def check_calendar_contract(errors: list[str]) -> None:
 
 def check_google_drive_contract(errors: list[str]) -> None:
     drive = ROOT / "Google-Drive.html"
-    runtime = ROOT / "scripts" / "google-drive.js"
     if not drive.is_file():
         errors.append("Google-Drive.html is missing")
         return
@@ -445,26 +444,59 @@ def check_google_drive_contract(errors: list[str]) -> None:
     if styles != ["styles/foundation.css", "styles/components.css", "styles/google-drive.css"]:
         errors.append("Google-Drive.html: expected shared and dedicated Drive stylesheets")
     scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
-    if scripts != ["scripts/google-drive.js"]:
-        errors.append("Google-Drive.html: expected one dedicated Drive runtime")
+    if scripts:
+        errors.append("Google-Drive.html: native catalog must not load a dedicated runtime")
     if "nicepage" in source.lower() or "jquery" in source.lower():
         errors.append("Google-Drive.html: Nicepage or jQuery dependency remains")
     if (ROOT / "Google-Drive.css").exists():
         errors.append("Google-Drive.css: legacy stylesheet should have no remaining consumer")
-    required_ids = {"gd-frame", "gd-frame-wrap", "gd-placeholder", "gd-open-btn", "gd-note"}
-    ids = {attrs.get("id") for _tag, attrs in parser.start_tags}
-    if not required_ids.issubset(ids):
-        errors.append("Google-Drive.html: required Drive element IDs are missing")
-    frames = [attrs for tag, attrs in parser.start_tags if tag == "iframe" and attrs.get("id") == "gd-frame"]
-    if len(frames) != 1 or frames[0].get("title") != "Материалы Google Drive":
-        errors.append("Google-Drive.html: expected one titled Drive iframe")
-    actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and attrs.get("id") == "gd-open-btn"]
-    if len(actions) != 1 or actions[0].get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((actions[0].get("rel") or "").split())):
-        errors.append("Google-Drive.html: Drive action lacks safe new-tab semantics")
-    runtime_source = runtime.read_text(encoding="utf-8", errors="replace") if runtime.is_file() else ""
-    for required in ('const FOLDER_ID = "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"', 'const FOLDER_VIEW = "grid"', 'const isConfigured = FOLDER_ID && FOLDER_ID !== "FOLDER_ID_HERE"', 'https://drive.google.com/embeddedfolderview?id=', '&hl=ru#', 'https://drive.google.com/drive/folders/', 'https://accounts.google.com/AccountChooser?continue=', '&service=writely', 'frame.src = embeddedUrl', 'openButton.href = chooserUrl', 'frame.hidden = true', 'placeholder.hidden = false', 'openButton.href = fallbackUrl', 'https://drive.google.com/drive/my-drive'):
-        if required not in runtime_source:
-            errors.append(f"Google-Drive.html: runtime missing required Drive contract: {required}")
+    if any(tag == "iframe" for tag, _attrs in parser.start_tags) or "embeddedfolderview" in source:
+        errors.append("Google-Drive.html: obsolete Drive iframe integration remains")
+    if (ROOT / "scripts" / "google-drive.js").exists():
+        errors.append("scripts/google-drive.js: obsolete iframe runtime should be removed")
+    expected_folders = (
+        ("Аварийная коммуникация", "1DxqR91OJeER4nsPxPqncvBNH0379wOxX"),
+        ("Архив спикерских", "1MuiNuW6oBzgDls1y_MeGXgOu0qrZhjdr"),
+        ("Карточки", "1aZTL1CoTwpVrdKlE8O7KOtQjlmj_0s9g"),
+        ("Концепции служения", "1qI_HNm2Ifay0jiLZmcsI1Qy1f6Z1Y0iU"),
+        ("Отчёты", "1-X980mz_eSJ0IVh8sr3uWmdbG_SM3Xvt"),
+        ("Преамбулы", "1U86CV0y4ziA9ex-WjHcfbdbxVD3aQi0q"),
+        ("Устав", "1dZ1Z3I_I79-mWCsaxTi5Jg11SAiEzPjq"),
+    )
+    labels = re.findall(r'<span class="drive-folder__label">([^<]+)</span>', source)
+    if labels != [label for label, _folder_id in expected_folders]:
+        errors.append("Google-Drive.html: folder labels or their order changed")
+    folders = [attrs for tag, attrs in parser.start_tags if tag == "a" and "drive-folder" in (attrs.get("class") or "").split()]
+    if len(folders) != len(expected_folders):
+        errors.append("Google-Drive.html: expected exactly seven folder-card links")
+    for index, (_label, folder_id) in enumerate(expected_folders):
+        if index >= len(folders):
+            break
+        folder = folders[index]
+        parsed = urlparse(folder.get("href") or "")
+        values = parse_qs(parsed.query)
+        expected_continue = f"https://drive.google.com/drive/folders/{folder_id}"
+        if (parsed.scheme != "https" or parsed.netloc != "accounts.google.com" or parsed.path != "/AccountChooser" or
+                values.get("continue") != [expected_continue] or values.get("service") != ["writely"]):
+            errors.append(f"Google-Drive.html: folder card {index + 1} AccountChooser destination changed")
+        if folder.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((folder.get("rel") or "").split())):
+            errors.append(f"Google-Drive.html: folder card {index + 1} lacks safe new-tab semantics")
+    parent_actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and attrs.get("id") == "drive-open-all"]
+    parent_id = "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"
+    if len(parent_actions) != 1:
+        errors.append("Google-Drive.html: expected one parent-folder action")
+    else:
+        parent = parent_actions[0]
+        parsed = urlparse(parent.get("href") or "")
+        values = parse_qs(parsed.query)
+        expected_continue = f"https://drive.google.com/drive/folders/{parent_id}"
+        if (parsed.scheme != "https" or parsed.netloc != "accounts.google.com" or parsed.path != "/AccountChooser" or
+                values.get("continue") != [expected_continue] or values.get("service") != ["writely"]):
+            errors.append("Google-Drive.html: parent-folder AccountChooser destination changed")
+        if parent.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((parent.get("rel") or "").split())):
+            errors.append("Google-Drive.html: parent-folder action lacks safe new-tab semantics")
+    if "Загрузка и редактирование файлов доступны только тем, кому выданы права Editor на эту папку." not in source:
+        errors.append("Google-Drive.html: permission note is missing")
 
 
 def local_check(contract: dict) -> tuple[list[str], list[str]]:

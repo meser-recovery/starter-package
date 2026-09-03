@@ -774,23 +774,26 @@ def check_calendar_mode_transition(page, base_url: str) -> None:
         assert_calendar_url(frame, expected_mode, f"transition {width}px")
 
 
-def assert_google_drive_urls(frame, action, context: str) -> None:
-    frame_source = frame.get_attribute("src") or ""
-    frame_url = urlparse(frame_source)
-    frame_values = parse_qs(frame_url.query)
-    if (frame_url.scheme != "https" or frame_url.netloc != "drive.google.com" or
-            frame_url.path != "/embeddedfolderview" or
-            frame_values.get("id") != ["1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"] or
-            frame_values.get("hl") != ["ru"] or frame_url.fragment != "grid"):
-        raise AssertionError(f"Drive embed URL contract failed at {context}: observed={frame_source}")
-    action_source = action.get_attribute("href") or ""
-    action_url = urlparse(action_source)
-    action_values = parse_qs(action_url.query)
-    expected_folder_url = "https://drive.google.com/drive/folders/1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"
-    if (action_url.scheme != "https" or action_url.netloc != "accounts.google.com" or
-            action_url.path != "/AccountChooser" or action_values.get("service") != ["writely"] or
-            action_values.get("continue") != [expected_folder_url]):
-        raise AssertionError(f"Drive account chooser URL contract failed at {context}: observed={action_source}")
+DRIVE_FOLDERS = (
+    ("Аварийная коммуникация", "1DxqR91OJeER4nsPxPqncvBNH0379wOxX"),
+    ("Архив спикерских", "1MuiNuW6oBzgDls1y_MeGXgOu0qrZhjdr"),
+    ("Карточки", "1aZTL1CoTwpVrdKlE8O7KOtQjlmj_0s9g"),
+    ("Концепции служения", "1qI_HNm2Ifay0jiLZmcsI1Qy1f6Z1Y0iU"),
+    ("Отчёты", "1-X980mz_eSJ0IVh8sr3uWmdbG_SM3Xvt"),
+    ("Преамбулы", "1U86CV0y4ziA9ex-WjHcfbdbxVD3aQi0q"),
+    ("Устав", "1dZ1Z3I_I79-mWCsaxTi5Jg11SAiEzPjq"),
+)
+
+
+def assert_drive_chooser_url(link, folder_id: str, context: str) -> None:
+    source = link.get_attribute("href") or ""
+    parsed = urlparse(source)
+    values = parse_qs(parsed.query)
+    expected_continue = f"https://drive.google.com/drive/folders/{folder_id}"
+    if (parsed.scheme != "https" or parsed.netloc != "accounts.google.com" or
+            parsed.path != "/AccountChooser" or values.get("service") != ["writely"] or
+            values.get("continue") != [expected_continue]):
+        raise AssertionError(f"Drive AccountChooser URL contract failed at {context}: observed={source}")
 
 
 def check_google_drive(page, base_url: str, width: int) -> None:
@@ -804,26 +807,51 @@ def check_google_drive(page, base_url: str, width: int) -> None:
         raise AssertionError(f"Drive main landmark or skip link is missing at {width}px")
     if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
         raise AssertionError(f"Drive shared navigation is missing at {width}px")
-    frame = page.locator("#gd-frame")
-    frame.wait_for(state="visible")
-    frame_box = frame.bounding_box()
-    if not frame_box or frame_box["width"] <= 0 or frame_box["height"] <= 0 or frame.get_attribute("title") != "Материалы Google Drive":
-        raise AssertionError(f"Drive iframe geometry or title is invalid at {width}px: {frame_box}")
-    if page.locator("#gd-placeholder").is_visible():
-        raise AssertionError(f"Drive placeholder must be hidden for the configured folder at {width}px")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Drive has horizontal overflow at {width}px")
-    action = page.locator("#gd-open-btn")
-    if action.count() != 1 or not action.is_visible() or action.get_attribute("target") != "_blank":
-        raise AssertionError(f"Drive action is missing at {width}px")
-    if not {"noopener", "noreferrer"}.issubset(set((action.get_attribute("rel") or "").split())):
-        raise AssertionError(f"Drive action lacks safe semantics at {width}px")
-    action.focus()
-    if not action.evaluate("element => document.activeElement === element"):
-        raise AssertionError(f"Drive action is not keyboard focusable at {width}px")
+    cards = page.locator("a.drive-folder")
+    labels = page.locator(".drive-folder__label")
+    if cards.count() != len(DRIVE_FOLDERS) or labels.count() != len(DRIVE_FOLDERS):
+        raise AssertionError(f"Drive must show seven folder cards at {width}px")
+    if [labels.nth(index).inner_text() for index in range(labels.count())] != [label for label, _folder_id in DRIVE_FOLDERS]:
+        raise AssertionError(f"Drive folder labels or order changed at {width}px")
+    card_boxes = []
+    for index, (_label, folder_id) in enumerate(DRIVE_FOLDERS):
+        card = cards.nth(index)
+        label = labels.nth(index)
+        if not card.is_visible() or not label.is_visible():
+            raise AssertionError(f"Drive folder card {index + 1} is not visible at {width}px")
+        box = card.bounding_box()
+        label_box = label.bounding_box()
+        if not box or not label_box or box["width"] < 120 or box["height"] < 44:
+            raise AssertionError(f"Drive folder card {index + 1} has unusable geometry at {width}px: card={box}, label={label_box}")
+        clipped = label.evaluate("""element => {
+            const style = getComputedStyle(element);
+            return style.textOverflow === 'ellipsis' || style.overflow !== 'visible' ||
+                element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight;
+        }""")
+        if clipped:
+            raise AssertionError(f"Drive folder label is clipped at {width}px: {label.inner_text()}")
+        if card.get_attribute("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((card.get_attribute("rel") or "").split())):
+            raise AssertionError(f"Drive folder card {index + 1} lacks safe new-tab semantics at {width}px")
+        card.focus()
+        if not card.evaluate("element => document.activeElement === element"):
+            raise AssertionError(f"Drive folder card {index + 1} is not keyboard focusable at {width}px")
+        assert_drive_chooser_url(card, folder_id, f"folder {index + 1} at {width}px")
+        card_boxes.append(box)
+    if width >= 768 and len({round(box["x"]) for box in card_boxes[:3]}) < 2:
+        raise AssertionError(f"Drive desktop catalog must display multiple cards per row at {width}px: {card_boxes[:3]}")
+    parent = page.locator("#drive-open-all")
+    if parent.count() != 1 or not parent.is_visible() or parent.get_attribute("target") != "_blank":
+        raise AssertionError(f"Drive parent-folder action is missing at {width}px")
+    if not {"noopener", "noreferrer"}.issubset(set((parent.get_attribute("rel") or "").split())):
+        raise AssertionError(f"Drive parent-folder action lacks safe semantics at {width}px")
+    parent.focus()
+    if not parent.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Drive parent-folder action is not keyboard focusable at {width}px")
+    assert_drive_chooser_url(parent, "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc", f"parent action at {width}px")
     if page.locator("footer.site-footer").count() != 1:
         raise AssertionError(f"Drive footer is missing at {width}px")
-    assert_google_drive_urls(frame, action, f"{width}px")
 
 
 def main() -> int:
