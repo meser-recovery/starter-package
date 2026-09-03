@@ -610,6 +610,52 @@ def check_delayed_stylesheet_readiness(browser, base_url: str) -> None:
     finally:
         context.close()
 
+
+def calculator_wheel_state(page) -> dict:
+    return page.evaluate("""() => {
+        const today = new Date();
+        const expected = [String(today.getDate()), String(today.getMonth() + 1), String(today.getFullYear())];
+        const wheels = ['cp-wheel-day', 'cp-wheel-month', 'cp-wheel-year'].map((id) => {
+            const wheel = document.getElementById(id);
+            const active = wheel?.querySelector('.cp-wheel-item.is-active');
+            const wheelRect = wheel?.getBoundingClientRect();
+            const activeRect = active?.getBoundingClientRect();
+            const offsetY = wheelRect && activeRect
+                ? ((activeRect.top + activeRect.bottom) - (wheelRect.top + wheelRect.bottom)) / 2
+                : null;
+            return {
+                id,
+                active: active?.dataset.value || '',
+                scrollTop: wheel?.scrollTop ?? null,
+                activeCenterY: activeRect ? (activeRect.top + activeRect.bottom) / 2 : null,
+                wheelCenterY: wheelRect ? (wheelRect.top + wheelRect.bottom) / 2 : null,
+                offsetY,
+            };
+        });
+        return { expected, wheels };
+    }""")
+
+
+def wait_for_calculator_wheel_alignment(page, phase: str) -> None:
+    try:
+        page.wait_for_function("""() => {
+            const today = new Date();
+            const expected = [String(today.getDate()), String(today.getMonth() + 1), String(today.getFullYear())];
+            return ['cp-wheel-day', 'cp-wheel-month', 'cp-wheel-year'].every((id, index) => {
+                const wheel = document.getElementById(id);
+                const active = wheel?.querySelector('.cp-wheel-item.is-active');
+                if (!wheel || !active || active.dataset.value !== expected[index]) return false;
+                const wheelRect = wheel.getBoundingClientRect();
+                const activeRect = active.getBoundingClientRect();
+                return Math.abs(((activeRect.top + activeRect.bottom) - (wheelRect.top + wheelRect.bottom)) / 2) <= 1;
+            });
+        }""")
+    except Error as exc:
+        raise AssertionError(
+            f"Calculator wheel alignment did not settle after {phase}: {calculator_wheel_state(page)}"
+        ) from exc
+
+
 def check_calculator(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     goto_ready(page, url(base_url, "/Calculator.html"))
@@ -641,6 +687,7 @@ def check_calculator(page, base_url: str, width: int) -> None:
     if modal.get_attribute("aria-hidden") != "false" or not modal.is_visible():
         raise AssertionError("Calculator modal did not open")
     page.wait_for_function("document.activeElement && document.activeElement.id === 'cp-closeModal'")
+    wait_for_calculator_wheel_alignment(page, "opening the modal")
     page.keyboard.press("Escape")
     if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
         raise AssertionError("Calculator modal did not close with Escape")
@@ -651,28 +698,7 @@ def check_calculator(page, base_url: str, width: int) -> None:
         raise AssertionError("Calculator modal did not close from its backdrop")
     page.locator("#cp-openPicker").click()
     page.locator("#cp-today").click()
-    page.wait_for_function("""() => {
-        const today = new Date();
-        const expected = [String(today.getFullYear()), String(today.getMonth() + 1), String(today.getDate())];
-        const selected = ['cp-wheel-year', 'cp-wheel-month', 'cp-wheel-day'].map((id) =>
-            document.querySelector(`#${id} .cp-wheel-item.is-active`)?.dataset.value || '');
-        return selected.every((value, index) => value === expected[index]);
-    }""")
-    wheel_values = page.evaluate("""() => {
-        const today = new Date();
-        return {
-        today: [today.getFullYear(), today.getMonth() + 1, today.getDate()].join('-'),
-        selected: ['cp-wheel-year', 'cp-wheel-month', 'cp-wheel-day'].map((id) =>
-            document.querySelector(`#${id} .cp-wheel-item.is-active`)?.dataset.value || '')
-        };
-    }""")
-    expected_wheels = wheel_values["today"].split("-")
-    if wheel_values["selected"] != [expected_wheels[0], str(int(expected_wheels[1])), str(int(expected_wheels[2]))]:
-        raise AssertionError(
-            f"Calculator Today did not synchronize the date wheels: "
-            f"expected={[expected_wheels[0], str(int(expected_wheels[1])), str(int(expected_wheels[2]))]}, "
-            f"observed={wheel_values['selected']}"
-        )
+    wait_for_calculator_wheel_alignment(page, "selecting Today")
     page.locator("#cp-save").click()
     if page.locator("#cp-totalDays").inner_text() != "0":
         raise AssertionError("Calculator Today must produce zero elapsed days")
