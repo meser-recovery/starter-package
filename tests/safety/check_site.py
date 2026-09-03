@@ -417,6 +417,86 @@ def check_calendar_contract(errors: list[str]) -> None:
             errors.append(f"Calendar.html: runtime missing required Calendar contract: {required}")
 
 
+def check_google_drive_contract(errors: list[str]) -> None:
+    drive = ROOT / "Google-Drive.html"
+    if not drive.is_file():
+        errors.append("Google-Drive.html is missing")
+        return
+    source = drive.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(drive)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Google-Drive.html: html lang must be ru")
+    if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: shared full-height page shell is missing")
+    if parser.h1_texts != ["Материалы"]:
+        errors.append("Google-Drive.html: expected one H1: Материалы")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: skip link is missing")
+    for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./"), ("service-link", "Admin-panel.html")):
+        if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
+            errors.append(f"Google-Drive.html: shared {class_name} link is missing")
+    if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: shared footer is missing")
+    styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
+    if styles != ["styles/foundation.css", "styles/components.css", "styles/google-drive.css"]:
+        errors.append("Google-Drive.html: expected shared and dedicated Drive stylesheets")
+    scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
+    if scripts:
+        errors.append("Google-Drive.html: native catalog must not load a dedicated runtime")
+    if "nicepage" in source.lower() or "jquery" in source.lower():
+        errors.append("Google-Drive.html: Nicepage or jQuery dependency remains")
+    if (ROOT / "Google-Drive.css").exists():
+        errors.append("Google-Drive.css: legacy stylesheet should have no remaining consumer")
+    if any(tag == "iframe" for tag, _attrs in parser.start_tags) or "embeddedfolderview" in source:
+        errors.append("Google-Drive.html: obsolete Drive iframe integration remains")
+    if "accounts.google.com/AccountChooser" in source or "service=writely" in source or "continue=" in source:
+        errors.append("Google-Drive.html: obsolete AccountChooser integration remains")
+    if (ROOT / "scripts" / "google-drive.js").exists():
+        errors.append("scripts/google-drive.js: obsolete iframe runtime should be removed")
+    expected_folders = (
+        ("Аварийная коммуникация", "1DxqR91OJeER4nsPxPqncvBNH0379wOxX"),
+        ("Архив спикерских", "1MuiNuW6oBzgDls1y_MeGXgOu0qrZhjdr"),
+        ("Карточки", "1aZTL1CoTwpVrdKlE8O7KOtQjlmj_0s9g"),
+        ("Концепции служения", "1qI_HNm2Ifay0jiLZmcsI1Qy1f6Z1Y0iU"),
+        ("Отчёты", "1-X980mz_eSJ0IVh8sr3uWmdbG_SM3Xvt"),
+        ("Преамбулы", "1U86CV0y4ziA9ex-WjHcfbdbxVD3aQi0q"),
+        ("Устав", "1dZ1Z3I_I79-mWCsaxTi5Jg11SAiEzPjq"),
+    )
+    labels = re.findall(r'<span class="drive-folder__label">([^<]+)</span>', source)
+    if labels != [label for label, _folder_id in expected_folders]:
+        errors.append("Google-Drive.html: folder labels or their order changed")
+    folders = [attrs for tag, attrs in parser.start_tags if tag == "a" and "drive-folder" in (attrs.get("class") or "").split()]
+    if len(folders) != len(expected_folders):
+        errors.append("Google-Drive.html: expected exactly seven folder-card links")
+    for index, (_label, folder_id) in enumerate(expected_folders):
+        if index >= len(folders):
+            break
+        folder = folders[index]
+        parsed = urlparse(folder.get("href") or "")
+        if (parsed.scheme != "https" or parsed.netloc != "drive.google.com" or
+                parsed.path != f"/drive/folders/{folder_id}" or parsed.query or parsed.fragment):
+            errors.append(f"Google-Drive.html: folder card {index + 1} direct Drive destination changed")
+        if folder.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((folder.get("rel") or "").split())):
+            errors.append(f"Google-Drive.html: folder card {index + 1} lacks safe new-tab semantics")
+    parent_actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and attrs.get("id") == "drive-open-all"]
+    parent_id = "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"
+    if len(parent_actions) != 1:
+        errors.append("Google-Drive.html: expected one parent-folder action")
+    else:
+        parent = parent_actions[0]
+        parsed = urlparse(parent.get("href") or "")
+        if (parsed.scheme != "https" or parsed.netloc != "drive.google.com" or
+                parsed.path != f"/drive/folders/{parent_id}" or parsed.query or parsed.fragment):
+            errors.append("Google-Drive.html: parent-folder direct Drive destination changed")
+        if parent.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((parent.get("rel") or "").split())):
+            errors.append("Google-Drive.html: parent-folder action lacks safe new-tab semantics")
+    if "Материалы доступны для просмотра всем по ссылке. Редактирование доступно только пользователям с соответствующими правами." not in source:
+        errors.append("Google-Drive.html: permission note is missing")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -453,6 +533,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_offline_meetings_contract(errors)
     check_calculator_contract(errors)
     check_calendar_contract(errors)
+    check_google_drive_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
