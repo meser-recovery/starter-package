@@ -729,6 +729,15 @@ def assert_calendar_url(frame, expected_mode: str, context: str) -> None:
         raise AssertionError(f"Calendar URL contract failed at {context}: expected mode={expected_mode}, observed={source}")
 
 
+def assert_calendar_action_url(action, context: str) -> None:
+    source = action.get_attribute("href") or ""
+    parsed = urlparse(source)
+    values = parse_qs(parsed.query)
+    if (parsed.scheme != "https" or parsed.netloc != "calendar.google.com" or
+            parsed.path != "/calendar/r/week" or values != {"cid": ["meserproject@gmail.com"]}):
+        raise AssertionError(f"Calendar direct action URL contract failed at {context}: observed={source}")
+
+
 def check_calendar(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     goto_ready(page, url(base_url, "/Calendar.html"))
@@ -748,13 +757,17 @@ def check_calendar(page, base_url: str, width: int) -> None:
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Calendar has horizontal overflow at {width}px")
     edit = page.locator("a.gc-btn")
-    if edit.count() != 1 or not edit.is_visible() or edit.get_attribute("target") != "_blank":
+    if (edit.count() != 1 or not edit.is_visible() or edit.inner_text() != "Открыть календарь в Google Calendar" or
+            edit.get_attribute("target") != "_blank"):
         raise AssertionError(f"Calendar edit action is missing at {width}px")
     if not {"noopener", "noreferrer"}.issubset(set((edit.get_attribute("rel") or "").split())):
         raise AssertionError(f"Calendar edit action lacks safe semantics at {width}px")
     edit.focus()
     if not edit.evaluate("element => document.activeElement === element"):
         raise AssertionError(f"Calendar edit action is not keyboard focusable at {width}px")
+    assert_calendar_action_url(edit, f"{width}px")
+    if page.locator(".gc-note").inner_text() != "Календарь доступен для просмотра здесь. Пользователи с соответствующими правами могут редактировать его в Google Calendar.":
+        raise AssertionError(f"Calendar direct action note is invalid at {width}px")
     if page.locator("footer.site-footer").count() != 1:
         raise AssertionError(f"Calendar footer is missing at {width}px")
     assert_calendar_url(frame, "AGENDA" if width <= 640 else "WEEK", f"{width}px")

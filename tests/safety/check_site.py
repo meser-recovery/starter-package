@@ -10,7 +10,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import urljoin, urlparse, urlunparse
+from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -405,12 +405,23 @@ def check_calendar_contract(errors: list[str]) -> None:
     frames = [attrs for tag, attrs in parser.start_tags if tag == "iframe" and attrs.get("id") == "gc-frame"]
     if len(frames) != 1 or frames[0].get("title") != "Календарь событий":
         errors.append("Calendar.html: expected one titled Google Calendar iframe")
-    edit_url = "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fr%2Fweek%3Fcid%3Dmeserproject%2540gmail.com&service=cl"
     edits = [attrs for tag, attrs in parser.start_tags if tag == "a" and "gc-btn" in (attrs.get("class") or "").split()]
-    if len(edits) != 1 or edits[0].get("href") != edit_url:
-        errors.append("Calendar.html: edit action destination changed")
+    if len(edits) != 1:
+        errors.append("Calendar.html: expected one edit action")
     elif edits[0].get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((edits[0].get("rel") or "").split())):
         errors.append("Calendar.html: edit action lacks safe new-tab semantics")
+    else:
+        parsed = urlparse(edits[0].get("href") or "")
+        values = parse_qs(parsed.query)
+        if (parsed.scheme != "https" or parsed.netloc != "calendar.google.com" or
+                parsed.path != "/calendar/r/week" or values != {"cid": ["meserproject@gmail.com"]}):
+            errors.append("Calendar.html: edit action direct Calendar destination changed")
+    if "accounts.google.com/AccountChooser" in source or "continue=" in source or "service=cl" in source:
+        errors.append("Calendar.html: obsolete AccountChooser action remains")
+    if "Открыть календарь в Google Calendar" not in source:
+        errors.append("Calendar.html: direct Calendar action label is missing")
+    if "Календарь доступен для просмотра здесь. Пользователи с соответствующими правами могут редактировать его в Google Calendar." not in source:
+        errors.append("Calendar.html: direct Calendar permission note is missing")
     runtime_source = runtime.read_text(encoding="utf-8", errors="replace") if runtime.is_file() else ""
     for required in ('const CALENDAR_ID = "meserproject%40gmail.com"', 'const MOBILE_QUERY = "(max-width: 640px)"', 'ctz=Asia%2FJerusalem', '"AGENDA"', '"WEEK"', 'wkst=2'):
         if required not in runtime_source:
