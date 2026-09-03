@@ -365,6 +365,58 @@ def check_calculator_contract(errors: list[str]) -> None:
         errors.append("Calculator.html: persistent localStorage key or runtime is missing")
 
 
+def check_calendar_contract(errors: list[str]) -> None:
+    calendar = ROOT / "Calendar.html"
+    runtime = ROOT / "scripts" / "calendar.js"
+    if not calendar.is_file():
+        errors.append("Calendar.html is missing")
+        return
+    source = calendar.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(calendar)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Calendar.html: html lang must be ru")
+    if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: shared full-height page shell is missing")
+    if parser.h1_texts != ["Календарь событий"]:
+        errors.append("Calendar.html: expected one H1: Календарь событий")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: skip link is missing")
+    if not any(tag == "a" and "site-header__logo" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: shared home-linked logo is missing")
+    if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: shared home-linked identity is missing")
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: shared service link is missing")
+    if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Calendar.html: shared footer is missing")
+    styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
+    if styles != ["styles/foundation.css", "styles/components.css", "styles/calendar.css"]:
+        errors.append("Calendar.html: expected shared and dedicated calendar stylesheets")
+    scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
+    if scripts != ["scripts/calendar.js"]:
+        errors.append("Calendar.html: expected one dedicated calendar runtime")
+    if "nicepage" in source.lower() or "jquery" in source.lower():
+        errors.append("Calendar.html: Nicepage or jQuery dependency remains")
+    if (ROOT / "Calendar.css").exists():
+        errors.append("Calendar.css: legacy stylesheet should have no remaining consumer")
+    frames = [attrs for tag, attrs in parser.start_tags if tag == "iframe" and attrs.get("id") == "gc-frame"]
+    if len(frames) != 1 or frames[0].get("title") != "Календарь событий":
+        errors.append("Calendar.html: expected one titled Google Calendar iframe")
+    edit_url = "https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fr%2Fweek%3Fcid%3Dmeserproject%2540gmail.com&service=cl"
+    edits = [attrs for tag, attrs in parser.start_tags if tag == "a" and "gc-btn" in (attrs.get("class") or "").split()]
+    if len(edits) != 1 or edits[0].get("href") != edit_url:
+        errors.append("Calendar.html: edit action destination changed")
+    elif edits[0].get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((edits[0].get("rel") or "").split())):
+        errors.append("Calendar.html: edit action lacks safe new-tab semantics")
+    runtime_source = runtime.read_text(encoding="utf-8", errors="replace") if runtime.is_file() else ""
+    for required in ('const CALENDAR_ID = "meserproject%40gmail.com"', 'const MOBILE_QUERY = "(max-width: 640px)"', 'ctz=Asia%2FJerusalem', '"AGENDA"', '"WEEK"', 'wkst=2'):
+        if required not in runtime_source:
+            errors.append(f"Calendar.html: runtime missing required Calendar contract: {required}")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -400,6 +452,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_audiobook_contract(errors)
     check_offline_meetings_contract(errors)
     check_calculator_contract(errors)
+    check_calendar_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
