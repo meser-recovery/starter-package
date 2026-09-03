@@ -1,277 +1,35 @@
-<!DOCTYPE html>
-<html style="font-size: 16px;" lang="en"><head>
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<!doctype html>
+<html lang="ru">
+  <head>
     <meta charset="utf-8">
-    <meta name="keywords" content="Стартовый набор для новичка">
-    <meta name="description" content="">
-    <title>Calendar</title>
-    <link rel="stylesheet" href="nicepage.css" media="screen">
-<link rel="stylesheet" href="Calendar.css" media="screen">
-    <script class="u-script" type="text/javascript" src="jquery.js" defer=""></script>
-    <script class="u-script" type="text/javascript" src="nicepage.js" defer=""></script>
-    <meta name="generator" content="Nicepage 8.5.1, nicepage.com">
-    
-    
-    
-    
-    <link id="u-page-google-font" rel="stylesheet" href="https://fonts.googleapis.com/css2?display=swap&amp;family=Roboto:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&amp;family=Open+Sans:ital,wght@0,300;0,400;0,500;0,600;0,700;0,800;1,300;1,400;1,500;1,600;1,700;1,800">
-    <script type="application/ld+json">{
-		"@context": "http://schema.org",
-		"@type": "Organization",
-		"name": "StarterPack",
-		"logo": "images/NALogo.png"
-}</script>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#478ac9">
-    <meta property="og:title" content="Calendar">
-    <meta property="og:description" content="">
-    <meta property="og:type" content="website">
-  <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2"><meta name="referrer" content="origin"><meta data-intl-tel-input-cdn-path="intlTelInput/"></head>
-  <body data-path-to-root="./" data-include-products="false" class="u-body u-clearfix u-xl-mode" data-lang="en"><header class="u-clearfix u-header u-header" id="header"><div class="u-clearfix u-sheet u-sheet-1">
-        <a href="./" data-page-id="93039949" class="u-image u-logo u-image-1" data-image-width="3000" data-image-height="3000">
-          <img src="images/NALogo.png" class="u-logo-image u-logo-image-1" title="About">
-        </a>
-        <h2 class="u-align-center-sm u-align-center-xs u-custom-font u-font-georgia u-subtitle u-text u-text-default-lg u-text-default-md u-text-default-xl u-text-palette-1-base u-text-1">Стартовый набор для новичка</h2>
-        <nav class="u-menu u-menu-hamburger u-offcanvas u-menu-1" role="navigation" data-responsive-from="XL">
-          <div class="menu-collapse">
-            <a class="u-button-style u-hamburger-link u-nav-link" aria-label="Open menu" aria-controls="8e81" href="#">
-              <svg class="u-svg-link" viewBox="0 0 24 24"><use xlink:href="#svg-3e5a"></use></svg>
-              <svg class="u-svg-content" version="1.1" id="svg-3e5a" viewBox="0 0 16 16" x="0px" y="0px" xmlns:xlink="http://www.w3.org/1999/xlink" xmlns="http://www.w3.org/2000/svg"><g><rect y="1" width="16" height="2"></rect><rect y="7" width="16" height="2"></rect><rect y="13" width="16" height="2"></rect>
-</g></svg>
-            </a>
-          </div>
-          <div class="u-custom-menu u-nav-container">
-            <ul role="menubar" class="u-nav u-unstyled"><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="./">Главная</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://na-tranzit.org/gruppy/onlajn-gruppy" target="_blank">Онлайн собрания</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Offline-meetings.html">Живые собрания</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Literature.html">Литература</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="AudioBook.html">Базовый текст</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://na-russia.org/meditation-today" target="_blank">Ежедневные размышления</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://radio-na.ru/" target="_blank">Радио NA</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751" target="_blank">Спикерские NA</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Calculator.html">Калькулятор чистого периода</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Admin-panel.html">Для служащих</a>
-</li></ul>
-          </div>
-          <div id="8e81" role="region" aria-label="Menu panel" class="u-custom-menu u-nav-container-collapse">
-            <div class="u-black u-container-style u-inner-container-layout u-opacity u-opacity-95 u-sidenav">
-              <div class="u-inner-container-layout u-sidenav-overflow">
-                <div class="u-menu-close" tabindex="-1" aria-controls="8e81" aria-label="Close menu"></div>
-                <ul role="menubar" class="u-align-left u-nav u-popupmenu-items u-unstyled u-nav-2"><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="./">Главная</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://na-tranzit.org/gruppy/onlajn-gruppy" target="_blank">Онлайн собрания</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Offline-meetings.html">Живые собрания</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Literature.html">Литература</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="AudioBook.html">Базовый текст</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://na-russia.org/meditation-today" target="_blank">Ежедневные размышления</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://radio-na.ru/" target="_blank">Радио NA</a>
-</li><li role="none" class="u-nav-item"><a tabindex="-1" role="menuitem" class="u-button-style u-nav-link" href="https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751" target="_blank">Спикерские NA</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Calculator.html">Калькулятор чистого периода</a>
-</li><li role="none" class="u-nav-item"><a role="menuitem" class="u-button-style u-nav-link" href="Admin-panel.html">Для служащих</a>
-</li></ul>
-              </div>
-            </div>
-            <div class="u-black u-menu-overlay u-opacity u-opacity-70"></div>
-          </div>
-          <style class="menu-style">@media (max-width: 1139px) {
-                    [data-responsive-from="LG"] .u-nav-container {
-                        display: none;
-                    }
-                    [data-responsive-from="LG"] .menu-collapse {
-                        display: block;
-                    }
-                }</style>
-        </nav>
-      </div></header>
-    <section class="u-clearfix u-palette-1-dark-1 u-section-1" id="block-1">
-      <div class="u-clearfix u-sheet u-sheet-1">
-        <div class="u-clearfix u-custom-html u-expanded-width u-custom-html-1">
-          <div class="gc-widget" id="gc-widget">
-            <div class="gc-card">
-              <div class="gc-title">Календарь событий</div>
-              <div class="gc-frame-wrap">
-                <iframe id="gc-frame" class="gc-frame" title="Календарь событий" frameborder="0" scrolling="no"></iframe>
-              </div>
-              <div class="gc-actions">
-                <a class="gc-btn" href="https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fr%2Fweek%3Fcid%3Dmeserproject%2540gmail.com&amp;service=cl" target="_blank" rel="noopener"> Выбрать аккаунт и редактировать </a>
-              </div>
-              <div class="gc-note"> Для редактирования выберите Google-аккаунт, которому выдан доступ к этому календарю. </div>
-            </div>
-          </div>
-          <style> .gc-widget {
-    font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif;
-    width: 100%;
-  }
-  .gc-widget * {
-    box-sizing: border-box;
-  }
-  .gc-card {
-    width: 100%;
-    max-width: 960px;
-    margin: 0 auto;
-    border: 3px solid #23308f;
-    border-radius: 22px;
-    padding: 24px 18px 26px;
-    background: #fff;
-    position: relative;
-    overflow: hidden;
-  }
-  .gc-title {
-    text-align: center;
-    font-size: 42px;
-    line-height: 1.08;
-    font-weight: 850;
-    color: #23308f;
-    margin: 6px 0 18px;
-    letter-spacing: .2px;
-  }
-  .gc-frame-wrap {
-    width: 100%;
-    height: 720px;
-    border-radius: 16px;
-    overflow: hidden;
-    border: 2px solid rgba(35,48,143,.22);
-    background: #f4f6ff;
-    box-shadow: 0 10px 22px rgba(0,0,0,.08);
-  }
-  .gc-frame {
-    width: 100%;
-    height: 100%;
-    border: 0;
-    display: block;
-    background: #fff;
-  }
-  .gc-actions {
-    margin-top: 18px;
-    display: flex;
-    justify-content: center;
-  }
-  .gc-btn {
-    display: inline-block;
-    text-decoration: none;
-    border: 3px solid #23308f;
-    color: #23308f;
-    background: #fff;
-    padding: 12px 24px;
-    border-radius: 16px;
-    font-weight: 900;
-    font-size: 24px;
-    cursor: pointer;
-    transition: transform .06s ease, opacity .15s ease;
-    text-align: center;
-  }
-  .gc-btn:hover {
-    opacity: .95;
-  }
-  .gc-btn:active {
-    transform: scale(.99);
-  }
-  .gc-note {
-    text-align: center;
-    margin-top: 10px;
-    font-size: 13px;
-    color: rgba(35,48,143,.9);
-    min-height: 18px;
-  }
-  @media (max-width: 640px) {
-    .gc-widget {
-      padding-left: calc(8px + env(safe-area-inset-left));
-      padding-right: calc(8px + env(safe-area-inset-right));
-      overflow-x: hidden;
-    }
-    .gc-card {
-      max-width: 100%;
-      margin: 0 auto;
-      border-width: 2px;
-      border-radius: 18px;
-      padding: 18px 8px 20px;
-    }
-    .gc-title {
-      font-size: clamp(34px, 10vw, 46px);
-      margin: 4px 0 14px;
-      line-height: 1.05;
-    }
-    .gc-frame-wrap {
-      height: 760px;
-      border-radius: 14px;
-    }
-    .gc-actions {
-      margin-top: 16px;
-    }
-    .gc-btn {
-      width: 100%;
-      max-width: 420px;
-      font-size: 20px;
-      line-height: 1.15;
-      padding: 12px 14px;
-      border-radius: 14px;
-    }
-    .gc-note {
-      font-size: 12px;
-      line-height: 1.35;
-      padding: 0 4px;
-    }
-  }
-  @media (max-width: 380px) {
-    .gc-widget {
-      padding-left: 4px;
-      padding-right: 4px;
-    }
-    .gc-card {
-      padding-left: 6px;
-      padding-right: 6px;
-    }
-    .gc-title {
-      font-size: clamp(30px, 9.5vw, 38px);
-    }
-    .gc-frame-wrap {
-      height: 740px;
-    }
-  } </style>
-          <script> (function(){
-  const CALENDAR_ID = "meserproject%40gmail.com";
-  const MOBILE_QUERY = "(max-width: 640px)";
-  const frame = document.getElementById("gc-frame");
-  function buildCalendarUrl(mode) {
-    return "https://calendar.google.com/calendar/embed"
-      + "?src=" + CALENDAR_ID
-      + "&ctz=Asia%2FJerusalem"
-      + "&hl=ru"
-      + "&mode=" + mode
-      + "&wkst=2"
-      + "&showTitle=0"
-      + "&showNav=1"
-      + "&showDate=1"
-      + "&showPrint=0"
-      + "&showTabs=1"
-      + "&showCalendars=0";
-  }
-  function getWantedMode() {
-    return window.matchMedia(MOBILE_QUERY).matches ? "AGENDA" : "WEEK";
-  }
-  function applyCalendarMode() {
-    if (!frame) return;
-    const mode = getWantedMode();
-    if (frame.dataset.mode === mode) return;
-    frame.dataset.mode = mode;
-    frame.src = buildCalendarUrl(mode);
-  }
-  applyCalendarMode();
-  const mediaQuery = window.matchMedia(MOBILE_QUERY);
-  if (mediaQuery.addEventListener) {
-    mediaQuery.addEventListener("change", applyCalendarMode);
-  } else if (mediaQuery.addListener) {
-    mediaQuery.addListener(applyCalendarMode);
-  }
-})(); </script>
-        </div>
+    <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2">
+    <title>Календарь событий — Проект Мэсэр</title>
+    <link rel="stylesheet" href="styles/foundation.css">
+    <link rel="stylesheet" href="styles/components.css">
+    <link rel="stylesheet" href="styles/calendar.css">
+    <script src="scripts/calendar.js" defer></script>
+  </head>
+  <body class="site-page">
+    <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
+    <header class="site-header">
+      <div class="container site-header__content">
+        <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
+        <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
+        <a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
       </div>
-    </section>
-    
-    
-    
-    
-    <footer class="u-align-center u-clearfix u-container-align-center u-footer u-grey-80 u-footer" id="footer"><div class="u-clearfix u-sheet u-valign-middle-md u-valign-middle-sm u-sheet-1">
-        <p class="u-small-text u-text u-text-variant u-text-1"> Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ
-        </p>
-      </div></footer>
-  
-</body></html>
+    </header>
+    <main id="main-content" class="calendar-main">
+      <div class="container calendar-content">
+        <h1>Календарь событий</h1>
+        <section class="gc-card" aria-label="Календарь событий">
+          <div class="gc-frame-wrap"><iframe id="gc-frame" class="gc-frame" title="Календарь событий" scrolling="no"></iframe></div>
+          <div class="gc-actions"><a class="gc-btn" href="https://accounts.google.com/AccountChooser?continue=https%3A%2F%2Fcalendar.google.com%2Fcalendar%2Fr%2Fweek%3Fcid%3Dmeserproject%2540gmail.com&amp;service=cl" target="_blank" rel="noopener noreferrer">Выбрать аккаунт и редактировать</a></div>
+          <p class="gc-note">Для редактирования выберите Google-аккаунт, которому выдан доступ к этому календарю.</p>
+        </section>
+      </div>
+    </main>
+    <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
+  </body>
+</html>

@@ -9,7 +9,7 @@ import re
 import sys
 import time
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Error, sync_playwright
 
@@ -716,6 +716,64 @@ def check_calculator(page, base_url: str, width: int) -> None:
         raise AssertionError("Calculator future dates must not produce a negative clean period")
 
 
+def assert_calendar_url(frame, expected_mode: str, context: str) -> None:
+    source = frame.get_attribute("src") or ""
+    parsed = urlparse(source)
+    values = parse_qs(parsed.query)
+    expected = {
+        "src": ["meserproject@gmail.com"], "ctz": ["Asia/Jerusalem"], "hl": ["ru"],
+        "mode": [expected_mode], "wkst": ["2"], "showTitle": ["0"], "showNav": ["1"],
+        "showDate": ["1"], "showPrint": ["0"], "showTabs": ["1"], "showCalendars": ["0"],
+    }
+    if parsed.netloc != "calendar.google.com" or parsed.path != "/calendar/embed" or any(values.get(key) != value for key, value in expected.items()):
+        raise AssertionError(f"Calendar URL contract failed at {context}: expected mode={expected_mode}, observed={source}")
+
+
+def check_calendar(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    goto_ready(page, url(base_url, "/Calendar.html"))
+    if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
+        raise AssertionError(f"Calendar semantic shell is missing at {width}px")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Календарь событий":
+        raise AssertionError(f"Calendar H1 is invalid at {width}px")
+    if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError(f"Calendar main landmark or skip link is missing at {width}px")
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+        raise AssertionError(f"Calendar shared navigation is missing at {width}px")
+    frame = page.locator("#gc-frame")
+    frame.wait_for(state="visible")
+    frame_box = frame.bounding_box()
+    if not frame_box or frame_box["width"] <= 0 or frame_box["height"] <= 0 or frame.get_attribute("title") != "Календарь событий":
+        raise AssertionError(f"Calendar iframe geometry or title is invalid at {width}px: {frame_box}")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Calendar has horizontal overflow at {width}px")
+    edit = page.locator("a.gc-btn")
+    if edit.count() != 1 or not edit.is_visible() or edit.get_attribute("target") != "_blank":
+        raise AssertionError(f"Calendar edit action is missing at {width}px")
+    if not {"noopener", "noreferrer"}.issubset(set((edit.get_attribute("rel") or "").split())):
+        raise AssertionError(f"Calendar edit action lacks safe semantics at {width}px")
+    edit.focus()
+    if not edit.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Calendar edit action is not keyboard focusable at {width}px")
+    if page.locator("footer.site-footer").count() != 1:
+        raise AssertionError(f"Calendar footer is missing at {width}px")
+    assert_calendar_url(frame, "AGENDA" if width <= 640 else "WEEK", f"{width}px")
+
+
+def check_calendar_mode_transition(page, base_url: str) -> None:
+    page.set_viewport_size({"width": 1280, "height": 900})
+    goto_ready(page, url(base_url, "/Calendar.html"))
+    frame = page.locator("#gc-frame")
+    assert_calendar_url(frame, "WEEK", "transition initial 1280px")
+    for width, expected_mode in ((390, "AGENDA"), (768, "WEEK"), (640, "AGENDA"), (641, "WEEK")):
+        page.set_viewport_size({"width": width, "height": 900})
+        page.wait_for_function(
+            """expectedMode => new URL(document.getElementById('gc-frame').src).searchParams.get('mode') === expectedMode""",
+            arg=expected_mode,
+        )
+        assert_calendar_url(frame, expected_mode, f"transition {width}px")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -923,17 +981,9 @@ def main() -> int:
         if "Admin-panel.html" not in urlparse(page.url).path or "5ab2b48b" in page.url:
             raise AssertionError("invalid admin password granted access")
 
-        goto_ready(page, url(base_url, "/Calendar.html"))
-        calendar = page.locator("#gc-frame")
-        calendar.wait_for()
-        if "mode=WEEK" not in (calendar.get_attribute("src") or ""):
-            raise AssertionError("desktop calendar URL did not initialize WEEK mode")
-        calendar_page = context.new_page()
-        calendar_page.set_viewport_size({"width": 390, "height": 844})
-        goto_ready(calendar_page, url(base_url, "/Calendar.html"))
-        if "mode=AGENDA" not in (calendar_page.locator("#gc-frame").get_attribute("src") or ""):
-            raise AssertionError("mobile calendar URL did not initialize AGENDA mode")
-        calendar_page.close()
+        for width in (320, 390, 768, 1280):
+            check_calendar(page, base_url, width)
+        check_calendar_mode_transition(page, base_url)
 
         goto_ready(page, url(base_url, "/Google-Drive.html"))
         drive_src = page.locator("#gd-frame").get_attribute("src") or ""
