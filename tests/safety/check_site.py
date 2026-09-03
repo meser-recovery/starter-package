@@ -243,10 +243,20 @@ def check_favicons(errors: list[str]) -> None:
     favicon = ROOT / "images/favicon.png"
     if not favicon.is_file() or favicon.stat().st_size == 0 or not favicon.read_bytes().startswith(b"\x89PNG\r\n\x1a\n"):
         errors.append("images/favicon.png: valid favicon PNG is missing")
-    for name in ("index.html", "Literature.html", "Literature-reader.html", "AudioBook.html", "Offline-meetings.html"):
+    expected = {"rel": "icon", "type": "image/png", "sizes": "64x64", "href": "images/favicon.png?v=2"}
+    migrated_pages = (
+        "index.html", "Literature.html", "Literature-reader.html", "AudioBook.html", "Offline-meetings.html",
+        "Admin-panel.html", "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html",
+        "Calculator.html", "Calendar.html", "Google-Drive.html",
+    )
+    for name in migrated_pages:
         page = ROOT / name
-        if page.is_file() and 'rel="icon" type="image/png" href="images/favicon.png"' not in page.read_text(encoding="utf-8", errors="replace"):
-            errors.append(f"{name}: explicit favicon markup is missing")
+        if not page.is_file():
+            errors.append(f"{name}: migrated page is missing")
+            continue
+        icons = [attrs for tag, attrs in parse_page(page).start_tags if tag == "link" and attrs.get("rel") == "icon"]
+        if icons != [expected]:
+            errors.append(f"{name}: expected one versioned favicon declaration {expected}")
 
 
 def check_audiobook_contract(errors: list[str]) -> None:
