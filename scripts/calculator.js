@@ -1,5 +1,6 @@
 (() => {
   const LS_KEY = "clean_period_start_date_v4"; // YYYY-MM-DD
+  const DEFAULT_START_YMD = "1953-10-05";
   const monthsRu = ["январь", "февраль", "март", "апрель", "май", "июнь", "июль", "август", "сентябрь", "октябрь", "ноябрь", "декабрь"];
   const $ = (id) => document.getElementById(id);
   const elTotalDays = $("cp-totalDays");
@@ -15,7 +16,7 @@
   const closeBtn = $("cp-closeModal");
   const closeBackdrop = $("cp-closeBackdrop");
   const saveBtn = $("cp-save");
-  const todayBtn = $("cp-today");
+  const resetBtn = $("cp-reset");
   const wheelDay = $("cp-wheel-day");
   const wheelMonth = $("cp-wheel-month");
   const wheelYear = $("cp-wheel-year");
@@ -206,10 +207,8 @@
     if (event.key === "Escape" && modal.classList.contains("is-open")) closeModal();
     trapModalFocus(event);
   });
-  todayBtn.addEventListener("click", () => {
-    const t = todayParts();
-    picker = { y: t.y, m: t.m, d: t.d };
-    initWheelsFromYMD(ymdFromParts(picker.y, picker.m, picker.d));
+  resetBtn.addEventListener("click", () => {
+    initWheelsFromYMD(DEFAULT_START_YMD);
   });
   saveBtn.addEventListener("click", () => {
     picker = normalizeDate(picker.y, picker.m, picker.d);
@@ -220,8 +219,8 @@
   });
   [wheelDay, wheelMonth, wheelYear].forEach(attachWheel);
   const saved = localStorage.getItem(LS_KEY);
-  const initial = saved && /^\d{4}-\d{2}-\d{2}$/.test(saved) ? saved : todayYMD();
+  const hasSavedDate = Boolean(saved && /^\d{4}-\d{2}-\d{2}$/.test(saved));
+  const initial = hasSavedDate ? saved : DEFAULT_START_YMD;
   initWheelsFromYMD(initial);
-  if (saved && /^\d{4}-\d{2}-\d{2}$/.test(saved)) renderFromStart(saved);
-  else { renderFromStart(initial); elLine.textContent = "Выбери дату начала"; elNote.textContent = ""; }
+  if (hasSavedDate) renderFromStart(saved);
 })();

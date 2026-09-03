@@ -611,10 +611,13 @@ def check_delayed_stylesheet_readiness(browser, base_url: str) -> None:
         context.close()
 
 
-def calculator_wheel_state(page) -> dict:
-    return page.evaluate("""() => {
-        const today = new Date();
-        const expected = [String(today.getDate()), String(today.getMonth() + 1), String(today.getFullYear())];
+def calculator_wheel_parts(ymd: str) -> list[str]:
+    year, month, day = ymd.split("-")
+    return [str(int(day)), str(int(month)), year]
+
+
+def calculator_wheel_state(page, expected_ymd: str) -> dict:
+    return page.evaluate("""expected => {
         const wheels = ['cp-wheel-day', 'cp-wheel-month', 'cp-wheel-year'].map((id) => {
             const wheel = document.getElementById(id);
             const active = wheel?.querySelector('.cp-wheel-item.is-active');
@@ -633,14 +636,13 @@ def calculator_wheel_state(page) -> dict:
             };
         });
         return { expected, wheels };
-    }""")
+    }""", calculator_wheel_parts(expected_ymd))
 
 
-def wait_for_calculator_wheel_alignment(page, phase: str) -> None:
+def wait_for_calculator_wheel_alignment(page, phase: str, expected_ymd: str) -> None:
+    expected = calculator_wheel_parts(expected_ymd)
     try:
-        page.wait_for_function("""() => {
-            const today = new Date();
-            const expected = [String(today.getDate()), String(today.getMonth() + 1), String(today.getFullYear())];
+        page.wait_for_function("""expected => {
             return ['cp-wheel-day', 'cp-wheel-month', 'cp-wheel-year'].every((id, index) => {
                 const wheel = document.getElementById(id);
                 const active = wheel?.querySelector('.cp-wheel-item.is-active');
@@ -649,10 +651,10 @@ def wait_for_calculator_wheel_alignment(page, phase: str) -> None:
                 const activeRect = active.getBoundingClientRect();
                 return Math.abs(((activeRect.top + activeRect.bottom) - (wheelRect.top + wheelRect.bottom)) / 2) <= 1;
             });
-        }""")
+        }""", arg=expected)
     except Error as exc:
         raise AssertionError(
-            f"Calculator wheel alignment did not settle after {phase}: {calculator_wheel_state(page)}"
+            f"Calculator wheel alignment did not settle after {phase}: {calculator_wheel_state(page, expected_ymd)}"
         ) from exc
 
 
@@ -680,6 +682,19 @@ def check_calculator(page, base_url: str, width: int) -> None:
         raise AssertionError("Calculator retains a Nicepage or jQuery dependency")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Calculator has horizontal overflow at {width}px")
+    neutral = page.evaluate("""() => ({
+        total: document.getElementById('cp-totalDays').textContent,
+        years: document.getElementById('cp-years').textContent,
+        months: document.getElementById('cp-months').textContent,
+        days: document.getElementById('cp-days').textContent,
+        line: document.getElementById('cp-resultLine').textContent,
+        note: document.getElementById('cp-note').textContent,
+    })""")
+    if neutral != {"total": "0", "years": "0", "months": "0", "days": "0", "line": "Выбери дату начала", "note": ""}:
+        raise AssertionError(f"Calculator without a saved date must remain neutral: {neutral}")
+    reset = page.locator("#cp-reset")
+    if reset.count() != 1 or reset.inner_text() != "Сброс" or reset.get_attribute("type") != "button":
+        raise AssertionError("Calculator reset action must be a Сброс button")
     modal = page.locator("#cp-modal")
     if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
         raise AssertionError("Calculator modal must be initially hidden")
@@ -687,7 +702,7 @@ def check_calculator(page, base_url: str, width: int) -> None:
     if modal.get_attribute("aria-hidden") != "false" or not modal.is_visible():
         raise AssertionError("Calculator modal did not open")
     page.wait_for_function("document.activeElement && document.activeElement.id === 'cp-closeModal'")
-    wait_for_calculator_wheel_alignment(page, "opening the modal")
+    wait_for_calculator_wheel_alignment(page, "opening the modal", "1953-10-05")
     page.keyboard.press("Escape")
     if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
         raise AssertionError("Calculator modal did not close with Escape")
@@ -696,19 +711,36 @@ def check_calculator(page, base_url: str, width: int) -> None:
     page.locator("#cp-closeBackdrop").click(position={"x": 2, "y": 2})
     if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
         raise AssertionError("Calculator modal did not close from its backdrop")
-    page.locator("#cp-openPicker").click()
-    page.locator("#cp-today").click()
-    wait_for_calculator_wheel_alignment(page, "selecting Today")
-    page.locator("#cp-save").click()
-    if page.locator("#cp-totalDays").inner_text() != "0":
-        raise AssertionError("Calculator Today must produce zero elapsed days")
-    saved_date = page.evaluate("localStorage.getItem('clean_period_start_date_v4')")
-    if not saved_date or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", saved_date):
-        raise AssertionError("Calculator Today did not persist a valid YYYY-MM-DD value")
+    page.evaluate("localStorage.setItem('clean_period_start_date_v4', '2000-01-02')")
     page.reload(wait_until="domcontentloaded")
     wait_for_page_ready(page)
-    if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != saved_date or page.locator("#cp-totalDays").inner_text() != "0":
-        raise AssertionError("Calculator persisted state did not render after reload")
+    page.locator("#cp-openPicker").click()
+    wait_for_calculator_wheel_alignment(page, "opening a saved date", "2000-01-02")
+    saved_summary = page.evaluate("""() => ({
+        total: document.getElementById('cp-totalDays').textContent,
+        line: document.getElementById('cp-resultLine').textContent,
+        note: document.getElementById('cp-note').textContent,
+    })""")
+    reset.click()
+    wait_for_calculator_wheel_alignment(page, "selecting Сброс", "1953-10-05")
+    if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != "2000-01-02":
+        raise AssertionError("Calculator Сброс must not change localStorage before Сохранить")
+    if page.evaluate("""() => ({
+        total: document.getElementById('cp-totalDays').textContent,
+        line: document.getElementById('cp-resultLine').textContent,
+        note: document.getElementById('cp-note').textContent,
+    })""") != saved_summary:
+        raise AssertionError("Calculator Сброс must not change the rendered result before Сохранить")
+    page.locator("#cp-save").click()
+    if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != "1953-10-05" or int(page.locator("#cp-totalDays").inner_text()) <= 0:
+        raise AssertionError("Calculator Сохранить after Сброс must persist 1953-10-05 and render a positive total")
+    page.reload(wait_until="domcontentloaded")
+    wait_for_page_ready(page)
+    if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != "1953-10-05" or int(page.locator("#cp-totalDays").inner_text()) <= 0:
+        raise AssertionError("Calculator persisted reset state did not render after reload")
+    page.locator("#cp-openPicker").click()
+    wait_for_calculator_wheel_alignment(page, "reopening the persisted reset date", "1953-10-05")
+    page.keyboard.press("Escape")
     page.evaluate("localStorage.setItem('clean_period_start_date_v4', '2999-01-01')")
     page.reload(wait_until="domcontentloaded")
     wait_for_page_ready(page)

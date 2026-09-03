@@ -389,8 +389,18 @@ def check_calculator_contract(errors: list[str]) -> None:
         errors.append("Calculator.html: Nicepage or jQuery dependency remains")
     if (ROOT / "Calculator.css").exists():
         errors.append("Calculator.css: legacy stylesheet should have no remaining consumer")
-    if not runtime.is_file() or 'const LS_KEY = "clean_period_start_date_v4"' not in runtime.read_text(encoding="utf-8", errors="replace"):
+    runtime_source = runtime.read_text(encoding="utf-8", errors="replace") if runtime.is_file() else ""
+    if not runtime_source or 'const LS_KEY = "clean_period_start_date_v4"' not in runtime_source:
         errors.append("Calculator.html: persistent localStorage key or runtime is missing")
+    if 'const DEFAULT_START_YMD = "1953-10-05";' not in runtime_source:
+        errors.append("Calculator.html: canonical default start date is missing")
+    reset_buttons = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("id") == "cp-reset"]
+    if len(reset_buttons) != 1 or reset_buttons[0].get("type") != "button":
+        errors.append("Calculator.html: expected one typed #cp-reset button")
+    if ">Сброс</button>" not in source:
+        errors.append("Calculator.html: #cp-reset must be labelled Сброс")
+    if "cp-today" in source or ">Сегодня</button>" in source:
+        errors.append("Calculator.html: obsolete Сегодня action remains")
 
 
 def check_calendar_contract(errors: list[str]) -> None:
