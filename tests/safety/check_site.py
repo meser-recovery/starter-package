@@ -508,6 +508,135 @@ def check_google_drive_contract(errors: list[str]) -> None:
         errors.append("Google-Drive.html: permission note is missing")
 
 
+def check_admin_access_contract(errors: list[str]) -> None:
+    login = ROOT / "Admin-panel.html"
+    landing_name = "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html"
+    landing = ROOT / landing_name
+    login_runtime = ROOT / "scripts" / "admin-access.js"
+    landing_runtime = ROOT / "scripts" / "service-landing.js"
+    for page, expected_h1 in ((login, "Для служащих"), (landing, "Служебная страница")):
+        if not page.is_file():
+            errors.append(f"{page.name} is missing")
+            continue
+        source = page.read_text(encoding="utf-8", errors="replace")
+        parser = parse_page(page)
+        html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+        if html_attrs.get("lang") != "ru":
+            errors.append(f"{page.name}: html lang must be ru")
+        if parser.h1_texts != [expected_h1]:
+            errors.append(f"{page.name}: expected one H1: {expected_h1}")
+        if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+            errors.append(f"{page.name}: shared full-height page shell is missing")
+        if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+            errors.append(f"{page.name}: main#main-content is missing")
+        if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+            errors.append(f"{page.name}: skip link is missing")
+        for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./"), ("service-link", "Admin-panel.html")):
+            if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
+                errors.append(f"{page.name}: shared {class_name} link is missing")
+        if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+            errors.append(f"{page.name}: shared footer is missing")
+        favicon = [attrs for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "icon"]
+        if len(favicon) != 1 or favicon[0].get("href") != "images/favicon.png?v=2":
+            errors.append(f"{page.name}: versioned favicon is missing")
+        if "nicepage" in source.lower() or "jquery" in source.lower():
+            errors.append(f"{page.name}: Nicepage or jQuery dependency remains")
+
+    if login.is_file():
+        source = login.read_text(encoding="utf-8", errors="replace")
+        parser = parse_page(login)
+        styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/admin-access.css"]:
+            errors.append("Admin-panel.html: expected shared and dedicated admin stylesheets")
+        scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
+        if scripts != ["scripts/admin-access.js"]:
+            errors.append("Admin-panel.html: expected one dedicated admin runtime")
+        forms = [attrs for tag, attrs in parser.start_tags if tag == "form"]
+        if len(forms) != 1 or forms[0].get("id") != "admin-access-form":
+            errors.append("Admin-panel.html: expected one semantic password form")
+        inputs = [attrs for tag, attrs in parser.start_tags if tag == "input" and attrs.get("id") == "admin-password"]
+        if (len(inputs) != 1 or inputs[0].get("type") != "password" or inputs[0].get("autocomplete") != "current-password" or
+                "required" not in inputs[0] or inputs[0].get("value") is not None):
+            errors.append("Admin-panel.html: password input contract changed")
+        labels = [attrs for tag, attrs in parser.start_tags if tag == "label" and attrs.get("for") == "admin-password"]
+        if len(labels) != 1 or "sr-only" in (labels[0].get("class") or "").split():
+            errors.append("Admin-panel.html: visible associated password label is missing")
+        toggles = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("id") == "admin-password-toggle"]
+        if (len(toggles) != 1 or toggles[0].get("type") != "button" or
+                toggles[0].get("aria-label") != "Показать пароль" or
+                toggles[0].get("aria-controls") != "admin-password"):
+            errors.append("Admin-panel.html: accessible show-password button contract changed")
+        if "<svg" not in source or "admin-password-toggle" not in source:
+            errors.append("Admin-panel.html: local inline eye icon is missing")
+        buttons = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("type") == "submit"]
+        if len(buttons) != 1 or ">Войти</button>" not in source:
+            errors.append("Admin-panel.html: real Войти submit button is missing")
+        if not any(attrs.get("aria-live") == "polite" for tag, attrs in parser.start_tags if tag in {"p", "div"}):
+            errors.append("Admin-panel.html: polite live error region is missing")
+        if "Введите пароль для доступа к служебным инструментам." not in source:
+            errors.append("Admin-panel.html: intro text changed")
+
+    runtime_source = login_runtime.read_text(encoding="utf-8", errors="replace") if login_runtime.is_file() else ""
+    required_login_runtime = (
+        'const SALT = "2969"',
+        'const SALTED_PASSWORD_VERIFIER = "598ebb5954daa98ece99310008316b259607777f0772006fb675ca92962cc216"',
+        'const SESSION_KEY = "meser_service_access_v1"',
+        f'const LANDING_URL = "{landing_name}"',
+        'value.charCodeAt(index) & 0xff',
+        'function sha256Fallback(bytes)',
+        'window.crypto?.subtle?.digest',
+        'window.crypto.subtle.digest("SHA-256", bytes)',
+        'return sha256Fallback(bytes);',
+        'window.AdminAccessHash = AdminAccessHash',
+        'legacySha256(passwordInput.value + SALT)',
+        'sessionStorage.setItem(SESSION_KEY, "granted")',
+        'location.replace(LANDING_URL)',
+        'error.textContent = "Неверный пароль."',
+        'error.textContent = "Не удалось проверить пароль. Попробуйте ещё раз."',
+        'passwordToggle.setAttribute("aria-label", showPassword ? "Скрыть пароль" : "Показать пароль")',
+    )
+    for required in required_login_runtime:
+        if required not in runtime_source:
+            errors.append(f"Admin-panel.html: runtime missing required access contract: {required}")
+    if "localStorage" in runtime_source or '"auth_key"' in runtime_source:
+        errors.append("Admin-panel.html: legacy persistent password storage remains")
+    if 'catch {\n        // A present but unusable Web Crypto API must not block LAN HTTP access.\n      }\n    }\n    return sha256Fallback(bytes);' not in runtime_source:
+        errors.append("Admin-panel.html: missing Web Crypto fallback path")
+    if 'catch {\n      error.textContent = "Неверный пароль."' in runtime_source:
+        errors.append("Admin-panel.html: technical hashing failures must not be reported as invalid passwords")
+
+    if landing.is_file():
+        source = landing.read_text(encoding="utf-8", errors="replace")
+        parser = parse_page(landing)
+        styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/service-landing.css"]:
+            errors.append(f"{landing_name}: expected shared and dedicated landing stylesheets")
+        scripts = [attrs for tag, attrs in parser.start_tags if tag == "script"]
+        if len(scripts) != 1 or scripts[0].get("src") != "scripts/service-landing.js" or scripts[0].get("defer") is not None:
+            errors.append(f"{landing_name}: expected one early blocking guard runtime")
+        actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and "service-action" in (attrs.get("class") or "").split()]
+        if [attrs.get("href") for attrs in actions] != ["Calendar.html", "Google-Drive.html"]:
+            errors.append(f"{landing_name}: service actions changed or are out of order")
+        if any(attrs.get("target") is not None for attrs in actions):
+            errors.append(f"{landing_name}: service actions must use same-tab navigation")
+        labels = re.findall(r'<a class="service-action"[^>]*>([^<]+)</a>', source)
+        if labels != ["Календарь", "Материалы"]:
+            errors.append(f"{landing_name}: service action labels changed")
+        logout = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("id") == "service-logout"]
+        if len(logout) != 1 or ">Выйти</button>" not in source:
+            errors.append(f"{landing_name}: logout control is missing")
+
+    landing_runtime_source = landing_runtime.read_text(encoding="utf-8", errors="replace") if landing_runtime.is_file() else ""
+    for required in ('const SESSION_KEY = "meser_service_access_v1"', 'sessionStorage.getItem(SESSION_KEY) !== "granted"', 'location.replace(LOGIN_URL)', 'sessionStorage.removeItem(SESSION_KEY)'):
+        if required not in landing_runtime_source:
+            errors.append(f"{landing_name}: guard runtime missing required contract: {required}")
+    if 'const LOGIN_URL = "Admin-panel.html"' not in landing_runtime_source:
+        errors.append(f"{landing_name}: unauthorized redirect target changed")
+    for legacy_css in ("Page-Password-Template.css", "Admin-panel.css"):
+        if (ROOT / legacy_css).exists():
+            errors.append(f"{legacy_css}: legacy admin stylesheet should be removed")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -545,6 +674,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_calculator_contract(errors)
     check_calendar_contract(errors)
     check_google_drive_contract(errors)
+    check_admin_access_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:

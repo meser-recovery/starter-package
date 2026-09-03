@@ -864,6 +864,199 @@ def check_google_drive(page, base_url: str, width: int) -> None:
         raise AssertionError(f"Drive footer is missing at {width}px")
 
 
+SERVICE_LANDING_PATH = "/Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html"
+SERVICE_SESSION_KEY = "meser_service_access_v1"
+
+
+def check_admin_hash_functions(page, base_url: str) -> None:
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    inputs = ("", "abc", "\x00\xffA\u0101")
+    observed = page.evaluate("""async values => {
+        const hash = window.AdminAccessHash;
+        if (!hash) return { missing: true };
+        return {
+            webCryptoAvailable: Boolean(window.crypto?.subtle?.digest),
+            values: await Promise.all(values.map(async value => ({
+                value,
+                bytes: Array.from(hash.legacyBytes(value)),
+                fallback: hash.sha256Fallback(hash.legacyBytes(value)),
+                primary: await hash.legacySha256(value),
+            }))),
+        };
+    }""", list(inputs))
+    if observed.get("missing") or not observed.get("webCryptoAvailable"):
+        raise AssertionError("Admin hashing helpers or Web Crypto are unavailable in the standard Chromium context")
+    expected = {
+        "": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "abc": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    }
+    for item in observed["values"]:
+        if item["value"] in expected and item["fallback"] != expected[item["value"]]:
+            raise AssertionError(f"Admin SHA-256 fallback vector failed for {item['value']!r}: {item['fallback']}")
+        if item["fallback"] != item["primary"]:
+            raise AssertionError(
+                f"Admin SHA-256 fallback and Web Crypto differ for legacy bytes {item['bytes']}: "
+                f"fallback={item['fallback']}, Web Crypto={item['primary']}"
+            )
+    if observed["values"][2]["bytes"] != [0, 255, 65, 1]:
+        raise AssertionError(f"Admin legacy byte conversion changed: {observed['values'][2]['bytes']}")
+
+
+def check_admin_without_subtle_crypto(browser, base_url: str) -> None:
+    context = browser.new_context(viewport={"width": 390, "height": 900})
+    context.add_init_script("""(() => {
+        Object.defineProperty(window, "crypto", { configurable: true, value: {} });
+    })()""")
+    page = context.new_page()
+    try:
+        goto_ready(page, url(base_url, "/Admin-panel.html"))
+        if page.evaluate("Boolean(window.crypto?.subtle?.digest)"):
+            raise AssertionError("Unable to mask Web Crypto before admin-access.js executes")
+        fallback_digest = page.evaluate(
+            "window.AdminAccessHash.sha256Fallback(window.AdminAccessHash.legacyBytes('abc'))"
+        )
+        if fallback_digest != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad":
+            raise AssertionError(f"Admin fallback hashing did not execute without Web Crypto: {fallback_digest}")
+        page.locator("#admin-password").fill("definitely-not-the-admin-password")
+        page.get_by_role("button", name="Войти", exact=True).click()
+        page.wait_for_function("document.getElementById('admin-error').textContent === 'Неверный пароль.'")
+        if page.locator("#admin-error").inner_text() != "Неверный пароль.":
+            raise AssertionError("Admin fallback path did not complete normal invalid-password verification")
+    finally:
+        context.close()
+
+
+def check_admin_login(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    page.evaluate("sessionStorage.clear()")
+    if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
+        raise AssertionError(f"Admin login semantic shell is missing at {width}px")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Для служащих":
+        raise AssertionError(f"Admin login H1 is invalid at {width}px")
+    if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError(f"Admin login main landmark or skip link is missing at {width}px")
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator("footer.site-footer").count() != 1:
+        raise AssertionError(f"Admin login shared shell controls are missing at {width}px")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Admin login has horizontal overflow at {width}px")
+    form = page.locator("form#admin-access-form")
+    password = page.locator("#admin-password")
+    label = page.locator('label[for="admin-password"]')
+    password_toggle = page.get_by_role("button", name="Показать пароль", exact=True)
+    submit = page.get_by_role("button", name="Войти", exact=True)
+    if (form.count() != 1 or not form.is_visible() or not password.is_visible() or not label.is_visible() or
+            not password_toggle.is_visible() or not submit.is_visible()):
+        raise AssertionError(f"Admin login form is incomplete at {width}px")
+    if (password.get_attribute("type") != "password" or password.get_attribute("autocomplete") != "current-password" or
+            password.get_attribute("required") is None or password_toggle.get_attribute("type") != "button" or
+            password_toggle.get_attribute("aria-pressed") != "false" or submit.get_attribute("type") != "submit"):
+        raise AssertionError(f"Admin login form semantics changed at {width}px")
+    for control, name in ((password, "password input"), (password_toggle, "show-password button"), (submit, "submit button")):
+        box = control.bounding_box()
+        if not box or box["width"] <= 0 or box["height"] < 44:
+            raise AssertionError(f"Admin {name} has unusable geometry at {width}px: {box}")
+    password_toggle.focus()
+    if not password_toggle.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Admin show-password button is not keyboard focusable at {width}px")
+    harmless_password = "harmless-password-test"
+    password.fill(harmless_password)
+    password_toggle.click()
+    hide_password = page.get_by_role("button", name="Скрыть пароль", exact=True)
+    if (password.get_attribute("type") != "text" or password.input_value() != harmless_password or
+            hide_password.get_attribute("aria-pressed") != "true"):
+        raise AssertionError(f"Admin show-password behavior changed at {width}px")
+    hide_password.click()
+    show_password = page.get_by_role("button", name="Показать пароль", exact=True)
+    if (password.get_attribute("type") != "password" or password.input_value() != harmless_password or
+            show_password.get_attribute("aria-pressed") != "false"):
+        raise AssertionError(f"Admin hide-password behavior changed at {width}px")
+    if password.evaluate("element => parseFloat(getComputedStyle(element).paddingRight) < 48"):
+        raise AssertionError(f"Admin password text can overlap the eye control at {width}px")
+    password.fill("definitely-not-the-admin-password")
+    submit.click()
+    page.wait_for_function("document.getElementById('admin-error').textContent === 'Неверный пароль.'")
+    if urlparse(page.url).path != "/Admin-panel.html":
+        raise AssertionError(f"Invalid admin password navigated away at {width}px: {page.url}")
+    if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
+        raise AssertionError(f"Invalid admin password set the service marker at {width}px")
+    if page.locator("#admin-error").inner_text() != "Неверный пароль." or submit.is_disabled():
+        raise AssertionError(f"Invalid admin password did not leave a usable form at {width}px")
+    if not password.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Invalid admin password did not return focus at {width}px")
+
+
+def seed_service_access(page, base_url: str) -> None:
+    """Seed the non-secret client-side post-login state; this does not test authentication."""
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    page.evaluate(f"sessionStorage.setItem('{SERVICE_SESSION_KEY}', 'granted')")
+
+
+def check_service_landing(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    seed_service_access(page, base_url)
+    goto_ready(page, url(base_url, SERVICE_LANDING_PATH))
+    if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
+        raise AssertionError(f"Service landing semantic shell is missing at {width}px")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Служебная страница":
+        raise AssertionError(f"Service landing H1 is invalid at {width}px")
+    if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError(f"Service landing main landmark or skip link is missing at {width}px")
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator("footer.site-footer").count() != 1:
+        raise AssertionError(f"Service landing shared shell controls are missing at {width}px")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Service landing has horizontal overflow at {width}px")
+    actions = page.locator("a.service-action")
+    expected = (("Календарь", "Calendar.html"), ("Материалы", "Google-Drive.html"))
+    if actions.count() != len(expected):
+        raise AssertionError(f"Service landing must have two actions at {width}px")
+    boxes = []
+    for index, (label, href) in enumerate(expected):
+        action = actions.nth(index)
+        if not action.is_visible() or action.inner_text() != label or action.get_attribute("href") != href or action.get_attribute("target") is not None:
+            raise AssertionError(f"Service landing action {index + 1} changed at {width}px")
+        box = action.bounding_box()
+        if not box or box["width"] <= 0 or box["height"] < 44:
+            raise AssertionError(f"Service landing action {index + 1} has unusable geometry at {width}px: {box}")
+        action.focus()
+        if not action.evaluate("element => document.activeElement === element"):
+            raise AssertionError(f"Service landing action {index + 1} is not keyboard focusable at {width}px")
+        boxes.append(box)
+    if width > 576 and abs(boxes[0]["y"] - boxes[1]["y"]) > 1:
+        raise AssertionError(f"Service landing desktop actions are not balanced in one row at {width}px: {boxes}")
+    if width <= 576 and boxes[1]["y"] <= boxes[0]["y"]:
+        raise AssertionError(f"Service landing mobile actions are not stacked at {width}px: {boxes}")
+    logout = page.get_by_role("button", name="Выйти", exact=True)
+    if not logout.is_visible():
+        raise AssertionError(f"Service logout control is missing at {width}px")
+    logout.focus()
+    if not logout.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Service logout is not keyboard focusable at {width}px")
+
+
+def check_service_access_journeys(page, base_url: str) -> None:
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    page.evaluate("sessionStorage.clear()")
+    page.goto(url(base_url, SERVICE_LANDING_PATH), wait_until="domcontentloaded")
+    page.wait_for_url("**/Admin-panel.html")
+    wait_for_page_ready(page)
+    if page.locator("h1").inner_text() != "Для служащих":
+        raise AssertionError("Unauthorized service landing did not redirect to the login page")
+
+    seed_service_access(page, base_url)
+    goto_ready(page, url(base_url, SERVICE_LANDING_PATH))
+    page.get_by_role("button", name="Выйти", exact=True).click()
+    page.wait_for_url("**/Admin-panel.html")
+    wait_for_page_ready(page)
+    if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
+        raise AssertionError("Service logout did not remove the session marker")
+    page.goto(url(base_url, SERVICE_LANDING_PATH), wait_until="domcontentloaded")
+    page.wait_for_url("**/Admin-panel.html")
+    wait_for_page_ready(page)
+    if page.locator("h1").inner_text() != "Для служащих":
+        raise AssertionError("Logged-out direct landing access was not redirected")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -1063,13 +1256,14 @@ def main() -> int:
         if not source or not source.endswith("audio/bt6/bt6_002.mp3"):
             raise AssertionError(f"second audio track did not set expected source: {source}")
 
-        goto_ready(page, url(base_url, "/Admin-panel.html"))
-        password = page.locator('input[type="password"]')
-        password.fill("stage-1-invalid-password")
-        page.locator('form a[href="#"]:visible').click()
-        page.wait_for_timeout(250)
-        if "Admin-panel.html" not in urlparse(page.url).path or "5ab2b48b" in page.url:
-            raise AssertionError("invalid admin password granted access")
+        for width in (320, 390, 768, 1280):
+            check_admin_login(page, base_url, width)
+            check_service_landing(page, base_url, width)
+        check_admin_hash_functions(page, base_url)
+        check_admin_without_subtle_crypto(browser, base_url)
+        check_service_access_journeys(page, base_url)
+        if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
+            raise AssertionError("Calendar and Drive regression checks must run without an admin marker")
 
         for width in (320, 390, 768, 1280):
             check_calendar(page, base_url, width)
