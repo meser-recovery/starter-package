@@ -10,7 +10,7 @@ import sys
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.error import URLError
-from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
+from urllib.parse import urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -452,6 +452,8 @@ def check_google_drive_contract(errors: list[str]) -> None:
         errors.append("Google-Drive.css: legacy stylesheet should have no remaining consumer")
     if any(tag == "iframe" for tag, _attrs in parser.start_tags) or "embeddedfolderview" in source:
         errors.append("Google-Drive.html: obsolete Drive iframe integration remains")
+    if "accounts.google.com/AccountChooser" in source or "service=writely" in source or "continue=" in source:
+        errors.append("Google-Drive.html: obsolete AccountChooser integration remains")
     if (ROOT / "scripts" / "google-drive.js").exists():
         errors.append("scripts/google-drive.js: obsolete iframe runtime should be removed")
     expected_folders = (
@@ -474,11 +476,9 @@ def check_google_drive_contract(errors: list[str]) -> None:
             break
         folder = folders[index]
         parsed = urlparse(folder.get("href") or "")
-        values = parse_qs(parsed.query)
-        expected_continue = f"https://drive.google.com/drive/folders/{folder_id}"
-        if (parsed.scheme != "https" or parsed.netloc != "accounts.google.com" or parsed.path != "/AccountChooser" or
-                values.get("continue") != [expected_continue] or values.get("service") != ["writely"]):
-            errors.append(f"Google-Drive.html: folder card {index + 1} AccountChooser destination changed")
+        if (parsed.scheme != "https" or parsed.netloc != "drive.google.com" or
+                parsed.path != f"/drive/folders/{folder_id}" or parsed.query or parsed.fragment):
+            errors.append(f"Google-Drive.html: folder card {index + 1} direct Drive destination changed")
         if folder.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((folder.get("rel") or "").split())):
             errors.append(f"Google-Drive.html: folder card {index + 1} lacks safe new-tab semantics")
     parent_actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and attrs.get("id") == "drive-open-all"]
@@ -488,14 +488,12 @@ def check_google_drive_contract(errors: list[str]) -> None:
     else:
         parent = parent_actions[0]
         parsed = urlparse(parent.get("href") or "")
-        values = parse_qs(parsed.query)
-        expected_continue = f"https://drive.google.com/drive/folders/{parent_id}"
-        if (parsed.scheme != "https" or parsed.netloc != "accounts.google.com" or parsed.path != "/AccountChooser" or
-                values.get("continue") != [expected_continue] or values.get("service") != ["writely"]):
-            errors.append("Google-Drive.html: parent-folder AccountChooser destination changed")
+        if (parsed.scheme != "https" or parsed.netloc != "drive.google.com" or
+                parsed.path != f"/drive/folders/{parent_id}" or parsed.query or parsed.fragment):
+            errors.append("Google-Drive.html: parent-folder direct Drive destination changed")
         if parent.get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((parent.get("rel") or "").split())):
             errors.append("Google-Drive.html: parent-folder action lacks safe new-tab semantics")
-    if "Загрузка и редактирование файлов доступны только тем, кому выданы права Editor на эту папку." not in source:
+    if "Материалы доступны для просмотра всем по ссылке. Редактирование доступно только пользователям с соответствующими правами." not in source:
         errors.append("Google-Drive.html: permission note is missing")
 
 

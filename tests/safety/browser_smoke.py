@@ -785,15 +785,12 @@ DRIVE_FOLDERS = (
 )
 
 
-def assert_drive_chooser_url(link, folder_id: str, context: str) -> None:
+def assert_drive_folder_url(link, folder_id: str, context: str) -> None:
     source = link.get_attribute("href") or ""
     parsed = urlparse(source)
-    values = parse_qs(parsed.query)
-    expected_continue = f"https://drive.google.com/drive/folders/{folder_id}"
-    if (parsed.scheme != "https" or parsed.netloc != "accounts.google.com" or
-            parsed.path != "/AccountChooser" or values.get("service") != ["writely"] or
-            values.get("continue") != [expected_continue]):
-        raise AssertionError(f"Drive AccountChooser URL contract failed at {context}: observed={source}")
+    if (parsed.scheme != "https" or parsed.netloc != "drive.google.com" or
+            parsed.path != f"/drive/folders/{folder_id}" or parsed.query or parsed.fragment):
+        raise AssertionError(f"Drive folder URL contract failed at {context}: observed={source}")
 
 
 def check_google_drive(page, base_url: str, width: int) -> None:
@@ -837,7 +834,7 @@ def check_google_drive(page, base_url: str, width: int) -> None:
         card.focus()
         if not card.evaluate("element => document.activeElement === element"):
             raise AssertionError(f"Drive folder card {index + 1} is not keyboard focusable at {width}px")
-        assert_drive_chooser_url(card, folder_id, f"folder {index + 1} at {width}px")
+        assert_drive_folder_url(card, folder_id, f"folder {index + 1} at {width}px")
         card_boxes.append(box)
     if width >= 768 and len({round(box["x"]) for box in card_boxes[:3]}) < 2:
         raise AssertionError(f"Drive desktop catalog must display multiple cards per row at {width}px: {card_boxes[:3]}")
@@ -849,7 +846,7 @@ def check_google_drive(page, base_url: str, width: int) -> None:
     parent.focus()
     if not parent.evaluate("element => document.activeElement === element"):
         raise AssertionError(f"Drive parent-folder action is not keyboard focusable at {width}px")
-    assert_drive_chooser_url(parent, "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc", f"parent action at {width}px")
+    assert_drive_folder_url(parent, "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc", f"parent action at {width}px")
     if page.locator("footer.site-footer").count() != 1:
         raise AssertionError(f"Drive footer is missing at {width}px")
 
