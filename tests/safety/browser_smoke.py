@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 import time
 from pathlib import Path
@@ -610,6 +611,111 @@ def check_delayed_stylesheet_readiness(browser, base_url: str) -> None:
         context.close()
 
 
+def calculator_wheel_state(page) -> dict:
+    return page.evaluate("""() => {
+        const today = new Date();
+        const expected = [String(today.getDate()), String(today.getMonth() + 1), String(today.getFullYear())];
+        const wheels = ['cp-wheel-day', 'cp-wheel-month', 'cp-wheel-year'].map((id) => {
+            const wheel = document.getElementById(id);
+            const active = wheel?.querySelector('.cp-wheel-item.is-active');
+            const wheelRect = wheel?.getBoundingClientRect();
+            const activeRect = active?.getBoundingClientRect();
+            const offsetY = wheelRect && activeRect
+                ? ((activeRect.top + activeRect.bottom) - (wheelRect.top + wheelRect.bottom)) / 2
+                : null;
+            return {
+                id,
+                active: active?.dataset.value || '',
+                scrollTop: wheel?.scrollTop ?? null,
+                activeCenterY: activeRect ? (activeRect.top + activeRect.bottom) / 2 : null,
+                wheelCenterY: wheelRect ? (wheelRect.top + wheelRect.bottom) / 2 : null,
+                offsetY,
+            };
+        });
+        return { expected, wheels };
+    }""")
+
+
+def wait_for_calculator_wheel_alignment(page, phase: str) -> None:
+    try:
+        page.wait_for_function("""() => {
+            const today = new Date();
+            const expected = [String(today.getDate()), String(today.getMonth() + 1), String(today.getFullYear())];
+            return ['cp-wheel-day', 'cp-wheel-month', 'cp-wheel-year'].every((id, index) => {
+                const wheel = document.getElementById(id);
+                const active = wheel?.querySelector('.cp-wheel-item.is-active');
+                if (!wheel || !active || active.dataset.value !== expected[index]) return false;
+                const wheelRect = wheel.getBoundingClientRect();
+                const activeRect = active.getBoundingClientRect();
+                return Math.abs(((activeRect.top + activeRect.bottom) - (wheelRect.top + wheelRect.bottom)) / 2) <= 1;
+            });
+        }""")
+    except Error as exc:
+        raise AssertionError(
+            f"Calculator wheel alignment did not settle after {phase}: {calculator_wheel_state(page)}"
+        ) from exc
+
+
+def check_calculator(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    goto_ready(page, url(base_url, "/Calculator.html"))
+    page.evaluate("localStorage.removeItem('clean_period_start_date_v4')")
+    page.reload(wait_until="domcontentloaded")
+    wait_for_page_ready(page)
+    if page.locator("html").get_attribute("lang") != "ru":
+        raise AssertionError("Calculator must use Russian document language")
+    if page.locator("body.site-page").count() != 1 or page.locator("main#main-content").count() != 1:
+        raise AssertionError("Calculator shared page shell or main landmark is missing")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Калькулятор чистого периода":
+        raise AssertionError("Calculator must retain one correct outer H1")
+    if page.locator("h2#cp-title").count() != 1 or page.locator("h2#cp-title").inner_text() != "Мой чистый период":
+        raise AssertionError("Calculator card title must be a correct H2")
+    if page.locator('a[href="#main-content"]').count() != 1 or page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1:
+        raise AssertionError("Calculator shared navigation is missing")
+    if page.locator('a.service-link[href="Admin-panel.html"]').count() != 1 or page.locator("footer.site-footer").count() != 1:
+        raise AssertionError("Calculator shared service link or footer is missing")
+    if page.locator('script[src="scripts/calculator.js"]').count() != 1:
+        raise AssertionError("Calculator dedicated runtime is missing")
+    if page.evaluate("document.documentElement.innerHTML.toLowerCase().includes('nicepage') || document.documentElement.innerHTML.toLowerCase().includes('jquery')"):
+        raise AssertionError("Calculator retains a Nicepage or jQuery dependency")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Calculator has horizontal overflow at {width}px")
+    modal = page.locator("#cp-modal")
+    if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
+        raise AssertionError("Calculator modal must be initially hidden")
+    page.locator("#cp-openPicker").click()
+    if modal.get_attribute("aria-hidden") != "false" or not modal.is_visible():
+        raise AssertionError("Calculator modal did not open")
+    page.wait_for_function("document.activeElement && document.activeElement.id === 'cp-closeModal'")
+    wait_for_calculator_wheel_alignment(page, "opening the modal")
+    page.keyboard.press("Escape")
+    if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
+        raise AssertionError("Calculator modal did not close with Escape")
+    page.wait_for_function("document.activeElement && document.activeElement.id === 'cp-openPicker'")
+    page.locator("#cp-openPicker").click()
+    page.locator("#cp-closeBackdrop").click(position={"x": 2, "y": 2})
+    if modal.get_attribute("aria-hidden") != "true" or modal.is_visible():
+        raise AssertionError("Calculator modal did not close from its backdrop")
+    page.locator("#cp-openPicker").click()
+    page.locator("#cp-today").click()
+    wait_for_calculator_wheel_alignment(page, "selecting Today")
+    page.locator("#cp-save").click()
+    if page.locator("#cp-totalDays").inner_text() != "0":
+        raise AssertionError("Calculator Today must produce zero elapsed days")
+    saved_date = page.evaluate("localStorage.getItem('clean_period_start_date_v4')")
+    if not saved_date or not re.fullmatch(r"\d{4}-\d{2}-\d{2}", saved_date):
+        raise AssertionError("Calculator Today did not persist a valid YYYY-MM-DD value")
+    page.reload(wait_until="domcontentloaded")
+    wait_for_page_ready(page)
+    if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != saved_date or page.locator("#cp-totalDays").inner_text() != "0":
+        raise AssertionError("Calculator persisted state did not render after reload")
+    page.evaluate("localStorage.setItem('clean_period_start_date_v4', '2999-01-01')")
+    page.reload(wait_until="domcontentloaded")
+    wait_for_page_ready(page)
+    if page.locator("#cp-resultLine").inner_text() != "Дата не может быть в будущем" or page.locator("#cp-totalDays").inner_text() != "0":
+        raise AssertionError("Calculator future dates must not produce a negative clean period")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -798,18 +904,8 @@ def main() -> int:
         for width in (320, 390, 768, 1280):
             check_offline_meetings(page, base_url, width)
         check_offline_meetings_failure(browser, base_url)
-
-        goto_ready(page, url(base_url, "/Calculator.html"))
-        page.locator("#cp-openPicker").click()
-        page.locator("#cp-today").click()
-        page.locator("#cp-save").click()
-        if page.locator("#cp-totalDays").inner_text() != "0":
-            raise AssertionError("today must produce zero elapsed days")
-        saved_date = page.evaluate("localStorage.getItem('clean_period_start_date_v4')")
-        page.reload(wait_until="domcontentloaded")
-        wait_for_page_ready(page)
-        if page.evaluate("localStorage.getItem('clean_period_start_date_v4')") != saved_date:
-            raise AssertionError("calculator date did not persist in localStorage")
+        for width in (320, 390, 768, 1280):
+            check_calculator(page, base_url, width)
 
         goto_ready(page, url(base_url, "/AudioBook.html"))
         frame = page.frame_locator('iframe[src="bt6-player.html"]')
