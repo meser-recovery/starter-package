@@ -561,6 +561,13 @@ def check_admin_access_contract(errors: list[str]) -> None:
         labels = [attrs for tag, attrs in parser.start_tags if tag == "label" and attrs.get("for") == "admin-password"]
         if len(labels) != 1 or "sr-only" in (labels[0].get("class") or "").split():
             errors.append("Admin-panel.html: visible associated password label is missing")
+        toggles = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("id") == "admin-password-toggle"]
+        if (len(toggles) != 1 or toggles[0].get("type") != "button" or
+                toggles[0].get("aria-label") != "Показать пароль" or
+                toggles[0].get("aria-controls") != "admin-password"):
+            errors.append("Admin-panel.html: accessible show-password button contract changed")
+        if "<svg" not in source or "admin-password-toggle" not in source:
+            errors.append("Admin-panel.html: local inline eye icon is missing")
         buttons = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("type") == "submit"]
         if len(buttons) != 1 or ">Войти</button>" not in source:
             errors.append("Admin-panel.html: real Войти submit button is missing")
@@ -576,17 +583,27 @@ def check_admin_access_contract(errors: list[str]) -> None:
         'const SESSION_KEY = "meser_service_access_v1"',
         f'const LANDING_URL = "{landing_name}"',
         'value.charCodeAt(index) & 0xff',
-        'window.crypto.subtle.digest("SHA-256", legacyBytes(value))',
+        'function sha256Fallback(bytes)',
+        'window.crypto?.subtle?.digest',
+        'window.crypto.subtle.digest("SHA-256", bytes)',
+        'return sha256Fallback(bytes);',
+        'window.AdminAccessHash = AdminAccessHash',
         'legacySha256(passwordInput.value + SALT)',
         'sessionStorage.setItem(SESSION_KEY, "granted")',
         'location.replace(LANDING_URL)',
         'error.textContent = "Неверный пароль."',
+        'error.textContent = "Не удалось проверить пароль. Попробуйте ещё раз."',
+        'passwordToggle.setAttribute("aria-label", showPassword ? "Скрыть пароль" : "Показать пароль")',
     )
     for required in required_login_runtime:
         if required not in runtime_source:
             errors.append(f"Admin-panel.html: runtime missing required access contract: {required}")
     if "localStorage" in runtime_source or '"auth_key"' in runtime_source:
         errors.append("Admin-panel.html: legacy persistent password storage remains")
+    if 'catch {\n        // A present but unusable Web Crypto API must not block LAN HTTP access.\n      }\n    }\n    return sha256Fallback(bytes);' not in runtime_source:
+        errors.append("Admin-panel.html: missing Web Crypto fallback path")
+    if 'catch {\n      error.textContent = "Неверный пароль."' in runtime_source:
+        errors.append("Admin-panel.html: technical hashing failures must not be reported as invalid passwords")
 
     if landing.is_file():
         source = landing.read_text(encoding="utf-8", errors="replace")

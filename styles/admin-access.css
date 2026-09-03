@@ -6,8 +6,16 @@
 .admin-form { display: grid; gap: var(--space-4); }
 .admin-field { display: grid; gap: var(--space-2); }
 .admin-field label { font-weight: 700; }
-.admin-field input { width: 100%; min-height: 3rem; padding: .625rem .75rem; color: var(--color-text); background: #fff; border: 2px solid var(--color-palette-light-2); border-radius: var(--radius-sm); font: inherit; }
+.admin-password-control { position: relative; }
+.admin-field input { width: 100%; min-height: 3rem; padding: .625rem 3.75rem .625rem .75rem; color: var(--color-text); background: #fff; border: 2px solid var(--color-palette-light-2); border-radius: var(--radius-sm); font: inherit; }
 .admin-field input:focus-visible { border-color: var(--color-brand); outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.admin-password-toggle { position: absolute; top: 50%; right: .125rem; display: grid; width: 3rem; min-width: 3rem; height: 3rem; min-height: 3rem; padding: .625rem; color: var(--color-palette-dark-1); background: transparent; border: 0; border-radius: var(--radius-sm); cursor: pointer; place-items: center; transform: translateY(-50%); }
+.admin-password-toggle:hover { color: var(--color-brand); background: var(--color-palette-light-2); }
+.admin-password-toggle:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 1px; }
+.admin-password-toggle svg { width: 1.35rem; height: 1.35rem; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; stroke-width: 2; }
+.admin-eye-off { display: none; }
+.admin-password-toggle.is-visible .admin-eye { display: none; }
+.admin-password-toggle.is-visible .admin-eye-off { display: block; }
 .admin-submit { min-height: 3rem; padding: .625rem 1.25rem; color: #fff; background: var(--color-brand); border: 2px solid var(--color-brand); border-radius: var(--radius-action); font: inherit; font-weight: 700; cursor: pointer; }
 .admin-submit:hover { background: var(--color-palette-dark-1); border-color: var(--color-palette-dark-1); }
 .admin-submit:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 3px; }

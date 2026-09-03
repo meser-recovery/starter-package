@@ -868,6 +868,64 @@ SERVICE_LANDING_PATH = "/Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737
 SERVICE_SESSION_KEY = "meser_service_access_v1"
 
 
+def check_admin_hash_functions(page, base_url: str) -> None:
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    inputs = ("", "abc", "\x00\xffA\u0101")
+    observed = page.evaluate("""async values => {
+        const hash = window.AdminAccessHash;
+        if (!hash) return { missing: true };
+        return {
+            webCryptoAvailable: Boolean(window.crypto?.subtle?.digest),
+            values: await Promise.all(values.map(async value => ({
+                value,
+                bytes: Array.from(hash.legacyBytes(value)),
+                fallback: hash.sha256Fallback(hash.legacyBytes(value)),
+                primary: await hash.legacySha256(value),
+            }))),
+        };
+    }""", list(inputs))
+    if observed.get("missing") or not observed.get("webCryptoAvailable"):
+        raise AssertionError("Admin hashing helpers or Web Crypto are unavailable in the standard Chromium context")
+    expected = {
+        "": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "abc": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+    }
+    for item in observed["values"]:
+        if item["value"] in expected and item["fallback"] != expected[item["value"]]:
+            raise AssertionError(f"Admin SHA-256 fallback vector failed for {item['value']!r}: {item['fallback']}")
+        if item["fallback"] != item["primary"]:
+            raise AssertionError(
+                f"Admin SHA-256 fallback and Web Crypto differ for legacy bytes {item['bytes']}: "
+                f"fallback={item['fallback']}, Web Crypto={item['primary']}"
+            )
+    if observed["values"][2]["bytes"] != [0, 255, 65, 1]:
+        raise AssertionError(f"Admin legacy byte conversion changed: {observed['values'][2]['bytes']}")
+
+
+def check_admin_without_subtle_crypto(browser, base_url: str) -> None:
+    context = browser.new_context(viewport={"width": 390, "height": 900})
+    context.add_init_script("""(() => {
+        Object.defineProperty(window, "crypto", { configurable: true, value: {} });
+    })()""")
+    page = context.new_page()
+    try:
+        goto_ready(page, url(base_url, "/Admin-panel.html"))
+        if page.evaluate("Boolean(window.crypto?.subtle?.digest)"):
+            raise AssertionError("Unable to mask Web Crypto before admin-access.js executes")
+        fallback_digest = page.evaluate(
+            "window.AdminAccessHash.sha256Fallback(window.AdminAccessHash.legacyBytes('abc'))"
+        )
+        if fallback_digest != "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad":
+            raise AssertionError(f"Admin fallback hashing did not execute without Web Crypto: {fallback_digest}")
+        page.locator("#admin-password").fill("definitely-not-the-admin-password")
+        page.get_by_role("button", name="Войти", exact=True).click()
+        page.wait_for_function("document.getElementById('admin-error').textContent === 'Неверный пароль.'")
+        if page.locator("#admin-error").inner_text() != "Неверный пароль.":
+            raise AssertionError("Admin fallback path did not complete normal invalid-password verification")
+    finally:
+        context.close()
+
+
 def check_admin_login(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     goto_ready(page, url(base_url, "/Admin-panel.html"))
@@ -885,16 +943,36 @@ def check_admin_login(page, base_url: str, width: int) -> None:
     form = page.locator("form#admin-access-form")
     password = page.locator("#admin-password")
     label = page.locator('label[for="admin-password"]')
+    password_toggle = page.get_by_role("button", name="Показать пароль", exact=True)
     submit = page.get_by_role("button", name="Войти", exact=True)
-    if form.count() != 1 or not form.is_visible() or not password.is_visible() or not label.is_visible() or not submit.is_visible():
+    if (form.count() != 1 or not form.is_visible() or not password.is_visible() or not label.is_visible() or
+            not password_toggle.is_visible() or not submit.is_visible()):
         raise AssertionError(f"Admin login form is incomplete at {width}px")
     if (password.get_attribute("type") != "password" or password.get_attribute("autocomplete") != "current-password" or
-            password.get_attribute("required") is None or submit.get_attribute("type") != "submit"):
+            password.get_attribute("required") is None or password_toggle.get_attribute("type") != "button" or
+            password_toggle.get_attribute("aria-pressed") != "false" or submit.get_attribute("type") != "submit"):
         raise AssertionError(f"Admin login form semantics changed at {width}px")
-    for control, name in ((password, "password input"), (submit, "submit button")):
+    for control, name in ((password, "password input"), (password_toggle, "show-password button"), (submit, "submit button")):
         box = control.bounding_box()
         if not box or box["width"] <= 0 or box["height"] < 44:
             raise AssertionError(f"Admin {name} has unusable geometry at {width}px: {box}")
+    password_toggle.focus()
+    if not password_toggle.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Admin show-password button is not keyboard focusable at {width}px")
+    harmless_password = "harmless-password-test"
+    password.fill(harmless_password)
+    password_toggle.click()
+    hide_password = page.get_by_role("button", name="Скрыть пароль", exact=True)
+    if (password.get_attribute("type") != "text" or password.input_value() != harmless_password or
+            hide_password.get_attribute("aria-pressed") != "true"):
+        raise AssertionError(f"Admin show-password behavior changed at {width}px")
+    hide_password.click()
+    show_password = page.get_by_role("button", name="Показать пароль", exact=True)
+    if (password.get_attribute("type") != "password" or password.input_value() != harmless_password or
+            show_password.get_attribute("aria-pressed") != "false"):
+        raise AssertionError(f"Admin hide-password behavior changed at {width}px")
+    if password.evaluate("element => parseFloat(getComputedStyle(element).paddingRight) < 48"):
+        raise AssertionError(f"Admin password text can overlap the eye control at {width}px")
     password.fill("definitely-not-the-admin-password")
     submit.click()
     page.wait_for_function("document.getElementById('admin-error').textContent === 'Неверный пароль.'")
@@ -1181,6 +1259,8 @@ def main() -> int:
         for width in (320, 390, 768, 1280):
             check_admin_login(page, base_url, width)
             check_service_landing(page, base_url, width)
+        check_admin_hash_functions(page, base_url)
+        check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")
