@@ -976,7 +976,12 @@ def check_admin_login(page, base_url: str, width: int) -> None:
     password.fill("definitely-not-the-admin-password")
     submit.click()
     page.wait_for_function("document.getElementById('admin-error').textContent === 'Неверный пароль.'")
-    if urlparse(page.url).path != "/Admin-panel.html":
+    expected_admin_url = urlparse(url(base_url, "/Admin-panel.html"))
+    actual_admin_url = urlparse(page.url)
+    if ((actual_admin_url.scheme, actual_admin_url.netloc, actual_admin_url.path,
+         actual_admin_url.params, actual_admin_url.query, actual_admin_url.fragment) !=
+            (expected_admin_url.scheme, expected_admin_url.netloc, expected_admin_url.path,
+             expected_admin_url.params, expected_admin_url.query, expected_admin_url.fragment)):
         raise AssertionError(f"Invalid admin password navigated away at {width}px: {page.url}")
     if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
         raise AssertionError(f"Invalid admin password set the service marker at {width}px")
