@@ -774,6 +774,58 @@ def check_calendar_mode_transition(page, base_url: str) -> None:
         assert_calendar_url(frame, expected_mode, f"transition {width}px")
 
 
+def assert_google_drive_urls(frame, action, context: str) -> None:
+    frame_source = frame.get_attribute("src") or ""
+    frame_url = urlparse(frame_source)
+    frame_values = parse_qs(frame_url.query)
+    if (frame_url.scheme != "https" or frame_url.netloc != "drive.google.com" or
+            frame_url.path != "/embeddedfolderview" or
+            frame_values.get("id") != ["1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"] or
+            frame_values.get("hl") != ["ru"] or frame_url.fragment != "grid"):
+        raise AssertionError(f"Drive embed URL contract failed at {context}: observed={frame_source}")
+    action_source = action.get_attribute("href") or ""
+    action_url = urlparse(action_source)
+    action_values = parse_qs(action_url.query)
+    expected_folder_url = "https://drive.google.com/drive/folders/1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"
+    if (action_url.scheme != "https" or action_url.netloc != "accounts.google.com" or
+            action_url.path != "/AccountChooser" or action_values.get("service") != ["writely"] or
+            action_values.get("continue") != [expected_folder_url]):
+        raise AssertionError(f"Drive account chooser URL contract failed at {context}: observed={action_source}")
+
+
+def check_google_drive(page, base_url: str, width: int) -> None:
+    page.set_viewport_size({"width": width, "height": 900})
+    goto_ready(page, url(base_url, "/Google-Drive.html"))
+    if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
+        raise AssertionError(f"Drive semantic shell is missing at {width}px")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Материалы":
+        raise AssertionError(f"Drive H1 is invalid at {width}px")
+    if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError(f"Drive main landmark or skip link is missing at {width}px")
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+        raise AssertionError(f"Drive shared navigation is missing at {width}px")
+    frame = page.locator("#gd-frame")
+    frame.wait_for(state="visible")
+    frame_box = frame.bounding_box()
+    if not frame_box or frame_box["width"] <= 0 or frame_box["height"] <= 0 or frame.get_attribute("title") != "Материалы Google Drive":
+        raise AssertionError(f"Drive iframe geometry or title is invalid at {width}px: {frame_box}")
+    if page.locator("#gd-placeholder").is_visible():
+        raise AssertionError(f"Drive placeholder must be hidden for the configured folder at {width}px")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Drive has horizontal overflow at {width}px")
+    action = page.locator("#gd-open-btn")
+    if action.count() != 1 or not action.is_visible() or action.get_attribute("target") != "_blank":
+        raise AssertionError(f"Drive action is missing at {width}px")
+    if not {"noopener", "noreferrer"}.issubset(set((action.get_attribute("rel") or "").split())):
+        raise AssertionError(f"Drive action lacks safe semantics at {width}px")
+    action.focus()
+    if not action.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Drive action is not keyboard focusable at {width}px")
+    if page.locator("footer.site-footer").count() != 1:
+        raise AssertionError(f"Drive footer is missing at {width}px")
+    assert_google_drive_urls(frame, action, f"{width}px")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--base-url", required=True)
@@ -985,13 +1037,8 @@ def main() -> int:
             check_calendar(page, base_url, width)
         check_calendar_mode_transition(page, base_url)
 
-        goto_ready(page, url(base_url, "/Google-Drive.html"))
-        drive_src = page.locator("#gd-frame").get_attribute("src") or ""
-        drive_open = page.locator("#gd-open-btn").get_attribute("href") or ""
-        if "drive.google.com/embeddedfolderview?id=" not in drive_src:
-            raise AssertionError("Drive embed URL did not initialize")
-        if not drive_open.startswith("https://accounts.google.com/AccountChooser?continue="):
-            raise AssertionError("Drive account chooser URL did not initialize")
+        for width in (320, 390, 768, 1280):
+            check_google_drive(page, base_url, width)
         if args.screenshot_dir:
             capture_screenshots(page, base_url, args.screenshot_dir)
         context.close()

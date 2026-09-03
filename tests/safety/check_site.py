@@ -417,6 +417,56 @@ def check_calendar_contract(errors: list[str]) -> None:
             errors.append(f"Calendar.html: runtime missing required Calendar contract: {required}")
 
 
+def check_google_drive_contract(errors: list[str]) -> None:
+    drive = ROOT / "Google-Drive.html"
+    runtime = ROOT / "scripts" / "google-drive.js"
+    if not drive.is_file():
+        errors.append("Google-Drive.html is missing")
+        return
+    source = drive.read_text(encoding="utf-8", errors="replace")
+    parser = parse_page(drive)
+    html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+    if html_attrs.get("lang") != "ru":
+        errors.append("Google-Drive.html: html lang must be ru")
+    if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: shared full-height page shell is missing")
+    if parser.h1_texts != ["Материалы"]:
+        errors.append("Google-Drive.html: expected one H1: Материалы")
+    if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: main#main-content is missing")
+    if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: skip link is missing")
+    for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./"), ("service-link", "Admin-panel.html")):
+        if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
+            errors.append(f"Google-Drive.html: shared {class_name} link is missing")
+    if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+        errors.append("Google-Drive.html: shared footer is missing")
+    styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
+    if styles != ["styles/foundation.css", "styles/components.css", "styles/google-drive.css"]:
+        errors.append("Google-Drive.html: expected shared and dedicated Drive stylesheets")
+    scripts = [attrs.get("src") for tag, attrs in parser.start_tags if tag == "script"]
+    if scripts != ["scripts/google-drive.js"]:
+        errors.append("Google-Drive.html: expected one dedicated Drive runtime")
+    if "nicepage" in source.lower() or "jquery" in source.lower():
+        errors.append("Google-Drive.html: Nicepage or jQuery dependency remains")
+    if (ROOT / "Google-Drive.css").exists():
+        errors.append("Google-Drive.css: legacy stylesheet should have no remaining consumer")
+    required_ids = {"gd-frame", "gd-frame-wrap", "gd-placeholder", "gd-open-btn", "gd-note"}
+    ids = {attrs.get("id") for _tag, attrs in parser.start_tags}
+    if not required_ids.issubset(ids):
+        errors.append("Google-Drive.html: required Drive element IDs are missing")
+    frames = [attrs for tag, attrs in parser.start_tags if tag == "iframe" and attrs.get("id") == "gd-frame"]
+    if len(frames) != 1 or frames[0].get("title") != "Материалы Google Drive":
+        errors.append("Google-Drive.html: expected one titled Drive iframe")
+    actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and attrs.get("id") == "gd-open-btn"]
+    if len(actions) != 1 or actions[0].get("target") != "_blank" or not {"noopener", "noreferrer"}.issubset(set((actions[0].get("rel") or "").split())):
+        errors.append("Google-Drive.html: Drive action lacks safe new-tab semantics")
+    runtime_source = runtime.read_text(encoding="utf-8", errors="replace") if runtime.is_file() else ""
+    for required in ('const FOLDER_ID = "1XjxskHzqZeVhhCx4HTe00mWWRuH2Sdnc"', 'const FOLDER_VIEW = "grid"', 'const isConfigured = FOLDER_ID && FOLDER_ID !== "FOLDER_ID_HERE"', 'https://drive.google.com/embeddedfolderview?id=', '&hl=ru#', 'https://drive.google.com/drive/folders/', 'https://accounts.google.com/AccountChooser?continue=', '&service=writely', 'frame.src = embeddedUrl', 'openButton.href = chooserUrl', 'frame.hidden = true', 'placeholder.hidden = false', 'openButton.href = fallbackUrl', 'https://drive.google.com/drive/my-drive'):
+        if required not in runtime_source:
+            errors.append(f"Google-Drive.html: runtime missing required Drive contract: {required}")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -453,6 +503,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_offline_meetings_contract(errors)
     check_calculator_contract(errors)
     check_calendar_contract(errors)
+    check_google_drive_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
