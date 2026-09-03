@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 import time
 from pathlib import Path
@@ -441,6 +442,61 @@ def check_audiobook(page, base_url: str, width: int) -> None:
         raise AssertionError(f"AudioBook iframe has excessive unused height at {width}px")
 
 
+def offline_filter_state(page, selected_city: str) -> dict:
+    return page.evaluate("""selectedCity => {
+        const cityFilter = document.getElementById('cityFilter');
+        const headings = Array.from(document.querySelectorAll('#meetings-content > h2'));
+        const exactMatches = headings.filter(heading => heading.textContent.trim() === selectedCity);
+        const substringMatches = headings.filter(heading => heading.textContent.includes(selectedCity));
+        const visibleCities = headings.filter(heading => !heading.hidden).map(heading => heading.textContent.trim());
+        return {
+            selectedCity,
+            cityFilterValue: cityFilter?.value || '',
+            exactMatchCount: exactMatches.length,
+            exactMatches: exactMatches.map(heading => ({ text: heading.textContent.trim(), hidden: heading.hidden })),
+            substringMatchCount: substringMatches.length,
+            substringMatches: substringMatches.map(heading => heading.textContent.trim()),
+            visibleCityCount: visibleCities.length,
+            visibleCities,
+            viewport: { width: window.innerWidth, height: window.innerHeight },
+            sourceDate: document.getElementById('meetings-date')?.textContent.trim() || '',
+        };
+    }""", selected_city)
+
+
+def assert_offline_city_filter(page, selected_city: str) -> None:
+    try:
+        page.wait_for_function("""selectedCity => {
+            const cityFilter = document.getElementById('cityFilter');
+            const headings = Array.from(document.querySelectorAll('#meetings-content > h2'));
+            const exactMatches = headings.filter(heading => heading.textContent.trim() === selectedCity);
+            const visibleHeadings = headings.filter(heading => !heading.hidden);
+            return cityFilter?.value === selectedCity && exactMatches.length === 1 &&
+                exactMatches[0].hidden === false && visibleHeadings.length === 1 &&
+                visibleHeadings[0].textContent.trim() === selectedCity;
+        }""", arg=selected_city, timeout=15000)
+    except Error as exc:
+        raise AssertionError(
+            "Offline Meetings city filter invariant failed: "
+            f"{json.dumps(offline_filter_state(page, selected_city), ensure_ascii=False)}"
+        ) from exc
+
+
+def assert_offline_all_cities(page, expected_city_count: int) -> None:
+    try:
+        page.wait_for_function("""expectedCount => {
+            const cityFilter = document.getElementById('cityFilter');
+            const headings = Array.from(document.querySelectorAll('#meetings-content > h2'));
+            return cityFilter?.value === 'all' && headings.length === expectedCount &&
+                headings.length > 1 && headings.every(heading => !heading.hidden);
+        }""", arg=expected_city_count, timeout=15000)
+    except Error as exc:
+        raise AssertionError(
+            "Offline Meetings all-cities invariant failed: "
+            f"{json.dumps(offline_filter_state(page, 'all'), ensure_ascii=False)}"
+        ) from exc
+
+
 def check_offline_meetings(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
     goto_ready(page, url(base_url, "/Offline-meetings.html"))
@@ -484,17 +540,22 @@ def check_offline_meetings(page, base_url: str, width: int) -> None:
         raise AssertionError("Offline Meetings did not render generated city headings")
     if city_blocks.evaluate_all("headings => headings.filter(heading => !heading.hidden).length") < 2:
         raise AssertionError("Offline Meetings does not initially show all city blocks")
-    selected_city = city_filter.locator("option").nth(2).get_attribute("value")
-    if not selected_city:
+    city_names = city_filter.locator("option").evaluate_all(
+        "options => options.map(option => option.value).filter(value => value && value !== 'all')"
+    )
+    if not city_names:
         raise AssertionError("Offline Meetings city names were not dynamically populated")
-    city_filter.select_option(selected_city)
-    if city_blocks.filter(has_text=selected_city).count() != 1 or not city_blocks.filter(has_text=selected_city).is_visible():
-        raise AssertionError("Offline Meetings selected city is not visible")
-    if city_blocks.evaluate_all("headings => headings.filter(heading => !heading.hidden).length") != 1:
-        raise AssertionError("Offline Meetings city filter did not hide other city blocks")
-    city_filter.select_option("all")
-    if city_blocks.evaluate_all("headings => headings.filter(heading => !heading.hidden).length") < 2:
-        raise AssertionError("Offline Meetings all-cities option did not restore city blocks")
+    selected_cities = [city_names[0]]
+    substring_sensitive_city = next(
+        (city for city in city_names if any(other != city and city in other for other in city_names)), None
+    )
+    if substring_sensitive_city and substring_sensitive_city not in selected_cities:
+        selected_cities.append(substring_sensitive_city)
+    for selected_city in selected_cities:
+        city_filter.select_option(selected_city)
+        assert_offline_city_filter(page, selected_city)
+        city_filter.select_option("all")
+        assert_offline_all_cities(page, city_blocks.count())
     if page.locator("footer.site-footer").count() != 1:
         raise AssertionError("Offline Meetings shared footer is missing")
 
