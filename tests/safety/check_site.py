@@ -21,6 +21,15 @@ FILE_ATTRIBUTES = {
 }
 IGNORED_SCHEMES = {"", "http", "https"}
 CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.I)
+LEGACY_RUNTIME_FILES = (
+    "nicepage.css",
+    "nicepage.js",
+    "jquery.js",
+)
+LEGACY_RUNTIME_DIRECTORY = "intlTelInput"
+LEGACY_RUNTIME_RESOURCE_NAMES = frozenset(
+    (*LEGACY_RUNTIME_FILES, "intlTelInput.css", "intlTelInput.min.js", "utils.js")
+)
 
 
 class PageParser(HTMLParser):
@@ -121,6 +130,25 @@ def check_css_references(path: Path, contract: dict, errors: list[str], warnings
         if not value or value.startswith("data:") or value.startswith("#"):
             continue
         check_reference(value, path, contract, errors, warnings, {})
+
+
+def check_legacy_runtime_contract(errors: list[str]) -> None:
+    for filename in LEGACY_RUNTIME_FILES:
+        if (ROOT / filename).exists():
+            errors.append(f"{filename}: prohibited legacy runtime file remains")
+    if (ROOT / LEGACY_RUNTIME_DIRECTORY).exists():
+        errors.append(f"{LEGACY_RUNTIME_DIRECTORY}/: prohibited legacy runtime directory remains")
+
+    for html_path in ROOT.glob("*.html"):
+        parser = parse_page(html_path)
+        for _tag, _attribute, reference in parser.references:
+            resource_name = Path(urlparse(reference).path).name.lower()
+            if resource_name in LEGACY_RUNTIME_RESOURCE_NAMES:
+                errors.append(f"{html_path.name}: prohibited legacy runtime reference remains: {reference}")
+        for tag, attrs in parser.start_tags:
+            if (tag == "meta" and (attrs.get("name") or "").lower() == "generator" and
+                    "nicepage" in (attrs.get("content") or "").lower()):
+                errors.append(f"{html_path.name}: Nicepage generator metadata remains")
 
 
 def check_literature_contract(errors: list[str]) -> None:
@@ -640,6 +668,7 @@ def check_admin_access_contract(errors: list[str]) -> None:
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
+    check_legacy_runtime_contract(errors)
     index = ROOT / "index.html"
     if not index.is_file():
         errors.append("index.html is missing")
