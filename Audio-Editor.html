@@ -41,6 +41,12 @@
           <div id="processor-source" class="processor-preview" hidden>
             <p id="processor-selection-summary"></p>
             <ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul>
+            <div id="processor-source-navigation" class="processor-source-navigation" hidden>
+              <span id="processor-source-navigation-label">Навигация по исходным дорожкам</span>
+              <div id="processor-source-scrollbar" class="processor-source-scrollbar" tabindex="0" aria-labelledby="processor-source-navigation-label">
+                <div id="processor-source-scrollbar-spacer" aria-hidden="true"></div>
+              </div>
+            </div>
             <div class="processor-source-player">
               <h3 id="processor-source-label">Прослушивание исходников</h3>
               <audio id="processor-source-audio" aria-labelledby="processor-source-label" controls preload="metadata"></audio>
@@ -52,6 +58,7 @@
                 <input id="processor-source-zoom-range" type="range" min="0" max="100" value="50" aria-label="Масштаб исходных дорожек">
                 <button id="processor-source-zoom-in" type="button" aria-label="Увеличить масштаб исходных дорожек">+</button>
                 <button id="processor-source-zoom-fit" type="button">Вписать</button>
+                <button id="processor-source-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
               </div>
               <div id="processor-preview-audios" hidden></div>
             </div>

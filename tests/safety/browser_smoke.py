@@ -1447,7 +1447,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
             if screenshot_dir:
                 page.screenshot(path=str(screenshot_dir / f"{label}-{width}.png"), full_page=True)
 
-    def select_tracks(files) -> None:
+    def select_tracks(files, expected_size_prefix="0,") -> None:
         page.locator("#processor-file").set_input_files(files)
         wait_waveforms(page, len(files))
         assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
@@ -1458,7 +1458,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
             card = page.locator(".processor-track").nth(index)
             assert card.locator(".processor-track__number").inner_text() == f"Дорожка {index + 1}"
             assert card.locator(".processor-track__name").inner_text() == file["name"]
-            assert card.locator(".processor-track__meta").inner_text().startswith("0,")
+            assert card.locator(".processor-track__meta").inner_text().startswith(expected_size_prefix)
             assert card.get_by_role("button", name="Соло", exact=True).count() == 1
             assert card.get_by_role("button", name="Заглушить", exact=True).count() == 1
             assert card.get_by_role("button", name=re.compile("Удалить дорожку")).count() == 1
@@ -1500,22 +1500,47 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.set_viewport_size({"width": 390, "height": 900})
     scrolls = page.locator(".processor-track .processor-waveform-scroll")
     assert scrolls.count() == 2
+    follow = page.locator("#processor-source-follow")
+    shared_navigation = page.locator("#processor-source-navigation")
+    shared_scrollbar = page.locator("#processor-source-scrollbar")
+    assert follow.inner_text() == "Следовать за воспроизведением"
+    assert follow.get_attribute("aria-pressed") == "false"
+    assert page.locator("#processor-source-scrollbar").count() == 1
     native_widths = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.naturalWidth)")
     page.locator("#processor-source-zoom-fit").click()
+    assert shared_navigation.is_hidden()
     before_widths = page.locator(".processor-track .processor-waveform").evaluate_all("items => items.map(item => item.offsetWidth)")
     page.locator("#processor-source-zoom-in").click()
+    assert shared_navigation.is_visible()
+    assert shared_scrollbar.get_attribute("tabindex") == "0"
+    assert shared_scrollbar.evaluate("element => element.scrollWidth > element.clientWidth")
     after_widths = page.locator(".processor-track .processor-waveform").evaluate_all("items => items.map(item => item.offsetWidth)")
     assert after_widths[0] > before_widths[0] and abs(after_widths[0] - after_widths[1]) <= 1, (before_widths, after_widths)
     assert all(width <= native + 1 for width, native in zip(after_widths, native_widths)), (after_widths, native_widths)
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
     assert scrolls.nth(0).evaluate("element => element.scrollWidth > element.clientWidth")
+    page.wait_for_timeout(50)
+    page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
+        shared.scrollLeft = (shared.scrollWidth - shared.clientWidth) / 2;
+        shared.dispatchEvent(new Event('scroll')); }""")
+    page.wait_for_function("""() => { const shared = document.getElementById('processor-source-scrollbar');
+        const tracks = document.querySelectorAll('.processor-track .processor-waveform-scroll');
+        return Math.abs(tracks[0].scrollLeft - shared.scrollLeft) < 2 && Math.abs(tracks[1].scrollLeft - shared.scrollLeft) < 2; }""")
+    shared_times = page.evaluate("""() => { const waveform = document.querySelector('.processor-waveform');
+        const pps = waveform.offsetWidth / 8;
+        return [...document.querySelectorAll('.processor-track .processor-waveform-scroll'),
+            document.getElementById('processor-source-scrollbar')].map(item => item.scrollLeft / pps); }""")
+    assert max(shared_times) - min(shared_times) < .05, shared_times
+    page.wait_for_timeout(50)
     page.evaluate("""() => { const items = document.querySelectorAll('.processor-track .processor-waveform-scroll');
         items[0].scrollLeft = 100; items[0].dispatchEvent(new Event('scroll')); }""")
-    page.wait_for_function("Math.abs(document.querySelectorAll('.processor-track .processor-waveform-scroll')[1].scrollLeft - 100) < 2")
-    page.wait_for_timeout(30)
+    page.wait_for_function("""() => Math.abs(document.querySelectorAll('.processor-track .processor-waveform-scroll')[1].scrollLeft - 100) < 2 &&
+        Math.abs(document.getElementById('processor-source-scrollbar').scrollLeft - 100) < 2""")
+    page.wait_for_timeout(50)
     page.evaluate("""() => { const items = document.querySelectorAll('.processor-track .processor-waveform-scroll');
         items[1].scrollLeft = 160; items[1].dispatchEvent(new Event('scroll')); }""")
-    page.wait_for_function("Math.abs(document.querySelectorAll('.processor-track .processor-waveform-scroll')[0].scrollLeft - 160) < 2")
+    page.wait_for_function("""() => Math.abs(document.querySelectorAll('.processor-track .processor-waveform-scroll')[0].scrollLeft - 160) < 2 &&
+        Math.abs(document.getElementById('processor-source-scrollbar').scrollLeft - 160) < 2""")
     anchor_before = page.evaluate("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
         const waveform = scroll.querySelector('.processor-waveform');
         return (scroll.scrollLeft + scroll.clientWidth / 2) / (waveform.offsetWidth / 8); }""")
@@ -1524,19 +1549,38 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         const waveform = scroll.querySelector('.processor-waveform');
         return (scroll.scrollLeft + scroll.clientWidth / 2) / (waveform.offsetWidth / 8); }""")
     assert abs(anchor_after - anchor_before) < .15, (anchor_before, anchor_after)
+    assert shared_scrollbar.evaluate("element => element.scrollWidth > element.clientWidth")
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
     assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
     capture_state("waveforms-synchronized")
+    page.set_viewport_size({"width": 390, "height": 900})
+    page.evaluate("() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))")
+    page.locator("#processor-source-zoom-range").evaluate(
+        "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+    page.wait_for_timeout(50)
+    page.wait_for_function("!document.getElementById('processor-source-navigation').hidden")
 
     # Drag pans without seeking; a click seeks every preview on the common timeline.
     first_scroll = scrolls.nth(0)
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 1")
+    page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
+        shared.scrollLeft = (shared.scrollWidth - shared.clientWidth) / 2;
+        shared.dispatchEvent(new Event('scroll')); }""")
+    page.wait_for_function("""() => { const shared = document.getElementById('processor-source-scrollbar');
+        const track = document.querySelector('.processor-track .processor-waveform-scroll');
+        return Math.abs(track.scrollLeft - shared.scrollLeft) < 2; }""")
+    page.wait_for_timeout(50)
+    scroll_before_drag = first_scroll.evaluate("element => element.scrollLeft")
     scroll_box = first_scroll.bounding_box()
     assert scroll_box
     first_scroll.hover(position={"x": scroll_box["width"] * .7, "y": 50})
     page.mouse.down()
     page.mouse.move(scroll_box["x"] + scroll_box["width"] * .35, scroll_box["y"] + 50, steps=5)
     page.mouse.up()
+    scroll_after_drag = first_scroll.evaluate("element => element.scrollLeft")
+    assert abs(scroll_after_drag - scroll_before_drag) > 20, (
+        scroll_before_drag, scroll_after_drag, scroll_box,
+        first_scroll.evaluate("element => [element.scrollWidth, element.clientWidth]"))
     assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 1) < .15")
     first_waveform = page.locator(".processor-track").nth(0).locator(".processor-waveform")
     page.wait_for_timeout(170)
@@ -1559,6 +1603,92 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert page.locator("#processor-source-audio").evaluate("audio => audio.currentTime < .1")
     first_waveform.press("End")
     assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 8) < .1")
+
+    # Follow mode uses the master clock, clamps boundaries, and keeps all source navigation aligned.
+    assert follow.get_attribute("aria-pressed") == "false"
+    follow.click()
+    assert follow.get_attribute("aria-pressed") == "true"
+    first_waveform.press("Home")
+    page.wait_for_function("""() => [...document.querySelectorAll('.processor-track .processor-waveform-scroll'),
+        document.getElementById('processor-source-scrollbar')].every(item => item.scrollLeft < 2)""")
+    first_waveform.click(position={"x": 180, "y": 50})
+    page.wait_for_function("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
+        const playhead = scroll.querySelector('.processor-waveform-playhead');
+        return Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
+    page.evaluate("document.getElementById('processor-source-audio').currentTime = 4")
+    page.wait_for_function("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
+        const playhead = scroll.querySelector('.processor-waveform-playhead');
+        return Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
+    followed_middle = page.evaluate("""() => {
+        const scrolls = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
+        const shared = document.getElementById('processor-source-scrollbar');
+        return {lefts: [...scrolls.map(item => item.scrollLeft), shared.scrollLeft],
+            visualX: scrolls[0].querySelector('.processor-waveform-playhead').getBoundingClientRect().left - scrolls[0].getBoundingClientRect().left,
+            centerX: scrolls[0].clientWidth / 2};
+    }""")
+    assert max(followed_middle["lefts"]) - min(followed_middle["lefts"]) < 2, followed_middle
+    assert abs(followed_middle["visualX"] - followed_middle["centerX"]) < 8, followed_middle
+
+    # Zoom while following recenters on the playhead and never desynchronizes tracks or proxy.
+    page.locator("#processor-source-zoom-out").click()
+    followed_zoom = page.evaluate("""() => { const scrolls = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
+        const shared = document.getElementById('processor-source-scrollbar');
+        const first = scrolls[0], playhead = first.querySelector('.processor-waveform-playhead');
+        return {lefts: [...scrolls.map(item => item.scrollLeft), shared.scrollLeft],
+            visualX: playhead.getBoundingClientRect().left - first.getBoundingClientRect().left, centerX: first.clientWidth / 2}; }""")
+    assert max(followed_zoom["lefts"]) - min(followed_zoom["lefts"]) < 2, followed_zoom
+    assert abs(followed_zoom["visualX"] - followed_zoom["centerX"]) < 8, followed_zoom
+    page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+
+    page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
+        audio.currentTime = 3; await audio.play(); }""")
+    playback_scroll_start = first_scroll.evaluate("element => element.scrollLeft")
+    page.wait_for_function("start => document.querySelector('.processor-track .processor-waveform-scroll').scrollLeft > start + 8",
+                           arg=playback_scroll_start, timeout=5000)
+    assert follow.get_attribute("aria-pressed") == "true"
+    playback_follow = page.evaluate("""() => { const items = [...document.querySelectorAll('.processor-track .processor-waveform-scroll'),
+        document.getElementById('processor-source-scrollbar')]; return items.map(item => item.scrollLeft); }""")
+    assert max(playback_follow) - min(playback_follow) < 2, playback_follow
+    page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
+    paused_left = first_scroll.evaluate("element => element.scrollLeft")
+    page.wait_for_timeout(450)
+    assert abs(first_scroll.evaluate("element => element.scrollLeft") - paused_left) < 2
+    page.locator("#processor-source-audio").evaluate("audio => audio.play()")
+    page.wait_for_function("start => document.querySelector('.processor-track .processor-waveform-scroll').scrollLeft > start + 5",
+                           arg=paused_left, timeout=5000)
+    page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
+
+    # Intentional waveform panning turns follow off; enabling it again recenters immediately.
+    scroll_box = first_scroll.bounding_box()
+    assert scroll_box
+    first_scroll.hover(position={"x": scroll_box["width"] * .55, "y": 50})
+    page.mouse.down()
+    page.mouse.move(scroll_box["x"] + scroll_box["width"] * .25, scroll_box["y"] + 50, steps=5)
+    page.mouse.up()
+    assert follow.get_attribute("aria-pressed") == "false"
+    follow.click()
+    assert follow.get_attribute("aria-pressed") == "true"
+    recentered = page.evaluate("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
+        const playhead = scroll.querySelector('.processor-waveform-playhead');
+        return [playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left, scroll.clientWidth / 2]; }""")
+    assert abs(recentered[0] - recentered[1]) < 8, recentered
+
+    # Native shared-scrollbar keyboard navigation is explicit manual intent and disengages follow.
+    shared_scrollbar.focus()
+    shared_scrollbar.press("ArrowRight")
+    assert follow.get_attribute("aria-pressed") == "false"
+    follow.click()
+    page.evaluate("document.getElementById('processor-source-audio').currentTime = 7.95")
+    page.wait_for_function("""() => { const shared = document.getElementById('processor-source-scrollbar');
+        return Math.abs(shared.scrollLeft - (shared.scrollWidth - shared.clientWidth)) < 3; }""")
+    end_state = page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
+        return {left: shared.scrollLeft, max: shared.scrollWidth - shared.clientWidth}; }""")
+    assert end_state["left"] >= 0 and end_state["left"] <= end_state["max"] + 2, end_state
+    page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
+    set_follow_off = follow.get_attribute("aria-pressed") == "true"
+    if set_follow_off:
+        follow.click()
+    print("Shared source scrollbar/follow passed: fit visibility, bidirectional time sync, centered playback, pause/resume, zoom, boundary clamps and manual disengage.")
 
     # Solo/Mute are monitoring-only, support multiple solos, and are mutually clearing per track.
     cards = page.locator(".processor-track")
@@ -1707,6 +1837,39 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     run_selected()
     assert_result(1, 5.35, 2)
     assert page.evaluate("window.processorProbe.workers") == probe_before["workers"] + 1
+
+    # Local visual evidence uses a long, low-rate real waveform so the shared scrollbar is useful even at 1280px.
+    if screenshot_dir:
+        visual_a = wav_payload("Навигация-A.wav", ((150, True), (150, False)), sample_rate=8000)
+        visual_b = wav_payload("Навигация-B.wav", ((150, False), (150, True)), frequency=660, sample_rate=8000)
+        select_tracks([visual_a, visual_b], expected_size_prefix="4,")
+        for width in (390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            if page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true":
+                page.locator("#processor-source-follow").click()
+            page.locator("#processor-source-zoom-fit").click()
+            assert page.locator("#processor-source-navigation").is_hidden()
+            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+            page.screenshot(path=str(screenshot_dir / f"source-fit-{width}.png"), full_page=True)
+            page.locator("#processor-source-zoom-range").evaluate(
+                "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+            assert page.locator("#processor-source-navigation").is_visible()
+            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+            page.wait_for_timeout(50)
+            page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
+                shared.scrollLeft = (shared.scrollWidth - shared.clientWidth) / 2;
+                shared.dispatchEvent(new Event('scroll')); }""")
+            page.screenshot(path=str(screenshot_dir / f"source-scrollbar-middle-{width}.png"), full_page=True)
+            page.locator("#processor-source-follow").click()
+            page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
+                audio.currentTime = 150; await audio.play(); }""")
+            page.wait_for_timeout(250)
+            assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true"
+            page.screenshot(path=str(screenshot_dir / f"source-follow-playing-{width}.png"), full_page=True)
+            page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
+            page.evaluate("document.getElementById('processor-source-audio').currentTime = 299.8")
+            page.wait_for_timeout(50)
+            page.screenshot(path=str(screenshot_dir / f"source-follow-end-{width}.png"), full_page=True)
 
     long_name = "Очень-длинное-название-спикерского-" * 6 + ".wav"
     long_track = dict(track_a, name=long_name)
@@ -1925,6 +2088,26 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.mouse.move(result_scroll_box["x"] + result_scroll_box["width"] * .35, result_scroll_box["y"] + 50, steps=5)
         page.mouse.up()
         assert page.locator("#processor-result-audio").evaluate("audio => Math.abs(audio.currentTime - 1) < .15")
+        result_independent_before = page.evaluate("""() => ({
+            time: document.getElementById('processor-result-audio').currentTime,
+            scroll: document.getElementById('processor-result-waveform-scroll').scrollLeft,
+            width: document.getElementById('processor-result-waveform-control').offsetWidth,
+            zoom: document.getElementById('processor-result-zoom-range').value
+        })""")
+        page.locator("#processor-source-follow").click()
+        page.locator("#processor-source-zoom-range").evaluate(
+            "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+        page.wait_for_timeout(50)
+        page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
+            if (!shared.closest('[hidden]')) { shared.scrollLeft = 40; shared.dispatchEvent(new Event('scroll')); } }""")
+        result_independent_after = page.evaluate("""() => ({
+            time: document.getElementById('processor-result-audio').currentTime,
+            scroll: document.getElementById('processor-result-waveform-scroll').scrollLeft,
+            width: document.getElementById('processor-result-waveform-control').offsetWidth,
+            zoom: document.getElementById('processor-result-zoom-range').value
+        })""")
+        assert result_independent_after == result_independent_before, (result_independent_before, result_independent_after)
+        assert page.locator("#processor-result").get_by_role("button", name="Следовать за воспроизведением").count() == 0
         result_info = page.evaluate("""async () => {
             const response = await fetch(document.getElementById('processor-download').href);
             const blob = await response.blob();

@@ -55,9 +55,20 @@
 .processor-waveform-scroll { max-width: 100%; height: 100px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; border-radius: .45rem; cursor: grab; touch-action: pan-y; }
 .processor-waveform-scroll.is-dragging { cursor: grabbing; user-select: none; }
 .processor-waveform-scroll .processor-waveform { max-width: none; }
+.processor-track .processor-waveform-scroll { scrollbar-width: none; }
+.processor-track .processor-waveform-scroll::-webkit-scrollbar { display: none; }
+.processor-source-navigation { display: grid; gap: .2rem; min-width: 0; margin-inline: var(--space-3); color: #555; font-size: .9rem; font-weight: 700; }
+.processor-source-navigation[hidden] { display: none; }
+.processor-source-scrollbar { width: 100%; max-width: 100%; height: 1.3rem; overflow-x: scroll; overflow-y: hidden; background: #d7e3ef; border: 1px solid var(--color-palette-light-2); border-radius: 999px; scrollbar-color: var(--color-brand) #d7e3ef; scrollbar-width: auto; overscroll-behavior-inline: contain; }
+.processor-source-scrollbar::-webkit-scrollbar { height: .85rem; }
+.processor-source-scrollbar::-webkit-scrollbar-track { background: #d7e3ef; border-radius: 999px; }
+.processor-source-scrollbar::-webkit-scrollbar-thumb { background: var(--color-brand); border: 2px solid #d7e3ef; border-radius: 999px; }
+.processor-source-scrollbar:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.processor-source-scrollbar > div { height: 1px; }
 .processor-track__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); justify-content: flex-end; }
 .processor-track__actions button, .processor-zoom button { min-height: 2.75rem; padding: .35rem .7rem; color: var(--color-text); background: var(--color-action-surface); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-action); font: inherit; font-weight: 700; cursor: pointer; }
 .processor-track__actions button[aria-pressed="true"] { color: #fff; background: var(--color-palette-dark-1); border-color: var(--color-palette-dark-1); }
+.processor-zoom button[aria-pressed="true"] { color: #fff; background: var(--color-palette-dark-1); border-color: var(--color-palette-dark-1); }
 .processor-track__actions button:disabled, .processor-zoom button:disabled, .processor-zoom input:disabled { cursor: not-allowed; opacity: .65; }
 .processor-source-player { display: grid; gap: var(--space-3); min-width: 0; padding-top: var(--space-2); border-top: 1px solid var(--color-palette-light-2); }
 .processor-source-time { font-variant-numeric: tabular-nums; font-weight: 700; }

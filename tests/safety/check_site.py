@@ -830,6 +830,8 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "processor-source-label": "h3", "processor-source-time": "p",
         "processor-source-zoom-out": "button", "processor-source-zoom-range": "input",
         "processor-source-zoom-in": "button", "processor-source-zoom-fit": "button",
+        "processor-source-navigation": "div", "processor-source-scrollbar": "div",
+        "processor-source-scrollbar-spacer": "div", "processor-source-follow": "button",
         "processor-result-waveform-scroll": "div", "processor-result-waveform-control": "button",
         "processor-result-waveform-status": "p", "processor-result-time": "p",
     }
@@ -851,11 +853,20 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
             errors.append(f"Audio-Editor.html: incorrect label for {element_id}")
     if "disabled" not in elements.get("processor-run", {}):
         errors.append("Audio-Editor.html: processor Run must start disabled")
-    for element_id in ("processor-cancel", "processor-progress", "processor-result"):
+    for element_id in ("processor-cancel", "processor-progress", "processor-result", "processor-source-navigation"):
         if "hidden" not in elements.get(element_id, {}):
             errors.append(f"Audio-Editor.html: {element_id} must start hidden")
     if elements.get("processor-status", {}).get("role") != "status" or "value" in elements.get("processor-progress", {}):
         errors.append("Audio-Editor.html: live status/indeterminate progress contract changed")
+    follow = elements.get("processor-source-follow", {})
+    if (follow.get("aria-pressed") != "false" or not re.search(
+            r'<button[^>]+id="processor-source-follow"[^>]*>Следовать за воспроизведением</button>', source)):
+        errors.append("Audio-Editor.html: source follow toggle contract changed")
+    scrollbar = elements.get("processor-source-scrollbar", {})
+    if scrollbar.get("tabindex") != "0" or scrollbar.get("aria-labelledby") != "processor-source-navigation-label":
+        errors.append("Audio-Editor.html: shared source scrollbar is not keyboard accessible")
+    if "processor-result-follow" in ids or source.count('id="processor-source-scrollbar"') != 1:
+        errors.append("Audio-Editor.html: source/result follow or shared scrollbar count contract changed")
     for tag, attrs in tags:
         if tag == "audio" and ("autoplay" in attrs or "controls" not in attrs):
             errors.append("Audio-Editor.html: audio must have native controls and no autoplay")
@@ -908,6 +919,8 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         "requestAnimationFrame", "ArrowLeft", "ArrowRight", 'event.key === "Home"', 'event.key === "End"',
         "URL.revokeObjectURL(track.waveformURL)", "Соло", "Заглушить", "Удалить",
         "processor-result-waveform.png", "resultWaveformURL", "processor-preview-audio",
+        "let sourceLeftVisibleTime = 0;", "let sourceViewportDuration = 0;",
+        "sourceFollowEnabled", "source-scrollbar-spacer",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
         "Длинные паузы не найдены. Файл не изменён.", "Подготовка обработчика…",
         "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово.",

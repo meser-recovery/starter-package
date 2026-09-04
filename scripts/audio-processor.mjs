@@ -167,8 +167,12 @@ let playheadFrame = 0;
 let resultPlayheadFrame = 0;
 let previewSyncTimer = 0;
 let sourceScrollLock = false;
+let sourceScrollReleaseFrame = 0;
 let sourcePixelsPerSecond = 2;
 let sourceTimelineDuration = NaN;
+let sourceLeftVisibleTime = 0;
+let sourceViewportDuration = 0;
+let sourceFollowEnabled = false;
 let sourceZoomMinimum = 2;
 let sourceZoomMaximum = 2;
 let sourceZoomInitialized = false;
@@ -271,8 +275,69 @@ function updateSelectionSummary() {
 }
 
 function sourceDisplayWidth(track) {
-  if (!Number.isFinite(track.duration) || track.duration <= 0 || !sourceZoomInitialized) return track.waveformWidth;
+  if (!sourceZoomInitialized || !Number.isFinite(sourceTimelineDuration) || sourceTimelineDuration <= 0) return track.waveformWidth;
+  return Math.max(1, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond));
+}
+
+function sourceImageDisplayWidth(track) {
+  if (!sourceZoomInitialized || !Number.isFinite(track.duration) || track.duration <= 0) return track.waveformWidth;
   return Math.max(1, Math.min(track.waveformWidth, Math.ceil(track.duration * sourcePixelsPerSecond)));
+}
+
+function maximumSourceLeftTime() {
+  return Math.max(0, (Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0) - sourceViewportDuration);
+}
+
+function releaseSourceScrollLock() {
+  cancelAnimationFrame(sourceScrollReleaseFrame);
+  sourceScrollReleaseFrame = requestAnimationFrame(() => {
+    sourceScrollReleaseFrame = requestAnimationFrame(() => { sourceScrollLock = false; });
+  });
+}
+
+function setSourceLeftVisibleTime(value) {
+  sourceLeftVisibleTime = Math.max(0, Math.min(maximumSourceLeftTime(), Number.isFinite(value) ? value : 0));
+  const target = sourceLeftVisibleTime * sourcePixelsPerSecond;
+  sourceScrollLock = true;
+  for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
+    if (Math.abs(scroll.scrollLeft - target) > .5) scroll.scrollLeft = target;
+  }
+  const shared = byId("source-scrollbar");
+  if (Math.abs(shared.scrollLeft - target) > .5) shared.scrollLeft = target;
+  releaseSourceScrollLock();
+}
+
+function setSourceFollow(enabled) {
+  sourceFollowEnabled = Boolean(enabled);
+  byId("source-follow").setAttribute("aria-pressed", String(sourceFollowEnabled));
+  if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
+}
+
+function disengageSourceFollow() {
+  if (sourceFollowEnabled) setSourceFollow(false);
+  sourceScrollLock = false;
+  cancelAnimationFrame(sourceScrollReleaseFrame);
+}
+
+function followSourcePlayhead(time = sourceAudio.currentTime || 0) {
+  if (!sourceFollowEnabled) return;
+  setSourceLeftVisibleTime(time - sourceViewportDuration / 2);
+}
+
+function updateSourceNavigation() {
+  const viewport = byId("file-info").querySelector(".processor-waveform-scroll");
+  const navigation = byId("source-navigation");
+  if (!viewport || !sourceZoomInitialized || !Number.isFinite(sourceTimelineDuration)) {
+    navigation.hidden = true;
+    sourceViewportDuration = 0;
+    sourceLeftVisibleTime = 0;
+    return;
+  }
+  const displayWidth = Math.max(1, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond));
+  sourceViewportDuration = viewport.clientWidth / sourcePixelsPerSecond;
+  byId("source-scrollbar-spacer").style.width = `${displayWidth}px`;
+  navigation.hidden = displayWidth <= viewport.clientWidth + 1;
+  setSourceLeftVisibleTime(navigation.hidden ? 0 : sourceLeftVisibleTime);
 }
 
 function seekSources(seconds) {
@@ -283,6 +348,7 @@ function seekSources(seconds) {
     const duration = Number.isFinite(audio.duration) ? audio.duration : track.duration;
     try { audio.currentTime = Number.isFinite(duration) ? Math.min(target, duration) : target; } catch { /* Metadata is pending. */ }
   }
+  if (sourceFollowEnabled) followSourcePlayhead(target);
   updatePlayheads();
 }
 
@@ -303,7 +369,7 @@ function navigateWaveform(event) {
   seekSources(target);
 }
 
-function installPan(scroll) {
+function installPan(scroll, onManualPan) {
   let startX = 0;
   let startScroll = 0;
   let dragging = false;
@@ -316,7 +382,10 @@ function installPan(scroll) {
   });
   scroll.addEventListener("pointermove", (event) => {
     if (!scroll.hasPointerCapture(event.pointerId)) return;
-    if (Math.abs(event.clientX - startX) > 6) dragging = true;
+    if (Math.abs(event.clientX - startX) > 6 && !dragging) {
+      dragging = true;
+      onManualPan?.();
+    }
     if (!dragging) return;
     event.preventDefault();
     scroll.classList.add("is-dragging");
@@ -335,12 +404,8 @@ function installPan(scroll) {
 function syncSourceScroll(event) {
   if (sourceScrollLock || sourcePixelsPerSecond <= 0) return;
   const origin = event.currentTarget;
-  const leftTime = origin.scrollLeft / sourcePixelsPerSecond;
-  sourceScrollLock = true;
-  for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
-    if (scroll !== origin) scroll.scrollLeft = leftTime * sourcePixelsPerSecond;
-  }
-  requestAnimationFrame(() => { sourceScrollLock = false; });
+  disengageSourceFollow();
+  setSourceLeftVisibleTime(origin.scrollLeft / sourcePixelsPerSecond);
 }
 
 function waveformControl(track) {
@@ -359,6 +424,7 @@ function waveformControl(track) {
     image.alt = "";
     image.width = track.waveformWidth;
     image.height = WAVEFORM_HEIGHT;
+    image.style.width = `${sourceImageDisplayWidth(track)}px`;
     control.append(image);
   } else {
     const message = document.createElement("span");
@@ -376,7 +442,6 @@ function waveformControl(track) {
 
 function renderTracks() {
   const list = byId("file-info");
-  const leftTime = list.querySelector(".processor-waveform-scroll")?.scrollLeft / sourcePixelsPerSecond || 0;
   list.replaceChildren();
   tracks.forEach((track, index) => {
     track.ordinal = index + 1;
@@ -403,7 +468,10 @@ function renderTracks() {
     scroll.append(waveformControl(track));
     scroll.addEventListener("click", seekFromControl);
     scroll.addEventListener("scroll", syncSourceScroll, { passive: true });
-    installPan(scroll);
+    scroll.addEventListener("wheel", (event) => {
+      if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || event.shiftKey) disengageSourceFollow();
+    }, { passive: true });
+    installPan(scroll, disengageSourceFollow);
     const actions = document.createElement("div");
     actions.className = "processor-track__actions";
     const solo = document.createElement("button");
@@ -431,11 +499,12 @@ function renderTracks() {
     top.append(heading, actions);
     item.append(top, scroll);
     list.append(item);
-    scroll.scrollLeft = leftTime * sourcePixelsPerSecond;
+    scroll.scrollLeft = sourceLeftVisibleTime * sourcePixelsPerSecond;
   });
   updateSelectionSummary();
   setBusy(Boolean(active));
   applyMonitoring();
+  if (sourceZoomInitialized) updateSourceNavigation();
   updatePlayheads();
 }
 
@@ -452,6 +521,7 @@ function updatePlayheads() {
 function animatePlayhead() {
   cancelAnimationFrame(playheadFrame);
   const frame = () => {
+    if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
     updatePlayheads();
     if (!sourceAudio.paused && !sourceAudio.ended) playheadFrame = requestAnimationFrame(frame);
   };
@@ -535,6 +605,7 @@ function setupPreviewAudios(position = 0, resume = false) {
 }
 
 sourceAudio.addEventListener("play", () => {
+  if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
   animatePlayhead();
   correctPreviewDrift(true);
   for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) void track.previewAudio?.play().catch(() => {});
@@ -547,7 +618,10 @@ sourceAudio.addEventListener("pause", () => {
   for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) track.previewAudio?.pause();
   updatePlayheads();
 });
-sourceAudio.addEventListener("seeking", () => correctPreviewDrift(true));
+sourceAudio.addEventListener("seeking", () => {
+  correctPreviewDrift(true);
+  if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
+});
 sourceAudio.addEventListener("volumechange", () => correctPreviewDrift(false));
 for (const event of ["timeupdate", "seeked", "durationchange", "ended"]) sourceAudio.addEventListener(event, updatePlayheads);
 
@@ -572,18 +646,21 @@ function updateSourceZoomRange() {
 
 function setSourceZoom(value, anchorTime) {
   sourceZoomBounds();
-  const first = byId("file-info").querySelector(".processor-waveform-scroll");
-  const centerTime = Number.isFinite(anchorTime) ? anchorTime : first ?
-    (first.scrollLeft + first.clientWidth / 2) / sourcePixelsPerSecond : 0;
+  const centerTime = Number.isFinite(anchorTime) ? anchorTime : sourceFollowEnabled ?
+    (sourceAudio.currentTime || 0) : sourceLeftVisibleTime + sourceViewportDuration / 2;
   sourcePixelsPerSecond = Math.max(sourceZoomMinimum, Math.min(sourceZoomMaximum, value));
   sourceZoomInitialized = true;
   for (const track of tracks) {
     const control = byId("source").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
-    if (control) control.style.width = `${sourceDisplayWidth(track)}px`;
+    if (control) {
+      control.style.width = `${sourceDisplayWidth(track)}px`;
+      const image = control.querySelector("img");
+      if (image) image.style.width = `${sourceImageDisplayWidth(track)}px`;
+    }
   }
-  for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
-    scroll.scrollLeft = Math.max(0, centerTime * sourcePixelsPerSecond - scroll.clientWidth / 2);
-  }
+  updateSourceNavigation();
+  if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
+  else setSourceLeftVisibleTime(centerTime - sourceViewportDuration / 2);
   updateSourceZoomRange();
   updatePlayheads();
 }
@@ -600,6 +677,15 @@ byId("source-zoom-range").addEventListener("input", (event) => {
 byId("source-zoom-out").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond / 1.5));
 byId("source-zoom-in").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond * 1.5));
 byId("source-zoom-fit").addEventListener("click", () => setSourceZoom(sourceZoomMinimum, 0));
+byId("source-follow").addEventListener("click", () => setSourceFollow(!sourceFollowEnabled));
+
+const sourceScrollbar = byId("source-scrollbar");
+sourceScrollbar.addEventListener("scroll", syncSourceScroll, { passive: true });
+sourceScrollbar.addEventListener("pointerdown", disengageSourceFollow);
+sourceScrollbar.addEventListener("wheel", disengageSourceFollow, { passive: true });
+sourceScrollbar.addEventListener("keydown", (event) => {
+  if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) disengageSourceFollow();
+});
 
 function syncInputFiles() {
   try {
@@ -620,13 +706,21 @@ function revokeTrackURLs(track) {
 
 function clearTracks(resetInput = true) {
   cancelAnimationFrame(playheadFrame);
+  cancelAnimationFrame(sourceScrollReleaseFrame);
+  sourceScrollLock = false;
   clearPreviewAudios(true);
   for (const track of tracks) revokeTrackURLs(track);
   tracks = [];
   selectedFiles = [];
   sourceTimelineDuration = NaN;
+  sourceLeftVisibleTime = 0;
+  sourceViewportDuration = 0;
   sourceZoomInitialized = false;
+  setSourceFollow(false);
   byId("file-info").replaceChildren();
+  byId("source-navigation").hidden = true;
+  byId("source-scrollbar").scrollLeft = 0;
+  byId("source-scrollbar-spacer").style.width = "0px";
   byId("selection-summary").textContent = "";
   byId("source-time").textContent = "0:00 / 0:00";
   byId("source").hidden = true;
