@@ -227,8 +227,9 @@ run.addEventListener("click", async () => {
     await operation.wait(currentEngine.writeFile(INPUT_PATH, bytes));
     const logs = [];
     logListener = ({ message }) => {
-      // Keep only detector output, not an unbounded copy of all decoder logs.
-      if (/\bsilence_(start|end):/.test(message)) logs.push(message);
+      // Accept detector lines only: user metadata may contain "silence_start" too.
+      // Do not keep an unbounded copy of all decoder/metadata logs.
+      if (/^\[silencedetect @ [^\]]+\] silence_(start|end):/.test(message)) logs.push(message);
     };
     currentEngine.on("log", logListener);
     const inputArgs = ["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", INPUT_PATH,

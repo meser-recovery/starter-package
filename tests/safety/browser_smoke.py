@@ -1301,7 +1301,7 @@ def check_audio_editor(page, base_url: str) -> None:
     page.evaluate(f"sessionStorage.removeItem('{SERVICE_SESSION_KEY}')")
 
 
-def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: int = 1) -> dict:
+def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: int = 1, comment: str | None = None) -> dict:
     """Generate PCM in memory; never commit or serve an audio test fixture."""
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav:
@@ -1310,8 +1310,14 @@ def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: i
             frames = b"".join(struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * n / 44100)) if audible else 0) * channels
                               for n in range(round(duration * 44100)))
             wav.writeframes(frames)
+    data = buffer.getvalue()
+    if comment is not None:
+        text = comment.encode("utf-8") + b"\x00"
+        info = b"INFOICMT" + struct.pack("<I", len(text)) + text + (b"\x00" if len(text) % 2 else b"")
+        chunk = b"LIST" + struct.pack("<I", len(info)) + info
+        data = data[:4] + struct.pack("<I", len(data) - 8 + len(chunk)) + data[8:12] + chunk + data[12:]
     # Empty MIME intentionally proves extension-based validation.
-    return {"name": name, "mimeType": "", "buffer": buffer.getvalue()}
+    return {"name": name, "mimeType": "", "buffer": data}
 
 
 def wait_processor_status(page, text: str) -> None:
@@ -1512,7 +1518,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
                 page.screenshot(path=str(screenshot_dir / f"processor-result-{width}.png"), full_page=True)
         prior_urls = page.evaluate("window.processorProbe.urls.slice()")
         exec_before = len([message for message in probe["messages"] if message["type"] == "EXEC"])
-        page.locator("#processor-file").set_input_files(wav_payload("no-pauses.WAV", ((.5, True), (.5, False), (.5, True))))
+        page.locator("#processor-file").set_input_files(wav_payload("no-pauses.WAV", ((1, True), (1, False), (1, True)),
+            comment="silence_start: 0"))
         assert_processor_no_result(page)
         revoked = page.evaluate("window.processorProbe.revoked")
         assert all(value in revoked for value in prior_urls), (prior_urls, revoked)
@@ -1521,7 +1528,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert_processor_no_result(page)
         probe = page.evaluate("window.processorProbe")
         assert probe["workers"] == 2 and len([message for message in probe["messages"] if message["type"] == "EXEC"]) == exec_before + 1
-        print("No-long-pause fixture passed: exact unchanged status, analysis only, no re-encode/result/download; loaded engine reused.")
+        print("No-long-pause fixture passed: exact unchanged status, analysis only, no re-encode/result/download; loaded engine reused; metadata cannot spoof detector output.")
 
         # Cancel once the real worker has started analysis; the next run must recreate it.
         page.locator("#processor-file").set_input_files(primary)
