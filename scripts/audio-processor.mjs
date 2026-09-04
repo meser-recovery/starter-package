@@ -9,15 +9,16 @@ const MAX_DURATION_DIFFERENCE_SECONDS = 0.5;
 // Only multi-track mixing uses this clock; single-track processing stays unchanged.
 const MIX_SAMPLE_RATE = 48000;
 const WAVEFORM_HEIGHT = 100;
-// One compact FFmpeg PNG is reused for both views: fit-to-card overview and
-// native-width detail. Two pixels/second exposes ~2 s gaps without unbounded images.
-const WAVEFORM_PIXELS_PER_SECOND = 2;
+// Source and result waveforms keep at most four generated samples per second;
+// the width floor preserves usable short-file rendering without unbounded images.
+const WAVEFORM_PIXELS_PER_SECOND = 4;
 const WAVEFORM_MIN_WIDTH = 640;
 const WAVEFORM_MAX_WIDTH = 16384;
 const OUTPUT_PATH = "processor-output.mp3";
+const RESULT_WAVEFORM_PATH = "processor-result-waveform.png";
 const PROGRESS_PATH = "processor-analysis.txt";
 const FILTER_PATH = "processor-filter.txt";
-const TEMP_PATHS = [OUTPUT_PATH, PROGRESS_PATH, FILTER_PATH];
+const TEMP_PATHS = [OUTPUT_PATH, RESULT_WAVEFORM_PATH, PROGRESS_PATH, FILTER_PATH];
 const UNSUPPORTED = "Обработка аудио не поддерживается в этом браузере.";
 const CANCELLED = "Обработка отменена.";
 const DURATION_MISMATCH = "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.";
@@ -157,13 +158,25 @@ const result = byId("result");
 const download = byId("download");
 let selectedFiles = [];
 let tracks = [];
-let activeTrackId = null;
 let nextTrackId = 1;
 let resultURL = null;
+let resultWaveformURL = null;
 let engine = null;
 let active = null;
-let switchVersion = 0;
 let playheadFrame = 0;
+let resultPlayheadFrame = 0;
+let previewSyncTimer = 0;
+let sourceScrollLock = false;
+let sourcePixelsPerSecond = 2;
+let sourceTimelineDuration = NaN;
+let sourceZoomMinimum = 2;
+let sourceZoomMaximum = 2;
+let sourceZoomInitialized = false;
+let resultPixelsPerSecond = 2;
+let resultDuration = NaN;
+let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
+let resultZoomMinimum = 2;
+let resultZoomMaximum = 2;
 
 const supported = typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function" && typeof Worker === "function" &&
   typeof File === "function" && typeof File.prototype.arrayBuffer === "function" &&
@@ -177,9 +190,21 @@ function clearAudio(audio) {
 
 function clearResult() {
   result.hidden = true;
+  cancelAnimationFrame(resultPlayheadFrame);
   clearAudio(resultAudio);
   if (resultURL) URL.revokeObjectURL(resultURL);
+  if (resultWaveformURL) URL.revokeObjectURL(resultWaveformURL);
   resultURL = null;
+  resultWaveformURL = null;
+  resultDuration = NaN;
+  resultWaveformWidth = WAVEFORM_MIN_WIDTH;
+  const resultControl = byId("result-waveform-control");
+  resultControl.replaceChildren();
+  resultControl.style.width = "100%";
+  byId("result-waveform-scroll").hidden = true;
+  byId("result-waveform-status").hidden = true;
+  byId("result-waveform-status").textContent = "";
+  byId("result-time").textContent = "0:00 / 0:00";
   download.removeAttribute("href");
   download.removeAttribute("download");
   byId("mixed-count").hidden = true;
@@ -197,6 +222,11 @@ function setBusy(busy) {
   cancel.hidden = !busy;
   progress.hidden = !busy;
   for (const control of byId("source").querySelectorAll("button")) control.disabled = busy;
+  for (const control of result.querySelectorAll("button, input")) control.disabled = busy;
+  if (!busy) {
+    updateSourceZoomRange();
+    if (resultWaveformURL) updateResultZoomRange();
+  }
 }
 
 function stop() {
@@ -240,52 +270,88 @@ function updateSelectionSummary() {
     `Выбрано дорожек: ${tracks.length} · Общий размер: ${fileSize(tracks.reduce((sum, track) => sum + track.file.size, 0))} МБ` : "";
 }
 
-function updateActiveState() {
-  for (const element of byId("source").querySelectorAll("[data-track-id]")) {
-    const current = Number(element.dataset.trackId) === activeTrackId;
-    if (element.classList.contains("processor-track")) element.setAttribute("aria-current", String(current));
-    if (element.matches("button[data-track-action='listen'], .processor-track-switcher button")) {
-      element.setAttribute("aria-pressed", String(current));
-    }
+function sourceDisplayWidth(track) {
+  if (!Number.isFinite(track.duration) || track.duration <= 0 || !sourceZoomInitialized) return track.waveformWidth;
+  return Math.max(1, Math.min(track.waveformWidth, Math.ceil(track.duration * sourcePixelsPerSecond)));
+}
+
+function seekSources(seconds) {
+  const target = Math.max(0, Math.min(Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : seconds, seconds));
+  for (const track of tracks) {
+    const audio = track.previewAudio;
+    if (!audio) continue;
+    const duration = Number.isFinite(audio.duration) ? audio.duration : track.duration;
+    try { audio.currentTime = Number.isFinite(duration) ? Math.min(target, duration) : target; } catch { /* Metadata is pending. */ }
   }
   updatePlayheads();
 }
 
 function seekFromControl(event) {
-  const control = event.currentTarget;
-  const track = trackById(control.dataset.trackId);
-  if (!track || !Number.isFinite(track.duration)) return;
-  if (event.detail === 0) {
-    void activateTrack(track.id, sourceAudio.currentTime, !sourceAudio.paused && !sourceAudio.ended);
-    return;
-  }
-  const box = control.getBoundingClientRect();
-  const ratio = Math.max(0, Math.min(1, (event.clientX - box.left) / box.width));
-  void activateTrack(track.id, ratio * track.duration, !sourceAudio.paused && !sourceAudio.ended);
+  const scroll = event.currentTarget.closest(".processor-waveform-scroll");
+  if (!scroll || Date.now() - Number(scroll.dataset.dragEnded || 0) < 150) return;
+  const box = scroll.getBoundingClientRect();
+  seekSources((scroll.scrollLeft + event.clientX - box.left) / sourcePixelsPerSecond);
 }
 
 function navigateWaveform(event) {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
-  const track = trackById(event.currentTarget.dataset.trackId);
-  if (!track || !Number.isFinite(track.duration)) return;
   event.preventDefault();
-  const current = Math.min(sourceAudio.currentTime || 0, track.duration);
+  const current = sourceAudio.currentTime || 0;
   const step = event.shiftKey ? 30 : 5;
-  const target = event.key === "Home" ? 0 : event.key === "End" ? track.duration :
-    Math.max(0, Math.min(track.duration, current + (event.key === "ArrowLeft" ? -step : step)));
-  void activateTrack(track.id, target, !sourceAudio.paused && !sourceAudio.ended);
+  const target = event.key === "Home" ? 0 : event.key === "End" ? sourceTimelineDuration :
+    current + (event.key === "ArrowLeft" ? -step : step);
+  seekSources(target);
 }
 
-function waveformControl(track, detail = false) {
+function installPan(scroll) {
+  let startX = 0;
+  let startScroll = 0;
+  let dragging = false;
+  scroll.addEventListener("pointerdown", (event) => {
+    if (event.button !== 0) return;
+    startX = event.clientX;
+    startScroll = scroll.scrollLeft;
+    dragging = false;
+    scroll.setPointerCapture(event.pointerId);
+  });
+  scroll.addEventListener("pointermove", (event) => {
+    if (!scroll.hasPointerCapture(event.pointerId)) return;
+    if (Math.abs(event.clientX - startX) > 6) dragging = true;
+    if (!dragging) return;
+    event.preventDefault();
+    scroll.classList.add("is-dragging");
+    scroll.scrollLeft = startScroll - (event.clientX - startX);
+  });
+  const finish = (event) => {
+    if (!scroll.hasPointerCapture(event.pointerId)) return;
+    scroll.releasePointerCapture(event.pointerId);
+    scroll.classList.remove("is-dragging");
+    if (dragging) scroll.dataset.dragEnded = String(Date.now());
+  };
+  scroll.addEventListener("pointerup", finish);
+  scroll.addEventListener("pointercancel", finish);
+}
+
+function syncSourceScroll(event) {
+  if (sourceScrollLock || sourcePixelsPerSecond <= 0) return;
+  const origin = event.currentTarget;
+  const leftTime = origin.scrollLeft / sourcePixelsPerSecond;
+  sourceScrollLock = true;
+  for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
+    if (scroll !== origin) scroll.scrollLeft = leftTime * sourcePixelsPerSecond;
+  }
+  requestAnimationFrame(() => { sourceScrollLock = false; });
+}
+
+function waveformControl(track) {
   const control = document.createElement("button");
   control.type = "button";
-  control.className = `processor-waveform${detail ? " processor-waveform--detail" : " processor-waveform--overview"}`;
+  control.className = "processor-waveform";
   control.dataset.trackId = String(track.id);
   control.dataset.trackAction = "waveform";
-  control.style.width = detail ? `${track.waveformWidth}px` : "100%";
-  control.setAttribute("aria-label", `${detail ? "Подробная" : "Обзорная"} форма сигнала дорожки ${track.ordinal}: ${track.file.name}`);
+  control.style.width = `${sourceDisplayWidth(track)}px`;
+  control.setAttribute("aria-label", `Форма сигнала дорожки ${track.ordinal}: ${track.file.name}`);
   control.setAttribute("aria-describedby", "processor-source-time");
-  control.addEventListener("click", seekFromControl);
   control.addEventListener("keydown", navigateWaveform);
   if (track.waveformURL) {
     const image = document.createElement("img");
@@ -310,15 +376,15 @@ function waveformControl(track, detail = false) {
 
 function renderTracks() {
   const list = byId("file-info");
-  const switcher = byId("track-switcher");
+  const leftTime = list.querySelector(".processor-waveform-scroll")?.scrollLeft / sourcePixelsPerSecond || 0;
   list.replaceChildren();
-  switcher.replaceChildren();
   tracks.forEach((track, index) => {
     track.ordinal = index + 1;
     const item = document.createElement("li");
     item.className = "processor-track";
     item.dataset.trackId = String(track.id);
-    item.setAttribute("aria-current", String(track.id === activeTrackId));
+    const top = document.createElement("div");
+    top.className = "processor-track__top";
     const heading = document.createElement("div");
     heading.className = "processor-track__heading";
     const number = document.createElement("span");
@@ -331,27 +397,29 @@ function renderTracks() {
     meta.className = "processor-track__meta";
     meta.textContent = `${fileSize(track.file.size)} МБ · ${clockDuration(track.duration)}`;
     heading.append(number, name, meta);
-    const overviewLabel = document.createElement("span");
-    overviewLabel.className = "processor-waveform-label";
-    overviewLabel.textContent = "Обзор формы сигнала";
-    const overview = waveformControl(track);
-    const detail = document.createElement("details");
-    detail.className = "processor-waveform-detail";
-    const summary = document.createElement("summary");
-    summary.textContent = "Подробная форма сигнала";
     const scroll = document.createElement("div");
     scroll.className = "processor-waveform-scroll";
-    scroll.append(waveformControl(track, true));
-    detail.append(summary, scroll);
+    scroll.dataset.trackId = String(track.id);
+    scroll.append(waveformControl(track));
+    scroll.addEventListener("click", seekFromControl);
+    scroll.addEventListener("scroll", syncSourceScroll, { passive: true });
+    installPan(scroll);
     const actions = document.createElement("div");
     actions.className = "processor-track__actions";
-    const listen = document.createElement("button");
-    listen.type = "button";
-    listen.dataset.trackId = String(track.id);
-    listen.dataset.trackAction = "listen";
-    listen.setAttribute("aria-pressed", String(track.id === activeTrackId));
-    listen.textContent = "Прослушать";
-    listen.addEventListener("click", () => void activateTrack(track.id, sourceAudio.currentTime, !sourceAudio.paused && !sourceAudio.ended));
+    const solo = document.createElement("button");
+    solo.type = "button";
+    solo.dataset.trackId = String(track.id);
+    solo.dataset.trackAction = "solo";
+    solo.setAttribute("aria-pressed", String(track.solo));
+    solo.textContent = "Соло";
+    solo.addEventListener("click", () => toggleMonitoring(track.id, "solo"));
+    const mute = document.createElement("button");
+    mute.type = "button";
+    mute.dataset.trackId = String(track.id);
+    mute.dataset.trackAction = "mute";
+    mute.setAttribute("aria-pressed", String(track.muted));
+    mute.textContent = "Заглушить";
+    mute.addEventListener("click", () => toggleMonitoring(track.id, "mute"));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.dataset.trackId = String(track.id);
@@ -359,37 +427,26 @@ function renderTracks() {
     remove.setAttribute("aria-label", `Удалить дорожку ${track.ordinal}: ${track.file.name}`);
     remove.textContent = "Удалить";
     remove.addEventListener("click", () => removeTrack(track.id));
-    actions.append(listen, remove);
-    item.append(heading, overviewLabel, overview, detail, actions);
+    actions.append(solo, mute, remove);
+    top.append(heading, actions);
+    item.append(top, scroll);
     list.append(item);
-
-    const switchButton = document.createElement("button");
-    switchButton.type = "button";
-    switchButton.dataset.trackId = String(track.id);
-    switchButton.dataset.trackAction = "switch";
-    switchButton.title = track.file.name;
-    switchButton.setAttribute("aria-label", `Дорожка ${track.ordinal}: ${track.file.name}`);
-    switchButton.setAttribute("aria-pressed", String(track.id === activeTrackId));
-    const shortName = track.file.name.length > 24 ? `${track.file.name.slice(0, 21)}…` : track.file.name;
-    switchButton.textContent = `${track.ordinal}. ${shortName}`;
-    switchButton.addEventListener("click", () => void activateTrack(track.id, sourceAudio.currentTime, !sourceAudio.paused && !sourceAudio.ended));
-    switcher.append(switchButton);
+    scroll.scrollLeft = leftTime * sourcePixelsPerSecond;
   });
   updateSelectionSummary();
   setBusy(Boolean(active));
+  applyMonitoring();
   updatePlayheads();
 }
 
 function updatePlayheads() {
   const current = Number.isFinite(sourceAudio.currentTime) ? sourceAudio.currentTime : 0;
   for (const track of tracks) {
-    const ratio = Number.isFinite(track.duration) && track.duration > 0 ? Math.min(1, current / track.duration) : 0;
-    for (const playhead of byId("source").querySelectorAll(`.processor-waveform[data-track-id="${track.id}"] .processor-waveform-playhead`)) {
-      playhead.style.left = `${ratio * 100}%`;
-    }
+    const control = byId("source").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
+    const playhead = control?.querySelector(".processor-waveform-playhead");
+    if (playhead) playhead.style.left = `${Math.min(control.offsetWidth, current * sourcePixelsPerSecond)}px`;
   }
-  const activeTrack = trackById(activeTrackId);
-  byId("source-time").textContent = `${clockDuration(current)} / ${clockDuration(activeTrack?.duration)}`;
+  byId("source-time").textContent = `${clockDuration(current)} / ${clockDuration(sourceTimelineDuration)}`;
 }
 
 function animatePlayhead() {
@@ -401,37 +458,148 @@ function animatePlayhead() {
   playheadFrame = requestAnimationFrame(frame);
 }
 
-sourceAudio.addEventListener("play", animatePlayhead);
-for (const event of ["pause", "timeupdate", "seeked", "durationchange", "ended"]) sourceAudio.addEventListener(event, updatePlayheads);
-
-async function activateTrack(id, position = 0, resume = false) {
-  const track = trackById(id);
-  if (!track) return;
-  const token = ++switchVersion;
-  const target = Number.isFinite(position) ? Math.max(0, position) : 0;
-  activeTrackId = track.id;
-  updateActiveState();
-  if (sourceAudio.src === track.sourceURL) {
-    sourceAudio.currentTime = Math.min(target, Number.isFinite(sourceAudio.duration) ? sourceAudio.duration : target);
-    updatePlayheads();
-    if (resume) await sourceAudio.play().catch(() => {});
-    return;
+function correctPreviewDrift(force = false) {
+  const masterTime = sourceAudio.currentTime || 0;
+  for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) {
+    const audio = track.previewAudio;
+    if (!audio) continue;
+    if (force || Math.abs((audio.currentTime || 0) - masterTime) > .25) {
+      try { audio.currentTime = Math.min(masterTime, Number.isFinite(audio.duration) ? audio.duration : masterTime); } catch { /* Metadata is pending. */ }
+    }
+    audio.playbackRate = sourceAudio.playbackRate;
+    audio.volume = sourceAudio.volume;
   }
-  sourceAudio.pause();
-  sourceAudio.src = track.sourceURL;
-  sourceAudio.load();
-  await new Promise((resolve) => {
-    if (sourceAudio.readyState >= 1) return resolve();
-    const done = () => { sourceAudio.removeEventListener("loadedmetadata", done); sourceAudio.removeEventListener("error", done); resolve(); };
-    sourceAudio.addEventListener("loadedmetadata", done, { once: true });
-    sourceAudio.addEventListener("error", done, { once: true });
-  });
-  if (token !== switchVersion || activeTrackId !== track.id) return;
-  const duration = Number.isFinite(sourceAudio.duration) ? sourceAudio.duration : track.duration;
-  sourceAudio.currentTime = Number.isFinite(duration) ? Math.min(target, duration) : target;
-  updatePlayheads();
-  if (resume) await sourceAudio.play().catch(() => {});
 }
+
+function applyMonitoring() {
+  const hasSolo = tracks.some((track) => track.solo);
+  for (const track of tracks) {
+    const audible = hasSolo ? track.solo : !track.muted;
+    if (track.previewAudio) track.previewAudio.muted = !audible;
+    const solo = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="solo"]`);
+    const mute = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="mute"]`);
+    solo?.setAttribute("aria-pressed", String(track.solo));
+    mute?.setAttribute("aria-pressed", String(track.muted));
+  }
+}
+
+function toggleMonitoring(id, action) {
+  const track = trackById(id);
+  if (!track || active) return;
+  if (action === "solo") {
+    track.solo = !track.solo;
+    if (track.solo) track.muted = false;
+  } else {
+    track.muted = !track.muted;
+    if (track.muted) track.solo = false;
+  }
+  applyMonitoring();
+}
+
+function clearPreviewAudios(clearMaster = true) {
+  clearInterval(previewSyncTimer);
+  previewSyncTimer = 0;
+  for (const track of tracks) {
+    if (track.previewAudio && track.previewAudio !== sourceAudio) clearAudio(track.previewAudio);
+    track.previewAudio = null;
+  }
+  byId("preview-audios").replaceChildren();
+  if (clearMaster) clearAudio(sourceAudio);
+  delete sourceAudio.dataset.trackId;
+}
+
+function setupPreviewAudios(position = 0, resume = false) {
+  clearPreviewAudios(true);
+  if (!tracks.length) return;
+  const master = tracks.reduce((longest, track) =>
+    Number.isFinite(track.duration) && (!Number.isFinite(longest.duration) || track.duration > longest.duration) ? track : longest, tracks[0]);
+  tracks.forEach((track) => {
+    const audio = track === master ? sourceAudio : document.createElement("audio");
+    audio.preload = "auto";
+    audio.src = track.sourceURL;
+    audio.dataset.trackId = String(track.id);
+    if (track !== master) {
+      audio.className = "processor-preview-audio";
+      byId("preview-audios").append(audio);
+    }
+    track.previewAudio = audio;
+    audio.load();
+  });
+  const restore = () => {
+    seekSources(position);
+    applyMonitoring();
+    if (resume) void sourceAudio.play().catch(() => {});
+  };
+  if (sourceAudio.readyState >= 1) restore();
+  else sourceAudio.addEventListener("loadedmetadata", restore, { once: true });
+}
+
+sourceAudio.addEventListener("play", () => {
+  animatePlayhead();
+  correctPreviewDrift(true);
+  for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) void track.previewAudio?.play().catch(() => {});
+  clearInterval(previewSyncTimer);
+  previewSyncTimer = window.setInterval(() => correctPreviewDrift(false), 500);
+});
+sourceAudio.addEventListener("pause", () => {
+  clearInterval(previewSyncTimer);
+  previewSyncTimer = 0;
+  for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) track.previewAudio?.pause();
+  updatePlayheads();
+});
+sourceAudio.addEventListener("seeking", () => correctPreviewDrift(true));
+sourceAudio.addEventListener("volumechange", () => correctPreviewDrift(false));
+for (const event of ["timeupdate", "seeked", "durationchange", "ended"]) sourceAudio.addEventListener(event, updatePlayheads);
+
+function sourceZoomBounds() {
+  const viewport = byId("file-info").querySelector(".processor-waveform-scroll");
+  const durations = tracks.map((track) => track.duration).filter((duration) => Number.isFinite(duration) && duration > 0);
+  sourceTimelineDuration = durations.length ? Math.max(...durations) : NaN;
+  const nativeRates = tracks.filter((track) => Number.isFinite(track.duration) && track.duration > 0)
+    .map((track) => track.waveformWidth / track.duration);
+  sourceZoomMaximum = nativeRates.length ? Math.min(...nativeRates) : 2;
+  sourceZoomMinimum = Number.isFinite(sourceTimelineDuration) && viewport ?
+    Math.min(sourceZoomMaximum, viewport.clientWidth / sourceTimelineDuration) : sourceZoomMaximum;
+}
+
+function updateSourceZoomRange() {
+  const range = byId("source-zoom-range");
+  const span = sourceZoomMaximum - sourceZoomMinimum;
+  range.value = String(span > 0 ? Math.round((sourcePixelsPerSecond - sourceZoomMinimum) / span * 100) : 0);
+  byId("source-zoom-out").disabled = Boolean(active) || sourcePixelsPerSecond <= sourceZoomMinimum + .001;
+  byId("source-zoom-in").disabled = Boolean(active) || sourcePixelsPerSecond >= sourceZoomMaximum - .001;
+}
+
+function setSourceZoom(value, anchorTime) {
+  sourceZoomBounds();
+  const first = byId("file-info").querySelector(".processor-waveform-scroll");
+  const centerTime = Number.isFinite(anchorTime) ? anchorTime : first ?
+    (first.scrollLeft + first.clientWidth / 2) / sourcePixelsPerSecond : 0;
+  sourcePixelsPerSecond = Math.max(sourceZoomMinimum, Math.min(sourceZoomMaximum, value));
+  sourceZoomInitialized = true;
+  for (const track of tracks) {
+    const control = byId("source").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
+    if (control) control.style.width = `${sourceDisplayWidth(track)}px`;
+  }
+  for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
+    scroll.scrollLeft = Math.max(0, centerTime * sourcePixelsPerSecond - scroll.clientWidth / 2);
+  }
+  updateSourceZoomRange();
+  updatePlayheads();
+}
+
+function initializeSourceZoom() {
+  sourceZoomBounds();
+  setSourceZoom(Math.max(sourceZoomMinimum, Math.min(sourceZoomMaximum, 2)), 0);
+}
+
+byId("source-zoom-range").addEventListener("input", (event) => {
+  const ratio = Number(event.currentTarget.value) / 100;
+  setSourceZoom(sourceZoomMinimum + (sourceZoomMaximum - sourceZoomMinimum) * ratio);
+});
+byId("source-zoom-out").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond / 1.5));
+byId("source-zoom-in").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond * 1.5));
+byId("source-zoom-fit").addEventListener("click", () => setSourceZoom(sourceZoomMinimum, 0));
 
 function syncInputFiles() {
   try {
@@ -451,15 +619,14 @@ function revokeTrackURLs(track) {
 }
 
 function clearTracks(resetInput = true) {
-  switchVersion++;
   cancelAnimationFrame(playheadFrame);
-  clearAudio(sourceAudio);
+  clearPreviewAudios(true);
   for (const track of tracks) revokeTrackURLs(track);
   tracks = [];
   selectedFiles = [];
-  activeTrackId = null;
+  sourceTimelineDuration = NaN;
+  sourceZoomInitialized = false;
   byId("file-info").replaceChildren();
-  byId("track-switcher").replaceChildren();
   byId("selection-summary").textContent = "";
   byId("source-time").textContent = "0:00 / 0:00";
   byId("source").hidden = true;
@@ -472,9 +639,9 @@ function removeTrack(id) {
   if (index < 0) return;
   clearResult();
   const removed = tracks[index];
-  const wasActive = removed.id === activeTrackId;
   const position = sourceAudio.currentTime;
   const resume = !sourceAudio.paused && !sourceAudio.ended;
+  clearPreviewAudios(true);
   tracks.splice(index, 1);
   revokeTrackURLs(removed);
   selectedFiles = tracks.map((track) => track.file);
@@ -485,9 +652,9 @@ function removeTrack(id) {
     setBusy(false);
     return;
   }
-  if (wasActive) activeTrackId = tracks[Math.min(index, tracks.length - 1)].id;
   renderTracks();
-  if (wasActive) void activateTrack(activeTrackId, position, resume);
+  setupPreviewAudios(position, resume);
+  initializeSourceZoom();
   status.textContent = selectionStatus();
   setBusy(false);
 }
@@ -575,7 +742,8 @@ async function buildWaveform(track, currentEngine, operation) {
     if (track.waveformURL) URL.revokeObjectURL(track.waveformURL);
     track.waveformURL = URL.createObjectURL(new Blob([image], { type: "image/png" }));
   } catch (failure) {
-    if (active === operation) track.waveformFailed = true;
+    if (active !== operation) throw failure;
+    track.waveformFailed = true;
   } finally {
     track.loading = false;
     if (currentEngine?.loaded && engine === currentEngine) {
@@ -611,6 +779,12 @@ async function generateWaveforms(candidates = tracks) {
       active = null;
       setBusy(false);
       renderTracks();
+      const longest = tracks.reduce((candidate, track) =>
+        Number.isFinite(track.duration) && (!Number.isFinite(candidate.duration) || track.duration > candidate.duration) ? track : candidate, tracks[0]);
+      if (longest && Number(sourceAudio.dataset.trackId) !== longest.id) {
+        setupPreviewAudios(sourceAudio.currentTime, !sourceAudio.paused && !sourceAudio.ended);
+      }
+      initializeSourceZoom();
     }
   }
 }
@@ -625,13 +799,13 @@ input.addEventListener("change", () => {
   if (files.length && !error && supported) {
     tracks = files.map((file) => ({
       id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), waveformURL: null,
-      waveformWidth: WAVEFORM_MIN_WIDTH, waveformFailed: false, loading: false, duration: NaN, ordinal: 0
+      waveformWidth: WAVEFORM_MIN_WIDTH, waveformFailed: false, loading: false, duration: NaN, ordinal: 0,
+      solo: false, muted: false, previewAudio: null
     }));
     selectedFiles = files;
-    activeTrackId = tracks[0].id;
     byId("source").hidden = false;
     renderTracks();
-    void activateTrack(activeTrackId, 0, false);
+    setupPreviewAudios(0, false);
     void generateWaveforms();
   }
   if (!active) setBusy(false);
@@ -654,6 +828,124 @@ function waitForMetadata(audio, operation) {
     audio.removeEventListener("loadedmetadata", loaded);
     audio.removeEventListener("error", failed);
   });
+}
+
+function resultDisplayWidth() {
+  if (!Number.isFinite(resultDuration) || resultDuration <= 0) return resultWaveformWidth;
+  return Math.max(1, Math.min(resultWaveformWidth, Math.ceil(resultDuration * resultPixelsPerSecond)));
+}
+
+function resultZoomBounds() {
+  const viewport = byId("result-waveform-scroll");
+  resultZoomMaximum = Number.isFinite(resultDuration) && resultDuration > 0 ? resultWaveformWidth / resultDuration : 2;
+  resultZoomMinimum = Number.isFinite(resultDuration) && resultDuration > 0 ?
+    Math.min(resultZoomMaximum, viewport.clientWidth / resultDuration) : resultZoomMaximum;
+}
+
+function updateResultZoomRange() {
+  const span = resultZoomMaximum - resultZoomMinimum;
+  byId("result-zoom-range").value = String(span > 0 ?
+    Math.round((resultPixelsPerSecond - resultZoomMinimum) / span * 100) : 0);
+  byId("result-zoom-out").disabled = Boolean(active) || resultPixelsPerSecond <= resultZoomMinimum + .001;
+  byId("result-zoom-in").disabled = Boolean(active) || resultPixelsPerSecond >= resultZoomMaximum - .001;
+}
+
+function setResultZoom(value, anchorTime) {
+  if (!resultWaveformURL) return;
+  const viewport = byId("result-waveform-scroll");
+  resultZoomBounds();
+  const centerTime = Number.isFinite(anchorTime) ? anchorTime :
+    (viewport.scrollLeft + viewport.clientWidth / 2) / resultPixelsPerSecond;
+  resultPixelsPerSecond = Math.max(resultZoomMinimum, Math.min(resultZoomMaximum, value));
+  byId("result-waveform-control").style.width = `${resultDisplayWidth()}px`;
+  viewport.scrollLeft = Math.max(0, centerTime * resultPixelsPerSecond - viewport.clientWidth / 2);
+  updateResultZoomRange();
+  updateResultPlayhead();
+}
+
+function updateResultPlayhead() {
+  const current = Number.isFinite(resultAudio.currentTime) ? resultAudio.currentTime : 0;
+  const control = byId("result-waveform-control");
+  const playhead = control.querySelector(".processor-waveform-playhead");
+  if (playhead) playhead.style.left = `${Math.min(control.offsetWidth, current * resultPixelsPerSecond)}px`;
+  byId("result-time").textContent = `${clockDuration(current)} / ${clockDuration(resultDuration)}`;
+}
+
+function animateResultPlayhead() {
+  cancelAnimationFrame(resultPlayheadFrame);
+  const frame = () => {
+    updateResultPlayhead();
+    if (!resultAudio.paused && !resultAudio.ended) resultPlayheadFrame = requestAnimationFrame(frame);
+  };
+  resultPlayheadFrame = requestAnimationFrame(frame);
+}
+
+function seekResult(seconds) {
+  if (!Number.isFinite(resultDuration)) return;
+  resultAudio.currentTime = Math.max(0, Math.min(resultDuration, seconds));
+  updateResultPlayhead();
+}
+
+const resultScroll = byId("result-waveform-scroll");
+const resultControl = byId("result-waveform-control");
+installPan(resultScroll);
+resultScroll.addEventListener("click", (event) => {
+  if (Date.now() - Number(resultScroll.dataset.dragEnded || 0) < 150) return;
+  const box = resultScroll.getBoundingClientRect();
+  seekResult((resultScroll.scrollLeft + event.clientX - box.left) / resultPixelsPerSecond);
+});
+resultControl.addEventListener("keydown", (event) => {
+  if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
+  event.preventDefault();
+  const step = event.shiftKey ? 30 : 5;
+  seekResult(event.key === "Home" ? 0 : event.key === "End" ? resultDuration :
+    (resultAudio.currentTime || 0) + (event.key === "ArrowLeft" ? -step : step));
+});
+resultAudio.addEventListener("play", animateResultPlayhead);
+for (const event of ["pause", "timeupdate", "seeked", "durationchange", "ended"]) resultAudio.addEventListener(event, updateResultPlayhead);
+byId("result-zoom-range").addEventListener("input", (event) => {
+  const ratio = Number(event.currentTarget.value) / 100;
+  setResultZoom(resultZoomMinimum + (resultZoomMaximum - resultZoomMinimum) * ratio);
+});
+byId("result-zoom-out").addEventListener("click", () => setResultZoom(resultPixelsPerSecond / 1.5));
+byId("result-zoom-in").addEventListener("click", () => setResultZoom(resultPixelsPerSecond * 1.5));
+byId("result-zoom-fit").addEventListener("click", () => setResultZoom(resultZoomMinimum, 0));
+
+async function buildResultWaveform(currentEngine, operation, duration) {
+  const waveformStatus = byId("result-waveform-status");
+  try {
+    resultDuration = duration;
+    resultWaveformWidth = waveformWidth(duration);
+    const filter = `[0:a:0]aformat=channel_layouts=mono,showwavespic=s=${resultWaveformWidth}x${WAVEFORM_HEIGHT}:colors=#74b2e6[v]`;
+    const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", OUTPUT_PATH,
+      "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", RESULT_WAVEFORM_PATH]));
+    if (code !== 0) throw new Error("waveform");
+    const image = await operation.wait(currentEngine.readFile(RESULT_WAVEFORM_PATH));
+    if (!image.byteLength) throw new Error("waveform");
+    resultWaveformURL = URL.createObjectURL(new Blob([image], { type: "image/png" }));
+    const element = document.createElement("img");
+    element.src = resultWaveformURL;
+    element.alt = "";
+    element.width = resultWaveformWidth;
+    element.height = WAVEFORM_HEIGHT;
+    const playhead = document.createElement("span");
+    playhead.className = "processor-waveform-playhead";
+    playhead.setAttribute("aria-hidden", "true");
+    resultControl.replaceChildren(element, playhead);
+    resultScroll.hidden = false;
+    waveformStatus.hidden = true;
+    resultZoomBounds();
+    setResultZoom(Math.max(resultZoomMinimum, Math.min(resultZoomMaximum, 2)), 0);
+  } catch (failure) {
+    if (active !== operation) throw failure;
+    resultScroll.hidden = true;
+    waveformStatus.textContent = "Не удалось построить форму сигнала.";
+    waveformStatus.hidden = false;
+  } finally {
+    if (currentEngine?.loaded && engine === currentEngine) {
+      try { await operation.wait(currentEngine.deleteFile(RESULT_WAVEFORM_PATH)); } catch { /* Absent or terminated. */ }
+    }
+  }
 }
 
 run.addEventListener("click", async () => {
@@ -721,6 +1013,8 @@ run.addEventListener("click", async () => {
     resultURL = URL.createObjectURL(new Blob([output], { type: "audio/mpeg" }));
     resultAudio.src = resultURL;
     const processedDuration = await waitForMetadata(resultAudio, operation);
+    result.hidden = false;
+    await buildResultWaveform(currentEngine, operation, processedDuration);
     for (const [id, value] of [["original-duration", duration], ["processed-duration", processedDuration],
       ["removed-duration", Math.max(0, duration - processedDuration)], ["pause-count", intervals.length]]) {
       byId(id).textContent = id === "pause-count" ? String(value) : formatDuration(value);
@@ -731,7 +1025,6 @@ run.addEventListener("click", async () => {
     byId("pause-label").textContent = multiple ? "Сокращено общих длинных пауз" : "Сокращено длинных пауз";
     download.href = resultURL;
     download.download = `${files[0].name.replace(/\.[^.]+$/, "")}${multiple ? "-mixed" : ""}-edited.mp3`;
-    result.hidden = false;
     status.textContent = multiple && !intervals.length ? MIXED_WITHOUT_CUTS : "Готово.";
   } catch (failure) {
     if (active === operation) {
@@ -766,7 +1059,7 @@ window.addEventListener("pagehide", () => {
   engine?.terminate();
   engine = null;
   clearResult();
-  clearAudio(sourceAudio);
+  clearPreviewAudios(true);
   for (const track of tracks) revokeTrackURLs(track);
 });
 window.addEventListener("pageshow", (event) => {
@@ -775,11 +1068,16 @@ window.addEventListener("pageshow", (event) => {
       track.sourceURL = URL.createObjectURL(track.file);
       track.waveformURL = null;
       track.waveformFailed = false;
+      track.previewAudio = null;
     }
     renderTracks();
-    void activateTrack(activeTrackId || tracks[0].id, sourceAudio.currentTime, false);
+    setupPreviewAudios(0, false);
     void generateWaveforms();
   }
+});
+window.addEventListener("resize", () => {
+  if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
+  if (resultWaveformURL) setResultZoom(resultPixelsPerSecond);
 });
 status.textContent = supported ? "Выберите файлы и нажмите «Обработать»." : UNSUPPORTED;
 setBusy(false);

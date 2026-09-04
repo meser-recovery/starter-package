@@ -827,7 +827,11 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "processor-download": "a", "processor-file-info": "ul", "processor-original-duration": "dd",
         "processor-processed-duration": "dd", "processor-removed-duration": "dd", "processor-pause-count": "dd",
         "processor-selection-summary": "p", "processor-mixed-count": "p", "processor-pause-label": "dt",
-        "processor-source-label": "h3", "processor-track-switcher": "div", "processor-source-time": "p",
+        "processor-source-label": "h3", "processor-source-time": "p",
+        "processor-source-zoom-out": "button", "processor-source-zoom-range": "input",
+        "processor-source-zoom-in": "button", "processor-source-zoom-fit": "button",
+        "processor-result-waveform-scroll": "div", "processor-result-waveform-control": "button",
+        "processor-result-waveform-status": "p", "processor-result-time": "p",
     }
     for element_id, element_tag in expected.items():
         if ids.count(element_id) != 1 or not any(tag == element_tag and attrs.get("id") == element_id for tag, attrs in tags):
@@ -897,12 +901,13 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         '"-filter_complex_script"', '"-map", "[mixed]"', "`processor-input-${index}`",
         "files.reduce((sum, file) => sum + file.size, 0)", "[...inputPaths, ...TEMP_PATHS]",
         "Выбрано дорожек:", "Дорожек сведено:", "Сокращено общих длинных пауз",
-        "const WAVEFORM_PIXELS_PER_SECOND = 2;", "const WAVEFORM_MAX_WIDTH = 16384;",
+        "const WAVEFORM_PIXELS_PER_SECOND = 4;", "const WAVEFORM_MAX_WIDTH = 16384;",
         "showwavespic=s=", "aformat=channel_layouts=mono", 'new Blob([image], { type: "image/png" })',
         "processor-waveform-input-${track.id}", "processor-waveform-${track.id}.png",
         "Не удалось построить форму сигнала.", "Подготовка формы сигнала…",
         "requestAnimationFrame", "ArrowLeft", "ArrowRight", 'event.key === "Home"', 'event.key === "End"',
-        "URL.revokeObjectURL(track.waveformURL)", "Прослушать", "Удалить",
+        "URL.revokeObjectURL(track.waveformURL)", "Соло", "Заглушить", "Удалить",
+        "processor-result-waveform.png", "resultWaveformURL", "processor-preview-audio",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
         "Длинные паузы не найдены. Файл не изменён.", "Подготовка обработчика…",
         "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово.",
@@ -912,6 +917,8 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if re.search(r'^import\s', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
+    if "Прослушать" in source or "processor-track-switcher" in source or "<details" in page.read_text(encoding="utf-8"):
+        errors.append("Processor retains the obsolete track switcher/detail waveform UI")
     forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|wavesurfer|peaks\.js|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
     if re.search(forbidden, source):
         errors.append("Processor has a forbidden external/write API, DSP, or threading dependency")
