@@ -39,8 +39,29 @@
 .processor-field input::file-selector-button { padding: .45rem .65rem; margin-right: .5rem; border: 0; border-radius: .3rem; font: inherit; background: var(--color-action-surface); color: var(--color-text); cursor: pointer; }
 .processor-preview { padding: var(--space-4); background: #f1f6fb; border-radius: var(--radius-sm); }
 .processor-preview audio { display: block; width: 100%; min-width: 0; max-width: 100%; }
-#processor-file-info { margin: 0; padding-left: 1.25rem; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
-#processor-file-info li + li { margin-top: var(--space-2); }
+.processor-track-list { display: grid; gap: var(--space-4); margin: 0; padding: 0; min-width: 0; list-style: none; }
+.processor-track { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-4); background: #fff; border: 2px solid var(--color-palette-light-2); border-radius: var(--radius-sm); }
+.processor-track[aria-current="true"] { border-color: var(--color-brand); box-shadow: 0 0 0 2px rgba(66, 139, 202, .16); }
+.processor-track__heading { display: grid; gap: var(--space-1); min-width: 0; }
+.processor-track__number { color: var(--color-brand); font-weight: 800; }
+.processor-track__name { margin: 0; overflow-wrap: anywhere; font-size: 1.05rem; }
+.processor-track__meta, .processor-waveform-status { color: #555; font-weight: 600; }
+.processor-waveform { position: relative; display: block; width: 100%; height: 100px; min-width: 0; padding: 0; overflow: hidden; background: #13293d; border: 2px solid transparent; border-radius: .45rem; cursor: pointer; touch-action: manipulation; }
+.processor-waveform:hover:not(:disabled) { border-color: var(--color-brand); }
+.processor-waveform:focus-visible, .processor-track button:focus-visible, .processor-track-switcher button:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.processor-waveform:disabled { cursor: wait; opacity: .72; }
+.processor-waveform img { display: block; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.processor-waveform-playhead { position: absolute; z-index: 1; top: 0; bottom: 0; left: 0; width: 3px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); pointer-events: none; }
+.processor-waveform-detail { min-width: 0; }
+.processor-waveform-detail > summary { margin-bottom: var(--space-2); font-weight: 700; cursor: pointer; }
+.processor-waveform-scroll { max-width: 100%; overflow-x: auto; overscroll-behavior-inline: contain; border-radius: .45rem; }
+.processor-waveform-scroll .processor-waveform { max-width: none; }
+.processor-track__actions, .processor-track-switcher { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.processor-track__actions button, .processor-track-switcher button { min-height: 2.75rem; padding: .45rem .8rem; color: var(--color-text); background: var(--color-action-surface); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-action); font: inherit; font-weight: 700; cursor: pointer; }
+.processor-track__actions button[aria-pressed="true"], .processor-track-switcher button[aria-pressed="true"] { color: #fff; background: var(--color-palette-dark-1); border-color: var(--color-palette-dark-1); }
+.processor-track__actions button:disabled, .processor-track-switcher button:disabled { cursor: not-allowed; opacity: .65; }
+.processor-source-player { display: grid; gap: var(--space-3); min-width: 0; padding-top: var(--space-2); border-top: 1px solid var(--color-palette-light-2); }
+.processor-source-time { font-variant-numeric: tabular-nums; font-weight: 700; }
 #processor-selection-summary, #processor-mixed-count { font-weight: 700; overflow-wrap: anywhere; }
 .processor-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .processor-actions button { min-height: 2.75rem; padding: .55rem 1rem; border: 1px solid var(--color-palette-dark-1); border-radius: var(--radius-action); font: inherit; font-weight: 700; color: var(--color-text); background: var(--color-action-surface); cursor: pointer; }
@@ -61,6 +82,7 @@
   .archive-item__actions > * { flex: 1 1 8rem; justify-content: center; }
   .audio-editor-content > .service-logout { width: 100%; }
   .processor-actions { flex-direction: column; }
+  .processor-track__actions > *, .processor-track-switcher > * { flex: 1 1 8rem; }
   .processor-statistics { grid-template-columns: 1fr; gap: var(--space-2); }
   #processor-download { width: 100%; }
 }

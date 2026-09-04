@@ -40,9 +40,13 @@
           </div>
           <div id="processor-source" class="processor-preview" hidden>
             <p id="processor-selection-summary"></p>
-            <ul id="processor-file-info"></ul>
-            <label id="processor-source-label" for="processor-source-audio">Исходное аудио</label>
-            <audio id="processor-source-audio" controls preload="metadata"></audio>
+            <ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul>
+            <div class="processor-source-player">
+              <h3 id="processor-source-label">Прослушивание исходников</h3>
+              <div id="processor-track-switcher" class="processor-track-switcher" role="group" aria-label="Выбор исходной дорожки"></div>
+              <audio id="processor-source-audio" aria-labelledby="processor-source-label" controls preload="metadata"></audio>
+              <p id="processor-source-time" class="processor-source-time" aria-live="off">0:00 / 0:00</p>
+            </div>
           </div>
           <div class="processor-actions">
             <button id="processor-run" type="button" disabled>Обработать</button>

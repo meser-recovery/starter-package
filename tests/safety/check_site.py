@@ -827,6 +827,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "processor-download": "a", "processor-file-info": "ul", "processor-original-duration": "dd",
         "processor-processed-duration": "dd", "processor-removed-duration": "dd", "processor-pause-count": "dd",
         "processor-selection-summary": "p", "processor-mixed-count": "p", "processor-pause-label": "dt",
+        "processor-source-label": "h3", "processor-track-switcher": "div", "processor-source-time": "p",
     }
     for element_id, element_tag in expected.items():
         if ids.count(element_id) != 1 or not any(tag == element_tag and attrs.get("id") == element_id for tag, attrs in tags):
@@ -896,6 +897,12 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         '"-filter_complex_script"', '"-map", "[mixed]"', "`processor-input-${index}`",
         "files.reduce((sum, file) => sum + file.size, 0)", "[...inputPaths, ...TEMP_PATHS]",
         "Выбрано дорожек:", "Дорожек сведено:", "Сокращено общих длинных пауз",
+        "const WAVEFORM_PIXELS_PER_SECOND = 2;", "const WAVEFORM_MAX_WIDTH = 16384;",
+        "showwavespic=s=", "aformat=channel_layouts=mono", 'new Blob([image], { type: "image/png" })',
+        "processor-waveform-input-${track.id}", "processor-waveform-${track.id}.png",
+        "Не удалось построить форму сигнала.", "Подготовка формы сигнала…",
+        "requestAnimationFrame", "ArrowLeft", "ArrowRight", 'event.key === "Home"', 'event.key === "End"',
+        "URL.revokeObjectURL(track.waveformURL)", "Прослушать", "Удалить",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
         "Длинные паузы не найдены. Файл не изменён.", "Подготовка обработчика…",
         "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово.",
@@ -903,9 +910,9 @@ def check_audio_processor_contract(errors: list[str]) -> None:
     for token in required:
         if token not in source:
             errors.append(f"Processor runtime contract missing: {token}")
-    if re.search(r'^import\s', source, re.M) or source.find('import("../vendor') < source.find('run.addEventListener("click"'):
-        errors.append("Processor must import FFmpeg lazily in the Run handler")
-    forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
+    if re.search(r'^import\s', source, re.M):
+        errors.append("Processor must import FFmpeg lazily after valid source selection")
+    forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|wavesurfer|peaks\.js|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
     if re.search(forbidden, source):
         errors.append("Processor has a forbidden external/write API, DSP, or threading dependency")
     own_source = source + (page.read_text(encoding="utf-8") if page.is_file() else "")
