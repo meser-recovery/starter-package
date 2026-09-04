@@ -1,7 +1,7 @@
 .service-main { display: flex; align-items: center; padding: var(--space-8) 0 var(--space-12); background: var(--color-brand-surface); }
 .service-content > h1 { margin-bottom: var(--space-6); color: #fff; font-size: clamp(1.8rem, 5vw, 2.7rem); text-align: center; }
-.service-card { max-width: 52rem; margin: 0 auto; padding: clamp(1rem, 4vw, 2rem); background: var(--color-surface); border: 2px solid var(--color-brand); border-radius: 1.25rem; box-shadow: 0 .75rem 1.75rem rgba(1, 58, 91, .18); text-align: center; }
-.service-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.service-card { max-width: 70rem; margin: 0 auto; padding: clamp(1rem, 4vw, 2rem); background: var(--color-surface); border: 2px solid var(--color-brand); border-radius: 1.25rem; box-shadow: 0 .75rem 1.75rem rgba(1, 58, 91, .18); text-align: center; }
+.service-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-4); }
 .service-action { display: flex; align-items: center; justify-content: center; min-height: 7rem; padding: var(--space-4); color: var(--color-text); background: var(--color-action-surface); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-action); box-shadow: var(--shadow-action); font-size: 1.25rem; font-weight: 700; text-align: center; text-decoration: none; }
 .service-action:hover { background: var(--color-action-surface-hover); border-color: var(--color-brand); }
 .service-action:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 3px; }
