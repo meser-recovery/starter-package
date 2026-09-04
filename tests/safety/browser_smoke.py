@@ -1135,6 +1135,15 @@ def fixture_manifest_route(route) -> None:
     )
 
 
+def wait_for_archive_items(page, count: int) -> None:
+    """Wait for the archive runtime to finish rendering the expected card count."""
+    page.locator(".archive-item").nth(count - 1).wait_for(state="visible")
+
+
+def wait_for_archive_text(page, text: str) -> None:
+    page.get_by_text(text, exact=True).wait_for(state="visible")
+
+
 def check_audio_editor_shell(page, width: int) -> None:
     if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
@@ -1175,6 +1184,7 @@ def check_audio_editor(page, base_url: str) -> None:
         page.get_by_role("link", name="Редактирование аудио", exact=True).click()
         page.wait_for_url("**/Audio-Editor.html")
         wait_for_page_ready(page)
+        wait_for_archive_items(page, 3)
         for width in (390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             check_audio_editor_shell(page, width)
@@ -1230,9 +1240,11 @@ def check_audio_editor(page, base_url: str) -> None:
             raise AssertionError("Archive download URL is not the canonical item URL")
 
         goto_ready(page, url(base_url, f"{AUDIO_EDITOR_PATH}?id=middle-audio"))
+        page.wait_for_function("expected => document.getElementById('archive-selected-name')?.textContent === expected && document.getElementById('archive-audio')?.src.endsWith('/middle-audio.mp3')", arg="Беседа Бета")
         if page.locator("#archive-selected-name").inner_text() != "Беседа Бета" or not page.locator("#archive-audio").evaluate("audio => audio.paused"):
             raise AssertionError("Valid audio editor deep link did not select safely")
         goto_ready(page, url(base_url, f"{AUDIO_EDITOR_PATH}?id=unknown-audio"))
+        wait_for_archive_items(page, 3)
         if page.locator(".archive-item").count() != 3 or page.locator("#archive-audio").get_attribute("src") is not None:
             raise AssertionError("Unknown audio editor deep link did not remain usable")
     finally:
@@ -1240,6 +1252,7 @@ def check_audio_editor(page, base_url: str) -> None:
 
     seed_service_access(page, base_url)
     goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+    wait_for_archive_text(page, "Архив пока пуст.")
     if not page.get_by_text("Архив пока пуст.", exact=True).is_visible() or page.locator(".archive-item").count() != 0:
         raise AssertionError("Production empty archive state failed")
     if page.locator("#archive-controls").is_visible():
@@ -1250,6 +1263,7 @@ def check_audio_editor(page, base_url: str) -> None:
     page.route(ARCHIVE_MANIFEST_PATTERN, lambda route: route.abort())
     try:
         goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+        wait_for_archive_text(page, "Не удалось загрузить архив.")
         if not page.get_by_text("Не удалось загрузить архив.", exact=True).is_visible():
             raise AssertionError("Archive manifest failure state failed")
     finally:
