@@ -1506,41 +1506,59 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert follow.inner_text() == "Следовать за воспроизведением"
     assert follow.get_attribute("aria-pressed") == "false"
     assert page.locator("#processor-source-scrollbar").count() == 1
+    shared_thumb = page.locator("#processor-source-scrollbar-thumb")
     native_widths = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.naturalWidth)")
     page.locator("#processor-source-zoom-fit").click()
-    assert shared_navigation.is_hidden()
+    assert shared_navigation.is_visible()
+    assert shared_scrollbar.get_attribute("role") == "scrollbar"
+    assert shared_scrollbar.get_attribute("aria-label") == "Навигация по исходным дорожкам"
+    assert shared_scrollbar.get_attribute("aria-valuemax") == "0"
+    assert shared_thumb.is_visible()
+    assert shared_thumb.bounding_box()["width"] >= shared_scrollbar.bounding_box()["width"] - 2
     before_widths = page.locator(".processor-track .processor-waveform").evaluate_all("items => items.map(item => item.offsetWidth)")
     page.locator("#processor-source-zoom-in").click()
     assert shared_navigation.is_visible()
     assert shared_scrollbar.get_attribute("tabindex") == "0"
-    assert shared_scrollbar.evaluate("element => element.scrollWidth > element.clientWidth")
+    assert shared_thumb.bounding_box()["width"] < shared_scrollbar.bounding_box()["width"] - 2
     after_widths = page.locator(".processor-track .processor-waveform").evaluate_all("items => items.map(item => item.offsetWidth)")
     assert after_widths[0] > before_widths[0] and abs(after_widths[0] - after_widths[1]) <= 1, (before_widths, after_widths)
     assert all(width <= native + 1 for width, native in zip(after_widths, native_widths)), (after_widths, native_widths)
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
     assert scrolls.nth(0).evaluate("element => element.scrollWidth > element.clientWidth")
     page.wait_for_timeout(50)
-    page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
-        shared.scrollLeft = (shared.scrollWidth - shared.clientWidth) / 2;
-        shared.dispatchEvent(new Event('scroll')); }""")
-    page.wait_for_function("""() => { const shared = document.getElementById('processor-source-scrollbar');
-        const tracks = document.querySelectorAll('.processor-track .processor-waveform-scroll');
-        return Math.abs(tracks[0].scrollLeft - shared.scrollLeft) < 2 && Math.abs(tracks[1].scrollLeft - shared.scrollLeft) < 2; }""")
+    rail_box = shared_scrollbar.bounding_box()
+    thumb_box = shared_thumb.bounding_box()
+    assert rail_box and thumb_box
+    page.mouse.move(thumb_box["x"] + thumb_box["width"] / 2, thumb_box["y"] + thumb_box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(rail_box["x"] + rail_box["width"] / 2, thumb_box["y"] + thumb_box["height"] / 2, steps=5)
+    page.mouse.up()
+    page.wait_for_function("""() => [...document.querySelectorAll('.processor-track .processor-waveform-scroll')]
+        .every(item => item.scrollLeft > 20)""")
     shared_times = page.evaluate("""() => { const waveform = document.querySelector('.processor-waveform');
         const pps = waveform.offsetWidth / 8;
-        return [...document.querySelectorAll('.processor-track .processor-waveform-scroll'),
-            document.getElementById('processor-source-scrollbar')].map(item => item.scrollLeft / pps); }""")
-    assert max(shared_times) - min(shared_times) < .05, shared_times
+        return {tracks: [...document.querySelectorAll('.processor-track .processor-waveform-scroll')].map(item => item.scrollLeft / pps),
+            shared: Number(document.getElementById('processor-source-scrollbar').getAttribute('aria-valuenow'))}; }""")
+    assert max(shared_times["tracks"]) - min(shared_times["tracks"]) < .05
+    assert all(abs(value - shared_times["shared"]) < .05 for value in shared_times["tracks"]), shared_times
+    rail_box = shared_scrollbar.bounding_box()
+    page.mouse.click(rail_box["x"] + 3, rail_box["y"] + rail_box["height"] / 2)
+    page.wait_for_function("""() => [...document.querySelectorAll('.processor-track .processor-waveform-scroll')]
+        .every(item => item.scrollLeft < 2) && Number(document.getElementById('processor-source-scrollbar').getAttribute('aria-valuenow')) === 0""")
     page.wait_for_timeout(50)
     page.evaluate("""() => { const items = document.querySelectorAll('.processor-track .processor-waveform-scroll');
         items[0].scrollLeft = 100; items[0].dispatchEvent(new Event('scroll')); }""")
-    page.wait_for_function("""() => Math.abs(document.querySelectorAll('.processor-track .processor-waveform-scroll')[1].scrollLeft - 100) < 2 &&
-        Math.abs(document.getElementById('processor-source-scrollbar').scrollLeft - 100) < 2""")
+    page.wait_for_function("""() => { const first = document.querySelectorAll('.processor-track .processor-waveform-scroll')[0];
+        const second = document.querySelectorAll('.processor-track .processor-waveform-scroll')[1];
+        const pps = first.querySelector('.processor-waveform').offsetWidth / 8;
+        return Math.abs(second.scrollLeft - 100) < 2 && Math.abs(Number(document.getElementById('processor-source-scrollbar').getAttribute('aria-valuenow')) - 100 / pps) < .05; }""")
     page.wait_for_timeout(50)
     page.evaluate("""() => { const items = document.querySelectorAll('.processor-track .processor-waveform-scroll');
         items[1].scrollLeft = 160; items[1].dispatchEvent(new Event('scroll')); }""")
-    page.wait_for_function("""() => Math.abs(document.querySelectorAll('.processor-track .processor-waveform-scroll')[0].scrollLeft - 160) < 2 &&
-        Math.abs(document.getElementById('processor-source-scrollbar').scrollLeft - 160) < 2""")
+    page.wait_for_function("""() => { const first = document.querySelectorAll('.processor-track .processor-waveform-scroll')[0];
+        const second = document.querySelectorAll('.processor-track .processor-waveform-scroll')[1];
+        const pps = first.querySelector('.processor-waveform').offsetWidth / 8;
+        return Math.abs(first.scrollLeft - 160) < 2 && Math.abs(Number(document.getElementById('processor-source-scrollbar').getAttribute('aria-valuenow')) - 160 / pps) < .05; }""")
     anchor_before = page.evaluate("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
         const waveform = scroll.querySelector('.processor-waveform');
         return (scroll.scrollLeft + scroll.clientWidth / 2) / (waveform.offsetWidth / 8); }""")
@@ -1549,7 +1567,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         const waveform = scroll.querySelector('.processor-waveform');
         return (scroll.scrollLeft + scroll.clientWidth / 2) / (waveform.offsetWidth / 8); }""")
     assert abs(anchor_after - anchor_before) < .15, (anchor_before, anchor_after)
-    assert shared_scrollbar.evaluate("element => element.scrollWidth > element.clientWidth")
+    assert shared_thumb.bounding_box()["width"] < shared_scrollbar.bounding_box()["width"] - 2
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
     assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
     capture_state("waveforms-synchronized")
@@ -1563,12 +1581,10 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     # Drag pans without seeking; a click seeks every preview on the common timeline.
     first_scroll = scrolls.nth(0)
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 1")
-    page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
-        shared.scrollLeft = (shared.scrollWidth - shared.clientWidth) / 2;
-        shared.dispatchEvent(new Event('scroll')); }""")
-    page.wait_for_function("""() => { const shared = document.getElementById('processor-source-scrollbar');
-        const track = document.querySelector('.processor-track .processor-waveform-scroll');
-        return Math.abs(track.scrollLeft - shared.scrollLeft) < 2; }""")
+    page.wait_for_timeout(50)
+    page.evaluate("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
+        scroll.scrollLeft = 120; scroll.dispatchEvent(new Event('scroll')); }""")
+    page.wait_for_function("Math.abs(document.querySelector('.processor-track .processor-waveform-scroll').scrollLeft - 120) < 2")
     page.wait_for_timeout(50)
     scroll_before_drag = first_scroll.evaluate("element => element.scrollLeft")
     scroll_box = first_scroll.bounding_box()
@@ -1609,8 +1625,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     follow.click()
     assert follow.get_attribute("aria-pressed") == "true"
     first_waveform.press("Home")
-    page.wait_for_function("""() => [...document.querySelectorAll('.processor-track .processor-waveform-scroll'),
-        document.getElementById('processor-source-scrollbar')].every(item => item.scrollLeft < 2)""")
+    page.wait_for_function("""() => [...document.querySelectorAll('.processor-track .processor-waveform-scroll')]
+        .every(item => item.scrollLeft < 2) && Number(document.getElementById('processor-source-scrollbar').getAttribute('aria-valuenow')) === 0""")
     first_waveform.click(position={"x": 180, "y": 50})
     page.wait_for_function("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
         const playhead = scroll.querySelector('.processor-waveform-playhead');
@@ -1622,11 +1638,12 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     followed_middle = page.evaluate("""() => {
         const scrolls = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
         const shared = document.getElementById('processor-source-scrollbar');
-        return {lefts: [...scrolls.map(item => item.scrollLeft), shared.scrollLeft],
+        const pps = scrolls[0].querySelector('.processor-waveform').offsetWidth / 8;
+        return {lefts: scrolls.map(item => item.scrollLeft), shared: Number(shared.getAttribute('aria-valuenow')) * pps,
             visualX: scrolls[0].querySelector('.processor-waveform-playhead').getBoundingClientRect().left - scrolls[0].getBoundingClientRect().left,
             centerX: scrolls[0].clientWidth / 2};
     }""")
-    assert max(followed_middle["lefts"]) - min(followed_middle["lefts"]) < 2, followed_middle
+    assert max(followed_middle["lefts"]) - min(followed_middle["lefts"]) < 2 and abs(followed_middle["lefts"][0] - followed_middle["shared"]) < 2, followed_middle
     assert abs(followed_middle["visualX"] - followed_middle["centerX"]) < 8, followed_middle
 
     # Zoom while following recenters on the playhead and never desynchronizes tracks or proxy.
@@ -1634,9 +1651,10 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     followed_zoom = page.evaluate("""() => { const scrolls = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
         const shared = document.getElementById('processor-source-scrollbar');
         const first = scrolls[0], playhead = first.querySelector('.processor-waveform-playhead');
-        return {lefts: [...scrolls.map(item => item.scrollLeft), shared.scrollLeft],
+        const pps = first.querySelector('.processor-waveform').offsetWidth / 8;
+        return {lefts: scrolls.map(item => item.scrollLeft), shared: Number(shared.getAttribute('aria-valuenow')) * pps,
             visualX: playhead.getBoundingClientRect().left - first.getBoundingClientRect().left, centerX: first.clientWidth / 2}; }""")
-    assert max(followed_zoom["lefts"]) - min(followed_zoom["lefts"]) < 2, followed_zoom
+    assert max(followed_zoom["lefts"]) - min(followed_zoom["lefts"]) < 2 and abs(followed_zoom["lefts"][0] - followed_zoom["shared"]) < 2, followed_zoom
     assert abs(followed_zoom["visualX"] - followed_zoom["centerX"]) < 8, followed_zoom
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
 
@@ -1646,9 +1664,10 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.wait_for_function("start => document.querySelector('.processor-track .processor-waveform-scroll').scrollLeft > start + 8",
                            arg=playback_scroll_start, timeout=5000)
     assert follow.get_attribute("aria-pressed") == "true"
-    playback_follow = page.evaluate("""() => { const items = [...document.querySelectorAll('.processor-track .processor-waveform-scroll'),
-        document.getElementById('processor-source-scrollbar')]; return items.map(item => item.scrollLeft); }""")
-    assert max(playback_follow) - min(playback_follow) < 2, playback_follow
+    playback_follow = page.evaluate("""() => { const items = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
+        const pps = items[0].querySelector('.processor-waveform').offsetWidth / 8;
+        return {lefts: items.map(item => item.scrollLeft), shared: Number(document.getElementById('processor-source-scrollbar').getAttribute('aria-valuenow')) * pps}; }""")
+    assert max(playback_follow["lefts"]) - min(playback_follow["lefts"]) < 2 and abs(playback_follow["lefts"][0] - playback_follow["shared"]) < 2, playback_follow
     page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
     paused_left = first_scroll.evaluate("element => element.scrollLeft")
     page.wait_for_timeout(450)
@@ -1673,16 +1692,40 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         return [playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left, scroll.clientWidth / 2]; }""")
     assert abs(recentered[0] - recentered[1]) < 8, recentered
 
-    # Native shared-scrollbar keyboard navigation is explicit manual intent and disengages follow.
+    # Persistent custom thumb dragging and keyboard navigation are explicit manual intent.
+    thumb_box = shared_thumb.bounding_box()
+    rail_box = shared_scrollbar.bounding_box()
+    assert thumb_box and rail_box
+    page.mouse.move(thumb_box["x"] + thumb_box["width"] / 2, thumb_box["y"] + thumb_box["height"] / 2)
+    page.mouse.down()
+    page.mouse.move(min(rail_box["x"] + rail_box["width"] - thumb_box["width"] / 2, thumb_box["x"] + thumb_box["width"] + 30), thumb_box["y"] + thumb_box["height"] / 2, steps=4)
+    page.mouse.up()
+    assert follow.get_attribute("aria-pressed") == "false"
+    follow.click()
+    assert follow.get_attribute("aria-pressed") == "true"
     shared_scrollbar.focus()
     shared_scrollbar.press("ArrowRight")
     assert follow.get_attribute("aria-pressed") == "false"
     follow.click()
+    shared_scrollbar.press("Home")
+    assert shared_scrollbar.get_attribute("aria-valuenow") == "0"
+    shared_scrollbar.press("PageDown")
+    assert float(shared_scrollbar.get_attribute("aria-valuenow")) > 0
+    shared_scrollbar.press("End")
+    assert abs(float(shared_scrollbar.get_attribute("aria-valuenow")) - float(shared_scrollbar.get_attribute("aria-valuemax"))) < .01
+    page.locator("#processor-source-zoom-fit").click()
+    assert shared_navigation.is_visible() and shared_thumb.is_visible()
+    assert shared_scrollbar.get_attribute("aria-valuemax") == "0"
+    fit_now = shared_scrollbar.get_attribute("aria-valuenow")
+    shared_scrollbar.press("ArrowRight")
+    assert shared_scrollbar.get_attribute("aria-valuenow") == fit_now
+    page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+    follow.click()
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 7.95")
     page.wait_for_function("""() => { const shared = document.getElementById('processor-source-scrollbar');
-        return Math.abs(shared.scrollLeft - (shared.scrollWidth - shared.clientWidth)) < 3; }""")
+        return Math.abs(Number(shared.getAttribute('aria-valuenow')) - Number(shared.getAttribute('aria-valuemax'))) < .01; }""")
     end_state = page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
-        return {left: shared.scrollLeft, max: shared.scrollWidth - shared.clientWidth}; }""")
+        return {left: Number(shared.getAttribute('aria-valuenow')), max: Number(shared.getAttribute('aria-valuemax'))}; }""")
     assert end_state["left"] >= 0 and end_state["left"] <= end_state["max"] + 2, end_state
     page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
     set_follow_off = follow.get_attribute("aria-pressed") == "true"
@@ -1743,6 +1786,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert page.locator("#processor-download").get_attribute("download") == "Zoom-A-edited.mp3"
     page.locator(".processor-track").get_by_role("button", name=re.compile("Удалить дорожку")).click()
     assert page.locator("#processor-source").is_hidden() and page.locator("#processor-run").is_disabled()
+    assert page.locator("#processor-source-navigation").is_hidden()
     assert page.locator("#processor-file").evaluate("input => input.files.length") == 0
     assert page.locator("#processor-status").inner_text() == "Выберите файлы и нажмите «Обработать»."
 
@@ -1848,17 +1892,19 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
             if page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true":
                 page.locator("#processor-source-follow").click()
             page.locator("#processor-source-zoom-fit").click()
-            assert page.locator("#processor-source-navigation").is_hidden()
+            assert page.locator("#processor-source-navigation").is_visible()
+            assert page.locator("#processor-source-scrollbar-thumb").is_visible()
+            assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] >= page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
             page.screenshot(path=str(screenshot_dir / f"source-fit-{width}.png"), full_page=True)
             page.locator("#processor-source-zoom-range").evaluate(
                 "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
             assert page.locator("#processor-source-navigation").is_visible()
+            assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] < page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
             page.wait_for_timeout(50)
-            page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
-                shared.scrollLeft = (shared.scrollWidth - shared.clientWidth) / 2;
-                shared.dispatchEvent(new Event('scroll')); }""")
+            rail_box = page.locator("#processor-source-scrollbar").bounding_box()
+            page.mouse.click(rail_box["x"] + rail_box["width"] / 2, rail_box["y"] + rail_box["height"] / 2)
             page.screenshot(path=str(screenshot_dir / f"source-scrollbar-middle-{width}.png"), full_page=True)
             page.locator("#processor-source-follow").click()
             page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
@@ -2098,8 +2144,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-source-zoom-range").evaluate(
             "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
         page.wait_for_timeout(50)
-        page.evaluate("""() => { const shared = document.getElementById('processor-source-scrollbar');
-            if (!shared.closest('[hidden]')) { shared.scrollLeft = 40; shared.dispatchEvent(new Event('scroll')); } }""")
+        source_rail = page.locator("#processor-source-scrollbar").bounding_box()
+        page.mouse.click(source_rail["x"] + source_rail["width"] * .65, source_rail["y"] + source_rail["height"] / 2)
         result_independent_after = page.evaluate("""() => ({
             time: document.getElementById('processor-result-audio').currentTime,
             scroll: document.getElementById('processor-result-waveform-scroll').scrollLeft,

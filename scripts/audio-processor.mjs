@@ -288,6 +288,30 @@ function maximumSourceLeftTime() {
   return Math.max(0, (Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0) - sourceViewportDuration);
 }
 
+function sourceScrollbarGeometry() {
+  const rail = byId("source-scrollbar");
+  const railWidth = Math.max(0, rail.clientWidth);
+  const duration = Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0;
+  const fraction = duration > 0 ? Math.min(1, Math.max(0, sourceViewportDuration / duration)) : 1;
+  const thumbWidth = railWidth ? Math.min(railWidth, Math.max(36, railWidth * fraction)) : 0;
+  const maxLeft = maximumSourceLeftTime();
+  const travel = Math.max(0, railWidth - thumbWidth);
+  return { railWidth, thumbWidth, maxLeft, travel };
+}
+
+function updateSourceScrollbar() {
+  const rail = byId("source-scrollbar");
+  const thumb = byId("source-scrollbar-thumb");
+  const { thumbWidth, maxLeft, travel } = sourceScrollbarGeometry();
+  const position = maxLeft > 0 ? sourceLeftVisibleTime / maxLeft * travel : 0;
+  thumb.style.width = `${thumbWidth}px`;
+  thumb.style.transform = `translateX(${Math.max(0, Math.min(travel, position))}px)`;
+  rail.setAttribute("aria-valuemin", "0");
+  rail.setAttribute("aria-valuemax", String(Math.round(maxLeft * 1000) / 1000));
+  rail.setAttribute("aria-valuenow", String(Math.round(sourceLeftVisibleTime * 1000) / 1000));
+  rail.setAttribute("aria-valuetext", `${clockDuration(sourceLeftVisibleTime)} из ${clockDuration(Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0)}`);
+}
+
 function releaseSourceScrollLock() {
   cancelAnimationFrame(sourceScrollReleaseFrame);
   sourceScrollReleaseFrame = requestAnimationFrame(() => {
@@ -302,8 +326,7 @@ function setSourceLeftVisibleTime(value) {
   for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
     if (Math.abs(scroll.scrollLeft - target) > .5) scroll.scrollLeft = target;
   }
-  const shared = byId("source-scrollbar");
-  if (Math.abs(shared.scrollLeft - target) > .5) shared.scrollLeft = target;
+  updateSourceScrollbar();
   releaseSourceScrollLock();
 }
 
@@ -327,17 +350,22 @@ function followSourcePlayhead(time = sourceAudio.currentTime || 0) {
 function updateSourceNavigation() {
   const viewport = byId("file-info").querySelector(".processor-waveform-scroll");
   const navigation = byId("source-navigation");
-  if (!viewport || !sourceZoomInitialized || !Number.isFinite(sourceTimelineDuration)) {
+  if (!tracks.length) {
     navigation.hidden = true;
     sourceViewportDuration = 0;
     sourceLeftVisibleTime = 0;
+    updateSourceScrollbar();
     return;
   }
-  const displayWidth = Math.max(1, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond));
+  navigation.hidden = false;
+  if (!viewport || !sourceZoomInitialized || !Number.isFinite(sourceTimelineDuration) || sourcePixelsPerSecond <= 0) {
+    sourceViewportDuration = 0;
+    sourceLeftVisibleTime = 0;
+    updateSourceScrollbar();
+    return;
+  }
   sourceViewportDuration = viewport.clientWidth / sourcePixelsPerSecond;
-  byId("source-scrollbar-spacer").style.width = `${displayWidth}px`;
-  navigation.hidden = displayWidth <= viewport.clientWidth + 1;
-  setSourceLeftVisibleTime(navigation.hidden ? 0 : sourceLeftVisibleTime);
+  setSourceLeftVisibleTime(sourceLeftVisibleTime);
 }
 
 function seekSources(seconds) {
@@ -680,11 +708,57 @@ byId("source-zoom-fit").addEventListener("click", () => setSourceZoom(sourceZoom
 byId("source-follow").addEventListener("click", () => setSourceFollow(!sourceFollowEnabled));
 
 const sourceScrollbar = byId("source-scrollbar");
-sourceScrollbar.addEventListener("scroll", syncSourceScroll, { passive: true });
-sourceScrollbar.addEventListener("pointerdown", disengageSourceFollow);
-sourceScrollbar.addEventListener("wheel", disengageSourceFollow, { passive: true });
+const sourceScrollbarThumb = byId("source-scrollbar-thumb");
+let sourceScrollbarDrag = null;
+
+function setSourceFromScrollbarPosition(position) {
+  const { thumbWidth, maxLeft, travel } = sourceScrollbarGeometry();
+  const fraction = travel > 0 ? Math.max(0, Math.min(1, position / travel)) : 0;
+  setSourceLeftVisibleTime(fraction * maxLeft);
+}
+
+sourceScrollbar.addEventListener("pointerdown", (event) => {
+  if (event.button !== 0) return;
+  const rect = sourceScrollbar.getBoundingClientRect();
+  disengageSourceFollow();
+  if (event.target === sourceScrollbarThumb) {
+    const { thumbWidth, travel } = sourceScrollbarGeometry();
+    const currentPosition = maximumSourceLeftTime() > 0 ? sourceLeftVisibleTime / maximumSourceLeftTime() * travel : 0;
+    sourceScrollbarDrag = { pointerId: event.pointerId, grabOffset: Math.max(0, Math.min(thumbWidth, event.clientX - rect.left - currentPosition)) };
+    sourceScrollbar.setPointerCapture(event.pointerId);
+    sourceScrollbarThumb.classList.add("is-dragging");
+    event.preventDefault();
+    return;
+  }
+  const { thumbWidth } = sourceScrollbarGeometry();
+  setSourceFromScrollbarPosition(event.clientX - rect.left - thumbWidth / 2);
+});
+
+sourceScrollbar.addEventListener("pointermove", (event) => {
+  if (!sourceScrollbarDrag || sourceScrollbarDrag.pointerId !== event.pointerId) return;
+  const rect = sourceScrollbar.getBoundingClientRect();
+  setSourceFromScrollbarPosition(event.clientX - rect.left - sourceScrollbarDrag.grabOffset);
+  event.preventDefault();
+});
+
+function finishSourceScrollbarDrag(event) {
+  if (!sourceScrollbarDrag || sourceScrollbarDrag.pointerId !== event.pointerId) return;
+  if (sourceScrollbar.hasPointerCapture(event.pointerId)) sourceScrollbar.releasePointerCapture(event.pointerId);
+  sourceScrollbarDrag = null;
+  sourceScrollbarThumb.classList.remove("is-dragging");
+}
+
+sourceScrollbar.addEventListener("pointerup", finishSourceScrollbarDrag);
+sourceScrollbar.addEventListener("pointercancel", finishSourceScrollbarDrag);
 sourceScrollbar.addEventListener("keydown", (event) => {
-  if (["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) disengageSourceFollow();
+  if (!["ArrowLeft", "ArrowRight", "Home", "End", "PageUp", "PageDown"].includes(event.key)) return;
+  event.preventDefault();
+  disengageSourceFollow();
+  const smallStep = Math.max(1, sourceViewportDuration / 10);
+  const pageStep = Math.max(smallStep, sourceViewportDuration * .9);
+  const target = event.key === "Home" ? 0 : event.key === "End" ? maximumSourceLeftTime() :
+    sourceLeftVisibleTime + (event.key === "ArrowLeft" ? -smallStep : event.key === "ArrowRight" ? smallStep : event.key === "PageUp" ? -pageStep : pageStep);
+  setSourceLeftVisibleTime(target);
 });
 
 function syncInputFiles() {
@@ -719,8 +793,7 @@ function clearTracks(resetInput = true) {
   setSourceFollow(false);
   byId("file-info").replaceChildren();
   byId("source-navigation").hidden = true;
-  byId("source-scrollbar").scrollLeft = 0;
-  byId("source-scrollbar-spacer").style.width = "0px";
+  updateSourceScrollbar();
   byId("selection-summary").textContent = "";
   byId("source-time").textContent = "0:00 / 0:00";
   byId("source").hidden = true;

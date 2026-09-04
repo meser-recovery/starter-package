@@ -831,7 +831,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "processor-source-zoom-out": "button", "processor-source-zoom-range": "input",
         "processor-source-zoom-in": "button", "processor-source-zoom-fit": "button",
         "processor-source-navigation": "div", "processor-source-scrollbar": "div",
-        "processor-source-scrollbar-spacer": "div", "processor-source-follow": "button",
+        "processor-source-scrollbar-thumb": "div", "processor-source-follow": "button",
         "processor-result-waveform-scroll": "div", "processor-result-waveform-control": "button",
         "processor-result-waveform-status": "p", "processor-result-time": "p",
     }
@@ -863,10 +863,15 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
             r'<button[^>]+id="processor-source-follow"[^>]*>Следовать за воспроизведением</button>', source)):
         errors.append("Audio-Editor.html: source follow toggle contract changed")
     scrollbar = elements.get("processor-source-scrollbar", {})
-    if scrollbar.get("tabindex") != "0" or scrollbar.get("aria-labelledby") != "processor-source-navigation-label":
-        errors.append("Audio-Editor.html: shared source scrollbar is not keyboard accessible")
+    if (scrollbar.get("tabindex") != "0" or scrollbar.get("role") != "scrollbar" or
+            scrollbar.get("aria-orientation") != "horizontal" or
+            scrollbar.get("aria-label") != "Навигация по исходным дорожкам" or
+            any(key not in scrollbar for key in ("aria-valuemin", "aria-valuemax", "aria-valuenow"))):
+        errors.append("Audio-Editor.html: persistent custom source scrollbar accessibility contract changed")
     if "processor-result-follow" in ids or source.count('id="processor-source-scrollbar"') != 1:
         errors.append("Audio-Editor.html: source/result follow or shared scrollbar count contract changed")
+    if "processor-source-scrollbar-spacer" in ids:
+        errors.append("Audio-Editor.html: native source scrollbar proxy must not remain")
     for tag, attrs in tags:
         if tag == "audio" and ("autoplay" in attrs or "controls" not in attrs):
             errors.append("Audio-Editor.html: audio must have native controls and no autoplay")
@@ -920,7 +925,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         "URL.revokeObjectURL(track.waveformURL)", "Соло", "Заглушить", "Удалить",
         "processor-result-waveform.png", "resultWaveformURL", "processor-preview-audio",
         "let sourceLeftVisibleTime = 0;", "let sourceViewportDuration = 0;",
-        "sourceFollowEnabled", "source-scrollbar-spacer",
+        "sourceFollowEnabled", "source-scrollbar-thumb", "updateSourceScrollbar",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
         "Длинные паузы не найдены. Файл не изменён.", "Подготовка обработчика…",
         "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово.",
@@ -928,6 +933,8 @@ def check_audio_processor_contract(errors: list[str]) -> None:
     for token in required:
         if token not in source:
             errors.append(f"Processor runtime contract missing: {token}")
+    if "navigation.hidden = displayWidth" in source or "navigation.hidden ? 0" in source:
+        errors.append("Processor source scrollbar must remain visible while tracks are selected")
     if re.search(r'^import\s', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     if "Прослушать" in source or "processor-track-switcher" in source or "<details" in page.read_text(encoding="utf-8"):
