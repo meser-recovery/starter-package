@@ -897,6 +897,7 @@ def check_google_drive(page, base_url: str, width: int) -> None:
 
 
 SERVICE_LANDING_PATH = "/Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html"
+AUDIO_EDITOR_PATH = "/Audio-Editor.html"
 SERVICE_SESSION_KEY = "meser_service_access_v1"
 
 
@@ -1044,9 +1045,13 @@ def check_service_landing(page, base_url: str, width: int) -> None:
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Service landing has horizontal overflow at {width}px")
     actions = page.locator("a.service-action")
-    expected = (("Календарь", "Calendar.html"), ("Материалы", "Google-Drive.html"))
+    expected = (
+        ("Календарь", "Calendar.html"),
+        ("Материалы", "Google-Drive.html"),
+        ("Редактирование аудио", "Audio-Editor.html"),
+    )
     if actions.count() != len(expected):
-        raise AssertionError(f"Service landing must have two actions at {width}px")
+        raise AssertionError(f"Service landing must have three actions at {width}px")
     boxes = []
     for index, (label, href) in enumerate(expected):
         action = actions.nth(index)
@@ -1055,13 +1060,15 @@ def check_service_landing(page, base_url: str, width: int) -> None:
         box = action.bounding_box()
         if not box or box["width"] <= 0 or box["height"] < 44:
             raise AssertionError(f"Service landing action {index + 1} has unusable geometry at {width}px: {box}")
+        if action.evaluate("element => element.scrollWidth > element.clientWidth || element.scrollHeight > element.clientHeight"):
+            raise AssertionError(f"Service landing action {index + 1} is clipped at {width}px")
         action.focus()
         if not action.evaluate("element => document.activeElement === element"):
             raise AssertionError(f"Service landing action {index + 1} is not keyboard focusable at {width}px")
         boxes.append(box)
-    if width > 576 and abs(boxes[0]["y"] - boxes[1]["y"]) > 1:
+    if width > 576 and any(abs(box["y"] - boxes[0]["y"]) > 1 for box in boxes[1:]):
         raise AssertionError(f"Service landing desktop actions are not balanced in one row at {width}px: {boxes}")
-    if width <= 576 and boxes[1]["y"] <= boxes[0]["y"]:
+    if width <= 576 and any(boxes[index]["y"] <= boxes[index - 1]["y"] for index in range(1, len(boxes))):
         raise AssertionError(f"Service landing mobile actions are not stacked at {width}px: {boxes}")
     logout = page.get_by_role("button", name="Выйти", exact=True)
     if not logout.is_visible():
@@ -1092,6 +1099,162 @@ def check_service_access_journeys(page, base_url: str) -> None:
     wait_for_page_ready(page)
     if page.locator("h1").inner_text() != "Для служащих":
         raise AssertionError("Logged-out direct landing access was not redirected")
+
+
+ARCHIVE_MANIFEST_PATTERN = "**/data/edited-audio.json"
+ARCHIVE_FIXTURE_ITEMS = (
+    {
+        "id": "older-audio",
+        "name": "Беседа Альфа",
+        "processedAt": "2026-09-01T12:00:00Z",
+        "durationSeconds": 61,
+        "audioUrl": "https://github.com/meser-recovery/starter-package/releases/download/edited-audio-v1/older-audio.mp3",
+    },
+    {
+        "id": "newest-audio",
+        "name": "Беседа Гамма",
+        "processedAt": "2026-09-03T12:00:00Z",
+        "durationSeconds": 3661,
+        "audioUrl": "https://github.com/meser-recovery/starter-package/releases/download/edited-audio-v1/newest-audio.mp3",
+    },
+    {
+        "id": "middle-audio",
+        "name": "Беседа Бета",
+        "processedAt": "2026-09-02T12:00:00Z",
+        "durationSeconds": 120,
+        "audioUrl": "https://github.com/meser-recovery/starter-package/releases/download/edited-audio-v1/middle-audio.mp3",
+    },
+)
+
+
+def fixture_manifest_route(route) -> None:
+    route.fulfill(
+        status=200,
+        content_type="application/json",
+        body=json.dumps({"schemaVersion": 1, "updatedAt": "2026-09-03T12:00:00Z", "items": ARCHIVE_FIXTURE_ITEMS}),
+    )
+
+
+def check_audio_editor_shell(page, width: int) -> None:
+    if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
+        raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
+    if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
+        raise AssertionError(f"Audio editor H1 is invalid at {width}px")
+    if page.locator("h2").count() != 1 or page.locator("h2").inner_text() != "Архив отредактированных аудио":
+        raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
+    if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
+        raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1:
+        raise AssertionError(f"Audio editor shared header is missing at {width}px")
+    if page.locator(f'a[href="{SERVICE_LANDING_PATH.lstrip("/")}"]').count() != 1:
+        raise AssertionError(f"Audio editor exact back link is missing at {width}px")
+    logout = page.get_by_role("button", name="Выйти", exact=True)
+    if not logout.is_visible():
+        raise AssertionError(f"Audio editor logout is missing at {width}px")
+    logout.focus()
+    if not logout.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Audio editor logout is not keyboard focusable at {width}px")
+    if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
+        raise AssertionError(f"Audio editor has horizontal overflow at {width}px")
+
+
+def check_audio_editor(page, base_url: str) -> None:
+    page.set_viewport_size({"width": 390, "height": 900})
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    page.evaluate("sessionStorage.clear()")
+    page.goto(url(base_url, AUDIO_EDITOR_PATH), wait_until="domcontentloaded")
+    page.wait_for_url("**/Admin-panel.html")
+    wait_for_page_ready(page)
+    if page.locator("h1").inner_text() != "Для служащих":
+        raise AssertionError("Unauthorized audio editor access did not redirect to the login page")
+
+    page.route(ARCHIVE_MANIFEST_PATTERN, fixture_manifest_route)
+    try:
+        seed_service_access(page, base_url)
+        goto_ready(page, url(base_url, SERVICE_LANDING_PATH))
+        page.get_by_role("link", name="Редактирование аудио", exact=True).click()
+        page.wait_for_url("**/Audio-Editor.html")
+        wait_for_page_ready(page)
+        for width in (390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            check_audio_editor_shell(page, width)
+
+        cards = page.locator(".archive-item")
+        if cards.count() != 3:
+            raise AssertionError("Fixture archive entries did not render")
+        if [cards.nth(index).locator("h3").inner_text() for index in range(cards.count())] != [
+            "Беседа Гамма", "Беседа Бета", "Беседа Альфа"
+        ]:
+            raise AssertionError("Fixture archive is not newest-first by default")
+        if page.locator("#archive-count").inner_text() != "Найдено: 3.":
+            raise AssertionError("Fixture archive count is incorrect")
+        player = page.locator("#archive-audio")
+        if player.get_attribute("src") is not None or not player.evaluate("audio => audio.paused"):
+            raise AssertionError("Archive player did not remain neutral before selection")
+
+        page.locator("#archive-sort").select_option("oldest")
+        if [cards.nth(index).locator("h3").inner_text() for index in range(cards.count())] != [
+            "Беседа Альфа", "Беседа Бета", "Беседа Гамма"
+        ]:
+            raise AssertionError("Archive oldest-first sorting failed")
+        page.locator("#archive-sort").select_option("name")
+        if [cards.nth(index).locator("h3").inner_text() for index in range(cards.count())] != [
+            "Беседа Альфа", "Беседа Бета", "Беседа Гамма"
+        ]:
+            raise AssertionError("Archive name sorting failed")
+        page.locator("#archive-search").fill("ГАмМА")
+        if cards.count() != 1 or cards.nth(0).locator("h3").inner_text() != "Беседа Гамма":
+            raise AssertionError("Archive case-insensitive search failed")
+        if page.locator("#archive-count").inner_text() != "Найдено: 1.":
+            raise AssertionError("Archive search count did not update")
+        page.locator("#archive-search").fill("не существует")
+        if cards.count() != 0 or not page.get_by_text("По вашему запросу ничего не найдено.", exact=True).is_visible():
+            raise AssertionError("Archive no-results state failed")
+        page.locator("#archive-search").fill("")
+        if cards.count() != 3 or page.locator("#archive-count").inner_text() != "Найдено: 3.":
+            raise AssertionError("Clearing archive search did not restore entries")
+
+        page.locator("#archive-sort").select_option("newest")
+        first_listen = cards.nth(0).get_by_role("button", name="Слушать", exact=True)
+        first_listen.focus()
+        if not first_listen.evaluate("element => document.activeElement === element"):
+            raise AssertionError("Archive listen button is not keyboard focusable")
+        first_listen.click()
+        expected_url = ARCHIVE_FIXTURE_ITEMS[1]["audioUrl"]
+        if player.get_attribute("src") != expected_url or page.locator("#archive-selected-name").inner_text() != "Беседа Гамма":
+            raise AssertionError("Selecting an archive item did not configure the shared player")
+        if not player.evaluate("audio => audio.paused") or urlparse(page.url).query != "id=newest-audio":
+            raise AssertionError("Archive selection autoplayed or did not replace the deep-link URL")
+        download = cards.nth(0).get_by_role("link", name="Скачать", exact=True)
+        if download.get_attribute("href") != expected_url:
+            raise AssertionError("Archive download URL is not the canonical item URL")
+
+        goto_ready(page, url(base_url, f"{AUDIO_EDITOR_PATH}?id=middle-audio"))
+        if page.locator("#archive-selected-name").inner_text() != "Беседа Бета" or not page.locator("#archive-audio").evaluate("audio => audio.paused"):
+            raise AssertionError("Valid audio editor deep link did not select safely")
+        goto_ready(page, url(base_url, f"{AUDIO_EDITOR_PATH}?id=unknown-audio"))
+        if page.locator(".archive-item").count() != 3 or page.locator("#archive-audio").get_attribute("src") is not None:
+            raise AssertionError("Unknown audio editor deep link did not remain usable")
+    finally:
+        page.unroute(ARCHIVE_MANIFEST_PATTERN)
+
+    seed_service_access(page, base_url)
+    goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+    if not page.get_by_text("Архив пока пуст.", exact=True).is_visible() or page.locator(".archive-item").count() != 0:
+        raise AssertionError("Production empty archive state failed")
+    if page.locator("#archive-controls").is_visible():
+        raise AssertionError("Production empty archive unexpectedly shows search and sorting controls")
+    if page.locator("#archive-audio").get_attribute("src") is not None:
+        raise AssertionError("Production empty archive player is not neutral")
+
+    page.route(ARCHIVE_MANIFEST_PATTERN, lambda route: route.abort())
+    try:
+        goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+        if not page.get_by_text("Не удалось загрузить архив.", exact=True).is_visible():
+            raise AssertionError("Archive manifest failure state failed")
+    finally:
+        page.unroute(ARCHIVE_MANIFEST_PATTERN)
+    page.evaluate(f"sessionStorage.removeItem('{SERVICE_SESSION_KEY}')")
 
 
 def main() -> int:
@@ -1299,6 +1462,7 @@ def main() -> int:
         check_admin_hash_functions(page, base_url)
         check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
+        check_audio_editor(page, base_url)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")
 

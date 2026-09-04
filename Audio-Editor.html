@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#478ac9">
+    <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2">
+    <title>Редактирование аудио — Проект Мэсэр</title>
+    <link rel="stylesheet" href="styles/foundation.css">
+    <link rel="stylesheet" href="styles/components.css">
+    <link rel="stylesheet" href="styles/audio-editor.css">
+    <script src="scripts/service-landing.js"></script>
+    <script src="scripts/audio-editor.js" defer></script>
+  </head>
+  <body class="site-page">
+    <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
+    <header class="site-header">
+      <div class="container site-header__content">
+        <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
+        <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
+        <a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
+      </div>
+    </header>
+    <main id="main-content" class="audio-editor-main">
+      <div class="container audio-editor-content">
+        <a class="archive-back-link" href="Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html">К служебной странице</a>
+        <h1>Редактирование аудио</h1>
+        <section class="archive-card" aria-labelledby="archive-heading">
+          <div class="archive-card__heading">
+            <h2 id="archive-heading">Архив отредактированных аудио</h2>
+            <p id="archive-status" class="archive-status" role="status">Загрузка архива…</p>
+          </div>
+          <div id="archive-controls" class="archive-controls" hidden>
+            <div class="archive-control">
+              <label for="archive-search">Поиск по архиву аудио</label>
+              <input id="archive-search" type="search" autocomplete="off" placeholder="Поиск по архиву аудио">
+            </div>
+            <div class="archive-control">
+              <label for="archive-sort">Сортировка</label>
+              <select id="archive-sort">
+                <option value="newest">Сначала новые</option>
+                <option value="oldest">Сначала старые</option>
+                <option value="name">По названию</option>
+              </select>
+            </div>
+          </div>
+          <p id="archive-count" class="archive-count" hidden></p>
+          <div id="archive-player" class="archive-player" aria-live="polite">
+            <p id="archive-selected-name">Выберите аудио из архива.</p>
+            <audio id="archive-audio" controls preload="none"></audio>
+          </div>
+          <div id="archive-list" class="archive-list" aria-live="polite"></div>
+        </section>
+        <button id="service-logout" class="service-logout" type="button">Выйти</button>
+      </div>
+    </main>
+    <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
+  </body>
+</html>

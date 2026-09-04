@@ -4,7 +4,9 @@
 from __future__ import annotations
 
 import argparse
+from datetime import datetime
 import json
+import math
 import re
 import sys
 from html.parser import HTMLParser
@@ -21,6 +23,7 @@ FILE_ATTRIBUTES = {
 }
 IGNORED_SCHEMES = {"", "http", "https"}
 CSS_URL_RE = re.compile(r"url\(\s*(['\"]?)(.*?)\1\s*\)", re.I)
+ISO_TIMESTAMP_RE = re.compile(r"^\d{4}-\d{2}-\d{2}T.+(?:Z|[+-]\d{2}:?\d{2})$")
 LEGACY_RUNTIME_FILES = (
     "nicepage.css",
     "nicepage.js",
@@ -275,7 +278,7 @@ def check_favicons(errors: list[str]) -> None:
     migrated_pages = (
         "index.html", "Literature.html", "Literature-reader.html", "AudioBook.html", "Offline-meetings.html",
         "Admin-panel.html", "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html",
-        "Calculator.html", "Calendar.html", "Google-Drive.html",
+        "Calculator.html", "Calendar.html", "Google-Drive.html", "Audio-Editor.html",
     )
     for name in migrated_pages:
         page = ROOT / name
@@ -653,12 +656,12 @@ def check_admin_access_contract(errors: list[str]) -> None:
         if len(scripts) != 1 or scripts[0].get("src") != "scripts/service-landing.js" or scripts[0].get("defer") is not None:
             errors.append(f"{landing_name}: expected one early blocking guard runtime")
         actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and "service-action" in (attrs.get("class") or "").split()]
-        if [attrs.get("href") for attrs in actions] != ["Calendar.html", "Google-Drive.html"]:
+        if [attrs.get("href") for attrs in actions] != ["Calendar.html", "Google-Drive.html", "Audio-Editor.html"]:
             errors.append(f"{landing_name}: service actions changed or are out of order")
         if any(attrs.get("target") is not None for attrs in actions):
             errors.append(f"{landing_name}: service actions must use same-tab navigation")
         labels = re.findall(r'<a class="service-action"[^>]*>([^<]+)</a>', source)
-        if labels != ["Календарь", "Материалы"]:
+        if labels != ["Календарь", "Материалы", "Редактирование аудио"]:
             errors.append(f"{landing_name}: service action labels changed")
         logout = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("id") == "service-logout"]
         if len(logout) != 1 or ">Выйти</button>" not in source:
@@ -673,6 +676,110 @@ def check_admin_access_contract(errors: list[str]) -> None:
     for legacy_css in ("Page-Password-Template.css", "Admin-panel.css"):
         if (ROOT / legacy_css).exists():
             errors.append(f"{legacy_css}: legacy admin stylesheet should be removed")
+
+
+def is_iso_timestamp(value: object) -> bool:
+    if not isinstance(value, str) or not ISO_TIMESTAMP_RE.fullmatch(value):
+        return False
+    try:
+        datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return False
+    return True
+
+
+def is_release_asset_url(value: object) -> bool:
+    if not isinstance(value, str):
+        return False
+    parsed = urlparse(value)
+    prefix = "/meser-recovery/starter-package/releases/download/"
+    remaining = [part for part in parsed.path.removeprefix(prefix).split("/") if part]
+    return (
+        parsed.scheme == "https" and parsed.netloc == "github.com" and not parsed.username and not parsed.password and
+        parsed.path.startswith(prefix) and len(remaining) >= 2
+    )
+
+
+def check_audio_editor_contract(errors: list[str]) -> None:
+    page = ROOT / "Audio-Editor.html"
+    manifest_path = ROOT / "data" / "edited-audio.json"
+    if not page.is_file():
+        errors.append("Audio-Editor.html is missing")
+    else:
+        source = page.read_text(encoding="utf-8", errors="replace")
+        parser = parse_page(page)
+        html_attrs = next((attrs for tag, attrs in parser.start_tags if tag == "html"), {})
+        if html_attrs.get("lang") != "ru":
+            errors.append("Audio-Editor.html: html lang must be ru")
+        if parser.h1_texts != ["Редактирование аудио"]:
+            errors.append("Audio-Editor.html: expected one H1: Редактирование аудио")
+        if not any(tag == "h2" for tag, attrs in parser.start_tags) or "Архив отредактированных аудио" not in source:
+            errors.append("Audio-Editor.html: archive H2 is missing")
+        if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: shared page shell is missing")
+        if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: main#main-content is missing")
+        if not any(tag == "a" and attrs.get("href") == "#main-content" for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: skip link is missing")
+        for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./")):
+            if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
+                errors.append(f"Audio-Editor.html: shared {class_name} link is missing")
+        if not any(tag == "a" and attrs.get("href") == "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html" for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: exact service landing back link is missing")
+        if not any(tag == "button" and attrs.get("id") == "service-logout" for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: service logout is missing")
+        if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: shared footer is missing")
+        styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css"]:
+            errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
+        scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
+        if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True)]:
+            errors.append("Audio-Editor.html: expected guard before dedicated archive runtime")
+        if any(tag == "script" and not attrs.get("src") for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: inline scripts are not allowed")
+        if "nicepage" in source.lower() or "jquery" in source.lower():
+            errors.append("Audio-Editor.html: Nicepage or jQuery dependency remains")
+
+    if not manifest_path.is_file():
+        errors.append("data/edited-audio.json is missing")
+        return
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError:
+        errors.append("data/edited-audio.json: invalid JSON")
+        return
+    if not isinstance(manifest, dict) or manifest.get("schemaVersion") != 1:
+        errors.append("data/edited-audio.json: schemaVersion must be 1")
+        return
+    if manifest.get("updatedAt") is not None and not is_iso_timestamp(manifest.get("updatedAt")):
+        errors.append("data/edited-audio.json: updatedAt must be null or a valid ISO timestamp")
+    items = manifest.get("items")
+    if not isinstance(items, list):
+        errors.append("data/edited-audio.json: items must be an array")
+        return
+    seen_ids: set[str] = set()
+    for index, item in enumerate(items):
+        prefix = f"data/edited-audio.json: item {index + 1}"
+        if not isinstance(item, dict):
+            errors.append(f"{prefix} must be an object")
+            continue
+        item_id = item.get("id")
+        if not isinstance(item_id, str) or not item_id.strip():
+            errors.append(f"{prefix} id must be a non-empty string")
+        elif item_id in seen_ids:
+            errors.append(f"{prefix} id must be unique")
+        else:
+            seen_ids.add(item_id)
+        if not isinstance(item.get("name"), str) or not item["name"].strip():
+            errors.append(f"{prefix} name must be a non-empty string")
+        if not is_iso_timestamp(item.get("processedAt")):
+            errors.append(f"{prefix} processedAt must be a valid ISO timestamp")
+        duration = item.get("durationSeconds")
+        if type(duration) not in (int, float) or not math.isfinite(duration) or duration <= 0:
+            errors.append(f"{prefix} durationSeconds must be a positive finite number")
+        if not is_release_asset_url(item.get("audioUrl")):
+            errors.append(f"{prefix} audioUrl must be a canonical GitHub Release asset URL")
 
 
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
@@ -714,6 +821,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_calendar_contract(errors)
     check_google_drive_contract(errors)
     check_admin_access_contract(errors)
+    check_audio_editor_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
