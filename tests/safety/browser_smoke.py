@@ -1181,6 +1181,8 @@ def check_audio_editor_shell(page, width: int) -> None:
         if audio.get_attribute("autoplay") is not None or not audio.evaluate("audio => audio.paused"):
             raise AssertionError("Processor audio must not autoplay")
     file_input = page.locator("#processor-file")
+    if file_input.get_attribute("multiple") is None:
+        raise AssertionError("Processor must accept multiple synchronized tracks")
     file_input.focus()
     page.keyboard.press("Shift+Tab")
     page.keyboard.press("Tab")
@@ -1301,14 +1303,15 @@ def check_audio_editor(page, base_url: str) -> None:
     page.evaluate(f"sessionStorage.removeItem('{SERVICE_SESSION_KEY}')")
 
 
-def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: int = 1, comment: str | None = None) -> dict:
+def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: int = 1, comment: str | None = None,
+                frequency: float = 440, amplitude: float = 12000 / 32768, sample_rate: int = 44100) -> dict:
     """Generate PCM in memory; never commit or serve an audio test fixture."""
     buffer = io.BytesIO()
     with wave.open(buffer, "wb") as wav:
-        wav.setparams((channels, 2, 44100, 0, "NONE", "not compressed"))
+        wav.setparams((channels, 2, sample_rate, 0, "NONE", "not compressed"))
         for duration, audible in segments:
-            frames = b"".join(struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * n / 44100)) if audible else 0) * channels
-                              for n in range(round(duration * 44100)))
+            frames = b"".join(struct.pack("<h", int(amplitude * 32768 * math.sin(2 * math.pi * frequency * n / sample_rate)) if audible else 0) * channels
+                              for n in range(round(duration * sample_rate)))
             wav.writeframes(frames)
     data = buffer.getvalue()
     if comment is not None:
@@ -1349,6 +1352,13 @@ def check_processor_helpers(page) -> None:
             unknownDuration: m.parseSilences(['silence_start: 0'], Infinity),
             formats: ['audio.MP3', 'Спикерское.m4a', 'fixture.WAV'].map(name => m.validateFile({name, size: 500 * 1024 * 1024})),
             oversize: m.validateFile({name: 'large.wav', size: 500 * 1024 * 1024 + 1}),
+            totalBoundary: m.validateFiles([{name: 'a.wav', size: 250 * 1024 * 1024}, {name: 'b.m4a', size: 250 * 1024 * 1024}]),
+            totalOversize: m.validateFiles([{name: 'a.wav', size: 250 * 1024 * 1024}, {name: 'b.m4a', size: 250 * 1024 * 1024 + 1}]),
+            intersection: m.commonSilences([{duration: 10, silences: [[1, 8]]}, {duration: 10, silences: [[2, 7]]},
+                {duration: 10, silences: [[3, 4], [5, 8]]}], 10),
+            tailIntersection: m.commonSilences([{duration: 9.5, silences: [[8, 9.5]]}, {duration: 10, silences: [[8, 10]]}], 10),
+            tolerance: m.commonTimeline([{duration: 9.5}, {duration: 10}]),
+            mismatch: (() => { try { m.commonTimeline([{duration: 9.499}, {duration: 10}]); return ''; } catch(e) { return e.message; } })(),
             filter: m.makeFilter([[3.175, 5.825]])
         };
     }""")
@@ -1357,8 +1367,198 @@ def check_processor_helpers(page) -> None:
     assert result["eof"] == [[7, 10]] and result["short"] == [] and result["exact"] == [[1, 3]], result
     assert result["clamped"] == [[0, 4], [8, 10]] and result["invalid"] == [] and result["unknownDuration"] == [], result
     assert result["merged"] == [[1, 6]] and result["formats"] == ["", "", ""], result
-    assert result["oversize"] == "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.", result
+    assert result["oversize"] == result["totalOversize"] == "Общий размер файлов слишком большой для обработки в браузере. Максимальный размер — 500 МБ.", result
+    assert result["totalBoundary"] == "" and result["intersection"] == [[5, 7]] and result["tailIntersection"] == [[8, 10]], result
+    assert result["tolerance"] == 10 and result["mismatch"] == "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.", result
     assert "gte(t,3.175000)*lt(t,5.825000)" in result["filter"], result
+
+
+def processor_mix_audio_metrics(page, windows: dict[str, tuple[float, float]]) -> dict:
+    """Inspect real decoded MP3 energy and distinct speaker frequencies, not mocked DSP."""
+    return page.evaluate("""async windows => {
+        const blob = await (await fetch(document.getElementById('processor-download').href)).blob();
+        const bytes = await blob.arrayBuffer(), raw = new Uint8Array(bytes);
+        const frame = 10 + ((raw[6] & 127) * 2097152 + (raw[7] & 127) * 16384 + (raw[8] & 127) * 128 + (raw[9] & 127));
+        const bitrate = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320][raw[frame + 2] >> 4];
+        const context = new AudioContext({sampleRate: 48000});
+        try {
+            const decoded = await context.decodeAudioData(bytes), samples = decoded.getChannelData(0);
+            let peak = 0, clipped = 0;
+            for (const value of samples) { peak = Math.max(peak, Math.abs(value)); if (Math.abs(value) >= .995) clipped++; }
+            const measures = {};
+            for (const [label, [start, end]] of Object.entries(windows)) {
+                const first = Math.round(start * decoded.sampleRate), last = Math.round(end * decoded.sampleRate);
+                let energy = 0; for (let i = first; i < last; i++) energy += samples[i] ** 2;
+                const tones = {};
+                for (const frequency of [440, 660, 880]) {
+                    let sin = 0, cos = 0;
+                    for (let i = first; i < last; i++) {
+                        const phase = 2 * Math.PI * frequency * i / decoded.sampleRate;
+                        sin += samples[i] * Math.sin(phase); cos += samples[i] * Math.cos(phase);
+                    }
+                    tones[frequency] = 2 * Math.hypot(sin, cos) / (last - first);
+                }
+                measures[label] = {rms: Math.sqrt(energy / (last - first)), tones};
+            }
+            return {size: blob.size, type: blob.type, bitrate, peak, clippedFraction: clipped / samples.length, measures};
+        } finally { await context.close(); }
+    }""", windows)
+
+
+def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
+    no_common = "Длинные общие паузы не найдены. Дорожки сведены без сокращения пауз."
+    mismatch = "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom."
+    track_a = wav_payload("Zoom-A.wav", ((1, True), (1, False), (1, True), (3, False), (1, True), (1, False)), amplitude=.7)
+    # Different source rates exercise the shared sample clock used for cuts.
+    track_b = wav_payload("Zoom-B.wav", ((1, False), (1, True), (4, False), (1, True), (1, False)), frequency=660, amplitude=.7, sample_rate=48000)
+
+    def capture_state(label: str) -> None:
+        page.evaluate("document.activeElement.blur(); window.scrollTo(0, 0)")
+        page.mouse.move(0, 0)
+        for width in (390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), (label, width)
+            for selector in ("#processor-file-info", "#processor-selection-summary", "#processor-source-audio", "#processor-run"):
+                box = page.locator(selector).bounding_box()
+                assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (label, width, selector, box)
+                assert not page.locator(selector).evaluate("el => el.scrollWidth > el.clientWidth + 1"), (label, width, selector)
+            if page.locator("#processor-result").is_visible():
+                for selector in ("#processor-result-audio", "#processor-download", "#processor-mixed-count"):
+                    box = page.locator(selector).bounding_box()
+                    assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (label, width, selector, box)
+            if screenshot_dir:
+                page.screenshot(path=str(screenshot_dir / f"{label}-{width}.png"), full_page=True)
+
+    def select_tracks(files) -> None:
+        page.locator("#processor-file").set_input_files(files)
+        assert page.locator("#processor-file-info li").count() == len(files)
+        if files:
+            assert page.locator("#processor-selection-summary").inner_text().startswith(f"Выбрано дорожек: {len(files)} · Общий размер:")
+        for index, file in enumerate(files):
+            label = page.locator("#processor-file-info li").nth(index).inner_text()
+            assert label.startswith(file["name"] + " · ") and label.endswith(" МБ"), label
+        assert_processor_no_result(page)
+
+    def run_selected(expected_status="Готово.") -> None:
+        page.locator("#processor-run").click()
+        page.wait_for_function("!document.getElementById('processor-file').disabled", timeout=180000)
+        actual_status = page.locator("#processor-status").inner_text()
+        assert actual_status == expected_status, (actual_status, expected_status, page.evaluate("window.processorProbe.logs"))
+        assert not page.locator("#processor-cancel").is_visible() and not page.locator("#processor-progress").is_visible()
+        assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
+
+    def assert_result(count, duration, tracks) -> None:
+        assert page.locator("#processor-result").is_visible()
+        actual = float(page.locator("#processor-processed-duration").get_attribute("data-value"))
+        assert abs(actual - duration) < .12, (actual, duration)
+        assert int(page.locator("#processor-pause-count").inner_text()) == count
+        assert page.locator("#processor-pause-label").inner_text() == "Сокращено общих длинных пауз"
+        assert page.locator("#processor-mixed-count").inner_text() == f"Дорожек сведено: {tracks}"
+        assert page.locator("#processor-result-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
+
+    select_tracks([track_a])
+    capture_state("mix-one-selected")
+    select_tracks([track_a, track_b])
+    capture_state("mix-two-selected")
+    run_selected()
+    assert_result(1, 5.35, 2)
+    assert float(page.locator("#processor-original-duration").get_attribute("data-value")) == 8
+    assert abs(float(page.locator("#processor-removed-duration").get_attribute("data-value")) - 2.65) < .12
+    assert page.locator("#processor-download").get_attribute("download") == "Zoom-A-mixed-edited.mp3"
+    with page.expect_download() as event:
+        page.locator("#processor-download").click()
+    assert event.value.suggested_filename == "Zoom-A-mixed-edited.mp3" and event.value.failure() is None
+    metrics = processor_mix_audio_metrics(page, {"a": (.2, .8), "b": (1.2, 1.8), "a_again": (2.2, 2.8),
+        "overlap": (3.5, 4.1), "tail": (4.5, 5.1)})
+    assert metrics["size"] > 0 and metrics["type"] == "audio/mpeg" and metrics["bitrate"] == 128, metrics
+    # Solo speakers retain their level (amix must not divide by track count).
+    assert metrics["measures"]["a"]["tones"]["440"] > .55 and metrics["measures"]["b"]["tones"]["660"] > .55, metrics
+    assert metrics["measures"]["a_again"]["tones"]["440"] > .55, metrics
+    assert metrics["measures"]["overlap"]["tones"]["440"] > .3 and metrics["measures"]["overlap"]["tones"]["660"] > .3, metrics
+    assert metrics["measures"]["tail"]["rms"] < .005, metrics
+    assert metrics["peak"] < 1.05 and metrics["clippedFraction"] < .005, metrics
+    output = float(page.locator("#processor-processed-duration").get_attribute("data-value"))
+    print(f"Real two-track mix passed: 8s -> {output:.6f}s, common pauses=1, MP3=128kbps; A/B solo and overlapping speech retained, peak={metrics['peak']:.6f}, clipped fraction={metrics['clippedFraction']:.6f}.")
+    capture_state("mix-completed")
+
+    track_c = wav_payload("Zoom-C.wav", ((4, True), (2, False), (2, True)), frequency=880)
+    select_tracks([track_a, track_b, track_c])
+    run_selected()
+    assert_result(1, 6.35, 3)
+    metrics_three = processor_mix_audio_metrics(page, {"third_fills_silence": (3.2, 3.8), "overlap": (4.6, 5.1)})
+    assert metrics_three["measures"]["third_fills_silence"]["tones"]["880"] > .25, metrics_three
+    assert all(metrics_three["measures"]["overlap"]["tones"][str(frequency)] > .12 for frequency in (440, 660, 880)), metrics_three
+    output = float(page.locator("#processor-processed-duration").get_attribute("data-value"))
+    print(f"Real three-track intersection passed: 8s -> {output:.6f}s, common pauses=1; C protects 3-4s and all three simultaneous tones survive.")
+
+    select_tracks([wav_payload("alternating-A.wav", ((2, True), (2, False))),
+                   wav_payload("alternating-B.wav", ((2, False), (2, True)), frequency=660)])
+    run_selected(no_common)
+    assert_result(0, 4, 2)
+    assert float(page.locator("#processor-removed-duration").get_attribute("data-value")) < .05
+    print("Real no-common-silence mix passed: MP3 produced, exact mixed-without-cuts status, pause count=0, removed duration near zero.")
+
+    select_tracks([wav_payload("short.wav", ((2, True),)), wav_payload("long.wav", ((3, True),))])
+    before = len(page.evaluate("window.processorProbe.messages"))
+    run_selected(mismatch)
+    assert_processor_no_result(page)
+    messages = page.evaluate("window.processorProbe.messages")[before:]
+    executions = [message["args"] for message in messages if message["type"] == "EXEC"]
+    assert len(executions) == 2 and all("libmp3lame" not in args and "-filter_complex_script" not in args for args in executions), executions
+    assert not any(message["type"] == "WRITE_FILE" and message["path"] == "processor-filter.txt" for message in messages), messages
+
+    select_tracks([wav_payload("tolerated-short.wav", ((2, True),)), wav_payload("tolerated-long.wav", ((2.5, True),), frequency=660)])
+    run_selected(no_common)
+    assert_result(0, 2.5, 2)
+    # 1.5s of actual silence + 0.5s missing tail is eligible only on the common timeline.
+    select_tracks([wav_payload("tail-short.wav", ((1, True), (1.5, False))),
+                   wav_payload("tail-long.wav", ((1, True), (2, False)), frequency=660)])
+    run_selected()
+    assert_result(1, 1.35, 2)
+    print("Duration safety passed: >0.5s rejected after independent analyses with no final encode; exactly 0.5s accepted, longest timeline preserved, missing tail counted as silence.")
+
+    select_tracks([track_a, track_b])
+    probe_before = page.evaluate("window.processorProbe")
+    source_before = page.locator("#processor-source-audio").get_attribute("src")
+    # Cancel when analysis of the second real input begins, not a mocked engine call.
+    page.evaluate("""() => {
+        const status = document.getElementById('processor-status'); let analyses = 0;
+        const observer = new MutationObserver(() => {
+            if (status.textContent === 'Поиск длинных пауз…' && ++analyses === 2) {
+                observer.disconnect(); document.getElementById('processor-cancel').click();
+            }
+        });
+        observer.observe(status, {childList: true});
+    }""")
+    run_selected("Обработка отменена.")
+    assert_processor_no_result(page)
+    assert page.locator("#processor-file").evaluate("input => input.files.length") == 2
+    assert page.locator("#processor-file-info li").count() == 2
+    assert page.locator("#processor-source-audio").get_attribute("src") == source_before
+    assert page.evaluate("window.processorProbe.terminated") == probe_before["terminated"] + 1
+    run_selected()
+    assert_result(1, 5.35, 2)
+    assert page.evaluate("window.processorProbe.workers") == probe_before["workers"] + 1
+
+    long_name = "Очень-длинное-название-спикерского-" * 6 + ".wav"
+    long_track = dict(track_a, name=long_name)
+    select_tracks([long_track])
+    capture_state("mix-long-one-selected")
+    select_tracks([long_track, track_b])
+    capture_state("mix-long-two-selected")
+    run_selected()
+    assert page.locator("#processor-download").get_attribute("download") == long_name[:-4] + "-mixed-edited.mp3"
+    capture_state("mix-long-completed")
+    probe = page.evaluate("window.processorProbe")
+    assert probe["files"] == {}, probe["files"]
+    live_urls = set(probe["urls"]) - set(probe["revoked"])
+    assert live_urls == {page.locator("#processor-source-audio").get_attribute("src"), page.locator("#processor-result-audio").get_attribute("src")}, live_urls
+    select_tracks([])
+    assert page.locator("#processor-run").is_disabled()
+    probe = page.evaluate("window.processorProbe")
+    assert set(probe["urls"]) == set(probe["revoked"]), probe
+    assert page.locator(".archive-item").count() == 0
+    print("Multi-track cancellation/retry, virtual-FS cleanup, URL revocation, filenames and 390/768/1280 responsive states passed.")
 
 
 def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -> None:
@@ -1371,15 +1571,32 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
     context.route("**/*", lambda route: route.continue_() if urlparse(route.request.url).netloc in {"", site_host} else route.abort())
     # Observe native workers and object URLs without replacing the engine or its work.
     context.add_init_script("""(() => {
-        window.processorProbe = {workers: 0, terminated: 0, messages: [], urls: [], revoked: [], phases: []};
+        window.processorProbe = {workers: 0, terminated: 0, messages: [], urls: [], revoked: [], phases: [], files: {}, logs: []};
         const NativeWorker = window.Worker;
         window.Worker = class extends NativeWorker {
-            constructor(...args) { super(...args); window.processorProbe.workers++; }
+            constructor(...args) {
+                super(...args); this.probeId = ++window.processorProbe.workers; this.pending = new Map();
+                this.addEventListener('message', ({data}) => {
+                    if (data.type === 'LOG') {
+                        window.processorProbe.logs.push(data.data.message);
+                        if (window.processorProbe.logs.length > 30) window.processorProbe.logs.shift();
+                    }
+                    const sent = this.pending.get(data.id);
+                    if (sent && ['WRITE_FILE', 'READ_FILE'].includes(data.type)) window.processorProbe.files[this.probeId + ':' + sent.path] = true;
+                    if (sent && data.type === 'DELETE_FILE') delete window.processorProbe.files[this.probeId + ':' + sent.path];
+                    this.pending.delete(data.id);
+                });
+            }
             postMessage(message, ...args) {
+                this.pending.set(message.id, message.data);
                 window.processorProbe.messages.push({type: message.type, path: message.data?.path, args: message.data?.args});
                 return super.postMessage(message, ...args);
             }
-            terminate() { window.processorProbe.terminated++; return super.terminate(); }
+            terminate() {
+                window.processorProbe.terminated++;
+                for (const key of Object.keys(window.processorProbe.files)) if (key.startsWith(this.probeId + ':')) delete window.processorProbe.files[key];
+                return super.terminate();
+            }
         };
         const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
         URL.createObjectURL = blob => { const value = create(blob); window.processorProbe.urls.push(value); return value; };
@@ -1426,7 +1643,17 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             input.dispatchEvent(new Event('change'));
             delete input.files;
         }""")
-        wait_processor_status(page, "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.")
+        wait_processor_status(page, "Общий размер файлов слишком большой для обработки в браузере. Максимальный размер — 500 МБ.")
+        page.evaluate("""() => {
+            const input = document.getElementById('processor-file');
+            Object.defineProperty(input, 'files', {configurable: true, value: [
+                {name: 'a.wav', size: 300 * 1024 * 1024}, {name: 'b.wav', size: 300 * 1024 * 1024}]});
+            input.dispatchEvent(new Event('change')); delete input.files;
+        }""")
+        wait_processor_status(page, "Общий размер файлов слишком большой для обработки в браузере. Максимальный размер — 500 МБ.")
+        page.locator("#processor-file").set_input_files([primary, {"name": "unsupported.ogg", "mimeType": "audio/wav", "buffer": b"invalid"}])
+        wait_processor_status(page, "Поддерживаются файлы MP3, M4A и WAV.")
+        assert page.locator("#processor-run").is_disabled()
         assert not any("/vendor/ffmpeg/" in request_url for method, request_url, _ in requests if method != "HEAD")
 
         # Cancel a genuinely pending lazy import; release its request only after cancellation.
@@ -1503,7 +1730,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         for phase in ("Подготовка обработчика…", "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово."):
             assert phase in probe["phases"], probe
         assert any("/core/ffmpeg-core.wasm" in request_url for method, request_url, _ in requests if method == "GET")
-        for path in ("processor-input", "processor-output.mp3", "processor-analysis.txt", "processor-filter.txt"):
+        for path in ("processor-input-0", "processor-output.mp3", "processor-analysis.txt", "processor-filter.txt"):
             assert any(message["type"] == "DELETE_FILE" and message["path"] == path for message in probe["messages"]), probe
         print(f"Real FFmpeg fixture passed: input={source_duration:.6f}s output={output_duration:.6f}s shortened={count}; MP3={result_info['size']} bytes; short pause preserved.")
         page.evaluate("document.activeElement.blur(); window.scrollTo(0, 0)")
@@ -1578,6 +1805,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
             assert not page.locator("#processor-file-info").evaluate("el => el.scrollWidth > el.clientWidth")
+        check_multi_track_processor(page, screenshot_dir)
         assert not errors, errors
         assert all(method in {"GET", "HEAD"} and body is None for method, _, body in requests), requests
         assert all(urlparse(request_url).netloc in {"", site_host} for _, request_url, _ in requests), requests

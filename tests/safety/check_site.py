@@ -824,8 +824,9 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "processor-heading": "h2", "processor-file": "input", "processor-run": "button",
         "processor-cancel": "button", "processor-status": "p", "processor-progress": "progress",
         "processor-source-audio": "audio", "processor-result": "div", "processor-result-audio": "audio",
-        "processor-download": "a", "processor-file-info": "p", "processor-original-duration": "dd",
+        "processor-download": "a", "processor-file-info": "ul", "processor-original-duration": "dd",
         "processor-processed-duration": "dd", "processor-removed-duration": "dd", "processor-pause-count": "dd",
+        "processor-selection-summary": "p", "processor-mixed-count": "p", "processor-pause-label": "dt",
     }
     for element_id, element_tag in expected.items():
         if ids.count(element_id) != 1 or not any(tag == element_tag and attrs.get("id") == element_id for tag, attrs in tags):
@@ -833,6 +834,8 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
     elements = {attrs.get("id"): attrs for _, attrs in tags if attrs.get("id")}
     if elements.get("processor-file", {}).get("type") != "file" or set((elements.get("processor-file", {}).get("accept") or "").split(",")) != PROCESSOR_ACCEPT:
         errors.append("Audio-Editor.html: processor extension/MIME accept list changed")
+    if "multiple" not in elements.get("processor-file", {}):
+        errors.append("Audio-Editor.html: processor must accept one or multiple tracks")
     if not any(tag == "label" and attrs.get("for") == "processor-file" for tag, attrs in tags):
         errors.append("Audio-Editor.html: file label missing")
     for element_id in ("processor-run", "processor-cancel"):
@@ -860,7 +863,8 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
             not scripts or any(key in scripts[0] for key in ("async", "defer", "type"))):
         errors.append("Audio-Editor.html: early blocking guard/archive/module order changed")
     for text in ("Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.",
-                 "Исходный файл обрабатывается локально в браузере и не отправляется на сервер."):
+                 "Исходные файлы обрабатываются локально в браузере и не отправляются на сервер.",
+                 "Общий размер всех файлов — не более 500 МБ.", "все выбранные дорожки одновременно молчат"):
         if text not in source:
             errors.append(f"Audio-Editor.html: processor explanation missing: {text}")
 
@@ -883,7 +887,15 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         '"0:a:0"', '"libmp3lame"', "silencedetect=noise=", "aselect=", "asetpts=N/SR/TB",
         "engine.terminate()", "URL.revokeObjectURL", "currentEngine.deleteFile(path)",
         "Поддерживаются файлы MP3, M4A и WAV.",
-        "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.",
+        "Общий размер файлов слишком большой для обработки в браузере. Максимальный размер — 500 МБ.",
+        "const MAX_DURATION_DIFFERENCE_SECONDS = 0.5;",
+        "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.",
+        "Длинные общие паузы не найдены. Дорожки сведены без сокращения пауз.",
+        "commonSilences(analyses, duration)", "commonTimeline(analyses)",
+        "const cuts = makeFilter(ranges)", "normalize=0", "alimiter=limit=0.95:level=0:latency=1",
+        '"-filter_complex_script"', '"-map", "[mixed]"', "`processor-input-${index}`",
+        "files.reduce((sum, file) => sum + file.size, 0)", "[...inputPaths, ...TEMP_PATHS]",
+        "Выбрано дорожек:", "Дорожек сведено:", "Сокращено общих длинных пауз",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
         "Длинные паузы не найдены. Файл не изменён.", "Подготовка обработчика…",
         "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово.",
@@ -893,7 +905,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if re.search(r'^import\s', source, re.M) or source.find('import("../vendor') < source.find('run.addEventListener("click"'):
         errors.append("Processor must import FFmpeg lazily in the Run handler")
-    forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac)[\"']"
+    forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
     if re.search(forbidden, source):
         errors.append("Processor has a forbidden external/write API, DSP, or threading dependency")
     own_source = source + (page.read_text(encoding="utf-8") if page.is_file() else "")

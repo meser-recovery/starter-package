@@ -39,7 +39,9 @@
 .processor-field input::file-selector-button { padding: .45rem .65rem; margin-right: .5rem; border: 0; border-radius: .3rem; font: inherit; background: var(--color-action-surface); color: var(--color-text); cursor: pointer; }
 .processor-preview { padding: var(--space-4); background: #f1f6fb; border-radius: var(--radius-sm); }
 .processor-preview audio { display: block; width: 100%; min-width: 0; max-width: 100%; }
-#processor-file-info { overflow-wrap: anywhere; font-weight: 600; }
+#processor-file-info { margin: 0; padding-left: 1.25rem; min-width: 0; overflow-wrap: anywhere; font-weight: 600; }
+#processor-file-info li + li { margin-top: var(--space-2); }
+#processor-selection-summary, #processor-mixed-count { font-weight: 700; overflow-wrap: anywhere; }
 .processor-actions { display: flex; flex-wrap: wrap; gap: var(--space-3); }
 .processor-actions button { min-height: 2.75rem; padding: .55rem 1rem; border: 1px solid var(--color-palette-dark-1); border-radius: var(--radius-action); font: inherit; font-weight: 700; color: var(--color-text); background: var(--color-action-surface); cursor: pointer; }
 .processor-actions button:hover:not(:disabled) { background: var(--color-action-surface-hover); }

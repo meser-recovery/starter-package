@@ -4,21 +4,32 @@ const TARGET_SILENCE_SECONDS = 0.35;
 const SILENCE_THRESHOLD_DB = -45;
 const OUTPUT_BITRATE = "128k";
 const MAX_INPUT_BYTES = 500 * 1024 * 1024; // 500 MiB
-const INPUT_PATH = "processor-input";
+const MAX_DURATION_DIFFERENCE_SECONDS = 0.5;
+// A shared sample/frame grid prevents cumulative cut drift across different input rates.
+// Only multi-track mixing uses this clock; single-track processing stays unchanged.
+const MIX_SAMPLE_RATE = 48000;
 const OUTPUT_PATH = "processor-output.mp3";
 const PROGRESS_PATH = "processor-analysis.txt";
 const FILTER_PATH = "processor-filter.txt";
-const TEMP_PATHS = [INPUT_PATH, OUTPUT_PATH, PROGRESS_PATH, FILTER_PATH];
+const TEMP_PATHS = [OUTPUT_PATH, PROGRESS_PATH, FILTER_PATH];
 const UNSUPPORTED = "Обработка аудио не поддерживается в этом браузере.";
 const CANCELLED = "Обработка отменена.";
+const DURATION_MISMATCH = "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.";
+const MIXED_WITHOUT_CUTS = "Длинные общие паузы не найдены. Дорожки сведены без сокращения пауз.";
 
 export function validateFile(file) {
-  if (!/\.(mp3|m4a|wav)$/i.test(file.name)) return "Поддерживаются файлы MP3, M4A и WAV.";
-  if (file.size > MAX_INPUT_BYTES) return "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.";
+  return validateFiles([file]);
+}
+
+export function validateFiles(files) {
+  if (files.some((file) => !/\.(mp3|m4a|wav)$/i.test(file.name))) return "Поддерживаются файлы MP3, M4A и WAV.";
+  if (files.reduce((sum, file) => sum + file.size, 0) > MAX_INPUT_BYTES) {
+    return "Общий размер файлов слишком большой для обработки в браузере. Максимальный размер — 500 МБ.";
+  }
   return "";
 }
 
-export function parseSilences(logs, duration) {
+export function parseSilences(logs, duration, minimum = MIN_SILENCE_SECONDS) {
   if (!Number.isFinite(duration) || duration <= 0) return [];
   const intervals = [];
   let start = null;
@@ -26,7 +37,7 @@ export function parseSilences(logs, duration) {
     if (start !== null && Number.isFinite(end)) {
       const left = Math.max(0, Math.min(start, duration));
       const right = Math.max(0, Math.min(end, duration));
-      if (right - left >= MIN_SILENCE_SECONDS) intervals.push([left, right]);
+      if (right > left && right - left >= minimum) intervals.push([left, right]);
     }
     start = null;
   };
@@ -50,6 +61,38 @@ export function parseSilences(logs, duration) {
   return merged;
 }
 
+export function commonTimeline(analyses) {
+  const durations = analyses.map((track) => track.duration);
+  const duration = Math.max(...durations);
+  if (duration - Math.min(...durations) > MAX_DURATION_DIFFERENCE_SECONDS) throw new Error(DURATION_MISMATCH);
+  return duration;
+}
+
+export function commonSilences(analyses, duration) {
+  let common = [[0, duration]];
+  for (const track of analyses) {
+    const intervals = track.silences.map((interval) => [...interval]);
+    if (track.duration < duration) {
+      const tail = intervals.at(-1);
+      if (tail && tail[1] === track.duration) tail[1] = duration;
+      else intervals.push([track.duration, duration]);
+    }
+    const intersection = [];
+    let left = 0;
+    let right = 0;
+    while (left < common.length && right < intervals.length) {
+      const start = Math.max(common[left][0], intervals[right][0]);
+      const end = Math.min(common[left][1], intervals[right][1]);
+      if (end > start) intersection.push([start, end]);
+      if (common[left][1] < intervals[right][1]) left++;
+      else right++;
+    }
+    common = intersection;
+  }
+  // Eligibility is decided only after every track has contributed its silence mask.
+  return common.filter(([start, end]) => end - start >= MIN_SILENCE_SECONDS);
+}
+
 export function removalRanges(intervals, duration) {
   return intervals.map(([start, end]) => {
     // An entirely silent recording retains its first 0.35 seconds.
@@ -60,10 +103,23 @@ export function removalRanges(intervals, duration) {
 }
 
 export function makeFilter(ranges) {
+  if (!ranges.length) return "asetpts=N/SR/TB";
   const excluded = ranges.map(([start, end]) => `gte(t,${start.toFixed(6)})*lt(t,${end.toFixed(6)})`).join("+");
   // Small frames bound cut rounding without resampling or changing channel layout.
   // All analysis/cut timestamps use the same decoded, zero-based audio timeline.
   return `asetpts=N/SR/TB,asetnsamples=n=256:p=0,aselect='not(${excluded})',asetpts=N/SR/TB`;
+}
+
+export function makeMixFilter(trackCount, ranges, duration) {
+  const cuts = makeFilter(ranges); // The exact same expression and frame grid for ALL inputs.
+  const wholeLength = Math.ceil(duration * MIX_SAMPLE_RATE);
+  const inputs = Array.from({ length: trackCount }, (_, index) =>
+    `[${index}:a:0]asetpts=N/SR/TB,aresample=${MIX_SAMPLE_RATE},apad=whole_len=${wholeLength},${cuts}[track${index}]`);
+  const labels = Array.from({ length: trackCount }, (_, index) => `[track${index}]`).join("");
+  // Unity weights: no per-speaker attenuation/boost. Disable the limiter's auto-level
+  // and compensate its lookahead delay (including buffered audio at EOF).
+  return `${inputs.join(";")};${labels}amix=inputs=${trackCount}:duration=longest:normalize=0,` +
+    "alimiter=limit=0.95:level=0:latency=1[mixed]";
 }
 
 export function analysisDuration(progress) {
@@ -93,7 +149,7 @@ const sourceAudio = byId("source-audio");
 const resultAudio = byId("result-audio");
 const result = byId("result");
 const download = byId("download");
-let selectedFile = null;
+let selectedFiles = [];
 let sourceURL = null;
 let resultURL = null;
 let engine = null;
@@ -116,6 +172,9 @@ function clearResult() {
   resultURL = null;
   download.removeAttribute("href");
   download.removeAttribute("download");
+  byId("mixed-count").hidden = true;
+  byId("mixed-count").textContent = "";
+  byId("pause-label").textContent = "Сокращено длинных пауз";
   for (const id of ["original-duration", "processed-duration", "removed-duration", "pause-count"]) {
     byId(id).textContent = "";
     delete byId(id).dataset.value;
@@ -124,7 +183,7 @@ function clearResult() {
 
 function setBusy(busy) {
   input.disabled = busy || !supported;
-  run.disabled = busy || !selectedFile || !supported;
+  run.disabled = busy || !selectedFiles.length || !supported;
   cancel.hidden = !busy;
   progress.hidden = !busy;
 }
@@ -147,19 +206,27 @@ input.addEventListener("change", () => {
   clearAudio(sourceAudio);
   if (sourceURL) URL.revokeObjectURL(sourceURL);
   sourceURL = null;
-  selectedFile = null;
+  selectedFiles = [];
   byId("source").hidden = true;
-  const file = input.files?.[0];
-  const error = file ? validateFile(file) : "";
-  status.textContent = error || "Выберите файл и нажмите «Обработать».";
-  if (file && !error && supported) {
-    selectedFile = file;
-    const size = new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(file.size / 1024 / 1024);
-    byId("file-info").textContent = `${file.name} · ${size} МБ`;
-    sourceURL = URL.createObjectURL(file);
+  byId("file-info").replaceChildren();
+  byId("selection-summary").textContent = "";
+  const files = Array.from(input.files || []);
+  const error = validateFiles(files);
+  status.textContent = error || "Выберите файлы и нажмите «Обработать».";
+  if (files.length && !error && supported) {
+    selectedFiles = files;
+    const size = (bytes) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 2 }).format(bytes / 1024 / 1024);
+    for (const file of files) {
+      const item = document.createElement("li");
+      item.textContent = `${file.name} · ${size(file.size)} МБ`;
+      byId("file-info").append(item);
+    }
+    byId("selection-summary").textContent = `Выбрано дорожек: ${files.length} · Общий размер: ${size(files.reduce((sum, file) => sum + file.size, 0))} МБ`;
+    byId("source-label").textContent = files.length === 1 ? "Исходное аудио" : "Прослушать первую исходную дорожку";
+    sourceURL = URL.createObjectURL(files[0]);
     sourceAudio.src = sourceURL;
     byId("source").hidden = false;
-    status.textContent = "Файл выбран. Нажмите «Обработать».";
+    status.textContent = files.length === 1 ? "Файл выбран. Нажмите «Обработать»." : "Дорожки выбраны. Нажмите «Обработать».";
   }
   setBusy(false);
 });
@@ -184,10 +251,12 @@ function waitForMetadata(audio, operation) {
 }
 
 run.addEventListener("click", async () => {
-  if (active || !selectedFile || !supported) return;
-  const file = selectedFile;
-  const error = validateFile(file);
+  if (active || !selectedFiles.length || !supported) return;
+  const files = selectedFiles;
+  const multiple = files.length > 1;
+  const error = validateFiles(files);
   if (error) { status.textContent = error; return; }
+  const inputPaths = files.map((_, index) => `processor-input-${index}`);
   let cancelOperation;
   const cancelled = new Promise((resolve) => { cancelOperation = resolve; });
   const operation = {
@@ -223,34 +292,50 @@ run.addEventListener("click", async () => {
       clearTimeout(loadTimer);
     }
     currentEngine = engine;
-    const bytes = new Uint8Array(await operation.wait(file.arrayBuffer()));
-    await operation.wait(currentEngine.writeFile(INPUT_PATH, bytes));
-    const logs = [];
-    logListener = ({ message }) => {
-      // Accept detector lines only: user metadata may contain "silence_start" too.
-      // Do not keep an unbounded copy of all decoder/metadata logs.
-      if (/^\[silencedetect @ [^\]]+\] silence_(start|end):/.test(message)) logs.push(message);
-    };
-    currentEngine.on("log", logListener);
-    const inputArgs = ["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", INPUT_PATH,
+    const inputArgs = (path) => ["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", path,
       "-map", "0:a:0", "-vn", "-sn", "-dn"];
-    status.textContent = "Поиск длинных пауз…";
-    const analysisCode = await operation.wait(currentEngine.exec([...inputArgs,
-      "-af", `asetpts=N/SR/TB,silencedetect=noise=${SILENCE_THRESHOLD_DB}dB:d=${MIN_SILENCE_SECONDS}`,
-      "-progress", PROGRESS_PATH, "-f", "null", "-"]));
-    currentEngine.off("log", logListener);
-    logListener = null;
-    if (analysisCode !== 0) throw new Error("Не удалось прочитать аудио. Проверьте исходный файл.");
-    const duration = analysisDuration(await operation.wait(currentEngine.readFile(PROGRESS_PATH, "utf8")));
-    const intervals = parseSilences(logs, duration);
-    if (!intervals.length) {
+    const analyses = [];
+    // A shorter track can contribute up to 0.5 s of implicit silent tail. Detect
+    // 1.5 s tails in multi-track mode, but still require 2.0 s AFTER intersection.
+    const detectionMinimum = multiple ? MIN_SILENCE_SECONDS - MAX_DURATION_DIFFERENCE_SECONDS : MIN_SILENCE_SECONDS;
+    // Integer sample timestamps avoid a one-sample floating-point truncation at
+    // EOF turning an exact 0.5 s duration difference into a false mismatch.
+    const analysisClock = multiple ? "asettb=1/sr,asetpts=N" : "asetpts=N/SR/TB";
+    for (let index = 0; index < files.length; index++) {
+      const bytes = new Uint8Array(await operation.wait(files[index].arrayBuffer()));
+      await operation.wait(currentEngine.writeFile(inputPaths[index], bytes));
+      const logs = [];
+      logListener = ({ message }) => {
+        // Accept detector lines only; metadata must not impersonate silence output.
+        if (/^\[silencedetect @ [^\]]+\] silence_(start|end):/.test(message)) logs.push(message);
+      };
+      currentEngine.on("log", logListener);
+      status.textContent = "Поиск длинных пауз…";
+      const analysisCode = await operation.wait(currentEngine.exec([...inputArgs(inputPaths[index]),
+        "-af", `${analysisClock},silencedetect=noise=${SILENCE_THRESHOLD_DB}dB:d=${detectionMinimum}`,
+        "-progress", PROGRESS_PATH, "-f", "null", "-"]));
+      currentEngine.off("log", logListener);
+      logListener = null;
+      if (analysisCode !== 0) throw new Error("Не удалось прочитать аудио. Проверьте исходный файл.");
+      const duration = analysisDuration(await operation.wait(currentEngine.readFile(PROGRESS_PATH, "utf8")));
+      analyses.push({ duration, silences: parseSilences(logs, duration, detectionMinimum) });
+    }
+    const duration = commonTimeline(analyses); // Reject mismatches before any final encoding.
+    const intervals = multiple ? commonSilences(analyses, duration) : analyses[0].silences;
+    if (!multiple && !intervals.length) {
       status.textContent = "Длинные паузы не найдены. Файл не изменён.";
       return;
     }
     status.textContent = "Сокращение пауз и создание MP3…";
-    await operation.wait(currentEngine.writeFile(FILTER_PATH, new TextEncoder().encode(makeFilter(removalRanges(intervals, duration)))));
-    const encodeCode = await operation.wait(currentEngine.exec([...inputArgs,
-      "-filter_script:a", FILTER_PATH, "-map_metadata", "0", "-c:a", "libmp3lame", "-b:a", OUTPUT_BITRATE, OUTPUT_PATH]));
+    const ranges = removalRanges(intervals, duration);
+    const filter = multiple ? makeMixFilter(files.length, ranges, duration) : makeFilter(ranges);
+    await operation.wait(currentEngine.writeFile(FILTER_PATH, new TextEncoder().encode(filter)));
+    const encodeArgs = multiple ? ["-hide_banner", "-nostats", "-xerror",
+      ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
+      "-filter_complex_script", FILTER_PATH, "-map", "[mixed]", "-vn", "-sn", "-dn"] :
+      [...inputArgs(inputPaths[0]), "-filter_script:a", FILTER_PATH];
+    const encodeCode = await operation.wait(currentEngine.exec([...encodeArgs,
+      "-map_metadata", "0", "-c:a", "libmp3lame", "-b:a", OUTPUT_BITRATE, OUTPUT_PATH]));
     if (encodeCode !== 0) throw new Error("Не удалось создать MP3. Попробуйте файл меньшего размера.");
     const output = await operation.wait(currentEngine.readFile(OUTPUT_PATH));
     if (!output.byteLength) throw new Error("Не удалось создать MP3.");
@@ -262,15 +347,18 @@ run.addEventListener("click", async () => {
       byId(id).textContent = id === "pause-count" ? String(value) : formatDuration(value);
       byId(id).dataset.value = String(value);
     }
+    byId("mixed-count").hidden = !multiple;
+    byId("mixed-count").textContent = multiple ? `Дорожек сведено: ${files.length}` : "";
+    byId("pause-label").textContent = multiple ? "Сокращено общих длинных пауз" : "Сокращено длинных пауз";
     download.href = resultURL;
-    download.download = `${file.name.replace(/\.[^.]+$/, "")}-edited.mp3`;
+    download.download = `${files[0].name.replace(/\.[^.]+$/, "")}${multiple ? "-mixed" : ""}-edited.mp3`;
     result.hidden = false;
-    status.textContent = "Готово.";
+    status.textContent = multiple && !intervals.length ? MIXED_WITHOUT_CUTS : "Готово.";
   } catch (failure) {
     if (active === operation) {
       clearResult();
       status.textContent = failure?.name === "NotSupportedError" || failure?.name === "SecurityError" ? UNSUPPORTED :
-        failure instanceof Error && failure.message.startsWith("Не удалось") ? failure.message :
+        failure instanceof Error && (failure.message.startsWith("Не удалось") || failure.message === DURATION_MISMATCH) ? failure.message :
           "Не удалось обработать аудио. Попробуйте ещё раз или выберите файл меньшего размера.";
       if (!currentEngine?.loaded) {
         currentEngine?.terminate();
@@ -282,7 +370,7 @@ run.addEventListener("click", async () => {
     if (logListener) currentEngine?.off("log", logListener);
     if (currentEngine?.loaded && engine === currentEngine) {
       // Every path is fixed; never interpolate the user's filename into the virtual FS.
-      for (const path of TEMP_PATHS) {
+      for (const path of [...inputPaths, ...TEMP_PATHS]) {
         if (engine !== currentEngine) break;
         try { await operation.wait(currentEngine.deleteFile(path)); } catch { /* Absent or terminated. */ }
       }
@@ -305,11 +393,11 @@ window.addEventListener("pagehide", () => {
   sourceURL = null;
 });
 window.addEventListener("pageshow", (event) => {
-  if (event.persisted && selectedFile && !sourceURL) {
-    sourceURL = URL.createObjectURL(selectedFile);
+  if (event.persisted && selectedFiles.length && !sourceURL) {
+    sourceURL = URL.createObjectURL(selectedFiles[0]);
     sourceAudio.src = sourceURL;
   }
 });
-status.textContent = supported ? "Выберите файл и нажмите «Обработать»." : UNSUPPORTED;
+status.textContent = supported ? "Выберите файлы и нажмите «Обработать»." : UNSUPPORTED;
 setBusy(false);
 byId("heading").dataset.ready = "true";
