@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import argparse
+import io
 import json
+import math
 import re
+import struct
 import sys
 import time
+import wave
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -1149,7 +1153,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").count() != 1 or page.locator("h2").inner_text() != "Архив отредактированных аудио":
+    if page.locator("h2").all_text_contents() != ["Обработка аудио", "Архив отредактированных аудио"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1165,6 +1169,32 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor logout is not keyboard focusable at {width}px")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Audio editor has horizontal overflow at {width}px")
+    page.locator('#processor-heading[data-ready="true"]').wait_for()
+    if not page.locator("#processor-run").is_disabled() or page.locator("#processor-result").is_visible():
+        raise AssertionError("Processor initial Run/result state is invalid")
+    if page.locator("#processor-cancel").is_visible() or page.locator("#processor-progress").is_visible():
+        raise AssertionError("Processor initial busy state is invalid")
+    if page.locator("#processor-status").get_attribute("role") != "status" or page.locator("#processor-progress").get_attribute("value") is not None:
+        raise AssertionError("Processor must expose live status and indeterminate progress")
+    for selector in ("#processor-source-audio", "#processor-result-audio"):
+        audio = page.locator(selector)
+        if audio.get_attribute("autoplay") is not None or not audio.evaluate("audio => audio.paused"):
+            raise AssertionError("Processor audio must not autoplay")
+    file_input = page.locator("#processor-file")
+    file_input.focus()
+    page.keyboard.press("Shift+Tab")
+    page.keyboard.press("Tab")
+    if not file_input.evaluate("element => document.activeElement === element"):
+        raise AssertionError(f"Processor file input is not keyboard accessible at {width}px")
+    for selector in (".processor-card", ".archive-card:not(.processor-card)", "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
+        element = page.locator(selector)
+        box = element.bounding_box()
+        if not box or box["x"] < 0 or box["x"] + box["width"] > width + 1 or box["width"] < 44:
+            raise AssertionError(f"Audio editor control/card clips at {width}px: {selector}, {box}")
+        if element.evaluate("element => element.scrollWidth > element.clientWidth + 1"):
+            raise AssertionError(f"Audio editor content overflows at {width}px: {selector}")
+    if page.evaluate("performance.getEntriesByType('resource').some(entry => entry.name.includes('/vendor/ffmpeg/'))"):
+        raise AssertionError("FFmpeg must not load just because the archive page opened")
 
 
 def check_audio_editor(page, base_url: str) -> None:
@@ -1269,6 +1299,301 @@ def check_audio_editor(page, base_url: str) -> None:
     finally:
         page.unroute(ARCHIVE_MANIFEST_PATTERN)
     page.evaluate(f"sessionStorage.removeItem('{SERVICE_SESSION_KEY}')")
+
+
+def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: int = 1) -> dict:
+    """Generate PCM in memory; never commit or serve an audio test fixture."""
+    buffer = io.BytesIO()
+    with wave.open(buffer, "wb") as wav:
+        wav.setparams((channels, 2, 44100, 0, "NONE", "not compressed"))
+        for duration, audible in segments:
+            frames = b"".join(struct.pack("<h", int(12000 * math.sin(2 * math.pi * 440 * n / 44100)) if audible else 0) * channels
+                              for n in range(round(duration * 44100)))
+            wav.writeframes(frames)
+    # Empty MIME intentionally proves extension-based validation.
+    return {"name": name, "mimeType": "", "buffer": buffer.getvalue()}
+
+
+def wait_processor_status(page, text: str) -> None:
+    page.wait_for_function("text => document.getElementById('processor-status').textContent === text", arg=text, timeout=180000)
+    page.wait_for_function("!document.getElementById('processor-file').disabled", timeout=30000)
+
+
+def assert_processor_no_result(page) -> None:
+    if page.locator("#processor-result").is_visible() or page.locator("#processor-download").get_attribute("href") is not None:
+        raise AssertionError("Processor created a fake/stale result or download")
+    if page.locator("#processor-result-audio").get_attribute("src") is not None:
+        raise AssertionError("Processor retained stale result audio")
+
+
+def check_processor_helpers(page) -> None:
+    result = page.evaluate("""async () => {
+        const m = await import('./scripts/audio-processor.mjs');
+        const parse = lines => m.parseSilences(lines, 10);
+        return {
+            boundaries: m.removalRanges([[0, 3], [4, 7], [8, 10]], 10),
+            allSilent: m.removalRanges([[0, 10]], 10),
+            eof: parse(['silence_start: 7']),
+            short: parse(['silence_start: 1', 'silence_end: 2.999']),
+            exact: parse(['silence_start: 1', 'silence_end: 3']),
+            clamped: parse(['silence_start: -2', 'silence_end: 4', 'silence_start: 8', 'silence_end: 50']),
+            invalid: parse(['silence_start: NaN', 'silence_end: 5', 'silence_start: 3', 'silence_end: Infinity',
+                'silence_start: 7', 'silence_end: 2', 'silence_start: 12']),
+            merged: parse(['silence_start: 1', 'silence_end: 4', 'silence_start: 3', 'silence_end: 6']),
+            unknownDuration: m.parseSilences(['silence_start: 0'], Infinity),
+            formats: ['audio.MP3', 'Спикерское.m4a', 'fixture.WAV'].map(name => m.validateFile({name, size: 500 * 1024 * 1024})),
+            oversize: m.validateFile({name: 'large.wav', size: 500 * 1024 * 1024 + 1}),
+            filter: m.makeFilter([[3.175, 5.825]])
+        };
+    }""")
+    assert result["boundaries"] == [[0, 2.65], [4.175, 6.825], [8.35, 10]], result
+    assert result["allSilent"] == [[.35, 10]], result
+    assert result["eof"] == [[7, 10]] and result["short"] == [] and result["exact"] == [[1, 3]], result
+    assert result["clamped"] == [[0, 4], [8, 10]] and result["invalid"] == [] and result["unknownDuration"] == [], result
+    assert result["merged"] == [[1, 6]] and result["formats"] == ["", "", ""], result
+    assert result["oversize"] == "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.", result
+    assert "gte(t,3.175000)*lt(t,5.825000)" in result["filter"], result
+
+
+def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -> None:
+    """UI/asset checks everywhere; real WASM only for the local/PR HTTP server."""
+    context = browser.new_context(viewport={"width": 390, "height": 900}, accept_downloads=True)
+    requests = []
+    errors = []
+    context.on("request", lambda request: requests.append((request.method, request.url, request.post_data)))
+    site_host = urlparse(base_url).netloc
+    context.route("**/*", lambda route: route.continue_() if urlparse(route.request.url).netloc in {"", site_host} else route.abort())
+    # Observe native workers and object URLs without replacing the engine or its work.
+    context.add_init_script("""(() => {
+        window.processorProbe = {workers: 0, terminated: 0, messages: [], urls: [], revoked: [], phases: []};
+        const NativeWorker = window.Worker;
+        window.Worker = class extends NativeWorker {
+            constructor(...args) { super(...args); window.processorProbe.workers++; }
+            postMessage(message, ...args) {
+                window.processorProbe.messages.push({type: message.type, path: message.data?.path, args: message.data?.args});
+                return super.postMessage(message, ...args);
+            }
+            terminate() { window.processorProbe.terminated++; return super.terminate(); }
+        };
+        const create = URL.createObjectURL.bind(URL), revoke = URL.revokeObjectURL.bind(URL);
+        URL.createObjectURL = blob => { const value = create(blob); window.processorProbe.urls.push(value); return value; };
+        URL.revokeObjectURL = value => { window.processorProbe.revoked.push(value); return revoke(value); };
+        document.addEventListener('DOMContentLoaded', () => {
+            const status = document.getElementById('processor-status');
+            if (status) new MutationObserver(() => window.processorProbe.phases.push(status.textContent))
+                .observe(status, {childList: true, subtree: true});
+        });
+    })();""")
+    page = context.new_page()
+    page.on("pageerror", lambda error: errors.append(str(error)))
+    try:
+        seed_service_access(page, base_url)
+        goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+        page.locator('#processor-heading[data-ready="true"]').wait_for()
+        wait_for_archive_text(page, "Архив пока пуст.")
+        for width in (390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            if screenshot_dir:
+                screenshot_dir.mkdir(parents=True, exist_ok=True)
+                page.screenshot(path=str(screenshot_dir / f"processor-{width}.png"), full_page=True)
+        assert not any("/vendor/ffmpeg/" in request_url for _, request_url, _ in requests), "Engine was not lazy"
+        assert not errors, errors
+        # HEAD only; never transfer/transcode the full core in production Safety.
+        for relative in ("ffmpeg/index.js", "ffmpeg/worker.js", "core/ffmpeg-core.js", "core/ffmpeg-core.wasm"):
+            response = context.request.head(url(base_url, f"/vendor/ffmpeg/{relative}"))
+            assert response.status == 200, (relative, response.status)
+            if relative.endswith(".wasm"):
+                assert response.headers.get("content-type", "").split(";")[0] == "application/wasm"
+        if urlparse(base_url).hostname not in {"localhost", "127.0.0.1", "::1"}:
+            print("Production processor UI/module/HEAD asset checks passed; real transcode intentionally skipped.")
+            return
+
+        check_processor_helpers(page)
+        primary = wav_payload("fixture.wav", ((1, True), (1, False), (1, True), (3, False), (1, True)))
+        page.locator("#processor-file").set_input_files({"name": "not-audio.ogg", "mimeType": "audio/wav", "buffer": b"invalid"})
+        wait_processor_status(page, "Поддерживаются файлы MP3, M4A и WAV.")
+        assert page.locator("#processor-run").is_disabled()
+        # Test the exact oversize UI branch without allocating half a GiB in CI.
+        page.evaluate("""() => {
+            const input = document.getElementById('processor-file');
+            Object.defineProperty(input, 'files', {configurable: true, value: [{name: 'large.wav', size: 500 * 1024 * 1024 + 1}]});
+            input.dispatchEvent(new Event('change'));
+            delete input.files;
+        }""")
+        wait_processor_status(page, "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.")
+        assert not any("/vendor/ffmpeg/" in request_url for method, request_url, _ in requests if method != "HEAD")
+
+        # Cancel a genuinely pending lazy import; release its request only after cancellation.
+        held = []
+        page.route("**/vendor/ffmpeg/ffmpeg/index.js", lambda route: held.append(route))
+        page.locator("#processor-file").set_input_files(primary)
+        page.locator("#processor-run").click()
+        page.wait_for_function("document.getElementById('processor-status').textContent === 'Подготовка обработчика…'")
+        assert page.locator("#processor-file").is_disabled() and page.locator("#processor-run").is_disabled()
+        assert page.locator("#processor-progress").is_visible()
+        page.locator("#processor-cancel").click()
+        wait_processor_status(page, "Обработка отменена.")
+        assert_processor_no_result(page)
+        for route in held:
+            route.continue_()
+        page.unroute("**/vendor/ffmpeg/ffmpeg/index.js")
+
+        # Also cancel with an actual FFmpeg worker awaiting core initialization.
+        held_core = []
+        context.route("**/vendor/ffmpeg/core/ffmpeg-core.js", lambda route: held_core.append(route))
+        with page.expect_worker():
+            page.locator("#processor-run").click()
+        page.wait_for_function("window.processorProbe.messages.some(message => message.type === 'LOAD')")
+        page.locator("#processor-cancel").click()
+        wait_processor_status(page, "Обработка отменена.")
+        assert page.evaluate("window.processorProbe.terminated") == 1
+        assert_processor_no_result(page)
+        for route in held_core:
+            route.abort()
+        context.unroute("**/vendor/ffmpeg/core/ffmpeg-core.js")
+
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Готово.")
+        assert page.locator("#processor-file-info").inner_text().startswith("fixture.wav · ")
+        assert page.locator("#processor-source-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
+        source_duration = float(page.locator("#processor-original-duration").get_attribute("data-value"))
+        output_duration = float(page.locator("#processor-processed-duration").get_attribute("data-value"))
+        count = int(page.locator("#processor-pause-count").inner_text())
+        assert abs(source_duration - 7) < .05 and abs(output_duration - 4.35) < .12 and count == 1
+        assert abs(float(page.locator("#processor-removed-duration").get_attribute("data-value")) - 2.65) < .12
+        assert page.locator("#processor-result-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
+        result_info = page.evaluate("""async () => {
+            const response = await fetch(document.getElementById('processor-download').href);
+            const blob = await response.blob();
+            const bytes = await blob.arrayBuffer();
+            const raw = new Uint8Array(bytes);
+            const frame = 10 + ((raw[6] & 127) * 2097152 + (raw[7] & 127) * 16384 + (raw[8] & 127) * 128 + (raw[9] & 127));
+            const headerRate = [44100, 48000, 32000][(raw[frame + 2] >> 2) & 3];
+            const headerBitrate = [0, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320][raw[frame + 2] >> 4];
+            const audioContext = new AudioContext({sampleRate: 44100});
+            try {
+                const decoded = await audioContext.decodeAudioData(bytes.slice(0));
+                const samples = decoded.getChannelData(0);
+                const rms = (start, end) => {
+                    const first = Math.floor(start * decoded.sampleRate), last = Math.floor(end * decoded.sampleRate);
+                    let sum = 0; for (let i = first; i < last; i++) sum += samples[i] ** 2;
+                    return Math.sqrt(sum / (last - first));
+                };
+                return {size: blob.size, type: blob.type, prefix: Array.from(new Uint8Array(bytes).slice(0, 3)),
+                    sampleRate: headerRate, bitrate: headerBitrate, channels: decoded.numberOfChannels,
+                    shortPauseRms: rms(1.1, 1.9), middleToneRms: rms(2.1, 2.8), lastToneRms: rms(3.5, 4.1)};
+            } finally { await audioContext.close(); }
+        }""")
+        assert result_info["size"] > 0 and result_info["type"] == "audio/mpeg" and result_info["prefix"] == [73, 68, 51], result_info
+        assert result_info["sampleRate"] == 44100 and result_info["bitrate"] == 128 and result_info["channels"] == 1, result_info
+        assert result_info["shortPauseRms"] < .005 and result_info["middleToneRms"] > .1 and result_info["lastToneRms"] > .1, result_info
+        with page.expect_download() as download_event:
+            page.locator("#processor-download").click()
+        download = download_event.value
+        assert download.suggested_filename == "fixture-edited.mp3" and download.failure() is None
+        assert page.locator(".archive-item").count() == 0
+        probe = page.evaluate("window.processorProbe")
+        assert probe["workers"] == 2, probe
+        for phase in ("Подготовка обработчика…", "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово."):
+            assert phase in probe["phases"], probe
+        assert any("/core/ffmpeg-core.wasm" in request_url for method, request_url, _ in requests if method == "GET")
+        for path in ("processor-input", "processor-output.mp3", "processor-analysis.txt", "processor-filter.txt"):
+            assert any(message["type"] == "DELETE_FILE" and message["path"] == path for message in probe["messages"]), probe
+        print(f"Real FFmpeg fixture passed: input={source_duration:.6f}s output={output_duration:.6f}s shortened={count}; MP3={result_info['size']} bytes; short pause preserved.")
+        page.evaluate("document.activeElement.blur(); window.scrollTo(0, 0)")
+        page.mouse.move(0, 0)
+        for width in (390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+            for selector in ("#processor-source-audio", "#processor-result-audio", "#processor-download"):
+                box = page.locator(selector).bounding_box()
+                assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (selector, box)
+            if screenshot_dir:
+                page.screenshot(path=str(screenshot_dir / f"processor-result-{width}.png"), full_page=True)
+        prior_urls = page.evaluate("window.processorProbe.urls.slice()")
+        exec_before = len([message for message in probe["messages"] if message["type"] == "EXEC"])
+        page.locator("#processor-file").set_input_files(wav_payload("no-pauses.WAV", ((.5, True), (.5, False), (.5, True))))
+        assert_processor_no_result(page)
+        revoked = page.evaluate("window.processorProbe.revoked")
+        assert all(value in revoked for value in prior_urls), (prior_urls, revoked)
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Длинные паузы не найдены. Файл не изменён.")
+        assert_processor_no_result(page)
+        probe = page.evaluate("window.processorProbe")
+        assert probe["workers"] == 2 and len([message for message in probe["messages"] if message["type"] == "EXEC"]) == exec_before + 1
+        print("No-long-pause fixture passed: exact unchanged status, analysis only, no re-encode/result/download; loaded engine reused.")
+
+        # Cancel once the real worker has started analysis; the next run must recreate it.
+        page.locator("#processor-file").set_input_files(primary)
+        page.evaluate("""() => {
+            const status = document.getElementById('processor-status');
+            const observer = new MutationObserver(() => {
+                if (status.textContent === 'Поиск длинных пауз…') {
+                    observer.disconnect(); document.getElementById('processor-cancel').click();
+                }
+            });
+            observer.observe(status, {childList: true});
+        }""")
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Обработка отменена.")
+        assert_processor_no_result(page)
+        assert page.evaluate("window.processorProbe.terminated") == 2
+        assert page.locator("#processor-source-audio").get_attribute("src").startswith("blob:")
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Готово.")
+        assert page.evaluate("window.processorProbe.workers") == 3
+
+        # Real leading/trailing EOF handling and stereo preservation, plus a Unicode filename.
+        page.locator("#processor-file").set_input_files(wav_payload("Спикерское.wav", ((3, False), (1, True), (3, False)), channels=2))
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Готово.")
+        assert page.locator("#processor-pause-count").inner_text() == "2"
+        edge_duration = float(page.locator("#processor-processed-duration").get_attribute("data-value"))
+        assert abs(edge_duration - 1.7) < .12, edge_duration
+        assert page.locator("#processor-download").get_attribute("download") == "Спикерское-edited.mp3"
+        assert page.evaluate("""async () => {
+            const audioContext = new AudioContext();
+            try {
+                const buffer = await (await fetch(document.getElementById('processor-download').href)).arrayBuffer();
+                return (await audioContext.decodeAudioData(buffer)).numberOfChannels === 2;
+            } finally { await audioContext.close(); }
+        }""")
+        print(f"Real boundary fixture passed: leading/trailing silence, output={edge_duration:.6f}s, shortened=2; cancel/retry passed.")
+        # Decoder failure must clean stale results and re-enable the UI.
+        page.locator("#processor-file").set_input_files({"name": "broken.wav", "mimeType": "audio/wav", "buffer": b"not a wav"})
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Не удалось прочитать аудио. Проверьте исходный файл.")
+        assert_processor_no_result(page)
+        assert not page.locator("#processor-run").is_disabled()
+        long_name = "Очень-длинное-название-спикерского-" * 6 + ".wav"
+        page.locator("#processor-file").set_input_files(wav_payload(long_name, ((.1, True),)))
+        for width in (390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+            assert not page.locator("#processor-file-info").evaluate("el => el.scrollWidth > el.clientWidth")
+        assert not errors, errors
+        assert all(method in {"GET", "HEAD"} and body is None for method, _, body in requests), requests
+        assert all(urlparse(request_url).netloc in {"", site_host} for _, request_url, _ in requests), requests
+        assert page.locator(".archive-item").count() == 0
+        goto_ready(page, url(base_url, "/Admin-panel.html"))
+    finally:
+        context.close()
+
+    unsupported_context = browser.new_context()
+    unsupported_context.add_init_script("Object.defineProperty(window, 'WebAssembly', {value: undefined})")
+    unsupported_page = unsupported_context.new_page()
+    try:
+        seed_service_access(unsupported_page, base_url)
+        unsupported_page.route(ARCHIVE_MANIFEST_PATTERN, fixture_manifest_route)
+        goto_ready(unsupported_page, url(base_url, AUDIO_EDITOR_PATH))
+        unsupported_page.get_by_text("Обработка аудио не поддерживается в этом браузере.", exact=True).wait_for()
+        wait_for_archive_items(unsupported_page, 3)
+        assert unsupported_page.locator("#processor-run").is_disabled()
+        unsupported_page.locator("#archive-search").fill("Альфа")
+        assert unsupported_page.locator(".archive-item").count() == 1
+        print("Unsupported-browser processor fallback passed; archive remains functional.")
+    finally:
+        unsupported_context.close()
 
 
 def main() -> int:
@@ -1477,6 +1802,7 @@ def main() -> int:
         check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
         check_audio_editor(page, base_url)
+        check_audio_processor(browser, base_url, args.screenshot_dir)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")
 

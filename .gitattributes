@@ -1,0 +1,3 @@
+# Preserve verbatim upstream whitespace; Safety pins the full SHA-256 of both files.
+vendor/ffmpeg/ffmpeg/classes.js -whitespace
+vendor/ffmpeg/core/ffmpeg-core.js -whitespace

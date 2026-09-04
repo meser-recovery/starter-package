@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from datetime import datetime
+import hashlib
 import json
 import math
 import re
@@ -44,6 +45,9 @@ class PageParser(HTMLParser):
         self.h1_texts: list[str] = []
         self._h1_depth = 0
         self._current_h1: list[str] = []
+        self.h2_texts: list[str] = []
+        self._h2_depth = 0
+        self._current_h2: list[str] = []
 
     def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
         values = dict(attrs)
@@ -51,6 +55,9 @@ class PageParser(HTMLParser):
         if tag == "h1":
             self._h1_depth += 1
             self._current_h1 = []
+        if tag == "h2":
+            self._h2_depth += 1
+            self._current_h2 = []
         anchor = values.get("id") or values.get("name")
         if anchor:
             self.anchors.add(anchor)
@@ -63,10 +70,15 @@ class PageParser(HTMLParser):
         if tag == "h1" and self._h1_depth:
             self.h1_texts.append("".join(self._current_h1).strip())
             self._h1_depth -= 1
+        if tag == "h2" and self._h2_depth:
+            self.h2_texts.append("".join(self._current_h2).strip())
+            self._h2_depth -= 1
 
     def handle_data(self, data: str) -> None:
         if self._h1_depth:
             self._current_h1.append(data)
+        if self._h2_depth:
+            self._current_h2.append(data)
 
 
 def load_contract() -> dict:
@@ -734,7 +746,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
-        if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True)]:
+        if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True), ("scripts/audio-processor.mjs", False)]:
             errors.append("Audio-Editor.html: expected guard before dedicated archive runtime")
         if any(tag == "script" and not attrs.get("src") for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: inline scripts are not allowed")
@@ -782,6 +794,147 @@ def check_audio_editor_contract(errors: list[str]) -> None:
             errors.append(f"{prefix} audioUrl must be a canonical GitHub Release asset URL")
 
 
+FFMPEG_WASM_SHA256 = "9f57947a5bd530d8f00c5b3f2cb2a3492faa7e5d823315342d6a8656d0a6b7b7"
+FFMPEG_WASM_BYTES = 32232419
+FFMPEG_HASHES = {
+    "ffmpeg/index.js": "cad19572420f7ead17272082d9582ebaed7f2856e19875542f83daf8d25d3b5d",
+    "ffmpeg/classes.js": "7a829c898bdbc3a8806652a5502d9101178ce4e988a2c50b3abc1306ce4fc919",
+    "ffmpeg/const.js": "9e3bc9dd84781c81daf459e2c46eeec815edac35089832681d9a9a0f383060d0",
+    "ffmpeg/errors.js": "619310d7ef5fe5fefa0a31927db862b7c291713cfef4d71753fa8aafd18f4db6",
+    "ffmpeg/types.js": "72f80e6fd44fcd18b55c9a0deb3bc70b9bb37480cf969045ca4521f5a11300f5",
+    "ffmpeg/utils.js": "8c2e0e16445f8d3a0acbb812f2c60541a92c88ed0bf9ffe96c52e7fb6c8b1d72",
+    "ffmpeg/worker.js": "feff0ac937ea225e997e1fae997a74f8b8d572423a526da59eb56624b1f3cde7",
+    "core/ffmpeg-core.js": "67a48f11645f85439f3fde4f2119042c16b374b910206b7a7a24f342e28dcae3",
+    "core/ffmpeg-core.wasm": FFMPEG_WASM_SHA256,
+    "licenses/ffmpeg-wasm-MIT.txt": "3e123e29517d76504ffce77b3f8e2ccffd4712493f27694b0aba3e376676459f",
+    "licenses/FFmpeg-GPLv2.txt": "8177f97513213526df2cf6184d8ff986c675afb514d4e68a404010521b880643",
+    "licenses/FFmpeg-LGPLv2.1.txt": "b634ab5640e258563c536e658cad87080553df6f34f62269a21d554844e58bfe",
+}
+PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-m4a", "audio/wav", "audio/x-wav"}
+
+
+def check_processor_markup(source: str, errors: list[str]) -> None:
+    parser = PageParser()
+    parser.feed(source)
+    if parser.h2_texts != ["Обработка аудио", "Архив отредактированных аудио"]:
+        errors.append("Audio-Editor.html: expected exactly processor then archive H2")
+    tags = parser.start_tags
+    ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
+    expected = {
+        "processor-heading": "h2", "processor-file": "input", "processor-run": "button",
+        "processor-cancel": "button", "processor-status": "p", "processor-progress": "progress",
+        "processor-source-audio": "audio", "processor-result": "div", "processor-result-audio": "audio",
+        "processor-download": "a", "processor-file-info": "p", "processor-original-duration": "dd",
+        "processor-processed-duration": "dd", "processor-removed-duration": "dd", "processor-pause-count": "dd",
+    }
+    for element_id, element_tag in expected.items():
+        if ids.count(element_id) != 1 or not any(tag == element_tag and attrs.get("id") == element_id for tag, attrs in tags):
+            errors.append(f"Audio-Editor.html: missing/duplicate/invalid {element_id}")
+    elements = {attrs.get("id"): attrs for _, attrs in tags if attrs.get("id")}
+    if elements.get("processor-file", {}).get("type") != "file" or set((elements.get("processor-file", {}).get("accept") or "").split(",")) != PROCESSOR_ACCEPT:
+        errors.append("Audio-Editor.html: processor extension/MIME accept list changed")
+    if not any(tag == "label" and attrs.get("for") == "processor-file" for tag, attrs in tags):
+        errors.append("Audio-Editor.html: file label missing")
+    for element_id in ("processor-run", "processor-cancel"):
+        if elements.get(element_id, {}).get("type") != "button":
+            errors.append(f"Audio-Editor.html: {element_id} must not submit a form")
+    for element_id, label in (("processor-run", "Обработать"), ("processor-cancel", "Отменить"), ("processor-download", "Скачать обработанный MP3")):
+        if not re.search(rf'<[^>]+id="{element_id}"[^>]*>{re.escape(label)}</', source):
+            errors.append(f"Audio-Editor.html: incorrect label for {element_id}")
+    if "disabled" not in elements.get("processor-run", {}):
+        errors.append("Audio-Editor.html: processor Run must start disabled")
+    for element_id in ("processor-cancel", "processor-progress", "processor-result"):
+        if "hidden" not in elements.get(element_id, {}):
+            errors.append(f"Audio-Editor.html: {element_id} must start hidden")
+    if elements.get("processor-status", {}).get("role") != "status" or "value" in elements.get("processor-progress", {}):
+        errors.append("Audio-Editor.html: live status/indeterminate progress contract changed")
+    for tag, attrs in tags:
+        if tag == "audio" and ("autoplay" in attrs or "controls" not in attrs):
+            errors.append("Audio-Editor.html: audio must have native controls and no autoplay")
+        if tag == "script" and attrs.get("src") == "scripts/audio-processor.mjs" and attrs.get("type") != "module":
+            errors.append("Audio-Editor.html: processor runtime must be a module")
+        if tag in {"script", "link"} and "ffmpeg" in (attrs.get("src") or attrs.get("href") or "").lower():
+            errors.append("Audio-Editor.html: FFmpeg must not load/preload on page open")
+    scripts = [attrs for tag, attrs in tags if tag == "script"]
+    if ([attrs.get("src") for attrs in scripts] != ["scripts/service-landing.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs"] or
+            not scripts or any(key in scripts[0] for key in ("async", "defer", "type"))):
+        errors.append("Audio-Editor.html: early blocking guard/archive/module order changed")
+    for text in ("Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.",
+                 "Исходный файл обрабатывается локально в браузере и не отправляется на сервер."):
+        if text not in source:
+            errors.append(f"Audio-Editor.html: processor explanation missing: {text}")
+
+
+def check_audio_processor_contract(errors: list[str]) -> None:
+    page = ROOT / "Audio-Editor.html"
+    if page.is_file():
+        check_processor_markup(page.read_text(encoding="utf-8"), errors)
+    runtime = ROOT / "scripts/audio-processor.mjs"
+    if not runtime.is_file():
+        errors.append("scripts/audio-processor.mjs is missing")
+        return
+    source = runtime.read_text(encoding="utf-8")
+    required = (
+        "const MIN_SILENCE_SECONDS = 2.0;", "const TARGET_SILENCE_SECONDS = 0.35;",
+        "const SILENCE_THRESHOLD_DB = -45;", 'const OUTPUT_BITRATE = "128k";',
+        "const MAX_INPUT_BYTES = 500 * 1024 * 1024;", 'import("../vendor/ffmpeg/ffmpeg/index.js")',
+        'coreURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.js", import.meta.url).href',
+        'wasmURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.wasm", import.meta.url).href',
+        '"0:a:0"', '"libmp3lame"', "silencedetect=noise=", "aselect=", "asetpts=N/SR/TB",
+        "engine.terminate()", "URL.revokeObjectURL", "currentEngine.deleteFile(path)",
+        "Поддерживаются файлы MP3, M4A и WAV.",
+        "Файл слишком большой для обработки в браузере. Максимальный размер — 500 МБ.",
+        "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
+        "Длинные паузы не найдены. Файл не изменён.", "Подготовка обработчика…",
+        "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово.",
+    )
+    for token in required:
+        if token not in source:
+            errors.append(f"Processor runtime contract missing: {token}")
+    if re.search(r'^import\s', source, re.M) or source.find('import("../vendor') < source.find('run.addEventListener("click"'):
+        errors.append("Processor must import FFmpeg lazily in the Run handler")
+    forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac)[\"']"
+    if re.search(forbidden, source):
+        errors.append("Processor has a forbidden external/write API, DSP, or threading dependency")
+    own_source = source + (page.read_text(encoding="utf-8") if page.is_file() else "")
+    if re.search(r"gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9]|api[_-]?key\s*[:=]|<form\b|\bupload\b", own_source, re.I):
+        errors.append("Processor contains a credential/upload/form contract violation")
+    for relative, expected_hash in {
+        "data/edited-audio.json": "196cb8d26daf8251485383d37df0c270e11f5d1b8a455fccc25903ddfe9c9364",
+        "scripts/audio-editor.js": "51448c682e5b21149191016b74d9374ce499b19c75df64bcf1b15cde657898ee",
+        "scripts/service-landing.js": "78387a46da7668981bfb7b5b6742838118a2dc26c00b81f07254faec90c01836",
+    }.items():
+        path = ROOT / relative
+        if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+            errors.append(f"Stage 7 must preserve Stage 6 bytes: {relative}")
+    vendor = ROOT / "vendor/ffmpeg"
+    actual = {path.relative_to(vendor).as_posix() for path in vendor.rglob("*") if path.is_file()}
+    if actual != set(FFMPEG_HASHES) | {"README.md"}:
+        errors.append("FFmpeg vendor file set differs from the pinned minimal ESM closure/licenses")
+    for relative, expected_hash in FFMPEG_HASHES.items():
+        path = vendor / relative
+        if not path.is_file() or not path.stat().st_size:
+            errors.append(f"FFmpeg vendor asset missing/empty: {relative}")
+        elif hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
+            errors.append(f"FFmpeg vendor upstream SHA-256 mismatch: {relative}")
+    wasm = vendor / "core/ffmpeg-core.wasm"
+    if wasm.is_file():
+        with wasm.open("rb") as handle:
+            if handle.read(4) != b"\x00asm" or wasm.stat().st_size != FFMPEG_WASM_BYTES:
+                errors.append("FFmpeg WASM magic bytes/byte size mismatch")
+    readme = vendor / "README.md"
+    provenance = readme.read_text(encoding="utf-8") if readme.is_file() else ""
+    for token in ("@ffmpeg/ffmpeg", "0.12.15", "@ffmpeg/core", "0.12.10", "single-thread",
+                  "https://github.com/ffmpegwasm/ffmpeg.wasm", "https://registry.npmjs.org/", FFMPEG_WASM_SHA256):
+        if token not in provenance:
+            errors.append(f"FFmpeg provenance missing: {token}")
+    for path in ROOT.rglob("*"):
+        if any(part in {".git", "venv", ".venv"} for part in path.relative_to(ROOT).parts):
+            continue
+        if path.name in {"package.json", "package-lock.json", "node_modules", "yarn.lock", "pnpm-lock.yaml", "webpack.config.js", "vite.config.js"}:
+            errors.append(f"Prohibited npm/build artifact: {path.relative_to(ROOT)}")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -822,6 +975,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_google_drive_contract(errors)
     check_admin_access_contract(errors)
     check_audio_editor_contract(errors)
+    check_audio_processor_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:
@@ -857,6 +1011,24 @@ def remote_check(contract: dict, base_url: str) -> tuple[list[str], list[str]]:
         for destination in contract["homepage_internal_destinations"] + contract["homepage_external_destinations"]:
             if destination not in hrefs:
                 errors.append(f"remote homepage contract changed or missing: {destination}")
+    if pages.get("/Audio-Editor.html"):
+        check_processor_markup(pages["/Audio-Editor.html"], errors)
+    # HEAD only: production checks must not download the 31 MiB WASM on each run.
+    for relative in ["scripts/audio-processor.mjs", *[f"vendor/ffmpeg/{path}" for path in FFMPEG_HASHES]]:
+        asset_url = urljoin(base_url, relative)
+        try:
+            with urlopen(Request(asset_url, method="HEAD", headers={"User-Agent": "site-contract-check"}), timeout=30) as response:
+                if response.status != 200:
+                    errors.append(f"processor deployed asset returned HTTP {response.status}: {relative}")
+                if relative.endswith(".wasm"):
+                    mime = response.headers.get_content_type()
+                    if mime != "application/wasm":
+                        errors.append(f"deployed WASM has incorrect MIME type: {mime}")
+                    length = response.headers.get("Content-Length")
+                    if length and not response.headers.get("Content-Encoding") and length != str(FFMPEG_WASM_BYTES):
+                        errors.append(f"deployed WASM has unexpected byte size: {length}")
+        except URLError as exc:
+            errors.append(f"processor deployed asset unavailable: {relative} ({exc.reason})")
     return errors, warnings
 
 

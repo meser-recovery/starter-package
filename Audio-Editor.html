@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles/audio-editor.css">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
+    <script src="scripts/audio-processor.mjs" type="module"></script>
   </head>
   <body class="site-page">
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
@@ -25,6 +26,42 @@
       <div class="container audio-editor-content">
         <a class="archive-back-link" href="Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html">К служебной странице</a>
         <h1>Редактирование аудио</h1>
+        <section class="archive-card processor-card" aria-labelledby="processor-heading">
+          <div class="archive-card__heading">
+            <h2 id="processor-heading">Обработка аудио</h2>
+            <p>Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.</p>
+            <p id="processor-privacy">Исходный файл обрабатывается локально в браузере и не отправляется на сервер.</p>
+          </div>
+          <div class="processor-field">
+            <label for="processor-file">Выберите аудиофайл</label>
+            <p id="processor-file-help">MP3, M4A или WAV, не более 500 МБ. Результат — MP3, 128 кбит/с.</p>
+            <input id="processor-file" type="file" accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-describedby="processor-file-help processor-privacy">
+          </div>
+          <div id="processor-source" class="processor-preview" hidden>
+            <p id="processor-file-info"></p>
+            <label for="processor-source-audio">Исходное аудио</label>
+            <audio id="processor-source-audio" controls preload="metadata"></audio>
+          </div>
+          <div class="processor-actions">
+            <button id="processor-run" type="button" disabled>Обработать</button>
+            <button id="processor-cancel" type="button" hidden>Отменить</button>
+          </div>
+          <div class="processor-feedback">
+            <p id="processor-status" role="status">Обработка аудио не поддерживается в этом браузере.</p>
+            <progress id="processor-progress" aria-label="Обработка аудио" hidden></progress>
+          </div>
+          <div id="processor-result" class="processor-preview" hidden>
+            <h3>Обработанное аудио</h3>
+            <audio id="processor-result-audio" aria-label="Обработанное аудио" controls preload="metadata"></audio>
+            <dl class="processor-statistics">
+              <div><dt>Исходная длительность</dt><dd id="processor-original-duration"></dd></div>
+              <div><dt>После обработки</dt><dd id="processor-processed-duration"></dd></div>
+              <div><dt>Удалено тишины</dt><dd id="processor-removed-duration"></dd></div>
+              <div><dt>Сокращено длинных пауз</dt><dd id="processor-pause-count"></dd></div>
+            </dl>
+            <a id="processor-download" class="archive-download">Скачать обработанный MP3</a>
+          </div>
+        </section>
         <section class="archive-card" aria-labelledby="archive-heading">
           <div class="archive-card__heading">
             <h2 id="archive-heading">Архив отредактированных аудио</h2>
