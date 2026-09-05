@@ -6,3 +6,7 @@ npm-debug.log
 .env.*
 *.pem
 *.key
+deploy/self-hosted/*.local.yaml
+deploy/self-hosted/*.local.yml
+deploy/self-hosted/deployment-state.local.md
+deploy/self-hosted/rollback-resolved.sh

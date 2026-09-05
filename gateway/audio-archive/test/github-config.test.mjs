@@ -1,6 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { generateKeyPairSync, verify } from "node:crypto";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { loadConfig } from "../src/config.mjs";
 import { createGitHubAppJwt, GitHubArchiveRepository } from "../src/github.mjs";
 
@@ -19,16 +22,86 @@ function jsonResponse(value, status = 200) {
     headers: value === null ? {} : { "Content-Type": "application/json" } });
 }
 
-test("configuration fixes GitHub scope and accepts one exact HTTPS Pages origin", () => {
-  const env = {
+function configEnvironment(overrides = {}) {
+  return {
     ALLOWED_ORIGIN: "https://meser-recovery.github.io", GITHUB_APP_ID: "1", GITHUB_APP_INSTALLATION_ID: "2",
-    GITHUB_APP_PRIVATE_KEY: "key", SHARED_PASSWORD_VERIFIER: "verifier", SESSION_SIGNING_SECRET: "x".repeat(32)
+    GITHUB_APP_PRIVATE_KEY_FILE: "/run/secrets/github-app.pem",
+    SHARED_PASSWORD_VERIFIER_FILE: "/run/secrets/shared-password-verifier",
+    SESSION_SIGNING_SECRET_FILE: "/run/secrets/session-signing-secret",
+    ...overrides
   };
-  const loaded = loadConfig(env);
+}
+
+function secretReader(overrides = {}) {
+  const values = {
+    "/run/secrets/github-app.pem": "line one\nline two\n",
+    "/run/secrets/shared-password-verifier": "test-password-verifier\n",
+    "/run/secrets/session-signing-secret": "x".repeat(32) + "\n",
+    ...overrides
+  };
+  return (filename) => {
+    if (!Object.hasOwn(values, filename)) throw new Error("unreadable");
+    return values[filename];
+  };
+}
+
+test("configuration fixes GitHub scope and accepts one exact HTTPS Pages origin", () => {
+  const env = configEnvironment();
+  const loaded = loadConfig(env, secretReader());
   assert.equal(`${loaded.storageOwner}/${loaded.storageRepository}`, "meser-recovery/audio-archive");
-  assert.throws(() => loadConfig({ ...env, STORAGE_REPOSITORY: "starter-package" }), /must remain/);
-  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "http://localhost:8000" }), /HTTPS origin/);
-  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test/path" }), /HTTPS origin/);
+  assert.throws(() => loadConfig({ ...env, STORAGE_REPOSITORY: "starter-package" }, secretReader()), /must remain/);
+  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "http://localhost:8000" }, secretReader()), /HTTPS origin/);
+  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test/path" }, secretReader()), /HTTPS origin/);
+  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test" }, secretReader()), /must remain/);
+});
+
+test("configuration reads each secret file once, preserves PEM newlines, and strips only the final newline", () => {
+  const calls = [];
+  const reader = secretReader();
+  const loaded = loadConfig(configEnvironment(), (filename, encoding) => {
+    calls.push([filename, encoding]);
+    return reader(filename);
+  });
+  assert.equal(loaded.githubAppPrivateKey, "line one\nline two");
+  assert.equal(loaded.sharedPasswordVerifier, "test-password-verifier");
+  assert.equal(loaded.sessionSigningSecret, "x".repeat(32));
+  assert.deepEqual(calls, [
+    ["/run/secrets/github-app.pem", "utf8"],
+    ["/run/secrets/shared-password-verifier", "utf8"],
+    ["/run/secrets/session-signing-secret", "utf8"]
+  ]);
+});
+
+test("configuration loads startup secrets from real files", () => {
+  const directory = mkdtempSync(join(tmpdir(), "audio-archive-config-"));
+  try {
+    const env = configEnvironment({
+      GITHUB_APP_PRIVATE_KEY_FILE: join(directory, "github-app.pem"),
+      SHARED_PASSWORD_VERIFIER_FILE: join(directory, "shared-password-verifier"),
+      SESSION_SIGNING_SECRET_FILE: join(directory, "session-signing-secret")
+    });
+    writeFileSync(env.GITHUB_APP_PRIVATE_KEY_FILE, "test-key-line-one\ntest-key-line-two\n", { mode: 0o600 });
+    writeFileSync(env.SHARED_PASSWORD_VERIFIER_FILE, "test-verifier\n", { mode: 0o600 });
+    writeFileSync(env.SESSION_SIGNING_SECRET_FILE, "z".repeat(32) + "\n", { mode: 0o600 });
+    const loaded = loadConfig(env);
+    assert.equal(loaded.githubAppPrivateKey, "test-key-line-one\ntest-key-line-two");
+    assert.equal(loaded.sharedPasswordVerifier, "test-verifier");
+    assert.equal(loaded.sessionSigningSecret, "z".repeat(32));
+  } finally {
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
+test("configuration fails closed without disclosing unreadable or empty secret contents", () => {
+  const env = configEnvironment();
+  assert.throws(() => loadConfig({ ...env, GITHUB_APP_PRIVATE_KEY_FILE: "" }, secretReader()),
+    (error) => /GITHUB_APP_PRIVATE_KEY_FILE is required/.test(error.message) && !error.message.includes("line one"));
+  assert.throws(() => loadConfig(env, secretReader({ "/run/secrets/shared-password-verifier": " \n" })),
+    (error) => /SHARED_PASSWORD_VERIFIER_FILE is empty/.test(error.message) && !error.message.includes("test-password"));
+  assert.throws(() => loadConfig(env, secretReader({ "/run/secrets/session-signing-secret": undefined })),
+    (error) => /SESSION_SIGNING_SECRET_FILE did not contain text/.test(error.message));
+  assert.throws(() => loadConfig(env, () => { throw new Error("private material"); }),
+    (error) => /GITHUB_APP_PRIVATE_KEY_FILE could not be read/.test(error.message) && !error.message.includes("private material"));
 });
 
 test("GitHub App JWT is short-lived RS256 and installation request is machine-only", async () => {

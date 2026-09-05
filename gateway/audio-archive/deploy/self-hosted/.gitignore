@@ -1,0 +1,4 @@
+*.local.yaml
+*.local.yml
+deployment-state.local.md
+rollback-resolved.sh

@@ -1,0 +1,26 @@
+{
+	admin off
+	servers :443 {
+		listener_wrappers {
+			proxy_protocol {
+				timeout 2s
+				allow 127.0.0.0/8 ::1/128 10.0.0.0/8 172.16.0.0/12 192.168.0.0/16
+				fallback_policy reject
+			}
+			tls
+		}
+		protocols h1 h2
+		strict_sni_host on
+	}
+}
+
+meserproject.duckdns.org {
+	reverse_proxy gateway:8080 {
+		header_up -X-Forwarded-For
+		header_up X-Forwarded-For {remote_host}
+		header_up -X-Forwarded-Proto
+		header_up X-Forwarded-Proto {scheme}
+		header_up -X-Forwarded-Host
+		header_up X-Forwarded-Host {host}
+	}
+}

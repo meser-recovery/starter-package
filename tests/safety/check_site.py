@@ -1000,6 +1000,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
             'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",
+            "GITHUB_APP_PRIVATE_KEY_FILE", "SHARED_PASSWORD_VERIFIER_FILE", "SESSION_SIGNING_SECRET_FILE",
         ),
         "gateway/audio-archive/src/auth.mjs": (
             "scrypt", "Secure; HttpOnly; SameSite=None; Partitioned", "requireCsrf", "LoginThrottle",
@@ -1012,7 +1013,22 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
             "GitHubArchiveRepository", "createGitHubAppJwt", "uploads.github.com", "commitJson",
         ),
         "gateway/audio-archive/Dockerfile": ("node:24-alpine", "USER node",),
-        "gateway/audio-archive/PROVISIONING.md": ("external provisioning", "Rollback", "meser-recovery/audio-archive",),
+        "gateway/audio-archive/deploy/self-hosted/compose.yaml": (
+            '"80:80/tcp"', '"127.0.0.1:9443:443/tcp"', "archive_private", "/etc/meser-audio-archive/",
+        ),
+        "gateway/audio-archive/deploy/self-hosted/Caddyfile": (
+            "meserproject.duckdns.org", "proxy_protocol", "reverse_proxy gateway:8080",
+        ),
+        "gateway/audio-archive/deploy/self-hosted/haproxy.cfg": (
+            "mode tcp", "req.ssl_sni -i meserproject.duckdns.org", "default_backend xray_reality",
+            "127.0.0.1:9443", "127.0.0.1:9444",
+        ),
+        "gateway/audio-archive/deploy/self-hosted/deployment-state.template.md": (
+            "UNRESOLVED", "8443", "5678", "65000", "Materialized and reviewed literal rollback commands",
+        ),
+        "gateway/audio-archive/PROVISIONING.md": (
+            "repository-only preparation", "Mandatory rollback", "PHASE_B_AUTHORIZED", "meser-recovery/audio-archive",
+        ),
     }
     for relative, tokens in required.items():
         path = ROOT / relative
@@ -1039,8 +1055,29 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
 
     for relative in ("Admin-panel.html", "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html", "Audio-Editor.html"):
         path = ROOT / relative
-        if path.is_file() and path.read_text(encoding="utf-8").count('name="audio-archive-gateway"') != 1:
-            errors.append(f"{relative}: expected one audio archive gateway configuration hook")
+        if path.is_file():
+            source = path.read_text(encoding="utf-8")
+            if source.count('name="audio-archive-gateway"') != 1:
+                errors.append(f"{relative}: expected one audio archive gateway configuration hook")
+            if source.count('<meta name="audio-archive-gateway" content="">') != 1:
+                errors.append(f"{relative}: audio archive gateway hook must remain empty before deployment")
+
+    active_provider_paths = [
+        ROOT / "gateway/audio-archive/src/config.mjs",
+        ROOT / "gateway/audio-archive/README.md",
+        ROOT / "gateway/audio-archive/PROVISIONING.md",
+        *list((ROOT / "gateway/audio-archive/deploy/self-hosted").glob("*")),
+    ]
+    rejected_provider = re.compile(r"Cloud Run|Secret Manager|Google Cloud|\bgcloud\b|\bGCP\b|Artifact Registry|Cloud Build", re.I)
+    embedded_secret = re.compile(r"-----BEGIN (?:RSA )?PRIVATE KEY-----|scrypt\$[^`\s]+")
+    for path in active_provider_paths:
+        if not path.is_file():
+            continue
+        source = path.read_text(encoding="utf-8")
+        if rejected_provider.search(source):
+            errors.append(f"S08A rejected provider assumption remains active: {path.relative_to(ROOT)}")
+        if embedded_secret.search(source):
+            errors.append(f"S08A deployment artifact appears to embed secret material: {path.relative_to(ROOT)}")
 
     schema_dir = ROOT / "gateway/audio-archive/storage-repository/schemas/v1"
     expected_schemas = {"catalog.schema.json", "deletion-tombstone.schema.json", "draft.schema.json", "source-session.schema.json", "transaction.schema.json"}
