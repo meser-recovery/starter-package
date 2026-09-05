@@ -44,4 +44,3 @@ Secret values supplied from Google Secret Manager:
 - The GitHub adapter exposes fixed domain operations, not a general-purpose repository proxy.
 
 See [PROVISIONING.md](PROVISIONING.md) for the explicit external provisioning checkpoint and rollback procedure.
-

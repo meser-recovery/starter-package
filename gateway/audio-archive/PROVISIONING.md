@@ -67,4 +67,3 @@ Inspect Cloud Run logs to confirm they contain request IDs and safe error catego
 3. If credentials may have leaked, revoke the GitHub App private key and rotate the session signing secret and shared password verifier in Secret Manager; deploy a new revision.
 4. Remove an unsafe revision only after traffic has moved away and audit evidence is retained.
 5. Destructive storage cleanup requires a separately approved, dependency-reviewed operation through the domain deletion workflow.
-
