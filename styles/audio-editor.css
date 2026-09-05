@@ -87,6 +87,33 @@
 .processor-statistics dd { margin: 0; font-weight: 700; }
 #processor-download { justify-self: start; text-align: center; justify-content: center; }
 
+.source-entry-modes, .source-session-toolbar, .source-session-actions, .source-session-dialog__actions { display: flex; flex-wrap: wrap; gap: var(--space-3); align-items: center; }
+.source-entry-modes button, .source-session-toolbar button, .source-session-actions button, .source-session-dialog button { min-height: 2.75rem; padding: .5rem 1rem; color: var(--color-text); background: var(--color-action-surface); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-action); font: inherit; font-weight: 700; cursor: pointer; }
+.source-entry-modes button[aria-pressed="true"] { color: #fff; background: var(--color-palette-dark-1); border-color: var(--color-palette-dark-1); }
+.source-entry-modes button:focus-visible, .source-session-toolbar button:focus-visible, .source-session-actions button:focus-visible, .source-session-dialog button:focus-visible, .source-session-dialog input:focus-visible, .source-session-dialog select:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.source-session-toolbar { align-items: end; }
+.source-session-toolbar .archive-control { flex: 1 1 12rem; }
+.source-session-session-status { margin: 0; color: #555; font-weight: 700; }
+.source-session-list { display: grid; gap: var(--space-4); }
+.source-session-item { display: grid; gap: var(--space-3); padding: var(--space-4); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-sm); }
+.source-session-item h3, .source-session-item h4, .source-session-item p { margin: 0; }
+.source-session-metadata { color: #555; overflow-wrap: anywhere; }
+.source-workflows { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
+.source-workflow { display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-3); background: #f1f6fb; border-radius: var(--radius-sm); }
+.source-output-version { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
+.source-session-danger { color: #8b1d1d !important; border-color: #b84a4a !important; background: #fff !important; }
+.source-session-maintenance { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--color-palette-light-2); }
+.source-recovery-item { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; padding-block: var(--space-2); }
+.source-session-dialog { width: min(42rem, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 0; overflow: auto; color: var(--color-text); background: var(--color-surface); border: 2px solid var(--color-brand); border-radius: 1rem; box-shadow: 0 1rem 3rem rgba(1, 58, 91, .35); }
+.source-session-dialog::backdrop { background: rgba(5, 30, 49, .7); }
+.source-session-dialog form { display: grid; gap: var(--space-4); padding: clamp(1rem, 4vw, 2rem); }
+.source-session-dialog h2, .source-session-dialog p { margin: 0; }
+.source-session-dialog fieldset { display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-3); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-sm); }
+.source-session-dialog fieldset label { display: flex; gap: var(--space-2); align-items: start; }
+.source-session-dialog input[type="text"], .source-session-dialog input[type="password"], .source-session-dialog input[type="datetime-local"], .source-session-dialog input[type="file"] { width: 100%; min-width: 0; min-height: 2.75rem; padding: .5rem; border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-sm); font: inherit; }
+.source-session-dialog progress { width: 100%; }
+.source-session-dialog__actions { justify-content: flex-end; }
+
 @media (max-width: 36rem) {
   .audio-editor-main { padding-block: var(--space-6); }
   .audio-editor-content { width: min(100% - 1rem, var(--container-max)); }
@@ -100,4 +127,7 @@
   .processor-track__actions > * { flex: 1 1 6.5rem; }
   .processor-statistics { grid-template-columns: 1fr; gap: var(--space-2); }
   #processor-download { width: 100%; }
+  .source-workflows { grid-template-columns: 1fr; }
+  .source-entry-modes > *, .source-session-toolbar > button, .source-session-dialog__actions > button { flex: 1 1 100%; }
+  .source-session-dialog { width: calc(100% - 1rem); max-height: calc(100% - 1rem); }
 }
