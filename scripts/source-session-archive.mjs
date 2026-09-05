@@ -306,9 +306,15 @@ async function showIncomplete() {
     for (const transaction of result.transactions || []) {
       const row = document.createElement("div");
       row.className = "source-recovery-item";
-      row.append(document.createTextNode(`${transaction.kind} · ${transaction.state} · ${transaction.transactionId} `));
-      row.append(button("Продолжить", () => recover(transaction.transactionId, "resume")));
-      if (transaction.kind === "ingestion") row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
+      if (transaction.kind === "ingestion") {
+        row.append(document.createTextNode(`ingestion · ${transaction.state} · ${transaction.transactionId} · загружено частей ${transaction.uploadedParts} из ${transaction.totalParts}. `));
+        if (transaction.canFinalize) row.append(button("Завершить", () => recover(transaction.transactionId, "resume")));
+        else row.append(document.createTextNode("Для безопасного продолжения нужны исходные файлы и исходный ключ операции. Если окно загрузки уже закрыто, удалите незавершённую операцию и создайте новую."));
+        row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
+      } else {
+        row.append(document.createTextNode(`${transaction.kind} · ${transaction.state} · ${transaction.transactionId} `));
+        row.append(button("Продолжить", () => recover(transaction.transactionId, "resume")));
+      }
       container.append(row);
     }
     for (const orphan of result.orphans || []) {

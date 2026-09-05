@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   DEFAULT_AUDIO_PART_BYTES, MAX_AUDIO_PART_BYTES, MAX_AUDIO_SESSION_BYTES, Sha256, assetName,
-  createIngestionPlan, isUuid, reconstructSessionTracks, sha256Hex, validateSessionManifest
+  createIngestionPlan, isUuid, reconstructSessionTracks, serializeIngestionPlan, sha256Hex, validateSessionManifest
 } from "../../../scripts/audio-archive-client.mjs";
 
 function nodeSha(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -34,6 +34,32 @@ test("chunk planner uses 16 MiB default, permits 64 MiB boundary, and rejects un
   await assert.rejects(() => createIngestionPlan([oversized]), /500 МБ/);
   assert.equal(isUuid("not-a-uuid"), false);
   assert.throws(() => assetName("not-a-uuid", 1), /идентификатор/);
+});
+
+test("chunk planner keeps identifiers and hashes stable for one idempotency operation", async () => {
+  const files = [new File([Uint8Array.of(1, 2, 3, 4, 5)], "meeting.wav", { type: "audio/wav" })];
+  const options = { idempotencyKey: "stable-operation-key" };
+  const first = await createIngestionPlan(files, 2, options);
+  const second = await createIngestionPlan(files, 2, options);
+  assert.deepEqual(serializeIngestionPlan(second), serializeIngestionPlan(first));
+  assert.equal(isUuid(first.tracks[0].trackId), true);
+  assert.equal(isUuid(first.tracks[0].blobId), true);
+});
+
+test("chunk planner observes cancellation immediately after every part read", async () => {
+  const controller = new AbortController();
+  let reads = 0;
+  const file = {
+    name: "meeting.wav", type: "audio/wav", size: 1,
+    slice() {
+      return { async arrayBuffer() { reads++; controller.abort(); return Uint8Array.of(7).buffer; } };
+    }
+  };
+  await assert.rejects(
+    () => createIngestionPlan([file], 1, { idempotencyKey: "cancel-operation-key", signal: controller.signal }),
+    (error) => error?.name === "AbortError"
+  );
+  assert.equal(reads, 1);
 });
 
 test("ordered parts reconstruct byte-identically and corruption fails closed", async () => {

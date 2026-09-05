@@ -154,10 +154,25 @@ export function normalizedMediaType(filename, suppliedType = "") {
   return canonical;
 }
 
-export async function sha256Hex(value) {
+function throwIfAborted(signal) {
+  if (!signal?.aborted) return;
+  if (signal.reason instanceof Error) throw signal.reason;
+  throw new DOMException("Операция отменена.", "AbortError");
+}
+
+export async function sha256Hex(value, signal) {
+  throwIfAborted(signal);
   const bytes = value instanceof Uint8Array ? value : value instanceof ArrayBuffer ? new Uint8Array(value) : encoder.encode(String(value));
   const digest = await crypto.subtle.digest("SHA-256", bytes);
+  throwIfAborted(signal);
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
+}
+
+async function stableUuid(idempotencyKey, label, signal) {
+  const hex = (await sha256Hex(`audio-archive\u0000${idempotencyKey}\u0000${label}`, signal)).slice(0, 32).split("");
+  hex[12] = "8";
+  hex[16] = ["8", "9", "a", "b"][Number.parseInt(hex[16], 16) & 3];
+  return `${hex.slice(0, 8).join("")}-${hex.slice(8, 12).join("")}-${hex.slice(12, 16).join("")}-${hex.slice(16, 20).join("")}-${hex.slice(20).join("")}`;
 }
 
 export function assetName(blobId, partNumber) {
@@ -167,7 +182,8 @@ export function assetName(blobId, partNumber) {
   return `blob-${blobId.toLowerCase()}-part-${String(partNumber).padStart(4, "0")}.bin`;
 }
 
-export async function createIngestionPlan(files, partSize = DEFAULT_AUDIO_PART_BYTES) {
+export async function createIngestionPlan(files, partSize = DEFAULT_AUDIO_PART_BYTES, { idempotencyKey = crypto.randomUUID(), signal } = {}) {
+  throwIfAborted(signal);
   const selected = Array.from(files || []);
   if (!selected.length) throw new Error("Выберите хотя бы одну аудиодорожку.");
   if (!Number.isSafeInteger(partSize) || partSize < 1 || partSize > MAX_AUDIO_PART_BYTES) {
@@ -180,23 +196,29 @@ export async function createIngestionPlan(files, partSize = DEFAULT_AUDIO_PART_B
   if (totalBytes <= 0 || totalBytes > MAX_AUDIO_SESSION_BYTES) throw new Error("Общий размер файлов превышает 500 МБ.");
   const tracks = [];
   for (const [trackIndex, file] of selected.entries()) {
-    const blobId = crypto.randomUUID();
+    throwIfAborted(signal);
+    const blobId = await stableUuid(idempotencyKey, `blob:${trackIndex + 1}`, signal);
+    const trackId = await stableUuid(idempotencyKey, `track:${trackIndex + 1}`, signal);
     const logicalHasher = new Sha256();
     const parts = [];
     for (let offset = 0, partNumber = 1; offset < file.size; offset += partSize, partNumber++) {
+      throwIfAborted(signal);
       const blob = file.slice(offset, Math.min(file.size, offset + partSize));
+      throwIfAborted(signal);
       const bytes = new Uint8Array(await blob.arrayBuffer());
+      throwIfAborted(signal);
       logicalHasher.update(bytes);
       parts.push({
         partNumber,
         sizeBytes: bytes.byteLength,
-        sha256: await sha256Hex(bytes),
+        sha256: await sha256Hex(bytes, signal),
         assetName: assetName(blobId, partNumber),
         blob
       });
+      throwIfAborted(signal);
     }
     tracks.push({
-      trackId: crypto.randomUUID(),
+      trackId,
       blobId,
       ordinal: trackIndex + 1,
       originalName: normalizeAudioFilename(file.name),
@@ -422,7 +444,7 @@ export class AudioArchiveGateway {
   rebuildCatalog() { return this.request("/v1/maintenance/catalog/rebuild", { method: "POST", body: { idempotencyKey: crypto.randomUUID() } }); }
 
   async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {} }) {
-    const plan = await createIngestionPlan(files, this.acceptedPartSize);
+    const plan = await createIngestionPlan(files, this.acceptedPartSize, { idempotencyKey, signal });
     const started = await this.request("/v1/source-sessions/ingestions", {
       method: "POST", signal,
       body: { schemaVersion: AUDIO_ARCHIVE_SCHEMA_VERSION, idempotencyKey, title, recordedAt, origin, supersedesSessionId, plan: serializeIngestionPlan(plan) }

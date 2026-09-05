@@ -1,4 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
   assertTimestamp, assertUuid, assetName, catalogEntry, hashIdempotencyKey, normalizeFilename, normalizeMediaType,
@@ -67,6 +68,12 @@ function sameAction(left, right) {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function sameIngestionRequest(transaction, request) {
+  return transaction.title === request.title && transaction.recordedAt === request.recordedAt &&
+    transaction.origin === request.origin && transaction.supersedesSessionId === request.supersedesSessionId &&
+    isDeepStrictEqual(transaction.plan, request.plan);
+}
+
 export class AudioArchiveDomain {
   constructor(repository, { acceptedPartBytes, clock = () => Date.now() }) {
     this.repository = repository;
@@ -117,11 +124,14 @@ export class AudioArchiveDomain {
     if (!["manual", "device"].includes(body.origin)) throw new ValidationError("Browser ingestion origin is invalid");
     const supersedesSessionId = body.supersedesSessionId === null ? null : assertUuid(body.supersedesSessionId, "supersedesSessionId");
     const plan = validateIngestionPlan(body.plan, this.acceptedPartBytes);
+    const immutableRequest = { title, recordedAt, origin: body.origin, supersedesSessionId, plan };
     let head = await this.repository.getHead();
     const existing = await this.repository.readJson(path, head);
     if (existing) {
       const transaction = validateTransaction(existing.data);
-      if (transaction.idempotencyHash !== idempotencyHash) throw conflict("Idempotency transaction mismatch");
+      if (transaction.idempotencyHash !== idempotencyHash || !sameIngestionRequest(transaction, immutableRequest)) {
+        throw conflict("Idempotency transaction request mismatch");
+      }
       return { transactionId, sessionId: transaction.sessionId, releaseId: transaction.releaseId, state: transaction.state };
     }
     const sessionId = transactionId;
@@ -131,6 +141,9 @@ export class AudioArchiveDomain {
     const raced = await this.repository.readJson(path, head);
     if (raced) {
       const transaction = validateTransaction(raced.data);
+      if (transaction.idempotencyHash !== idempotencyHash || !sameIngestionRequest(transaction, immutableRequest)) {
+        throw conflict("Idempotency transaction request mismatch");
+      }
       return { transactionId, sessionId: transaction.sessionId, releaseId: transaction.releaseId, state: transaction.state };
     }
     const timestamp = nowIso(this.clock);
@@ -479,10 +492,18 @@ export class AudioArchiveDomain {
       if (item.invalid) continue;
       try {
         const transaction = validateTransaction(item.data);
-        if (!["finalized", "complete", "discarded"].includes(transaction.state)) transactions.push({
-          transactionId: transaction.transactionId, kind: transaction.kind, state: transaction.state,
-          sessionId: transaction.sessionId, updatedAt: transaction.updatedAt
-        });
+        if (!["finalized", "complete", "discarded"].includes(transaction.state)) {
+          const totalParts = transaction.kind === "ingestion" ?
+            transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0) : null;
+          const uploadedParts = transaction.kind === "ingestion" ? transaction.uploadedParts.length : null;
+          transactions.push({
+            transactionId: transaction.transactionId, kind: transaction.kind, state: transaction.state,
+            sessionId: transaction.sessionId, updatedAt: transaction.updatedAt,
+            uploadedParts, totalParts,
+            canFinalize: transaction.kind === "ingestion" ? uploadedParts === totalParts : null,
+            requiresOriginalFiles: transaction.kind === "ingestion" ? uploadedParts !== totalParts : false
+          });
+        }
       } catch { /* Malformed records are not actionable. */ }
     }
     const manifests = new Set((await this.repository.listJson("sessions/", head)).filter((item) => !item.invalid && item.data.kind !== "deletion_tombstone").map((item) => item.data.storage?.tag));
@@ -504,6 +525,10 @@ export class AudioArchiveDomain {
         const discarded = { ...transaction, state: "discarded", revision: transaction.revision + 1, updatedAt: nowIso(this.clock) };
         await this.repository.commitJson(head, { [transactionPath("ingest", transactionId)]: discarded }, `Discard ingestion ${transactionId}`);
         return { discarded: true, transactionId };
+      }
+      const requiredCount = transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);
+      if (transaction.uploadedParts.length !== requiredCount) {
+        throw conflict("Original files are required to continue this incomplete ingestion safely");
       }
       return this.finalizeIngestion(transactionId);
     }

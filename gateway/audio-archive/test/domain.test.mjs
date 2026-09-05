@@ -54,11 +54,51 @@ test("ingestion is idempotent, hidden until finalization, integrity checked, and
     const retried = await domain.uploadPart(first.transactionId, IDS.blob, index + 1, bytes, sha(bytes), `${KEY}:part:${index}`);
     assert.equal(retried.assetId, uploaded.assetId);
   }
-  const finalized = await domain.finalizeIngestion(first.transactionId);
+  const ready = (await domain.listIncomplete()).transactions[0];
+  assert.equal(ready.canFinalize, true);
+  assert.equal(ready.requiresOriginalFiles, false);
+  const finalized = await domain.recoverIncomplete(first.transactionId, "resume");
   assert.equal(finalized.session.sourceTracks[0].sha256, sha(fixture.bytes));
   assert.equal((await domain.finalizeIngestion(first.transactionId)).idempotent, true);
   assert.equal((await domain.listSessions("incoming")).sessions.length, 1);
   assert.equal((await domain.listIncomplete()).transactions.length, 0);
+});
+
+test("an idempotency key cannot be reused with changed immutable ingestion data", async () => {
+  const repository = new MemoryRepository();
+  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4, clock: CLOCK });
+  const fixture = ingestionBody();
+  await domain.beginIngestion(fixture.body);
+  const changedPlan = ingestionBody(Buffer.from("source-budio")).body.plan;
+  const variants = [
+    { ...fixture.body, title: "Другая запись" },
+    { ...fixture.body, origin: "device" },
+    { ...fixture.body, supersedesSessionId: IDS.session },
+    { ...fixture.body, plan: changedPlan }
+  ];
+  for (const body of variants) {
+    await assert.rejects(() => domain.beginIngestion(body), (error) => error.status === 409 && /request mismatch/.test(error.message));
+  }
+  assert.equal(repository.releases.size, 1);
+});
+
+test("partial maintenance recovery requires original files and never finalizes early", async () => {
+  const repository = new MemoryRepository();
+  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4, clock: CLOCK });
+  const fixture = ingestionBody();
+  const started = await domain.beginIngestion(fixture.body);
+  await domain.uploadPart(started.transactionId, IDS.blob, 1, fixture.parts[0], sha(fixture.parts[0]), `${KEY}:part:1`);
+  const [incomplete] = (await domain.listIncomplete()).transactions;
+  assert.deepEqual(
+    { uploadedParts: incomplete.uploadedParts, totalParts: incomplete.totalParts, canFinalize: incomplete.canFinalize, requiresOriginalFiles: incomplete.requiresOriginalFiles },
+    { uploadedParts: 1, totalParts: fixture.parts.length, canFinalize: false, requiresOriginalFiles: true }
+  );
+  await assert.rejects(
+    () => domain.recoverIncomplete(started.transactionId, "resume"),
+    (error) => error.status === 409 && /Original files are required/.test(error.message)
+  );
+  assert.equal((await domain.listSessions("incoming")).sessions.length, 0);
+  assert.equal(repository.releases.get(started.releaseId).draft, true);
 });
 
 test("workflow states are independent and stale session mutations conflict", async () => {
