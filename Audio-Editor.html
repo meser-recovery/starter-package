@@ -11,6 +11,7 @@
     <link rel="stylesheet" href="styles/audio-editor.css">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
+    <script src="scripts/audio-processor.mjs" type="module"></script>
   </head>
   <body class="site-page">
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
@@ -25,6 +26,78 @@
       <div class="container audio-editor-content">
         <a class="archive-back-link" href="Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html">К служебной странице</a>
         <h1>Редактирование аудио</h1>
+        <section class="archive-card processor-card" aria-labelledby="processor-heading">
+          <div class="archive-card__heading">
+            <h2 id="processor-heading">Обработка аудио</h2>
+            <p>Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.</p>
+            <p>Выберите одну дорожку или несколько уже синхронизированных дорожек одной записи Zoom. Сокращаются только участки, где все выбранные дорожки одновременно молчат. Затем дорожки сводятся в один MP3.</p>
+            <p id="processor-privacy">Исходные файлы обрабатываются локально в браузере и не отправляются на сервер.</p>
+          </div>
+          <div class="processor-field">
+            <label for="processor-file">Выберите аудиодорожки</label>
+            <p id="processor-file-help">MP3, M4A или WAV. Общий размер всех файлов — не более 500 МБ. Результат — MP3, 128 кбит/с.</p>
+            <input id="processor-file" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-describedby="processor-file-help processor-privacy">
+          </div>
+          <div id="processor-source" class="processor-preview" hidden>
+            <p id="processor-selection-summary"></p>
+            <ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul>
+            <div id="processor-source-navigation" class="processor-source-navigation" hidden>
+              <span id="processor-source-navigation-label">Навигация по исходным дорожкам</span>
+              <div id="processor-source-scrollbar" class="processor-source-scrollbar" tabindex="0" role="scrollbar" aria-label="Навигация по исходным дорожкам" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
+                <div id="processor-source-scrollbar-thumb" class="processor-source-scrollbar__thumb" aria-hidden="true"></div>
+              </div>
+            </div>
+            <div class="processor-source-player">
+              <h3 id="processor-source-label">Прослушивание исходников</h3>
+              <audio id="processor-source-audio" aria-labelledby="processor-source-label" controls preload="metadata"></audio>
+              <p id="processor-source-time" class="processor-source-time" aria-live="off">0:00 / 0:00</p>
+              <p class="processor-monitoring-note">Соло и «Заглушить» влияют только на прослушивание и не исключают дорожки из обработки.</p>
+              <div class="processor-zoom" role="group" aria-label="Масштаб исходных дорожек">
+                <span>Масштаб</span>
+                <button id="processor-source-zoom-out" type="button" aria-label="Уменьшить масштаб исходных дорожек">−</button>
+                <input id="processor-source-zoom-range" type="range" min="0" max="100" value="50" aria-label="Масштаб исходных дорожек">
+                <button id="processor-source-zoom-in" type="button" aria-label="Увеличить масштаб исходных дорожек">+</button>
+                <button id="processor-source-zoom-fit" type="button">Вписать</button>
+                <button id="processor-source-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
+              </div>
+              <div id="processor-preview-audios" hidden></div>
+            </div>
+          </div>
+          <div class="processor-actions">
+            <button id="processor-run" type="button" disabled>Обработать</button>
+            <button id="processor-cancel" type="button" hidden>Отменить</button>
+          </div>
+          <div class="processor-feedback">
+            <p id="processor-status" role="status">Обработка аудио не поддерживается в этом браузере.</p>
+            <progress id="processor-progress" aria-label="Обработка аудио" hidden></progress>
+          </div>
+          <div id="processor-result" class="processor-preview" hidden>
+            <h3>Обработанное аудио</h3>
+            <audio id="processor-result-audio" aria-label="Обработанное аудио" controls preload="metadata"></audio>
+            <div class="processor-result-waveform">
+              <p id="processor-result-waveform-status" class="processor-waveform-status" hidden></p>
+              <div id="processor-result-waveform-scroll" class="processor-waveform-scroll" hidden>
+                <button id="processor-result-waveform-control" class="processor-waveform" type="button" aria-label="Форма сигнала обработанного аудио" aria-describedby="processor-result-time"></button>
+              </div>
+              <p id="processor-result-time" class="processor-source-time" aria-live="off">0:00 / 0:00</p>
+              <div class="processor-zoom" role="group" aria-label="Масштаб обработанного аудио">
+                <span>Масштаб</span>
+                <button id="processor-result-zoom-out" type="button" aria-label="Уменьшить масштаб обработанного аудио">−</button>
+                <input id="processor-result-zoom-range" type="range" min="0" max="100" value="50" aria-label="Масштаб обработанного аудио">
+                <button id="processor-result-zoom-in" type="button" aria-label="Увеличить масштаб обработанного аудио">+</button>
+                <button id="processor-result-zoom-fit" type="button">Вписать</button>
+              </div>
+            </div>
+            <p id="processor-mixed-count" hidden></p>
+            <dl class="processor-statistics">
+              <div><dt>Исходная длительность</dt><dd id="processor-original-duration"></dd></div>
+              <div><dt>После обработки</dt><dd id="processor-processed-duration"></dd></div>
+              <div><dt>Удалено тишины</dt><dd id="processor-removed-duration"></dd></div>
+              <div><dt id="processor-pause-label">Сокращено длинных пауз</dt><dd id="processor-pause-count"></dd></div>
+            </dl>
+            <a id="processor-download" class="archive-download">Скачать обработанный MP3</a>
+          </div>
+        </section>
         <section class="archive-card" aria-labelledby="archive-heading">
           <div class="archive-card__heading">
             <h2 id="archive-heading">Архив отредактированных аудио</h2>
