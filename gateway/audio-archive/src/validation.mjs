@@ -10,6 +10,30 @@ export const WORKFLOWS = Object.freeze(["announcement", "speaker"]);
 export const WORKFLOW_STATES = Object.freeze(["new", "in_progress", "result_ready"]);
 export const MEDIA_TYPES = Object.freeze({ mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav" });
 
+export function canonicalReleaseAssetUrl(releaseTag, assetName) {
+  return `https://github.com/meser-recovery/audio-archive/releases/download/${releaseTag}/${assetName}`;
+}
+
+function escapeRegularExpression(value) {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+function normalizeUploadedPartUrl(value, part) {
+  const canonical = canonicalReleaseAssetUrl(value.releaseTag, part.assetName);
+  if (part.downloadUrl === canonical) return canonical;
+  if (!["uploading", "staged"].includes(value.state) || typeof part.downloadUrl !== "string") {
+    throw new ValidationError("Uploaded part URL is invalid");
+  }
+  let parsed;
+  try { parsed = new URL(part.downloadUrl); } catch { throw new ValidationError("Uploaded part URL is invalid"); }
+  const legacy = new RegExp(`^https://github\\.com/meser-recovery/audio-archive/releases/download/untagged-[0-9a-f]{20}/${escapeRegularExpression(part.assetName)}$`);
+  if (!legacy.test(part.downloadUrl) || parsed.protocol !== "https:" || parsed.hostname !== "github.com" || parsed.host !== "github.com" ||
+      parsed.username || parsed.password || parsed.port || parsed.search || parsed.hash) {
+    throw new ValidationError("Uploaded part URL is invalid");
+  }
+  return canonical;
+}
+
 export class ValidationError extends Error {
   constructor(message, details = undefined) {
     super(message);
@@ -308,15 +332,16 @@ export function validateTransaction(value) {
     if (value.supersedesSessionId !== null) assertUuid(value.supersedesSessionId, "transaction.supersedesSessionId");
     const plan = validateIngestionPlan(value.plan, MAX_PART_BYTES);
     if (!Array.isArray(value.uploadedParts)) throw new ValidationError("Uploaded parts must be an array");
+    const normalized = structuredClone(value);
     const uploaded = new Set();
-    for (const part of value.uploadedParts) {
+    for (const part of normalized.uploadedParts) {
       assertExactKeys(part, ["blobId", "partNumber", "assetName", "sizeBytes", "sha256", "assetId", "downloadUrl"], "uploaded part");
       const blobId = assertUuid(part.blobId, "uploaded blobId");
       assertInteger(part.partNumber, 1, 9999, "uploaded partNumber");
       const planned = plan.tracks.find((track) => track.blobId === blobId)?.parts.find((item) => item.partNumber === part.partNumber);
       if (!planned || part.assetName !== planned.assetName || part.sizeBytes !== planned.sizeBytes || part.sha256 !== planned.sha256) throw new ValidationError("Uploaded part does not match plan");
       assertInteger(part.assetId, 1, Number.MAX_SAFE_INTEGER, "uploaded assetId");
-      if (typeof part.downloadUrl !== "string" || !part.downloadUrl.startsWith(`https://github.com/meser-recovery/audio-archive/releases/download/${value.releaseTag}/`)) throw new ValidationError("Uploaded part URL is invalid");
+      part.downloadUrl = normalizeUploadedPartUrl(normalized, part);
       const slot = `${blobId}:${part.partNumber}`;
       if (uploaded.has(slot)) throw new ValidationError("Uploaded part slots must be unique");
       uploaded.add(slot);
@@ -326,7 +351,7 @@ export function validateTransaction(value) {
       if (manifest.id !== value.sessionId || manifest.storage.releaseId !== value.releaseId) throw new ValidationError("Staged manifest does not match transaction");
     }
     if (value.state === "staged" && value.stagedManifest === null) throw new ValidationError("Staged transaction requires a manifest");
-    return structuredClone(value);
+    return normalized;
   }
   if (value.kind === "pending_delete") {
     assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "revision", "state", "sessionId", "expectedRevision", "releaseId", "releaseTag", "action", "assetIds", "deletedAssetIds", "createdAt", "updatedAt"], "delete transaction");

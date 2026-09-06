@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
   assertTimestamp, assertUuid, assetName, catalogEntry, hashIdempotencyKey, normalizeFilename, normalizeMediaType,
-  uuidFromIdempotencyKey, validateCatalog, validateDraft, validateIngestionPlan, validateSourceSession, validateTombstone, validateTransaction
+  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, validateCatalog, validateDraft, validateIngestionPlan, validateSourceSession, validateTombstone, validateTransaction
 } from "./validation.mjs";
 
 function conflict(message = "Canonical state changed; reload and retry") {
@@ -187,20 +187,29 @@ export class AudioArchiveDomain {
     }
     const name = assetName(id, partNumber);
     const assets = await this.repository.listReleaseAssets(transaction.releaseId);
-    let asset = assets.find((item) => item.name === name);
+    const matchingAssets = assets.filter((item) => item.name === name);
+    if (matchingAssets.length > 1) throw conflict("Duplicate release assets occupy the planned slot");
+    let asset = matchingAssets[0];
     if (asset) {
-      if (asset.size !== bytes.byteLength || !sameDigest(String(asset.digest || "").replace(/^sha256:/, ""), hash)) throw conflict("Existing release asset does not match the planned part");
+      if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.size !== bytes.byteLength ||
+          (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) {
+        throw conflict("Existing release asset does not match the planned part");
+      }
     } else {
       asset = await this.repository.uploadReleaseAsset(transaction.releaseId, name, bytes);
     }
-    if (asset.size !== bytes.byteLength || (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw new Error("GitHub asset integrity response did not match upload");
+    if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.name !== name || asset.size !== bytes.byteLength ||
+        (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) {
+      throw new Error("GitHub asset integrity response did not match upload");
+    }
+    const downloadUrl = canonicalReleaseAssetUrl(transaction.releaseTag, name);
     transaction = structuredClone(transaction);
     transaction.revision++;
     transaction.updatedAt = nowIso(this.clock);
-    transaction.uploadedParts.push({ blobId: id, partNumber, assetName: name, sizeBytes: bytes.byteLength, sha256: hash, assetId: asset.id, downloadUrl: asset.browser_download_url });
+    transaction.uploadedParts.push({ blobId: id, partNumber, assetName: name, sizeBytes: bytes.byteLength, sha256: hash, assetId: asset.id, downloadUrl });
     transaction.uploadedParts.sort((left, right) => left.blobId.localeCompare(right.blobId) || left.partNumber - right.partNumber);
     await this.repository.commitJson(head, { [path]: transaction }, `Record audio part ${transaction.sessionId} ${name}`);
-    return { uploaded: true, assetId: asset.id, downloadUrl: asset.browser_download_url };
+    return { uploaded: true, assetId: asset.id, downloadUrl };
   }
 
   buildManifest(transaction) {
@@ -210,6 +219,9 @@ export class AudioArchiveDomain {
       parts: track.parts.map((part) => {
         const uploaded = transaction.uploadedParts.find((item) => item.blobId === track.blobId && item.partNumber === part.partNumber);
         if (!uploaded) throw conflict("Ingestion is incomplete");
+        if (uploaded.downloadUrl !== canonicalReleaseAssetUrl(transaction.releaseTag, uploaded.assetName)) {
+          throw conflict("Ingestion contains a non-canonical asset URL");
+        }
         return { ...part, assetId: uploaded.assetId, downloadUrl: uploaded.downloadUrl };
       })
     }));
@@ -233,7 +245,8 @@ export class AudioArchiveDomain {
     const assets = await this.repository.listReleaseAssets(transaction.releaseId);
     for (const uploaded of transaction.uploadedParts) {
       const asset = assets.find((item) => item.id === uploaded.assetId && item.name === uploaded.assetName);
-      if (!asset || asset.size !== uploaded.sizeBytes || !sameDigest(String(asset.digest || "").replace(/^sha256:/, ""), uploaded.sha256)) {
+      if (!asset || asset.size !== uploaded.sizeBytes ||
+          (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), uploaded.sha256))) {
         throw conflict("Release assets failed final integrity verification");
       }
     }
