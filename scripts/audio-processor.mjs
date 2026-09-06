@@ -182,6 +182,24 @@ let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
 let resultZoomMinimum = 2;
 let resultZoomMaximum = 2;
 
+function notifyProcessorSelection() {
+  window.dispatchEvent(new CustomEvent("audio-processor-selection", {
+    detail: { files: [...selectedFiles] }
+  }));
+}
+
+export function getProcessorFiles() {
+  return [...selectedFiles];
+}
+
+export function loadProcessorFiles(files) {
+  if (active) throw new Error("Дождитесь завершения текущей операции.");
+  const selected = Array.from(files || []);
+  const error = validateFiles(selected);
+  if (!selected.length || error) throw new Error(error || "Выберите хотя бы одну аудиодорожку.");
+  selectProcessorFiles(selected);
+}
+
 const supported = typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function" && typeof Worker === "function" &&
   typeof File === "function" && typeof File.prototype.arrayBuffer === "function" &&
   typeof URL.createObjectURL === "function" && typeof URL.revokeObjectURL === "function";
@@ -798,6 +816,7 @@ function clearTracks(resetInput = true) {
   byId("source-time").textContent = "0:00 / 0:00";
   byId("source").hidden = true;
   if (resetInput) input.value = "";
+  notifyProcessorSelection();
 }
 
 function removeTrack(id) {
@@ -813,6 +832,7 @@ function removeTrack(id) {
   revokeTrackURLs(removed);
   selectedFiles = tracks.map((track) => track.file);
   syncInputFiles();
+  notifyProcessorSelection();
   if (!tracks.length) {
     clearTracks();
     status.textContent = "Выберите файлы и нажмите «Обработать».";
@@ -956,11 +976,11 @@ async function generateWaveforms(candidates = tracks) {
   }
 }
 
-input.addEventListener("change", () => {
+function selectProcessorFiles(candidates) {
   if (active) return;
   clearResult();
   clearTracks(false);
-  const files = Array.from(input.files || []);
+  const files = Array.from(candidates || []);
   const error = validateFiles(files);
   status.textContent = error || "Выберите файлы и нажмите «Обработать».";
   if (files.length && !error && supported) {
@@ -975,8 +995,11 @@ input.addEventListener("change", () => {
     setupPreviewAudios(0, false);
     void generateWaveforms();
   }
+  notifyProcessorSelection();
   if (!active) setBusy(false);
-});
+}
+
+input.addEventListener("change", () => selectProcessorFiles(input.files));
 
 function waitForMetadata(audio, operation) {
   let timer;

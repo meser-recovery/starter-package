@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="theme-color" content="#478ac9">
+    <meta name="audio-archive-gateway" content="">
     <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2">
     <title>Редактирование аудио — Проект Мэсэр</title>
     <link rel="stylesheet" href="styles/foundation.css">
@@ -12,6 +13,7 @@
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
+    <script src="scripts/source-session-archive.mjs" type="module"></script>
   </head>
   <body class="site-page">
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
@@ -26,6 +28,45 @@
       <div class="container audio-editor-content">
         <a class="archive-back-link" href="Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html">К служебной странице</a>
         <h1>Редактирование аудио</h1>
+        <section class="archive-card source-session-card" aria-labelledby="source-session-heading">
+          <div class="archive-card__heading">
+            <h2 id="source-session-heading">Входящий архив</h2>
+            <p>Source Session хранит неизменяемые синхронизированные исходники и независимое состояние работ «Объявление» и «Спикерская».</p>
+          </div>
+          <div class="source-entry-modes" role="group" aria-label="Источник аудио">
+            <button id="source-session-mode-archive" type="button" aria-pressed="true">Из архива</button>
+            <button id="source-session-mode-device" type="button" aria-pressed="false">С устройства</button>
+          </div>
+          <div id="source-session-archive-panel">
+            <div class="source-session-toolbar">
+              <div class="archive-control">
+                <label for="source-session-lifecycle">Показывать записи</label>
+                <select id="source-session-lifecycle">
+                  <option value="incoming">Входящие</option>
+                  <option value="archived">Архивированные</option>
+                </select>
+              </div>
+              <button id="source-session-refresh" type="button">Обновить</button>
+              <button id="source-session-create" type="button">Создать входящую запись</button>
+              <button id="source-session-authenticate" type="button">Подключить архив</button>
+            </div>
+            <p id="source-session-session-status" class="source-session-session-status">Сеанс архива проверяется…</p>
+            <p id="source-session-status" class="archive-status" role="status">Подключение к входящему архиву…</p>
+            <p id="source-session-count" class="archive-count" hidden></p>
+            <div id="source-session-list" class="source-session-list" aria-live="polite"></div>
+            <div id="source-session-maintenance" class="source-session-maintenance" hidden>
+              <h3>Обслуживание и восстановление</h3>
+              <div class="source-session-toolbar">
+                <button id="source-session-incomplete" type="button">Проверить незавершённые операции</button>
+                <button id="source-session-rebuild" type="button">Пересобрать каталог</button>
+              </div>
+              <div id="source-session-recovery-list"></div>
+            </div>
+          </div>
+          <div id="source-session-device-panel" hidden>
+            <p>Выбор и обработка файлов остаются локальными. Ничего не загружается и входящая запись не создаётся, пока вы отдельно не нажмёте «Сохранить во входящие».</p>
+          </div>
+        </section>
         <section class="archive-card processor-card" aria-labelledby="processor-heading">
           <div class="archive-card__heading">
             <h2 id="processor-heading">Обработка аудио</h2>
@@ -33,7 +74,7 @@
             <p>Выберите одну дорожку или несколько уже синхронизированных дорожек одной записи Zoom. Сокращаются только участки, где все выбранные дорожки одновременно молчат. Затем дорожки сводятся в один MP3.</p>
             <p id="processor-privacy">Исходные файлы обрабатываются локально в браузере и не отправляются на сервер.</p>
           </div>
-          <div class="processor-field">
+          <div id="processor-device-field" class="processor-field">
             <label for="processor-file">Выберите аудиодорожки</label>
             <p id="processor-file-help">MP3, M4A или WAV. Общий размер всех файлов — не более 500 МБ. Результат — MP3, 128 кбит/с.</p>
             <input id="processor-file" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-describedby="processor-file-help processor-privacy">
@@ -65,6 +106,7 @@
           </div>
           <div class="processor-actions">
             <button id="processor-run" type="button" disabled>Обработать</button>
+            <button id="processor-save-incoming" type="button" disabled>Сохранить во входящие</button>
             <button id="processor-cancel" type="button" hidden>Отменить</button>
           </div>
           <div class="processor-feedback">
@@ -124,6 +166,67 @@
           </div>
           <div id="archive-list" class="archive-list" aria-live="polite"></div>
         </section>
+        <dialog id="source-session-login-dialog" class="source-session-dialog" aria-labelledby="source-session-login-title">
+          <form id="source-session-login-form" method="dialog">
+            <h2 id="source-session-login-title">Подключить входящий архив</h2>
+            <p>Введите общий служебный пароль. Пароль передаётся только защищённому шлюзу и не сохраняется в браузере.</p>
+            <div class="processor-field">
+              <label for="source-session-password">Служебный пароль</label>
+              <input id="source-session-password" type="password" autocomplete="current-password" required>
+            </div>
+            <p id="source-session-login-status" role="status"></p>
+            <div class="source-session-dialog__actions">
+              <button type="submit">Подключить</button>
+              <button id="source-session-login-cancel" type="button">Отмена</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog id="source-session-ingest-dialog" class="source-session-dialog" aria-labelledby="source-session-ingest-title">
+          <form id="source-session-ingest-form" method="dialog">
+            <h2 id="source-session-ingest-title">Создать входящую запись</h2>
+            <div id="source-session-ingest-files-field" class="processor-field">
+              <label for="source-session-ingest-files">Синхронизированные аудиодорожки</label>
+              <input id="source-session-ingest-files" type="file" multiple required accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav">
+            </div>
+            <p id="source-session-ingest-selection"></p>
+            <div class="processor-field">
+              <label for="source-session-ingest-name">Название</label>
+              <input id="source-session-ingest-name" type="text" required maxlength="200" autocomplete="off">
+            </div>
+            <div class="processor-field">
+              <label for="source-session-ingest-recorded">Дата и время записи (необязательно)</label>
+              <input id="source-session-ingest-recorded" type="datetime-local">
+            </div>
+            <p id="source-session-ingest-status" role="status"></p>
+            <progress id="source-session-ingest-progress" max="100" hidden aria-label="Загрузка исходников"></progress>
+            <div class="source-session-dialog__actions">
+              <button id="source-session-ingest-submit" type="submit">Загрузить и завершить</button>
+              <button id="source-session-ingest-cancel" type="button">Отмена</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog id="source-session-delete-dialog" class="source-session-dialog" aria-labelledby="source-session-delete-title">
+          <form id="source-session-delete-form" method="dialog">
+            <h2 id="source-session-delete-title">Постоянное удаление</h2>
+            <p id="source-session-delete-summary"></p>
+            <fieldset>
+              <legend>Удалить только выбранный уровень</legend>
+              <label><input type="radio" name="delete-level" value="announcement-series">Все версии «Объявление»</label>
+              <label><input type="radio" name="delete-level" value="speaker-series">Все версии «Спикерская»</label>
+              <label><input type="radio" name="delete-level" value="sources">Исходники, сохранив результаты</label>
+              <label><input type="radio" name="delete-level" value="purge">Всю Source Session</label>
+            </fieldset>
+            <div class="processor-field">
+              <label for="source-session-delete-confirmation">Для исходников введите «Удалить исходники, сохранить результаты»; для полной очистки — ID записи</label>
+              <input id="source-session-delete-confirmation" type="text" autocomplete="off">
+            </div>
+            <p id="source-session-delete-status" role="status"></p>
+            <div class="source-session-dialog__actions">
+              <button id="source-session-delete-submit" type="submit">Удалить выбранное</button>
+              <button id="source-session-delete-cancel" type="button">Отмена</button>
+            </div>
+          </form>
+        </dialog>
         <button id="service-logout" class="service-logout" type="button">Выйти</button>
       </div>
     </main>

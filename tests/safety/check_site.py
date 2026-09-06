@@ -746,8 +746,12 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
-        if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True), ("scripts/audio-processor.mjs", False)]:
+        if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),
+                       ("scripts/audio-processor.mjs", False), ("scripts/source-session-archive.mjs", False)]:
             errors.append("Audio-Editor.html: expected guard before dedicated archive runtime")
+        gateway_meta = [attrs for tag, attrs in parser.start_tags if tag == "meta" and attrs.get("name") == "audio-archive-gateway"]
+        if len(gateway_meta) != 1:
+            errors.append("Audio-Editor.html: expected one neutral audio archive gateway configuration hook")
         if any(tag == "script" and not attrs.get("src") for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: inline scripts are not allowed")
         if "nicepage" in source.lower() or "jquery" in source.lower():
@@ -816,8 +820,8 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    if parser.h2_texts != ["Обработка аудио", "Архив отредактированных аудио"]:
-        errors.append("Audio-Editor.html: expected exactly processor then archive H2")
+    if parser.h2_texts[:3] != ["Входящий архив", "Обработка аудио", "Архив отредактированных аудио"]:
+        errors.append("Audio-Editor.html: expected Source Session, processor, then derived archive H2")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -880,7 +884,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         if tag in {"script", "link"} and "ffmpeg" in (attrs.get("src") or attrs.get("href") or "").lower():
             errors.append("Audio-Editor.html: FFmpeg must not load/preload on page open")
     scripts = [attrs for tag, attrs in tags if tag == "script"]
-    if ([attrs.get("src") for attrs in scripts] != ["scripts/service-landing.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs"] or
+    if ([attrs.get("src") for attrs in scripts] != ["scripts/service-landing.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/source-session-archive.mjs"] or
             not scripts or any(key in scripts[0] for key in ("async", "defer", "type"))):
         errors.append("Audio-Editor.html: early blocking guard/archive/module order changed")
     for text in ("Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.",
@@ -942,13 +946,12 @@ def check_audio_processor_contract(errors: list[str]) -> None:
     forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|wavesurfer|peaks\.js|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
     if re.search(forbidden, source):
         errors.append("Processor has a forbidden external/write API, DSP, or threading dependency")
-    own_source = source + (page.read_text(encoding="utf-8") if page.is_file() else "")
+    own_source = source
     if re.search(r"gh[pousr]_[A-Za-z0-9_]{20,}|github_pat_[A-Za-z0-9_]+|Bearer\s+[A-Za-z0-9]|api[_-]?key\s*[:=]|<form\b|\bupload\b", own_source, re.I):
         errors.append("Processor contains a credential/upload/form contract violation")
     for relative, expected_hash in {
         "data/edited-audio.json": "196cb8d26daf8251485383d37df0c270e11f5d1b8a455fccc25903ddfe9c9364",
         "scripts/audio-editor.js": "51448c682e5b21149191016b74d9374ce499b19c75df64bcf1b15cde657898ee",
-        "scripts/service-landing.js": "78387a46da7668981bfb7b5b6742838118a2dc26c00b81f07254faec90c01836",
     }.items():
         path = ROOT / relative
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
@@ -977,8 +980,120 @@ def check_audio_processor_contract(errors: list[str]) -> None:
     for path in ROOT.rglob("*"):
         if any(part in {".git", "venv", ".venv"} for part in path.relative_to(ROOT).parts):
             continue
-        if path.name in {"package.json", "package-lock.json", "node_modules", "yarn.lock", "pnpm-lock.yaml", "webpack.config.js", "vite.config.js"}:
+        relative = path.relative_to(ROOT)
+        isolated_gateway_package = relative.as_posix() == "gateway/audio-archive/package.json"
+        if path.name in {"package.json", "package-lock.json", "node_modules", "yarn.lock", "pnpm-lock.yaml", "webpack.config.js", "vite.config.js"} and not isolated_gateway_package:
             errors.append(f"Prohibited npm/build artifact: {path.relative_to(ROOT)}")
+
+
+def check_audio_archive_foundation_contract(errors: list[str]) -> None:
+    required = {
+        "scripts/audio-archive-client.mjs": (
+            "DEFAULT_AUDIO_PART_BYTES = 16 * 1024 * 1024", "MAX_AUDIO_PART_BYTES = 64 * 1024 * 1024",
+            "MAX_AUDIO_SESSION_BYTES = 500 * 1024 * 1024", "meser-recovery/audio-archive/releases/download",
+            'credentials: "include"', '"X-CSRF-Token"', "reconstructSessionTracks",
+        ),
+        "scripts/source-session-archive.mjs": (
+            'setMode("archive")', "С устройства", "Начать работу", "Вернуть в новые",
+        ),
+        "Audio-Editor.html": ("Из архива", "С устройства", "Создать входящую запись", "Сохранить во входящие"),
+        "gateway/audio-archive/src/config.mjs": (
+            'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
+            'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",
+            "GITHUB_APP_PRIVATE_KEY_FILE", "SHARED_PASSWORD_VERIFIER_FILE", "SESSION_SIGNING_SECRET_FILE",
+        ),
+        "gateway/audio-archive/src/auth.mjs": (
+            "scrypt", "Secure; HttpOnly; SameSite=None; Partitioned", "requireCsrf", "LoginThrottle",
+        ),
+        "gateway/audio-archive/src/domain.mjs": (
+            "beginIngestion", "uploadPart", "finalizeIngestion", "expectedRevision", "pending_delete",
+            "rebuildCatalog", "deletion_tombstone",
+        ),
+        "gateway/audio-archive/src/github.mjs": (
+            "GitHubArchiveRepository", "createGitHubAppJwt", "uploads.github.com", "commitJson",
+        ),
+        "gateway/audio-archive/Dockerfile": ("node:24-alpine", "USER node",),
+        "gateway/audio-archive/deploy/self-hosted/compose.yaml": (
+            '"80:80/tcp"', '"127.0.0.1:9443:443/tcp"', "archive_private", "/etc/meser-audio-archive/",
+        ),
+        "gateway/audio-archive/deploy/self-hosted/Caddyfile": (
+            "meserproject.duckdns.org", "proxy_protocol", "reverse_proxy gateway:8080",
+        ),
+        "gateway/audio-archive/deploy/self-hosted/haproxy.cfg": (
+            "mode tcp", "req.ssl_sni -i meserproject.duckdns.org", "default_backend xray_reality",
+            "127.0.0.1:9443", "127.0.0.1:9444",
+        ),
+        "gateway/audio-archive/deploy/self-hosted/deployment-state.template.md": (
+            "UNRESOLVED", "8443", "5678", "65000", "Materialized and reviewed literal rollback commands",
+        ),
+        "gateway/audio-archive/PROVISIONING.md": (
+            "repository-only preparation", "Mandatory rollback", "PHASE_B_AUTHORIZED", "meser-recovery/audio-archive",
+        ),
+    }
+    for relative, tokens in required.items():
+        path = ROOT / relative
+        if not path.is_file():
+            errors.append(f"S08A required file is missing: {relative}")
+            continue
+        source = path.read_text(encoding="utf-8")
+        for token in tokens:
+            if token not in source:
+                errors.append(f"S08A contract token missing in {relative}: {token}")
+
+    executable_paths = [ROOT / "scripts/audio-archive-client.mjs", ROOT / "scripts/source-session-archive.mjs"]
+    executable_paths += list((ROOT / "gateway/audio-archive/src").glob("*.mjs"))
+    rejected = re.compile(r"cloudflare|durable\s*object|\boauth\b|firestore|wrangler|assignee|soft.?lock|\blease\b|heartbeat", re.I)
+    for path in executable_paths:
+        if path.is_file() and rejected.search(path.read_text(encoding="utf-8")):
+            errors.append(f"S08A rejected architecture term remains in executable code: {path.relative_to(ROOT)}")
+
+    frontend = "\n".join(path.read_text(encoding="utf-8") for path in executable_paths[:2] if path.is_file())
+    if re.search(r"GITHUB_APP|PRIVATE_KEY|INSTALLATION_TOKEN|SHARED_PASSWORD_VERIFIER|SESSION_SIGNING_SECRET", frontend):
+        errors.append("S08A frontend exposes a gateway-only credential name")
+    if re.search(r"api\.github\.com/repos/.+(?:POST|PATCH|PUT|DELETE)", frontend, re.S):
+        errors.append("S08A frontend appears to contain direct GitHub writes")
+
+    for relative in ("Admin-panel.html", "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html", "Audio-Editor.html"):
+        path = ROOT / relative
+        if path.is_file():
+            source = path.read_text(encoding="utf-8")
+            if source.count('name="audio-archive-gateway"') != 1:
+                errors.append(f"{relative}: expected one audio archive gateway configuration hook")
+            if source.count('<meta name="audio-archive-gateway" content="">') != 1:
+                errors.append(f"{relative}: audio archive gateway hook must remain empty before deployment")
+
+    active_provider_paths = [
+        ROOT / "gateway/audio-archive/src/config.mjs",
+        ROOT / "gateway/audio-archive/README.md",
+        ROOT / "gateway/audio-archive/PROVISIONING.md",
+        *list((ROOT / "gateway/audio-archive/deploy/self-hosted").glob("*")),
+    ]
+    rejected_provider = re.compile(r"Cloud Run|Secret Manager|Google Cloud|\bgcloud\b|\bGCP\b|Artifact Registry|Cloud Build", re.I)
+    embedded_secret = re.compile(r"-----BEGIN (?:RSA )?PRIVATE KEY-----|scrypt\$[^`\s]+")
+    for path in active_provider_paths:
+        if not path.is_file():
+            continue
+        source = path.read_text(encoding="utf-8")
+        if rejected_provider.search(source):
+            errors.append(f"S08A rejected provider assumption remains active: {path.relative_to(ROOT)}")
+        if embedded_secret.search(source):
+            errors.append(f"S08A deployment artifact appears to embed secret material: {path.relative_to(ROOT)}")
+
+    schema_dir = ROOT / "gateway/audio-archive/storage-repository/schemas/v1"
+    expected_schemas = {"catalog.schema.json", "deletion-tombstone.schema.json", "draft.schema.json", "source-session.schema.json", "transaction.schema.json"}
+    if schema_dir.is_dir():
+        actual_schemas = {path.name for path in schema_dir.glob("*.json")}
+        if actual_schemas != expected_schemas:
+            errors.append("S08A storage schema set changed")
+        for path in schema_dir.glob("*.json"):
+            try:
+                value = json.loads(path.read_text(encoding="utf-8"))
+                if value.get("$schema") != "https://json-schema.org/draft/2020-12/schema":
+                    errors.append(f"S08A schema dialect is invalid: {path.relative_to(ROOT)}")
+            except (json.JSONDecodeError, AttributeError):
+                errors.append(f"S08A schema is invalid JSON: {path.relative_to(ROOT)}")
+    else:
+        errors.append("S08A storage schema directory is missing")
 
 
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
@@ -1022,6 +1137,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_admin_access_contract(errors)
     check_audio_editor_contract(errors)
     check_audio_processor_contract(errors)
+    check_audio_archive_foundation_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
     for html_path in ROOT.rglob("*.html"):
         if ".git" in html_path.parts or "venv" in html_path.parts:

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
 import io
 import json
 import math
@@ -1153,7 +1154,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").all_text_contents() != ["Обработка аудио", "Архив отредактированных аудио"]:
+    if page.locator("h2").all_text_contents()[:3] != ["Входящий архив", "Обработка аудио", "Архив отредактированных аудио"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1180,6 +1181,10 @@ def check_audio_editor_shell(page, width: int) -> None:
         audio = page.locator(selector)
         if audio.get_attribute("autoplay") is not None or not audio.evaluate("audio => audio.paused"):
             raise AssertionError("Processor audio must not autoplay")
+    page.locator("#source-session-mode-archive").click()
+    if page.locator("#source-session-mode-archive").get_attribute("aria-pressed") != "true" or not page.locator("#source-session-archive-panel").is_visible():
+        raise AssertionError("Source Session Incoming archive must be the default entry mode")
+    page.locator("#source-session-mode-device").click()
     file_input = page.locator("#processor-file")
     if file_input.get_attribute("multiple") is None:
         raise AssertionError("Processor must accept multiple synchronized tracks")
@@ -1188,7 +1193,7 @@ def check_audio_editor_shell(page, width: int) -> None:
     page.keyboard.press("Tab")
     if not file_input.evaluate("element => document.activeElement === element"):
         raise AssertionError(f"Processor file input is not keyboard accessible at {width}px")
-    for selector in (".processor-card", ".archive-card:not(.processor-card)", "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
+    for selector in (".source-session-card", ".processor-card", '[aria-labelledby="archive-heading"]', "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
         element = page.locator(selector)
         box = element.bounding_box()
         if not box or box["x"] < 0 or box["x"] + box["width"] > width + 1 or box["width"] < 44:
@@ -1217,7 +1222,7 @@ def check_audio_editor(page, base_url: str) -> None:
         page.wait_for_url("**/Audio-Editor.html")
         wait_for_page_ready(page)
         wait_for_archive_items(page, 3)
-        for width in (390, 768, 1280):
+        for width in (320, 390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             check_audio_editor_shell(page, width)
 
@@ -1301,6 +1306,134 @@ def check_audio_editor(page, base_url: str) -> None:
     finally:
         page.unroute(ARCHIVE_MANIFEST_PATTERN)
     page.evaluate(f"sessionStorage.removeItem('{SERVICE_SESSION_KEY}')")
+
+
+def check_source_session_archive(browser, base_url: str) -> None:
+    """Exercise the S08A browser integration against a deterministic cross-origin gateway."""
+    context = browser.new_context(viewport={"width": 390, "height": 900})
+    page = context.new_page()
+    page_errors = []
+    page.on("pageerror", lambda error: page_errors.append(str(error)))
+    session_id = "11111111-1111-4111-8111-111111111111"
+    track_id = "22222222-2222-4222-8222-222222222222"
+    blob_id = "33333333-3333-4333-8333-333333333333"
+    wav = wav_payload("archive-source.wav", ((.1, True),), sample_rate=8000)["buffer"]
+    digest = hashlib.sha256(wav).hexdigest()
+    asset_name = f"blob-{blob_id}-part-0001.bin"
+    asset_url = f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/{asset_name}"
+    workflow = lambda name: {"workflow": name, "status": "new", "currentDraft": None, "outputs": [], "deletedVersions": [], "nextVersion": 1}
+    session = {
+        "schemaVersion": 1, "revision": 1, "id": session_id, "title": "Архивная запись", "recordedAt": None,
+        "createdAt": "2026-01-01T00:00:00.000Z", "updatedAt": "2026-01-01T00:00:00.000Z",
+        "origin": {"kind": "manual", "externalId": None}, "storage": {"releaseId": 1, "tag": f"audio-session-{session_id}"},
+        "lifecycle": {"state": "incoming"}, "sourceState": "available",
+        "sourceTracks": [{"trackId": track_id, "blobId": blob_id, "ordinal": 1, "originalName": "archive-source.wav",
+            "mediaType": "audio/wav", "sizeBytes": len(wav), "sha256": digest,
+            "parts": [{"partNumber": 1, "sizeBytes": len(wav), "sha256": digest, "assetName": asset_name,
+                "assetId": 10, "downloadUrl": asset_url}]}],
+        "deletedSources": None, "workflows": {"announcement": workflow("announcement"), "speaker": workflow("speaker")},
+        "relations": {"supersedesSessionId": None, "supersededBySessionId": None},
+        "transaction": {"state": "finalized", "id": session_id},
+    }
+    gateway_calls = []
+    site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
+
+    def fulfill_json(route, value, status=200):
+        route.fulfill(status=status, content_type="application/json", headers={
+            "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
+            "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, X-Part-SHA256, Idempotency-Key",
+            "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS",
+        }, body=json.dumps(value))
+
+    def route_request(route):
+        request = route.request
+        parsed = urlparse(request.url)
+        if parsed.netloc == urlparse(base_url).netloc and parsed.path == AUDIO_EDITOR_PATH:
+            response = route.fetch()
+            body = response.body().decode("utf-8").replace('name="audio-archive-gateway" content=""',
+                'name="audio-archive-gateway" content="https://gateway.test"')
+            route.fulfill(response=response, body=body)
+            return
+        if request.url == asset_url:
+            route.fulfill(status=200, content_type="application/octet-stream", body=wav)
+            return
+        if parsed.netloc != "gateway.test":
+            route.continue_()
+            return
+        content_type = request.header_value("content-type") or ""
+        gateway_calls.append((request.method, parsed.path, request.post_data if "application/json" in content_type else None))
+        if request.method == "OPTIONS":
+            route.fulfill(status=204, headers={"Access-Control-Allow-Origin": site_origin,
+                "Access-Control-Allow-Credentials": "true", "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, X-Part-SHA256, Idempotency-Key",
+                "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS"})
+        elif parsed.path == "/v1/config":
+            fulfill_json(route, {"schemaVersion": 1, "acceptedPartSize": 16777216, "maximumPartSize": 67108864, "maximumSessionSize": 524288000})
+        elif parsed.path == "/v1/session":
+            fulfill_json(route, {"authenticated": True, "expiresAt": 2000000000, "csrfToken": "mock-csrf"})
+        elif parsed.path == "/v1/source-sessions" and request.method == "GET":
+            lifecycle = parse_qs(parsed.query).get("lifecycle", ["incoming"])[0]
+            fulfill_json(route, {"revision": session["revision"], "sessions": [session] if session["lifecycle"]["state"] == lifecycle else []})
+        elif parsed.path == f"/v1/source-sessions/{session_id}" and request.method == "GET":
+            fulfill_json(route, session)
+        elif parsed.path.endswith("/workflows/announcement/status") and request.method == "PUT":
+            session["workflows"]["announcement"]["status"] = "in_progress"
+            session["revision"] += 1
+            fulfill_json(route, session)
+        elif parsed.path == "/v1/source-sessions/ingestions" and request.method == "POST":
+            fulfill_json(route, {"transactionId": session_id, "sessionId": session_id, "releaseId": 1, "state": "uploading"}, 201)
+        elif "/blobs/" in parsed.path and "/parts/" in parsed.path and request.method == "PUT":
+            fulfill_json(route, {"uploaded": True, "assetId": 99, "downloadUrl": asset_url})
+        elif parsed.path.endswith("/finalize") and request.method == "POST":
+            fulfill_json(route, {"session": session, "idempotent": False})
+        else:
+            fulfill_json(route, {"error": "unexpected mock route"}, 404)
+
+    context.route("**/*", route_request)
+    try:
+        seed_service_access(page, base_url)
+        goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+        try:
+            page.locator(".source-session-item").wait_for()
+        except Error as error:
+            raise AssertionError({"error": str(error), "pageErrors": page_errors, "status": page.locator("#source-session-status").inner_text(),
+                "meta": page.locator('meta[name="audio-archive-gateway"]').get_attribute("content"), "calls": gateway_calls})
+        assert page.locator("#source-session-mode-archive").get_attribute("aria-pressed") == "true"
+        assert page.locator(".source-session-item h3").inner_text() == "Архивная запись"
+        assert page.get_by_text("Статус: Новая", exact=True).count() == 2
+        page.locator(".source-workflow").nth(0).get_by_role("button", name="Начать работу", exact=True).click()
+        page.get_by_text("Статус: В работе", exact=True).wait_for()
+        assert session["workflows"]["speaker"]["status"] == "new"
+        page.get_by_role("button", name="Открыть исходники", exact=True).click()
+        try:
+            page.locator(".processor-track").wait_for(timeout=30000)
+        except Error as error:
+            raise AssertionError({"error": str(error), "pageErrors": page_errors, "status": page.locator("#source-session-status").inner_text(), "calls": gateway_calls})
+        assert page.locator(".processor-track__name").inner_text() == "archive-source.wav"
+        assert session["lifecycle"]["state"] == "incoming"
+        session["lifecycle"]["state"] = "archived"
+        page.locator("#source-session-lifecycle").select_option("archived")
+        page.locator(".source-session-item").wait_for()
+        calls_before_archived_open = len(gateway_calls)
+        page.get_by_role("button", name="Открыть исходники", exact=True).click()
+        page.get_by_text(re.compile("запись осталась архивированной"), exact=False).wait_for(timeout=30000)
+        assert session["lifecycle"]["state"] == "archived"
+        assert not any(path.endswith("/restore") for _, path, _ in gateway_calls[calls_before_archived_open:])
+        for width in (320, 390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+
+        page.locator("#source-session-mode-archive").click()
+        page.get_by_role("button", name="Создать входящую запись", exact=True).click()
+        page.locator("#source-session-ingest-files").set_input_files({"name": "manual.wav", "mimeType": "audio/wav", "buffer": wav})
+        page.locator("#source-session-ingest-name").fill("Ручная запись")
+        page.locator("#source-session-ingest-submit").click()
+        page.get_by_text("Входящая запись создана.", exact=True).wait_for(timeout=30000)
+        assert any(method == "POST" and path == "/v1/source-sessions/ingestions" for method, path, _ in gateway_calls)
+        assert any(method == "PUT" and "/parts/1" in path for method, path, _ in gateway_calls)
+        assert any(method == "POST" and path.endswith("/finalize") for method, path, _ in gateway_calls)
+        print("Source Session mock gateway passed: archive list/status, byte reconstruction, local adapter, manual ingestion and 320/390/768/1280 layout.")
+    finally:
+        context.close()
 
 
 def wav_payload(name: str, segments: tuple[tuple[float, bool], ...], channels: int = 1, comment: str | None = None,
@@ -2089,6 +2222,14 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
         print(f"Real waveform passed: WAV -> {waveform_info['width']}x{waveform_info['height']} PNG ({waveform_info['size']} bytes); Blob rendered and waveform FS files deleted.")
 
+        page.locator("#processor-save-incoming").click()
+        assert page.locator("#source-session-login-dialog").is_visible()
+        assert page.locator("#source-session-login-status").inner_text() == "Шлюз входящего архива ещё не настроен."
+        assert page.locator("#processor-file").evaluate("input => input.files.length") == 1
+        assert page.locator(".processor-track__name").inner_text() == "fixture.wav"
+        page.locator("#source-session-login-cancel").click()
+        print("Gateway-unavailable persistence fallback passed: local S07 source state remained intact.")
+
         page.locator("#processor-run").click()
         wait_processor_status(page, "Готово.")
         assert page.locator(".processor-track__name").inner_text() == "fixture.wav"
@@ -2535,6 +2676,7 @@ def main() -> int:
         check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
         check_audio_editor(page, base_url)
+        check_source_session_archive(browser, base_url)
         check_audio_processor(browser, base_url, args.screenshot_dir)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")
