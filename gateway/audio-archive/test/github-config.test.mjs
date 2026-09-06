@@ -145,6 +145,40 @@ test("atomic JSON commit stays inside fixed repository and rejects arbitrary pat
   await assert.rejects(() => repository.readJson("../../starter-package/secrets.json", "head-1"), /Unsafe/);
 });
 
+test("canonical ingestion transaction paths use their structural UUID", async () => {
+  const transactionId = "11111111-1111-4111-8111-111111111111";
+  const transactionPath = `transactions/ingest-${transactionId}.json`;
+  const stored = { id: transactionId, kind: "ingest", status: "planned" };
+  const seen = [];
+  const repository = new GitHubArchiveRepository(config(), async (url, options = {}) => {
+    const body = options.body && JSON.parse(options.body);
+    seen.push({ url, method: options.method || "GET", body });
+    if (url.includes(`/contents/${transactionPath}?ref=head-1`)) {
+      return jsonResponse({ type: "file", encoding: "base64", content: Buffer.from(JSON.stringify(stored)).toString("base64"), sha: "transaction-blob" });
+    }
+    if (url.endsWith("/git/ref/heads/main")) return jsonResponse({ object: { sha: "head-1" } });
+    if (url.endsWith("/git/commits/head-1")) return jsonResponse({ tree: { sha: "tree-1" } });
+    if (url.endsWith("/git/blobs")) return jsonResponse({ sha: "blob-1" }, 201);
+    if (url.endsWith("/git/trees")) return jsonResponse({ sha: "tree-2" }, 201);
+    if (url.endsWith("/git/commits")) return jsonResponse({ sha: "commit-2" }, 201);
+    if (url.endsWith("/git/refs/heads/main")) return jsonResponse({ object: { sha: "commit-2" } });
+    throw new Error(`unexpected ${url}`);
+  });
+  repository.installationToken = { value: "installation-token", expiresAt: Number.MAX_SAFE_INTEGER };
+
+  assert.deepEqual(await repository.readJson(transactionPath, "head-1"), { data: stored, blobSha: "transaction-blob" });
+  assert.equal(await repository.commitJson("head-1", { [transactionPath]: stored }, "persist ingestion"), "commit-2");
+  const tree = seen.find(({ url }) => url.endsWith("/git/trees"));
+  assert.deepEqual(tree.body.tree.map(({ path }) => path), [transactionPath]);
+
+  const callsBeforeRejection = seen.length;
+  await assert.rejects(
+    () => repository.readJson("transactions/ingest-11111111-1111-0111-8111-111111111111.json", "head-1"),
+    /Unsafe internal UUID path/
+  );
+  assert.equal(seen.length, callsBeforeRejection);
+});
+
 test("release asset upload uses opaque deterministic name and fixed upload host", async () => {
   let seen;
   const repository = new GitHubArchiveRepository(config(), async (url, options) => {

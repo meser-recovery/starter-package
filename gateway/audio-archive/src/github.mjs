@@ -3,6 +3,7 @@ import { UUID_PATTERN } from "./validation.mjs";
 
 const API_VERSION = "2026-03-10";
 const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|transactions\/(?:ingest|delete)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
+const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|transactions\/(?:ingest|delete)-([0-9a-f-]{36})\.json)$/;
 
 export class GitHubError extends Error {
   constructor(message, status, responseBody = null) {
@@ -19,7 +20,7 @@ function base64url(value) {
 
 function assertStoragePath(path) {
   if (!STORAGE_PATH.test(path) || path.includes("..")) throw new Error("Unsafe internal storage path");
-  const uuid = path.match(/[0-9a-f-]{36}/)?.[0];
+  const uuid = UUID_STORAGE_PATH.exec(path)?.slice(1).find(Boolean);
   if (uuid && !UUID_PATTERN.test(uuid)) throw new Error("Unsafe internal UUID path");
   return path;
 }
