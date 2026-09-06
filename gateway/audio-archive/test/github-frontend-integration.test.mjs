@@ -34,6 +34,7 @@ class GitHubHttpTransport {
     this.nextRelease = 100;
     this.nextAsset = 1_000;
     this.uploadedDraftUrls = [];
+    this.downloadedAssetIds = [];
   }
 
   fileBlob(path) {
@@ -129,6 +130,17 @@ class GitHubHttpTransport {
       const blobSha = path.slice("/git/blobs/".length);
       return jsonResponse({ encoding: "base64", content: this.blobs.get(blobSha) });
     }
+    const assetDownloadMatch = path.match(/^\/releases\/assets\/(\d+)$/);
+    if (method === "GET" && assetDownloadMatch) {
+      const assetId = Number(assetDownloadMatch[1]);
+      const bytes = this.assetBytes.get(assetId);
+      assert.equal(new Headers(options.headers).get("Accept"), "application/octet-stream");
+      if (!bytes) return jsonResponse({ message: "not found" }, 404);
+      this.downloadedAssetIds.push(assetId);
+      return new Response(bytes, { status: 200, headers: {
+        "Content-Type": "application/octet-stream", "Content-Length": String(bytes.byteLength)
+      } });
+    }
     if (method === "GET" && path.startsWith("/releases/tags/")) {
       const tag = decodeURIComponent(path.slice("/releases/tags/".length));
       const release = [...this.releases.values()].find((candidate) => candidate.tag_name === tag);
@@ -199,7 +211,7 @@ test("real GitHub adapter canonicalizes draft upload URLs for a new frontend ing
   validateSourceSession(manifest);
 });
 
-test("frontend resumes one production-shaped legacy draft transaction through the real GitHub adapter", async () => {
+test("frontend resumes a legacy draft transaction and reconstructs through the authenticated real GitHub adapter", async () => {
   const transport = new GitHubHttpTransport();
   const key = "production-shaped-recovery-operation";
   const bytes = Uint8Array.from([10, 11, 12, 13, 14, 15]);
@@ -260,8 +272,10 @@ test("frontend resumes one production-shaped legacy draft transaction through th
   assert.ok(storedTransaction.uploadedParts.every((part) => part.downloadUrl === canonicalReleaseAssetUrl(releaseTag, part.assetName)));
   assert.ok(manifest.sourceTracks[0].parts.every((part) => part.downloadUrl === canonicalReleaseAssetUrl(releaseTag, part.assetName)));
   assert.deepEqual(await harness.gateway.listIncomplete(), { transactions: [], orphans: [] });
-  const [reconstructed] = await reconstructSessionTracks(await harness.gateway.getSession(transactionId), harness.gateway.fetchImpl);
+  const complete = await harness.gateway.getSession(transactionId);
+  const [reconstructed] = await reconstructSessionTracks(complete, harness.gateway.sourcePartFetch(complete));
   assert.deepEqual(new Uint8Array(await reconstructed.arrayBuffer()), bytes);
+  assert.deepEqual(harness.transport.downloadedAssetIds, release.assets.map((asset) => asset.id));
 });
 
 test("legacy draft URL normalization is narrow and finalized transactions stay strict", async () => {

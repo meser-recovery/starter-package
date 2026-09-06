@@ -113,6 +113,13 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
         actionBody(await jsonBody(request));
         return cors(json(await domain.finalizeIngestion(assertUuid(match[0], "transactionId"))), config.allowedOrigin);
       }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/blobs\/([^/]+)\/parts\/(\d+)\/content$/)) && request.method === "GET") {
+        const result = await domain.downloadSourcePart(assertUuid(match[0], "sessionId"), assertUuid(match[1], "blobId"), Number(match[2]));
+        return cors(new Response(result.bytes, { status: 200, headers: {
+          "Content-Type": "application/octet-stream", "Content-Length": String(result.bytes.byteLength),
+          "Content-Disposition": `attachment; filename="${result.assetName}"`
+        } }), config.allowedOrigin);
+      }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)$/))) {
         const sessionId = assertUuid(match[0], "sessionId");
         if (request.method === "GET") return cors(json(await domain.getSession(sessionId)), config.allowedOrigin);

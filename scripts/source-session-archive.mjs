@@ -115,7 +115,7 @@ async function loadSession(session) {
   setArchiveStatus("Загрузка и проверка исходных дорожек…");
   try {
     const complete = await gateway.getSession(session.id);
-    const files = await reconstructSessionTracks(complete, (url, options) => fetch(url, options));
+    const files = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
     state.loadingArchive = true;
     loadProcessorFiles(files);
     state.loadingArchive = false;

@@ -1,5 +1,5 @@
 import { createSign } from "node:crypto";
-import { UUID_PATTERN } from "./validation.mjs";
+import { MAX_PART_BYTES, UUID_PATTERN } from "./validation.mjs";
 
 const API_VERSION = "2026-03-10";
 const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|transactions\/(?:ingest|delete)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
@@ -204,6 +204,24 @@ export class GitHubArchiveRepository {
     const data = await this.readJsonResponse(response, "asset upload");
     if (!response.ok) throw new GitHubError("GitHub asset upload failed", response.status, data);
     return data;
+  }
+
+  async downloadReleaseAsset(assetId) {
+    if (!Number.isSafeInteger(assetId) || assetId < 1) throw new Error("Unsafe release asset ID");
+    const token = await this.token();
+    const response = await this.fetchImpl(`https://api.github.com/repos/${this.owner}/${this.repository}/releases/assets/${assetId}`, {
+      headers: this.headers(token, { Accept: "application/octet-stream" })
+    });
+    if (!response.ok) throw new GitHubError("GitHub asset download failed", response.status);
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && (declared < 1 || declared > MAX_PART_BYTES)) {
+      throw new GitHubError("GitHub asset download size is invalid", 502);
+    }
+    const bytes = Buffer.from(await response.arrayBuffer());
+    if (bytes.byteLength < 1 || bytes.byteLength > MAX_PART_BYTES) {
+      throw new GitHubError("GitHub asset download size is invalid", 502);
+    }
+    return bytes;
   }
 
   async publishRelease(releaseId) {

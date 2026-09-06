@@ -1354,9 +1354,6 @@ def check_source_session_archive(browser, base_url: str) -> None:
                 'name="audio-archive-gateway" content="https://gateway.test"')
             route.fulfill(response=response, body=body)
             return
-        if request.url == asset_url:
-            route.fulfill(status=200, content_type="application/octet-stream", body=wav)
-            return
         if parsed.netloc != "gateway.test":
             route.continue_()
             return
@@ -1375,6 +1372,11 @@ def check_source_session_archive(browser, base_url: str) -> None:
             fulfill_json(route, {"revision": session["revision"], "sessions": [session] if session["lifecycle"]["state"] == lifecycle else []})
         elif parsed.path == f"/v1/source-sessions/{session_id}" and request.method == "GET":
             fulfill_json(route, session)
+        elif parsed.path == f"/v1/source-sessions/{session_id}/blobs/{blob_id}/parts/1/content" and request.method == "GET":
+            route.fulfill(status=200, content_type="application/octet-stream", headers={
+                "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
+                "Cache-Control": "no-store",
+            }, body=wav)
         elif parsed.path.endswith("/workflows/announcement/status") and request.method == "PUT":
             session["workflows"]["announcement"]["status"] = "in_progress"
             session["revision"] += 1
@@ -1409,6 +1411,7 @@ def check_source_session_archive(browser, base_url: str) -> None:
         except Error as error:
             raise AssertionError({"error": str(error), "pageErrors": page_errors, "status": page.locator("#source-session-status").inner_text(), "calls": gateway_calls})
         assert page.locator(".processor-track__name").inner_text() == "archive-source.wav"
+        assert any(method == "GET" and path.endswith(f"/blobs/{blob_id}/parts/1/content") for method, path, _ in gateway_calls)
         assert session["lifecycle"]["state"] == "incoming"
         session["lifecycle"]["state"] = "archived"
         page.locator("#source-session-lifecycle").select_option("archived")

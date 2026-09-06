@@ -415,6 +415,19 @@ export class AudioArchiveGateway {
   logout() { return this.request("/v1/session/logout", { method: "POST" }); }
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
   getSession(id) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`); }
+  sourcePartFetch(session) {
+    if (!validateSessionManifest(session) || session.sourceState !== "available") throw new Error("Манифест Source Session повреждён.");
+    const parts = new Map();
+    for (const track of session.sourceTracks) {
+      for (const part of track.parts) parts.set(part.downloadUrl, { blobId: track.blobId, partNumber: part.partNumber });
+    }
+    return async (url, options = {}) => {
+      const part = parts.get(String(url));
+      if (!part) throw new Error("URL части не принадлежит этой Source Session.");
+      const path = `/v1/source-sessions/${encodeURIComponent(session.id)}/blobs/${encodeURIComponent(part.blobId)}/parts/${part.partNumber}/content`;
+      return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
+    };
+  }
   updateSession(id, expectedRevision, patch, idempotencyKey = crypto.randomUUID()) {
     return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: { expectedRevision, patch, idempotencyKey } });
   }

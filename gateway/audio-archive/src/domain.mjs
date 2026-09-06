@@ -113,6 +113,21 @@ export class AudioArchiveDomain {
     return publicSession((await this.sessionSnapshot(sessionId)).session);
   }
 
+  async downloadSourcePart(sessionId, blobId, partNumber) {
+    const id = assertUuid(blobId, "blobId");
+    assertInteger(partNumber, 1, 9999, "partNumber");
+    const session = (await this.sessionSnapshot(sessionId)).session;
+    if (session.sourceState !== "available") throw notFound("Source Session audio is unavailable");
+    const track = session.sourceTracks.find((item) => item.blobId === id);
+    const part = track?.parts.find((item) => item.partNumber === partNumber);
+    if (!part) throw notFound("Source Session part not found");
+    const bytes = await this.repository.downloadReleaseAsset(part.assetId);
+    if (bytes.byteLength !== part.sizeBytes || !sameDigest(digestBytes(bytes), part.sha256)) {
+      throw conflict("Release asset failed integrity verification");
+    }
+    return { bytes, assetName: part.assetName };
+  }
+
   async beginIngestion(body) {
     assertExactKeys(body, ["schemaVersion", "idempotencyKey", "title", "recordedAt", "origin", "supersedesSessionId", "plan"], "begin ingestion");
     if (body.schemaVersion !== SCHEMA_VERSION) throw new ValidationError("Unsupported ingestion schema");
