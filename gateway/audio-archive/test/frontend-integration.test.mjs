@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AudioArchiveGateway, reconstructSessionTracks } from "../../../scripts/audio-archive-client.mjs";
+import { AudioArchiveGateway, reconstructAnnouncementOutput, reconstructSessionTracks } from "../../../scripts/audio-archive-client.mjs";
 import { createApp } from "../src/app.mjs";
 import { createPasswordVerifier } from "../src/auth.mjs";
 import { AudioArchiveDomain } from "../src/domain.mjs";
@@ -109,7 +109,7 @@ test("real frontend client resumes one interrupted logical ingestion without dup
       parts: track.parts.map(({ partNumber, sizeBytes, sha256, assetName }) => ({ partNumber, sizeBytes, sha256, assetName }))
     }))
   }, originalTransaction.plan);
-  const [restored] = await reconstructSessionTracks(stored, harness.gateway.fetchImpl);
+  const [restored] = await reconstructSessionTracks(stored, harness.gateway.sourcePartFetch(stored));
   assert.deepEqual(new Uint8Array(await restored.arrayBuffer()), bytes);
 
   const changedFiles = [new File([Uint8Array.from([...bytes, 10])], "meeting.wav", { type: "audio/wav" })];
@@ -139,4 +139,40 @@ test("real frontend client cancels during hashing before contacting ingestion AP
   );
   assert.equal(reads, 1);
   assert.equal(fetchCalls, 0);
+});
+
+test("real frontend and gateway publish, retrieve, and verify one Announcement output", async () => {
+  const harness = await frontendHarness();
+  const source = new File([Uint8Array.of(1, 2, 3, 4)], "meeting.wav", { type: "audio/wav" });
+  const ingested = await harness.gateway.ingestFiles({ files: [source], title: "Запись", origin: "manual", idempotencyKey: `${KEY}:source` });
+  let session = ingested.session;
+  const saved = await harness.gateway.saveDraft(session.id, "announcement", {
+    schemaVersion: 1, expectedDraftRevision: 0, expectedSourceSessionRevision: session.revision,
+    payloadSchema: "announcement/v1", payload: { trackIds: [session.sourceTracks[0].trackId] }, idempotencyKey: `${KEY}:draft`
+  });
+  session = saved.session;
+  const outputBytes = Uint8Array.of(9, 8, 7, 6, 5);
+  const track = session.sourceTracks[0];
+  const recipe = {
+    sourceSessionRevision: session.revision,
+    sources: [{ trackId: track.trackId, blobId: track.blobId, ordinal: 1, sizeBytes: track.sizeBytes, sha256: track.sha256, mediaType: track.mediaType }],
+    draft: { revision: saved.draft.draftRevision, payloadSchema: "announcement/v1", payload: saved.draft.payload },
+    processing: { mode: "processed_single", silenceThresholdDb: -45, minimumSilenceSeconds: 2, retainedSilenceSeconds: 0.35,
+      detectedIntervals: [[2, 5]], removalRanges: [[2.175, 4.825]], mix: null, limiter: null,
+      codec: { name: "libmp3lame", bitrate: "128k" } },
+    result: { mediaType: "audio/mpeg", presentationFilename: "meeting-edited.mp3", sizeBytes: outputBytes.length,
+      sha256: "0".repeat(64), originalDurationSeconds: 8, resultDurationSeconds: 5.35, removedDurationSeconds: 2.65, pauseCount: 1 }
+  };
+  const progress = [];
+  const published = await harness.gateway.publishAnnouncement({ sessionId: session.id, expectedRevision: session.revision,
+    expectedDraftRevision: saved.draft.draftRevision, blob: new Blob([outputBytes], { type: "audio/mpeg" }), recipe,
+    idempotencyKey: `${KEY}:publish`, onProgress: (event) => progress.push(event) });
+  assert.equal(published.output.version, 1);
+  assert.equal(progress.length, 2);
+  const metadata = await harness.gateway.getAnnouncementOutput(session.id, published.output.outputId);
+  const file = await reconstructAnnouncementOutput(metadata, harness.gateway.announcementPartFetch(metadata));
+  assert.equal(file.name, "meeting-edited.mp3");
+  assert.equal(file.type, "audio/mpeg");
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), outputBytes);
+  assert.equal(harness.repository.files.has(`recipes/${session.id}/announcement/${published.output.outputId}.json`), true);
 });

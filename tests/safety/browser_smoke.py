@@ -1154,7 +1154,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").all_text_contents()[:3] != ["Входящий архив", "Обработка аудио", "Архив отредактированных аудио"]:
+    if page.locator("h2").all_text_contents()[:4] != ["Входящий архив", "Объявление · Announcement workspace", "Обработка аудио", "Архив отредактированных аудио"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1308,7 +1308,7 @@ def check_audio_editor(page, base_url: str) -> None:
     page.evaluate(f"sessionStorage.removeItem('{SERVICE_SESSION_KEY}')")
 
 
-def check_source_session_archive(browser, base_url: str) -> None:
+def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | None = None) -> None:
     """Exercise the S08A browser integration against a deterministic cross-origin gateway."""
     context = browser.new_context(viewport={"width": 390, "height": 900})
     page = context.new_page()
@@ -1336,6 +1336,8 @@ def check_source_session_archive(browser, base_url: str) -> None:
         "transaction": {"state": "finalized", "id": session_id},
     }
     gateway_calls = []
+    mock = {"draft": None, "publication": None}
+    publication_id = "44444444-4444-4444-8444-444444444444"
     site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
 
     def fulfill_json(route, value, status=200):
@@ -1374,11 +1376,44 @@ def check_source_session_archive(browser, base_url: str) -> None:
             fulfill_json(route, {"revision": session["revision"], "sessions": [session] if session["lifecycle"]["state"] == lifecycle else []})
         elif parsed.path == f"/v1/source-sessions/{session_id}" and request.method == "GET":
             fulfill_json(route, session)
+        elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/announcement" and request.method == "GET":
+            fulfill_json(route, {"draft": mock["draft"]})
+        elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/announcement" and request.method == "PUT":
+            body = json.loads(request.post_data)
+            session["revision"] += 1
+            mock["draft"] = {"schemaVersion": 1, "sessionId": session_id, "workflow": "announcement", "draftRevision": 1,
+                "sourceSessionRevision": session["revision"], "savedAt": "2026-01-02T03:04:05.000Z",
+                "payloadSchema": "announcement/v1", "payload": body["payload"]}
+            session["workflows"]["announcement"]["currentDraft"] = {"path": f"drafts/{session_id}/announcement.json", "revision": 1}
+            session["workflows"]["announcement"]["status"] = "in_progress"
+            fulfill_json(route, {"draft": mock["draft"], "session": session})
         elif parsed.path == f"/v1/source-sessions/{session_id}/blobs/{blob_id}/parts/1/content" and request.method == "GET":
             route.fulfill(status=200, content_type="application/octet-stream", headers={
                 "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
                 "Cache-Control": "no-store",
             }, body=wav)
+        elif parsed.path == f"/v1/source-sessions/{session_id}/outputs/announcement/publications" and request.method == "POST":
+            mock["publication"] = json.loads(request.post_data)
+            session["revision"] += 1
+            reserved = session["workflows"]["announcement"]["nextVersion"]
+            session["workflows"]["announcement"]["nextVersion"] += 1
+            fulfill_json(route, {"transactionId": publication_id, "sessionId": session_id, "workflow": "announcement",
+                "outputId": mock["publication"]["plan"]["outputId"], "blobId": mock["publication"]["plan"]["blobId"],
+                "state": "uploading", "reservedVersion": reserved, "reservedSessionRevision": session["revision"],
+                "uploadedParts": 0, "totalParts": len(mock["publication"]["plan"]["parts"]), "canFinalize": False,
+                "requiresLocalResult": True, "updatedAt": "2026-01-02T03:04:05.000Z"}, 201)
+        elif parsed.path == f"/v1/announcement-publications/{publication_id}/finalize" and request.method == "POST":
+            plan = mock["publication"]["plan"]
+            output_asset_url = f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/{plan['parts'][0]['assetName']}"
+            output = {"outputId": plan["outputId"], "version": 1, "sessionId": session_id,
+                "createdAt": "2026-01-02T03:04:05.000Z", "blobId": plan["blobId"], "sizeBytes": plan["sizeBytes"],
+                "sha256": plan["sha256"], "parts": [{**part, "assetId": 99 + index, "downloadUrl": output_asset_url}
+                    for index, part in enumerate(plan["parts"])],
+                "recipeSnapshotRef": f"recipes/{session_id}/announcement/{plan['outputId']}.json", "processorVersion": plan["processorVersion"]}
+            session["workflows"]["announcement"]["outputs"] = [output]
+            session["workflows"]["announcement"]["status"] = "result_ready"
+            session["revision"] += 1
+            fulfill_json(route, {"job": {"transactionId": publication_id, "state": "finalized"}, "output": output, "idempotent": False})
         elif parsed.path.endswith("/workflows/announcement/status") and request.method == "PUT":
             session["workflows"]["announcement"]["status"] = "in_progress"
             session["revision"] += 1
@@ -1404,24 +1439,50 @@ def check_source_session_archive(browser, base_url: str) -> None:
         assert page.locator("#source-session-mode-archive").get_attribute("aria-pressed") == "true"
         assert page.locator(".source-session-item h3").inner_text() == "Архивная запись"
         assert page.get_by_text("Статус: Новая", exact=True).count() == 2
-        page.locator(".source-workflow").nth(0).get_by_role("button", name="Начать работу", exact=True).click()
-        page.get_by_text("Статус: В работе", exact=True).wait_for()
-        assert session["workflows"]["speaker"]["status"] == "new"
-        page.get_by_role("button", name="Открыть исходники", exact=True).click()
+        page.locator(".source-workflow").nth(0).get_by_role("button", name="Открыть workspace", exact=True).click()
         try:
             page.locator(".processor-track").wait_for(timeout=30000)
         except Error as error:
             raise AssertionError({"error": str(error), "pageErrors": page_errors, "status": page.locator("#source-session-status").inner_text(), "calls": gateway_calls})
         assert page.locator(".processor-track__name").inner_text() == "archive-source.wav"
+        assert session_id in page.locator("#source-session-announcement-identity").inner_text()
+        assert track_id in page.locator("#source-session-announcement-tracks").inner_text()
+        assert page.locator("#source-session-publish-announcement").is_disabled()
+        page.locator("#source-session-announcement-save").click()
+        page.get_by_text("Общий черновик сохранён, ревизия 1.", exact=True).wait_for()
         page.wait_for_function("!document.getElementById('processor-file').disabled")
+        page.locator("#processor-run").click()
+        wait_processor_status(page, "Длинные паузы не найдены. Файл не изменён.")
+        assert not page.locator("#source-session-publish-announcement").is_disabled()
+        page.locator("#source-session-publish-announcement").click()
+        summary = page.locator("#source-session-publication-summary").inner_text()
+        assert session_id in summary and "archive-source.wav" in summary and "без изменения байтов" in summary
+        assert "audio/wav" in summary and "предварительно версия 1" in summary
+        if screenshot_dir:
+            page.set_viewport_size({"width": 390, "height": 900})
+            page.screenshot(path=str(screenshot_dir / "s08b-publication-confirmation-390.png"), full_page=True)
+        page.locator("#source-session-publication-submit").click()
+        page.get_by_text("Объявление версии 1 опубликовано.", exact=True).wait_for(timeout=30000)
+        page.get_by_text(re.compile(r"Версия 1 ·"), exact=False).wait_for(timeout=30000)
+        assert page.get_by_role("button", name="Слушать", exact=True).count() == 1
+        assert page.get_by_role("button", name="Скачать", exact=True).count() == 1
+        assert page.get_by_role("button", name="Удалить версию", exact=True).count() == 1
+        if screenshot_dir:
+            page.locator("#source-session-publication-dialog").wait_for(state="hidden")
+            for width in (390, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.screenshot(path=str(screenshot_dir / f"s08b-published-history-{width}.png"), full_page=True)
         assert any(method == "GET" and path.endswith(f"/blobs/{blob_id}/parts/1/content") for method, path, _ in gateway_calls)
         assert session["lifecycle"]["state"] == "incoming"
         session["lifecycle"]["state"] = "archived"
         page.locator("#source-session-lifecycle").select_option("archived")
         page.locator(".source-session-item").wait_for()
         calls_before_archived_open = len(gateway_calls)
-        page.get_by_role("button", name="Открыть исходники", exact=True).click()
-        page.get_by_text(re.compile("запись осталась архивированной"), exact=False).wait_for(timeout=30000)
+        page.get_by_role("button", name="Открыть результаты", exact=True).click()
+        page.get_by_text("Архивированная запись открыта без загрузки в обработчик.", exact=True).wait_for(timeout=30000)
+        assert page.get_by_text(re.compile("Архивированная запись доступна только"), exact=False).is_visible()
+        assert page.locator("#source-session-publish-announcement").is_disabled()
         assert session["lifecycle"]["state"] == "archived"
         assert not any(path.endswith("/restore") for _, path, _ in gateway_calls[calls_before_archived_open:])
         for width in (320, 390, 768, 1280):
@@ -2253,6 +2314,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
 
         page.locator("#processor-run").click()
         wait_processor_status(page, "Готово.")
+        assert page.locator("#source-session-publish-announcement").is_disabled()
+        assert "активной Source Session" in page.locator("#source-session-publish-reason").inner_text()
         assert page.locator(".processor-track__name").inner_text() == "fixture.wav"
         assert page.locator("#processor-source-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
         source_duration = float(page.locator("#processor-original-duration").get_attribute("data-value"))
@@ -2399,8 +2462,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         print("Waveform failure fallbacks passed: source and result preview failures retained native playback and a valid processed MP3.")
 
         prior_urls = page.evaluate("window.processorProbe.urls.slice()")
-        page.locator("#processor-file").set_input_files(wav_payload("no-pauses.WAV", ((1, True), (1, False), (1, True)),
-            comment="silence_start: 0"))
+        no_pause = wav_payload("no-pauses.WAV", ((1, True), (1, False), (1, True)), comment="silence_start: 0")
+        page.locator("#processor-file").set_input_files(no_pause)
         wait_waveforms(page, 1)
         exec_before = len([message for message in page.evaluate("window.processorProbe.messages") if message["type"] == "EXEC"])
         assert_processor_no_result(page)
@@ -2408,10 +2471,16 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert all(value in revoked for value in prior_urls), (prior_urls, revoked)
         page.locator("#processor-run").click()
         wait_processor_status(page, "Длинные паузы не найдены. Файл не изменён.")
-        assert_processor_no_result(page)
+        assert page.locator("#processor-result").is_visible()
+        assert page.locator("#processor-download").get_attribute("download") == "no-pauses.WAV"
+        assert page.locator("#processor-download").inner_text() == "Скачать исходный файл без изменений"
+        passthrough_bytes = page.evaluate("""async () => Array.from(new Uint8Array(
+            await (await fetch(document.getElementById('processor-download').href)).arrayBuffer()))""")
+        assert bytes(passthrough_bytes) == no_pause["buffer"]
         probe = page.evaluate("window.processorProbe")
-        assert probe["workers"] == 2 and len([message for message in probe["messages"] if message["type"] == "EXEC"]) == exec_before + 1
-        print("No-long-pause fixture passed: exact unchanged status, analysis only, no re-encode/result/download; loaded engine reused; metadata cannot spoof detector output.")
+        assert probe["workers"] == 2 and len([message for message in probe["messages"] if message["type"] == "EXEC"]) >= exec_before + 1
+        assert "processor-output.mp3" not in probe["files"]
+        print("No-long-pause fixture passed: exact-byte passthrough result/download, no output encode; loaded engine reused; metadata cannot spoof detector output.")
 
         # Cancel once the real worker has started analysis; the next run must recreate it.
         page.locator("#processor-file").set_input_files(primary)
@@ -2697,7 +2766,7 @@ def main() -> int:
         check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
         check_audio_editor(page, base_url)
-        check_source_session_archive(browser, base_url)
+        check_source_session_archive(browser, base_url, args.screenshot_dir)
         check_audio_processor(browser, base_url, args.screenshot_dir)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")

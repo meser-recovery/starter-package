@@ -173,11 +173,23 @@ test("deletion is explicit, non-cascading, resumable, and version numbers are no
   assert.equal(afterOutput.session.workflows.announcement.nextVersion, 2);
 });
 
+test("retained S08A v1 output descriptors remain readable without rewrite", async () => {
+  const { repository, domain, session } = await finalizedFixture();
+  const stored = structuredClone(repository.files.get(`sessions/${session.id}.json`));
+  const legacy = sampleOutput(session.id);
+  legacy.recipeSnapshotRef = `drafts/${session.id}/announcement.json#1`;
+  stored.workflows.announcement.outputs = [legacy];
+  stored.workflows.announcement.nextVersion = 2;
+  stored.workflows.announcement.status = "result_ready";
+  repository.files.set(`sessions/${session.id}.json`, stored);
+  assert.equal((await domain.getSession(session.id)).workflows.announcement.outputs[0].recipeSnapshotRef, legacy.recipeSnapshotRef);
+});
+
 test("purge writes a tombstone, removes only its release/drafts, and catalog rebuild reports orphans", async () => {
   const { repository, domain, session } = await finalizedFixture();
   await domain.saveDraft(session.id, "announcement", {
     schemaVersion: 1, expectedDraftRevision: 0, expectedSourceSessionRevision: session.revision,
-    payloadSchema: "foundation/v1", payload: {}, idempotencyKey: `${KEY}:draft-purge`
+    payloadSchema: "announcement/v1", payload: { trackIds: [IDS.track] }, idempotencyKey: `${KEY}:draft-purge`
   });
   const current = await domain.getSession(session.id);
   const orphan = await repository.createDraftRelease("audio-session-77777777-7777-4777-8777-777777777777");
@@ -212,4 +224,130 @@ test("malformed persisted transactions fail closed and are never offered for rec
   const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4, clock: CLOCK });
   assert.deepEqual((await domain.listIncomplete()).transactions, []);
   await assert.rejects(() => domain.recoverIncomplete(IDS.transaction, "resume"), /unsupported fields|idempotencyHash/);
+});
+
+function publicationBody(session, bytes, key = `${KEY}:publication`, ids = { output: IDS.output, blob: IDS.outputBlob }) {
+  const chunks = [];
+  for (let offset = 0; offset < bytes.length; offset += 4) chunks.push(bytes.subarray(offset, offset + 4));
+  return {
+    chunks,
+    body: {
+      schemaVersion: 1, expectedRevision: session.revision, expectedDraftRevision: 1, idempotencyKey: key,
+      plan: {
+        outputId: ids.output, blobId: ids.blob, processorVersion: "s07-v1", sizeBytes: bytes.length, sha256: sha(bytes),
+        parts: chunks.map((part, index) => ({ partNumber: index + 1, sizeBytes: part.length, sha256: sha(part), assetName: assetName(ids.blob, index + 1) })),
+        recipe: {
+          sourceSessionRevision: session.revision,
+          sources: [{ trackId: IDS.track, blobId: IDS.blob, ordinal: 1, sizeBytes: Buffer.from("source-audio").length,
+            sha256: sha(Buffer.from("source-audio")), mediaType: "audio/wav" }],
+          draft: { revision: 1, payloadSchema: "announcement/v1", payload: { trackIds: [IDS.track] } },
+          processing: { mode: "processed_single", silenceThresholdDb: -45, minimumSilenceSeconds: 2,
+            retainedSilenceSeconds: 0.35, detectedIntervals: [[2, 5]], removalRanges: [[2.175, 4.825]],
+            mix: null, limiter: null, codec: { name: "libmp3lame", bitrate: "128k" } },
+          result: { mediaType: "audio/mpeg", presentationFilename: "source-edited.mp3", sizeBytes: bytes.length,
+            sha256: sha(bytes), originalDurationSeconds: 8, resultDurationSeconds: 5.35, removedDurationSeconds: 2.65, pauseCount: 1 }
+        }
+      }
+    }
+  };
+}
+
+async function announcementFixture() {
+  const fixture = await finalizedFixture();
+  const saved = await fixture.domain.saveDraft(fixture.session.id, "announcement", {
+    schemaVersion: 1, expectedDraftRevision: 0, expectedSourceSessionRevision: fixture.session.revision,
+    payloadSchema: "announcement/v1", payload: { trackIds: [IDS.track] }, idempotencyKey: `${KEY}:announcement-draft`
+  });
+  return { ...fixture, session: saved.session, draft: saved.draft };
+}
+
+test("Announcement publication reserves once, finalizes atomically, and verifies stored bytes", async () => {
+  const { repository, domain, session } = await announcementFixture();
+  const resultBytes = Buffer.from("result-mp3");
+  const publication = publicationBody(session, resultBytes);
+  const started = await domain.beginAnnouncementPublication(session.id, publication.body);
+  assert.equal(started.reservedVersion, 1);
+  assert.equal((await domain.getSession(session.id)).workflows.announcement.outputs.length, 0);
+  assert.deepEqual(await domain.beginAnnouncementPublication(session.id, publication.body), started);
+  await assert.rejects(() => domain.beginAnnouncementPublication(session.id, {
+    ...publication.body, plan: { ...publication.body.plan, processorVersion: "s07-changed" }
+  }), (error) => error.status === 409 && /mismatch/.test(error.message));
+  for (const [index, bytes] of publication.chunks.entries()) {
+    await domain.uploadAnnouncementPart(started.transactionId, IDS.outputBlob, index + 1, bytes, sha(bytes), `${KEY}:publication-part:${index}`);
+  }
+  const finalized = await domain.finalizeAnnouncementPublication(started.transactionId);
+  assert.equal(finalized.output.version, 1);
+  assert.equal(finalized.job.state, "finalized");
+  assert.equal((await domain.getSession(session.id)).workflows.announcement.status, "result_ready");
+  assert.equal((await domain.finalizeAnnouncementPublication(started.transactionId)).idempotent, true);
+  assert.deepEqual((await domain.getAnnouncementOutput(session.id, IDS.output)).recipe.result.sha256, sha(resultBytes));
+  const downloaded = [];
+  for (let part = 1; part <= publication.chunks.length; part++) {
+    downloaded.push((await domain.downloadAnnouncementPart(session.id, IDS.output, IDS.outputBlob, part)).bytes);
+  }
+  assert.deepEqual(Buffer.concat(downloaded), resultBytes);
+  const firstAsset = finalized.output.parts[0].assetId;
+  repository.assetBytes.set(firstAsset, Buffer.from("xxxx"));
+  await assert.rejects(() => domain.downloadAnnouncementPart(session.id, IDS.output, IDS.outputBlob, 1), (error) => error.status === 409);
+  repository.assetBytes.set(firstAsset, Buffer.from(publication.chunks[0]));
+  const current = await domain.getSession(session.id);
+  const deleted = await domain.deleteOutputVersion(session.id, "announcement", 1, {
+    expectedRevision: current.revision, idempotencyKey: `${KEY}:delete-published`, confirmation: ""
+  });
+  assert.equal(deleted.session.sourceTracks.length, 1);
+  assert.equal(deleted.session.workflows.speaker.outputs.length, 0);
+  assert.equal(deleted.session.workflows.announcement.nextVersion, 2);
+  assert.equal(deleted.session.workflows.announcement.status, "in_progress");
+  assert.equal(repository.files.has(`recipes/${session.id}/announcement/${IDS.output}.json`), false);
+});
+
+test("cancelled publications block destruction until discard and reserved versions are burned", async () => {
+  const { domain, session } = await announcementFixture();
+  const first = publicationBody(session, Buffer.from("result-one"));
+  const started = await domain.beginAnnouncementPublication(session.id, first.body);
+  await assert.rejects(() => domain.recoverIncomplete(started.transactionId, "resume"),
+    (error) => error.status === 409 && /Local processor result/.test(error.message));
+  await domain.cancelAnnouncementPublication(started.transactionId, { idempotencyKey: `${KEY}:cancel` });
+  const current = await domain.getSession(session.id);
+  assert.equal((await domain.dependencyPreview(session.id)).pendingAnnouncementPublications, 1);
+  await assert.rejects(() => domain.setLifecycle(session.id, "archived", { expectedRevision: current.revision, idempotencyKey: `${KEY}:archive-blocked` }), /pending/);
+  const discarded = await domain.cancelAnnouncementPublication(started.transactionId, { idempotencyKey: `${KEY}:discard` }, true);
+  assert.equal(discarded.job.state, "discarded");
+  assert.equal(discarded.session.workflows.announcement.nextVersion, 2);
+  const secondIds = { output: "77777777-7777-4777-8777-777777777777", blob: "88888888-8888-4888-8888-888888888888" };
+  const second = publicationBody(discarded.session, Buffer.from("result-two"), `${KEY}:publication-two`, secondIds);
+  const reserved = await domain.beginAnnouncementPublication(session.id, second.body);
+  assert.equal(reserved.reservedVersion, 2);
+  assert.equal((await domain.listIncomplete()).transactions.some((job) => job.kind === "publication" && job.reservedVersion === 2), true);
+});
+
+test("passthrough publication accepts only exact source bytes, hash, size, and media type", async () => {
+  const { domain, session } = await announcementFixture();
+  const sourceBytes = Buffer.from("source-audio");
+  const exact = publicationBody(session, sourceBytes);
+  exact.body.plan.recipe.processing = { mode: "passthrough", silenceThresholdDb: -45, minimumSilenceSeconds: 2,
+    retainedSilenceSeconds: 0.35, detectedIntervals: [], removalRanges: [], mix: null, limiter: null, codec: null };
+  exact.body.plan.recipe.result = { mediaType: "audio/wav", presentationFilename: "source.wav", sizeBytes: sourceBytes.length,
+    sha256: sha(sourceBytes), originalDurationSeconds: 3, resultDurationSeconds: 3, removedDurationSeconds: 0, pauseCount: 0 };
+  assert.equal((await domain.beginAnnouncementPublication(session.id, exact.body)).reservedVersion, 1);
+
+  const other = await announcementFixture();
+  const changed = publicationBody(other.session, Buffer.from("different"), `${KEY}:passthrough-changed`, {
+    output: "99999999-9999-4999-8999-999999999999", blob: "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+  });
+  changed.body.plan.recipe.processing = exact.body.plan.recipe.processing;
+  changed.body.plan.recipe.result = { ...exact.body.plan.recipe.result, sizeBytes: changed.body.plan.sizeBytes, sha256: changed.body.plan.sha256 };
+  await assert.rejects(() => other.domain.beginAnnouncementPublication(other.session.id, changed.body),
+    (error) => error.status === 409 && /byte-identical/.test(error.message));
+});
+
+test("Archived Source Sessions deny new Announcement publication until explicit restore", async () => {
+  const { domain, session } = await announcementFixture();
+  const archived = await domain.setLifecycle(session.id, "archived", { expectedRevision: session.revision, idempotencyKey: `${KEY}:archive-announcement` });
+  const denied = publicationBody(archived, Buffer.from("result-mp3"), `${KEY}:archived-publication`);
+  await assert.rejects(() => domain.beginAnnouncementPublication(session.id, denied.body),
+    (error) => error.status === 409 && /restored/.test(error.message));
+  const restored = await domain.setLifecycle(session.id, "incoming", { expectedRevision: archived.revision, idempotencyKey: `${KEY}:restore-announcement` });
+  const allowed = publicationBody(restored, Buffer.from("result-mp3"), `${KEY}:restored-publication`);
+  assert.equal((await domain.beginAnnouncementPublication(session.id, allowed.body)).reservedVersion, 1);
 });

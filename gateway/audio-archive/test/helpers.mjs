@@ -21,6 +21,7 @@ export class MemoryRepository {
     this.nextRelease = 1;
     this.nextAsset = 1;
     this.commits = [];
+    this.assetBytes = new Map();
   }
 
   async getHead() { return `h${this.head}`; }
@@ -66,12 +67,20 @@ export class MemoryRepository {
       browser_download_url: `https://github.com/meser-recovery/audio-archive/releases/download/${release.tag_name}/${name}`
     };
     release.assets.push(asset);
+    this.assetBytes.set(asset.id, Buffer.from(bytes));
     return structuredClone(asset);
+  }
+
+  async downloadReleaseAsset(assetId) {
+    const bytes = this.assetBytes.get(assetId);
+    if (!bytes) throw new Error("asset missing");
+    return Buffer.from(bytes);
   }
 
   async publishRelease(releaseId) { this.releases.get(releaseId).draft = false; }
   async deleteAsset(assetId) {
     for (const release of this.releases.values()) release.assets = release.assets.filter((asset) => asset.id !== assetId);
+    this.assetBytes.delete(assetId);
   }
   async deleteRelease(releaseId) { this.releases.delete(releaseId); }
   async deleteTag() {}
@@ -86,6 +95,6 @@ export function sampleOutput(sessionId = IDS.session) {
     sizeBytes: bytes.length, sha256: sha(bytes),
     parts: [{ partNumber: 1, sizeBytes: bytes.length, sha256: sha(bytes), assetName: name, assetId: 90,
       downloadUrl: `https://github.com/meser-recovery/audio-archive/releases/download/audio-session-${sessionId}/${name}` }],
-    recipeSnapshotRef: `drafts/${sessionId}/announcement.json#1`, processorVersion: "s07"
+    recipeSnapshotRef: `recipes/${sessionId}/announcement/${IDS.output}.json`, processorVersion: "s07"
   };
 }

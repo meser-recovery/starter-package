@@ -820,8 +820,8 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    if parser.h2_texts[:3] != ["Входящий архив", "Обработка аудио", "Архив отредактированных аудио"]:
-        errors.append("Audio-Editor.html: expected Source Session, processor, then derived archive H2")
+    if parser.h2_texts[:4] != ["Входящий архив", "Объявление · Announcement workspace", "Обработка аудио", "Архив отредактированных аудио"]:
+        errors.append("Audio-Editor.html: expected Source Session, Announcement workspace, processor, then derived archive H2")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -939,7 +939,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if "navigation.hidden = displayWidth" in source or "navigation.hidden ? 0" in source:
         errors.append("Processor source scrollbar must remain visible while tracks are selected")
-    if re.search(r'^import\s', source, re.M):
+    if re.search(r'^import\s+(?!\{\s*sha256Hex\s*\}\s+from\s+"\./audio-archive-client\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     if "Прослушать" in source or "processor-track-switcher" in source or "<details" in page.read_text(encoding="utf-8"):
         errors.append("Processor retains the obsolete track switcher/detail waveform UI")

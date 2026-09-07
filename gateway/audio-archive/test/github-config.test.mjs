@@ -179,6 +179,16 @@ test("canonical ingestion transaction paths use their structural UUID", async ()
   assert.equal(seen.length, callsBeforeRejection);
 });
 
+test("S08B publication jobs and immutable recipe paths accept only structural UUIDs", async () => {
+  const repository = new GitHubArchiveRepository(config(), async () => { throw new Error("network must not be reached"); });
+  repository.installationToken = { value: "installation-token", expiresAt: Number.MAX_SAFE_INTEGER };
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const outputId = "22222222-2222-4222-8222-222222222222";
+  await assert.rejects(() => repository.readJson(`recipes/${sessionId}/announcement/22222222-2222-0222-8222-222222222222.json`, "head-1"), /Unsafe internal UUID path/);
+  await assert.rejects(() => repository.readJson(`recipes/${sessionId}/announcement/${outputId}.json/..`, "head-1"), /Unsafe internal storage path/);
+  await assert.rejects(() => repository.readJson("transactions/publish-11111111-1111-0111-8111-111111111111.json", "head-1"), /Unsafe internal UUID path/);
+});
+
 test("release asset upload uses opaque deterministic name and fixed upload host", async () => {
   let seen;
   const repository = new GitHubArchiveRepository(config(), async (url, options) => {
