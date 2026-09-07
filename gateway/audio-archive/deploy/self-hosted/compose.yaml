@@ -1,0 +1,84 @@
+name: meser-audio-archive
+
+services:
+  gateway:
+    build:
+      context: ../..
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    init: true
+    user: "1000:0"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      PORT: "8080"
+      ALLOWED_ORIGIN: https://meser-recovery.github.io
+      STORAGE_OWNER: meser-recovery
+      STORAGE_REPOSITORY: audio-archive
+      STORAGE_BRANCH: main
+      GITHUB_APP_ID: ${GITHUB_APP_ID:?GITHUB_APP_ID must be set}
+      GITHUB_APP_INSTALLATION_ID: ${GITHUB_APP_INSTALLATION_ID:?GITHUB_APP_INSTALLATION_ID must be set}
+      GITHUB_APP_PRIVATE_KEY_FILE: /run/secrets/github-app.pem
+      SHARED_PASSWORD_VERIFIER_FILE: /run/secrets/shared-password-verifier
+      SESSION_SIGNING_SECRET_FILE: /run/secrets/session-signing-secret
+    expose:
+      - "8080"
+    secrets:
+      - source: github_app_private_key
+        target: github-app.pem
+      - source: shared_password_verifier
+        target: shared-password-verifier
+      - source: session_signing_secret
+        target: session-signing-secret
+    networks:
+      - archive_private
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,nodev,size=64m
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+
+  caddy:
+    image: caddy:2.11.4-alpine
+    restart: unless-stopped
+    init: true
+    cap_drop:
+      - ALL
+    cap_add:
+      - NET_BIND_SERVICE
+    security_opt:
+      - no-new-privileges:true
+    depends_on:
+      gateway:
+        condition: service_healthy
+    ports:
+      - "80:80/tcp"
+      - "127.0.0.1:9443:443/tcp"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    networks:
+      - archive_private
+
+networks:
+  archive_private:
+    driver: bridge
+
+volumes:
+  caddy_data:
+  caddy_config:
+
+secrets:
+  github_app_private_key:
+    file: /etc/meser-audio-archive/github-app.pem
+  shared_password_verifier:
+    file: /etc/meser-audio-archive/shared-password-verifier
+  session_signing_secret:
+    file: /etc/meser-audio-archive/session-signing-secret

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meser-recovery/audio-archive/schemas/v1/catalog.schema.json",
+  "title": "Derived Source Session catalog v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "revision", "updatedAt", "entries"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "revision": { "type": "integer", "minimum": 0 },
+    "updatedAt": { "type": ["string", "null"], "format": "date-time" },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "title", "recordedAt", "createdAt", "updatedAt", "origin", "lifecycle", "sourceState", "workflows"],
+        "properties": {
+          "id": { "$ref": "#/$defs/uuid" },
+          "title": { "type": "string", "minLength": 1, "maxLength": 200 },
+          "recordedAt": { "type": ["string", "null"], "format": "date-time" },
+          "createdAt": { "type": "string", "format": "date-time" },
+          "updatedAt": { "type": "string", "format": "date-time" },
+          "origin": { "enum": ["manual", "device", "zoom_webhook"] },
+          "lifecycle": { "enum": ["incoming", "archived"] },
+          "sourceState": { "enum": ["available", "deleted"] },
+          "workflows": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["announcement", "speaker"],
+            "properties": {
+              "announcement": { "$ref": "#/$defs/workflowState" },
+              "speaker": { "$ref": "#/$defs/workflowState" }
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
+    "workflowState": { "enum": ["new", "in_progress", "result_ready"] }
+  }
+}

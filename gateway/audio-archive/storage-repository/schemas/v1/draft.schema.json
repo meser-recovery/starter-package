@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meser-recovery/audio-archive/schemas/v1/draft.schema.json",
+  "title": "Shared audio workflow draft envelope v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "sessionId", "workflow", "draftRevision", "sourceSessionRevision", "savedAt", "payloadSchema", "payload"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "sessionId": { "$ref": "#/$defs/uuid" },
+    "workflow": { "enum": ["announcement", "speaker"] },
+    "draftRevision": { "type": "integer", "minimum": 1 },
+    "sourceSessionRevision": { "type": "integer", "minimum": 1 },
+    "savedAt": { "type": "string", "format": "date-time" },
+    "payloadSchema": { "type": "string", "minLength": 1, "maxLength": 100, "pattern": "^[-A-Za-z0-9_.:/]+$" },
+    "payload": true
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" }
+  }
+}

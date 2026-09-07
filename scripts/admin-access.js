@@ -109,6 +109,26 @@ window.AdminAccessHash = AdminAccessHash;
   const submit = form?.querySelector('button[type="submit"]');
   if (!form || !passwordInput || !error || !submit) return;
 
+  const establishArchiveSession = async password => {
+    const baseUrl = document.querySelector('meta[name="audio-archive-gateway"]')?.content.replace(/\/$/, "");
+    if (!baseUrl) return;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      await fetch(`${baseUrl}/v1/session/login`, {
+        method: "POST",
+        credentials: "include",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+        signal: controller.signal
+      });
+    } catch {
+      // Archive availability must never block the browser-local service tools.
+    } finally {
+      clearTimeout(timer);
+    }
+  };
+
   passwordToggle?.addEventListener("click", () => {
     const wasInputFocused = document.activeElement === passwordInput;
     const value = passwordInput.value;
@@ -133,6 +153,7 @@ window.AdminAccessHash = AdminAccessHash;
     try {
       const verifier = await AdminAccessHash.legacySha256(passwordInput.value + SALT);
       if (verifier === SALTED_PASSWORD_VERIFIER) {
+        await establishArchiveSession(passwordInput.value);
         sessionStorage.setItem(SESSION_KEY, "granted");
         passwordInput.value = "";
         location.replace(LANDING_URL);
