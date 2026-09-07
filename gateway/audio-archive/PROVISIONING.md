@@ -45,7 +45,7 @@ The local Caddy result is authoritative only when `caddy version` reports the pi
 
 Gate 1 evidence must also show:
 
-- the three frontend `audio-archive-gateway` hooks are present and empty;
+- the three frontend `audio-archive-gateway` hooks retain the exact accepted production origin;
 - rendered Compose has no gateway `ports`, no host networking and no sensitive environment value;
 - only Caddy maps host `80` and `127.0.0.1:9443`, never host `443`;
 - only the gateway receives the three file secrets;

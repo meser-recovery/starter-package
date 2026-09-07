@@ -1,6 +1,26 @@
 # Audio Archive gateway
 
-Stateless Node.js gateway for S08A. The browser authenticates with one shared service password; only this service holds the GitHub App installation credentials that can write to the dedicated public `meser-recovery/audio-archive` repository. Canonical state remains in versioned JSON files and GitHub Releases. The self-hosted VM contains no application database and is not canonical audio or metadata storage.
+Stateless Node.js gateway for the S08A Source Session archive and S08B Announcement publishing workflow. The browser authenticates with one shared service password; only this service holds the GitHub App installation credentials that can write to the dedicated `meser-recovery/audio-archive` repository. Canonical state remains in versioned JSON files and GitHub Releases. The self-hosted VM contains no application database and is not canonical audio or metadata storage.
+
+## Announcement publication
+
+Processing remains local in the browser. Publication is a separate confirmed operation implemented as a durable job:
+
+1. `POST /v1/source-sessions/:sessionId/outputs/announcement/publications` validates the current Source Session/draft/provenance and atomically reserves `nextVersion`.
+2. `PUT /v1/announcement-publications/:transactionId/blobs/:blobId/parts/:partNumber` uploads one bounded, hash-verified opaque part to the existing Source Session Release.
+3. `POST /v1/announcement-publications/:transactionId/finalize` verifies every stored part and the whole logical SHA-256, then atomically exposes the output and immutable recipe.
+4. `GET /v1/announcement-publications/:transactionId` and the maintenance endpoints expose resumable state. `cancel` stops the current attempt without reclaiming its version; `discard` explicitly closes the job without deleting orphan assets automatically.
+
+Output metadata and parts are retrieved only through authenticated canonical identity routes. The client verifies part order, size, per-part hash, total size, and whole hash before playback/download. Presentation media type and filename come from the recipe, never a request parameter.
+
+Canonical S08B records are:
+
+- `transactions/publish-<transactionId>.json` — mutable durable upload/finalization progress;
+- `recipes/<sessionId>/announcement/<outputId>.json` — immutable after finalization;
+- `blob-<blobId>-part-NNNN.bin` — opaque Release assets in `audio-session-<sessionId>`;
+- `workflows.announcement.outputs[]` — visible finalized descriptors only.
+
+Version numbers are reserved monotonically at begin time and are never reused. Only finalization may establish `result_ready`. Pending or cancelled jobs block lifecycle/deletion mutations until finalized or explicitly discarded. Exact record fields and invariants are documented in [S08B-SCHEMAS.md](S08B-SCHEMAS.md).
 
 ## Local validation
 
@@ -24,7 +44,7 @@ Committed non-secret deployment artifacts are in [`deploy/self-hosted/`](deploy/
 - `haproxy.cfg`: host-level TCP/SNI passthrough with unconditional Xray default;
 - `deployment-state.template.md`: required unresolved discovery/evidence record.
 
-The frontend gateway meta values intentionally remain empty until a separately authorized deployment and external validation have completed.
+The frontend retains the accepted production gateway origin. This repository change does not deploy or restart that gateway and does not mutate production archive data.
 
 ## Runtime configuration
 

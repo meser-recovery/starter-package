@@ -9,6 +9,7 @@ export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const WORKFLOWS = Object.freeze(["announcement", "speaker"]);
 export const WORKFLOW_STATES = Object.freeze(["new", "in_progress", "result_ready"]);
 export const MEDIA_TYPES = Object.freeze({ mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav" });
+export const PUBLICATION_STATES = Object.freeze(["uploading", "cancelled", "finalized", "discarded"]);
 
 export function canonicalReleaseAssetUrl(releaseTag, assetName) {
   return `https://github.com/meser-recovery/audio-archive/releases/download/${releaseTag}/${assetName}`;
@@ -99,6 +100,12 @@ export function assetName(blobId, partNumber) {
   return `blob-${id}-part-${String(partNumber).padStart(4, "0")}.bin`;
 }
 
+export function recipePath(sessionId, outputId) {
+  const session = assertUuid(sessionId, "sessionId");
+  const output = assertUuid(outputId, "outputId");
+  return `recipes/${session}/announcement/${output}.json`;
+}
+
 export function hashIdempotencyKey(value) {
   if (typeof value !== "string" || value.length < 16 || value.length > 200) throw new ValidationError("Invalid idempotency key");
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -143,6 +150,133 @@ export function validateIngestionPlan(plan, acceptedPartBytes = DEFAULT_PART_BYT
     sessionBytes += track.sizeBytes;
   }
   if (sessionBytes !== plan.totalBytes || sessionBytes < 1 || sessionBytes > MAX_SESSION_BYTES) throw new ValidationError("Session byte total is invalid");
+  return structuredClone(plan);
+}
+
+function assertFinite(value, minimum, maximum, label) {
+  if (!Number.isFinite(value) || value < minimum || value > maximum) throw new ValidationError(`${label} is out of range`);
+  return value;
+}
+
+function validateIntervals(value, label) {
+  if (!Array.isArray(value) || value.length > 10000) throw new ValidationError(`${label} must be a bounded array`);
+  let previousEnd = 0;
+  for (const [index, interval] of value.entries()) {
+    if (!Array.isArray(interval) || interval.length !== 2) throw new ValidationError(`${label}[${index}] is invalid`);
+    const start = assertFinite(interval[0], 0, 7 * 24 * 60 * 60, `${label}[${index}].start`);
+    const end = assertFinite(interval[1], 0, 7 * 24 * 60 * 60, `${label}[${index}].end`);
+    if (end <= start || (index && start < previousEnd)) throw new ValidationError(`${label} order is invalid`);
+    previousEnd = end;
+  }
+}
+
+export function validateAnnouncementDraftPayload(value) {
+  assertExactKeys(value, ["trackIds"], "announcement draft payload");
+  if (!Array.isArray(value.trackIds) || !value.trackIds.length || value.trackIds.length > 32) {
+    throw new ValidationError("Announcement draft must contain one to 32 track IDs");
+  }
+  const ids = value.trackIds.map((id) => assertUuid(id, "announcement draft trackId"));
+  if (new Set(ids).size !== ids.length) throw new ValidationError("Announcement draft track IDs must be unique");
+  return { trackIds: ids };
+}
+
+function validateRecipeSources(sources) {
+  if (!Array.isArray(sources) || !sources.length || sources.length > 32) throw new ValidationError("Recipe sources are invalid");
+  const trackIds = new Set();
+  const blobIds = new Set();
+  for (const [index, source] of sources.entries()) {
+    assertExactKeys(source, ["trackId", "blobId", "ordinal", "sizeBytes", "sha256", "mediaType"], "recipe source");
+    const trackId = assertUuid(source.trackId, "recipe trackId");
+    const blobId = assertUuid(source.blobId, "recipe blobId");
+    if (trackIds.has(trackId) || blobIds.has(blobId)) throw new ValidationError("Recipe source identities must be unique");
+    trackIds.add(trackId); blobIds.add(blobId);
+    if (source.ordinal !== index + 1) throw new ValidationError("Recipe source order is invalid");
+    assertInteger(source.sizeBytes, 1, MAX_SESSION_BYTES, "recipe source sizeBytes");
+    assertSha256(source.sha256, "recipe source sha256");
+    if (!Object.values(MEDIA_TYPES).includes(source.mediaType)) throw new ValidationError("Recipe source media type is invalid");
+  }
+}
+
+function validateProcessing(value) {
+  assertExactKeys(value, ["mode", "silenceThresholdDb", "minimumSilenceSeconds", "retainedSilenceSeconds", "detectedIntervals", "removalRanges", "mix", "limiter", "codec"], "recipe processing");
+  if (!["passthrough", "processed_single", "mixed_multi"].includes(value.mode)) throw new ValidationError("Processing mode is invalid");
+  if (value.silenceThresholdDb !== -45 || value.minimumSilenceSeconds !== 2 || value.retainedSilenceSeconds !== 0.35) {
+    throw new ValidationError("Processing settings do not match the accepted S07 contract");
+  }
+  validateIntervals(value.detectedIntervals, "detectedIntervals");
+  validateIntervals(value.removalRanges, "removalRanges");
+  if (value.mode === "passthrough") {
+    if (value.removalRanges.length || value.mix !== null || value.limiter !== null || value.codec !== null) {
+      throw new ValidationError("Passthrough recipe cannot claim processing that did not occur");
+    }
+  } else {
+    if (value.mode === "processed_single" && value.mix !== null) throw new ValidationError("Single-track recipe cannot contain mix settings");
+    if (value.mode === "mixed_multi" && (value.mix !== "amix=normalize=0" || value.limiter !== "alimiter=limit=0.95:level=0:latency=1")) {
+      throw new ValidationError("Multi-track mix settings are invalid");
+    }
+    if (value.mode === "processed_single" && value.limiter !== null) throw new ValidationError("Single-track recipe cannot contain limiter settings");
+    assertExactKeys(value.codec, ["name", "bitrate"], "recipe codec");
+    if (value.codec.name !== "libmp3lame" || value.codec.bitrate !== "128k") throw new ValidationError("Recipe codec settings are invalid");
+  }
+}
+
+function validateRecipeResult(value) {
+  assertExactKeys(value, ["mediaType", "presentationFilename", "sizeBytes", "sha256", "originalDurationSeconds", "resultDurationSeconds", "removedDurationSeconds", "pauseCount"], "recipe result");
+  if (!Object.values(MEDIA_TYPES).includes(value.mediaType)) throw new ValidationError("Recipe result media type is invalid");
+  if (value.presentationFilename !== normalizeFilename(value.presentationFilename)) throw new ValidationError("Recipe presentation filename is invalid");
+  assertInteger(value.sizeBytes, 1, MAX_SESSION_BYTES, "recipe result sizeBytes");
+  assertSha256(value.sha256, "recipe result sha256");
+  assertFinite(value.originalDurationSeconds, 0, 7 * 24 * 60 * 60, "originalDurationSeconds");
+  assertFinite(value.resultDurationSeconds, 0, 7 * 24 * 60 * 60, "resultDurationSeconds");
+  assertFinite(value.removedDurationSeconds, 0, 7 * 24 * 60 * 60, "removedDurationSeconds");
+  assertInteger(value.pauseCount, 0, 10000, "pauseCount");
+}
+
+export function validateAnnouncementRecipe(recipe) {
+  assertExactKeys(recipe, ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "sourceSessionRevision", "sources", "draft", "processing", "result"], "announcement recipe");
+  if (recipe.schemaVersion !== SCHEMA_VERSION || recipe.workflow !== "announcement") throw new ValidationError("Announcement recipe identity is invalid");
+  assertUuid(recipe.sessionId, "recipe sessionId");
+  assertUuid(recipe.outputId, "recipe outputId");
+  assertInteger(recipe.version, 1, Number.MAX_SAFE_INTEGER, "recipe version");
+  if (typeof recipe.processorVersion !== "string" || !/^s07(?:[-.][a-z0-9]+)*$/i.test(recipe.processorVersion)) throw new ValidationError("processorVersion is invalid");
+  assertTimestamp(recipe.createdAt, "recipe createdAt");
+  assertInteger(recipe.sourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "recipe sourceSessionRevision");
+  validateRecipeSources(recipe.sources);
+  assertExactKeys(recipe.draft, ["revision", "payloadSchema", "payload"], "recipe draft");
+  assertInteger(recipe.draft.revision, 0, Number.MAX_SAFE_INTEGER, "recipe draft revision");
+  if (recipe.draft.payloadSchema !== "announcement/v1") throw new ValidationError("Announcement draft schema is invalid");
+  validateAnnouncementDraftPayload(recipe.draft.payload);
+  validateProcessing(recipe.processing);
+  validateRecipeResult(recipe.result);
+  if ((recipe.processing.mode === "mixed_multi") !== (recipe.sources.length > 1)) throw new ValidationError("Processing mode does not match source count");
+  if (recipe.processing.mode !== "passthrough" && recipe.result.mediaType !== MEDIA_TYPES.mp3) throw new ValidationError("Processed Announcement output must be MP3");
+  return structuredClone(recipe);
+}
+
+export function validatePublicationPlan(plan, acceptedPartBytes = DEFAULT_PART_BYTES) {
+  assertInteger(acceptedPartBytes, 1, MAX_PART_BYTES, "acceptedPartBytes");
+  assertExactKeys(plan, ["outputId", "blobId", "processorVersion", "sizeBytes", "sha256", "parts", "recipe"], "publication plan");
+  const outputId = assertUuid(plan.outputId, "outputId");
+  const blobId = assertUuid(plan.blobId, "blobId");
+  if (typeof plan.processorVersion !== "string" || !/^s07(?:[-.][a-z0-9]+)*$/i.test(plan.processorVersion)) throw new ValidationError("processorVersion is invalid");
+  assertInteger(plan.sizeBytes, 1, MAX_SESSION_BYTES, "publication sizeBytes");
+  assertSha256(plan.sha256, "publication sha256");
+  if (!Array.isArray(plan.parts) || !plan.parts.length || plan.parts.length > 9999) throw new ValidationError("Publication parts are invalid");
+  const partBytes = plan.parts.reduce((sum, part, index) => sum + validatePlannedPart(part, blobId, index + 1, acceptedPartBytes), 0);
+  if (partBytes !== plan.sizeBytes) throw new ValidationError("Publication part sizes do not match logical size");
+  assertExactKeys(plan.recipe, ["sourceSessionRevision", "sources", "draft", "processing", "result"], "publication recipe template");
+  assertInteger(plan.recipe.sourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "recipe sourceSessionRevision");
+  validateRecipeSources(plan.recipe.sources);
+  assertExactKeys(plan.recipe.draft, ["revision", "payloadSchema", "payload"], "recipe draft");
+  assertInteger(plan.recipe.draft.revision, 0, Number.MAX_SAFE_INTEGER, "recipe draft revision");
+  if (plan.recipe.draft.payloadSchema !== "announcement/v1") throw new ValidationError("Announcement draft schema is invalid");
+  validateAnnouncementDraftPayload(plan.recipe.draft.payload);
+  validateProcessing(plan.recipe.processing);
+  validateRecipeResult(plan.recipe.result);
+  if ((plan.recipe.processing.mode === "mixed_multi") !== (plan.recipe.sources.length > 1)) throw new ValidationError("Processing mode does not match source count");
+  if (plan.recipe.result.sizeBytes !== plan.sizeBytes || plan.recipe.result.sha256 !== plan.sha256) throw new ValidationError("Publication result does not match its plan");
+  if (plan.recipe.processing.mode !== "passthrough" && plan.recipe.result.mediaType !== MEDIA_TYPES.mp3) throw new ValidationError("Processed Announcement output must be MP3");
+  if (outputId === blobId) throw new ValidationError("Output and blob identities must be distinct");
   return structuredClone(plan);
 }
 
@@ -352,6 +486,57 @@ export function validateTransaction(value) {
     }
     if (value.state === "staged" && value.stagedManifest === null) throw new ValidationError("Staged transaction requires a manifest");
     return normalized;
+  }
+  if (value.kind === "publication") {
+    assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "requestFingerprint", "revision", "state", "sessionId", "workflow", "outputId", "blobId", "expectedRevision", "reservedSessionRevision", "reservedVersion", "releaseId", "releaseTag", "plan", "uploadedParts", "recipeSnapshot", "outputDescriptor", "failure", "createdAt", "updatedAt"], "publication transaction");
+    validateTransactionBase(value, "publication", PUBLICATION_STATES);
+    assertSha256(value.requestFingerprint, "requestFingerprint");
+    if (value.workflow !== "announcement") throw new ValidationError("Publication workflow is invalid");
+    if (assertUuid(value.outputId, "publication outputId") !== value.plan?.outputId ||
+        assertUuid(value.blobId, "publication blobId") !== value.plan?.blobId) throw new ValidationError("Publication identities do not match plan");
+    assertInteger(value.expectedRevision, 1, Number.MAX_SAFE_INTEGER, "publication expectedRevision");
+    assertInteger(value.reservedSessionRevision, value.expectedRevision + 1, Number.MAX_SAFE_INTEGER, "publication reservedSessionRevision");
+    assertInteger(value.reservedVersion, 1, Number.MAX_SAFE_INTEGER, "publication reservedVersion");
+    assertInteger(value.releaseId, 1, Number.MAX_SAFE_INTEGER, "publication releaseId");
+    if (value.releaseTag !== `audio-session-${value.sessionId}`) throw new ValidationError("Publication release tag is invalid");
+    const plan = validatePublicationPlan(value.plan, MAX_PART_BYTES);
+    const recipe = validateAnnouncementRecipe(value.recipeSnapshot);
+    if (recipe.sessionId !== value.sessionId || recipe.outputId !== value.outputId || recipe.version !== value.reservedVersion ||
+        recipe.processorVersion !== plan.processorVersion || recipe.sourceSessionRevision !== value.expectedRevision) {
+      throw new ValidationError("Publication recipe identity is invalid");
+    }
+    if (!Array.isArray(value.uploadedParts)) throw new ValidationError("Publication uploaded parts are invalid");
+    const slots = new Set();
+    for (const part of value.uploadedParts) {
+      assertExactKeys(part, ["blobId", "partNumber", "assetName", "sizeBytes", "sha256", "assetId", "downloadUrl"], "publication uploaded part");
+      if (part.blobId !== value.blobId) throw new ValidationError("Publication uploaded blob is invalid");
+      assertInteger(part.partNumber, 1, 9999, "publication partNumber");
+      const planned = plan.parts.find((item) => item.partNumber === part.partNumber);
+      if (!planned || part.assetName !== planned.assetName || part.sizeBytes !== planned.sizeBytes || part.sha256 !== planned.sha256) {
+        throw new ValidationError("Publication uploaded part does not match plan");
+      }
+      assertInteger(part.assetId, 1, Number.MAX_SAFE_INTEGER, "publication assetId");
+      if (part.downloadUrl !== canonicalReleaseAssetUrl(value.releaseTag, part.assetName)) throw new ValidationError("Publication asset URL is invalid");
+      if (slots.has(part.partNumber)) throw new ValidationError("Publication part slots must be unique");
+      slots.add(part.partNumber);
+    }
+    if (value.outputDescriptor !== null) {
+      validateOutput(value.outputDescriptor, value.sessionId);
+      if (value.outputDescriptor.outputId !== value.outputId || value.outputDescriptor.version !== value.reservedVersion ||
+          value.outputDescriptor.blobId !== value.blobId || value.outputDescriptor.recipeSnapshotRef !== recipePath(value.sessionId, value.outputId)) {
+        throw new ValidationError("Publication output descriptor is invalid");
+      }
+    }
+    if (value.state === "finalized" && (value.outputDescriptor === null || value.uploadedParts.length !== plan.parts.length)) {
+      throw new ValidationError("Finalized publication requires a complete output descriptor");
+    }
+    if (value.state !== "finalized" && value.outputDescriptor !== null) throw new ValidationError("Incomplete publication cannot expose an output descriptor");
+    if (value.failure !== null) {
+      assertExactKeys(value.failure, ["code", "message", "at"], "publication failure");
+      if (typeof value.failure.code !== "string" || typeof value.failure.message !== "string") throw new ValidationError("Publication failure metadata is invalid");
+      assertTimestamp(value.failure.at, "publication failure.at");
+    }
+    return structuredClone(value);
   }
   if (value.kind === "pending_delete") {
     assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "revision", "state", "sessionId", "expectedRevision", "releaseId", "releaseTag", "action", "assetIds", "deletedAssetIds", "createdAt", "updatedAt"], "delete transaction");

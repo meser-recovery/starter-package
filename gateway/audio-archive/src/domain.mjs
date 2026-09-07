@@ -3,7 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
   assertTimestamp, assertUuid, assetName, catalogEntry, hashIdempotencyKey, normalizeFilename, normalizeMediaType,
-  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, validateCatalog, validateDraft, validateIngestionPlan, validateSourceSession, validateTombstone, validateTransaction
+  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, recipePath, validateAnnouncementDraftPayload, validateAnnouncementRecipe,
+  validateCatalog, validateDraft, validateIngestionPlan, validatePublicationPlan, validateSourceSession, validateTombstone, validateTransaction
 } from "./validation.mjs";
 
 function conflict(message = "Canonical state changed; reload and retry") {
@@ -49,6 +50,10 @@ function draftPath(sessionId, workflow) {
   return `drafts/${sessionId}/${workflow}.json`;
 }
 
+function publicationPath(transactionId) {
+  return transactionPath("publish", transactionId);
+}
+
 function publicSession(session) {
   validateSourceSession(session);
   return structuredClone(session);
@@ -72,6 +77,12 @@ function sameIngestionRequest(transaction, request) {
   return transaction.title === request.title && transaction.recordedAt === request.recordedAt &&
     transaction.origin === request.origin && transaction.supersedesSessionId === request.supersedesSessionId &&
     isDeepStrictEqual(transaction.plan, request.plan);
+}
+
+function requestFingerprint(value) {
+  const canonical = (input) => Array.isArray(input) ? input.map(canonical) : input && typeof input === "object" ?
+    Object.fromEntries(Object.keys(input).sort().map((key) => [key, canonical(input[key])])) : input;
+  return createHash("sha256").update(JSON.stringify(canonical(value)), "utf8").digest("hex");
 }
 
 export class AudioArchiveDomain {
@@ -126,6 +137,300 @@ export class AudioArchiveDomain {
       throw conflict("Release asset failed integrity verification");
     }
     return { bytes, assetName: part.assetName };
+  }
+
+  async getAnnouncementOutput(sessionId, outputId) {
+    const id = assertUuid(outputId, "outputId");
+    const { head, session } = await this.sessionSnapshot(sessionId);
+    const output = session.workflows.announcement.outputs.find((item) => item.outputId === id);
+    if (!output) throw notFound("Announcement output not found");
+    const stored = await this.repository.readJson(recipePath(session.id, id), head);
+    if (!stored) throw conflict("Announcement recipe is missing");
+    const recipe = validateAnnouncementRecipe(stored.data);
+    if (recipe.sessionId !== session.id || recipe.outputId !== output.outputId || recipe.version !== output.version ||
+        recipe.processorVersion !== output.processorVersion || recipe.result.sizeBytes !== output.sizeBytes || recipe.result.sha256 !== output.sha256) {
+      throw conflict("Announcement recipe does not match its output");
+    }
+    return { output: structuredClone(output), recipe };
+  }
+
+  async downloadAnnouncementPart(sessionId, outputId, blobId, partNumber) {
+    const metadata = await this.getAnnouncementOutput(sessionId, outputId);
+    const id = assertUuid(blobId, "blobId");
+    assertInteger(partNumber, 1, 9999, "partNumber");
+    if (metadata.output.blobId !== id) throw notFound("Announcement output blob not found");
+    const part = metadata.output.parts.find((item) => item.partNumber === partNumber);
+    if (!part) throw notFound("Announcement output part not found");
+    const bytes = await this.repository.downloadReleaseAsset(part.assetId);
+    if (bytes.byteLength !== part.sizeBytes || !sameDigest(digestBytes(bytes), part.sha256)) {
+      throw conflict("Announcement asset failed integrity verification");
+    }
+    return { bytes, assetName: part.assetName };
+  }
+
+  async publicationSnapshot(transactionId) {
+    const head = await this.repository.getHead();
+    const path = publicationPath(transactionId);
+    const stored = await this.repository.readJson(path, head);
+    if (!stored || stored.data?.kind !== "publication") throw notFound("Publication job not found");
+    return { head, path, transaction: validateTransaction(stored.data) };
+  }
+
+  publicPublicationJob(transaction) {
+    const requiredParts = transaction.plan.parts.length;
+    return {
+      transactionId: transaction.transactionId,
+      sessionId: transaction.sessionId,
+      workflow: transaction.workflow,
+      outputId: transaction.outputId,
+      blobId: transaction.blobId,
+      state: transaction.state,
+      reservedVersion: transaction.reservedVersion,
+      reservedSessionRevision: transaction.reservedSessionRevision,
+      uploadedParts: transaction.uploadedParts.length,
+      totalParts: requiredParts,
+      canFinalize: transaction.uploadedParts.length === requiredParts,
+      requiresLocalResult: transaction.uploadedParts.length !== requiredParts,
+      updatedAt: transaction.updatedAt
+    };
+  }
+
+  async activePublications(sessionId, head = null, excluding = null) {
+    const ref = head || await this.repository.getHead();
+    const jobs = [];
+    for (const item of await this.repository.listJson("transactions/", ref)) {
+      if (item.invalid || item.data?.kind !== "publication") continue;
+      try {
+        const job = validateTransaction(item.data);
+        if (job.sessionId === sessionId && job.transactionId !== excluding && ["uploading", "cancelled"].includes(job.state)) jobs.push(job);
+      } catch { /* Invalid jobs fail closed elsewhere and are not resumable. */ }
+    }
+    return jobs;
+  }
+
+  async beginAnnouncementPublication(sessionId, body) {
+    assertExactKeys(body, ["schemaVersion", "expectedRevision", "expectedDraftRevision", "idempotencyKey", "plan"], "begin publication");
+    if (body.schemaVersion !== SCHEMA_VERSION) throw new ValidationError("Unsupported publication schema");
+    assertInteger(body.expectedRevision, 1, Number.MAX_SAFE_INTEGER, "expectedRevision");
+    assertInteger(body.expectedDraftRevision, 0, Number.MAX_SAFE_INTEGER, "expectedDraftRevision");
+    const idempotencyHash = hashIdempotencyKey(body.idempotencyKey);
+    const transactionId = uuidFromIdempotencyKey(`publication:${sessionId}:${body.idempotencyKey}`);
+    const path = publicationPath(transactionId);
+    const plan = validatePublicationPlan(body.plan, this.acceptedPartBytes);
+    const immutableRequest = { sessionId, workflow: "announcement", expectedRevision: body.expectedRevision,
+      expectedDraftRevision: body.expectedDraftRevision, plan };
+    const fingerprint = requestFingerprint(immutableRequest);
+    let head = await this.repository.getHead();
+    const existing = await this.repository.readJson(path, head);
+    if (existing) {
+      const job = validateTransaction(existing.data);
+      if (job.idempotencyHash !== idempotencyHash || job.requestFingerprint !== fingerprint) {
+        throw conflict("Idempotency publication request mismatch");
+      }
+      return this.publicPublicationJob(job);
+    }
+    const snapshot = await this.sessionSnapshot(sessionId);
+    head = snapshot.head;
+    const session = snapshot.session;
+    if (session.revision !== body.expectedRevision) throw conflict();
+    if (session.lifecycle.state !== "incoming") throw conflict("Archived Source Session must be restored before publication");
+    if (session.sourceState !== "available") throw conflict("Source Session audio is unavailable for publication");
+    if ((await this.activePublications(session.id, head)).length) throw conflict("Finish or discard the existing Announcement publication before starting another");
+    const workflow = session.workflows.announcement;
+    const currentDraftRevision = workflow.currentDraft?.revision || 0;
+    if (currentDraftRevision !== body.expectedDraftRevision || plan.recipe.draft.revision !== body.expectedDraftRevision) {
+      throw conflict("Announcement draft changed; reload before publication");
+    }
+    if (plan.recipe.sourceSessionRevision !== session.revision) throw conflict("Processor provenance is stale");
+    const recipeTrackIds = plan.recipe.sources.map((source) => source.trackId);
+    const draftTrackIds = validateAnnouncementDraftPayload(plan.recipe.draft.payload).trackIds;
+    if (!isDeepStrictEqual(recipeTrackIds, draftTrackIds)) throw new ValidationError("Announcement draft and recipe track order differ");
+    for (const source of plan.recipe.sources) {
+      const track = session.sourceTracks.find((item) => item.trackId === source.trackId);
+      if (!track || track.blobId !== source.blobId || track.sizeBytes !== source.sizeBytes || track.sha256 !== source.sha256 || track.mediaType !== source.mediaType) {
+        throw conflict("Processor source provenance does not match Source Session");
+      }
+    }
+    if (plan.recipe.processing.mode === "passthrough") {
+      const source = session.sourceTracks.find((track) => track.trackId === recipeTrackIds[0]);
+      if (!source || plan.sizeBytes !== source.sizeBytes || plan.sha256 !== source.sha256 ||
+          plan.recipe.result.mediaType !== source.mediaType) {
+        throw conflict("Passthrough result must be byte-identical to its single source track");
+      }
+    }
+    if (workflow.currentDraft) {
+      const storedDraft = await this.repository.readJson(workflow.currentDraft.path, head);
+      const draft = storedDraft ? validateDraft(storedDraft.data) : null;
+      if (!draft || draft.draftRevision !== body.expectedDraftRevision || draft.payloadSchema !== "announcement/v1" ||
+          !isDeepStrictEqual(validateAnnouncementDraftPayload(draft.payload), plan.recipe.draft.payload)) {
+        throw conflict("Announcement draft does not match the processed candidate");
+      }
+    }
+    const allOutputs = WORKFLOWS.flatMap((name) => session.workflows[name].outputs);
+    if (session.sourceTracks.some((track) => track.blobId === plan.blobId) ||
+        allOutputs.some((output) => output.outputId === plan.outputId || output.blobId === plan.blobId)) {
+      throw conflict("Publication output identity is already in use");
+    }
+    const timestamp = nowIso(this.clock);
+    const reservedVersion = workflow.nextVersion;
+    const recipeSnapshot = validateAnnouncementRecipe({
+      schemaVersion: SCHEMA_VERSION, workflow: "announcement", sessionId: session.id, outputId: plan.outputId,
+      version: reservedVersion, processorVersion: plan.processorVersion, createdAt: timestamp, ...plan.recipe
+    });
+    const next = structuredClone(session);
+    next.workflows.announcement.nextVersion++;
+    if (!next.workflows.announcement.outputs.length) next.workflows.announcement.status = "in_progress";
+    next.revision++;
+    next.updatedAt = timestamp;
+    const job = validateTransaction({
+      schemaVersion: SCHEMA_VERSION, kind: "publication", transactionId, idempotencyHash, requestFingerprint: fingerprint,
+      revision: 1, state: "uploading", sessionId: session.id, workflow: "announcement", outputId: plan.outputId,
+      blobId: plan.blobId, expectedRevision: session.revision, reservedSessionRevision: next.revision,
+      reservedVersion, releaseId: session.storage.releaseId, releaseTag: session.storage.tag, plan,
+      uploadedParts: [], recipeSnapshot, outputDescriptor: null, failure: null, createdAt: timestamp, updatedAt: timestamp
+    });
+    const catalogStored = await this.repository.readJson("catalog.json", head);
+    const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
+    await this.commitSession(head, next, catalog, `Reserve Announcement version ${reservedVersion} for ${session.id}`, { [path]: job });
+    return this.publicPublicationJob(job);
+  }
+
+  async uploadAnnouncementPart(transactionId, blobId, partNumber, bytes, suppliedHash, idempotencyKey) {
+    const id = assertUuid(blobId, "blobId");
+    assertInteger(partNumber, 1, 9999, "partNumber");
+    hashIdempotencyKey(idempotencyKey);
+    if (!Buffer.isBuffer(bytes) || bytes.byteLength < 1 || bytes.byteLength > Math.min(this.acceptedPartBytes, MAX_PART_BYTES)) throw new ValidationError("Part body size is invalid");
+    const hash = assertSha256(suppliedHash, "X-Part-SHA256");
+    if (!sameDigest(digestBytes(bytes), hash)) throw new ValidationError("Part SHA-256 does not match its bytes");
+    let { head, path, transaction } = await this.publicationSnapshot(transactionId);
+    if (transaction.state === "finalized") return { uploaded: true, finalized: true };
+    if (transaction.state === "discarded") throw conflict("Publication job was discarded");
+    if (transaction.blobId !== id) throw new ValidationError("Blob does not belong to publication job");
+    const planned = transaction.plan.parts.find((item) => item.partNumber === partNumber);
+    if (!planned || planned.sizeBytes !== bytes.byteLength || !sameDigest(planned.sha256, hash)) throw new ValidationError("Part does not match publication plan");
+    const already = transaction.uploadedParts.find((item) => item.partNumber === partNumber);
+    if (already) {
+      if (already.sizeBytes !== bytes.byteLength || !sameDigest(already.sha256, hash)) throw conflict("A different part already occupies this slot");
+      return { uploaded: true, assetId: already.assetId, downloadUrl: already.downloadUrl };
+    }
+    const name = assetName(id, partNumber);
+    const assets = await this.repository.listReleaseAssets(transaction.releaseId);
+    const matches = assets.filter((asset) => asset.name === name);
+    if (matches.length > 1) throw conflict("Duplicate release assets occupy the planned slot");
+    let asset = matches[0];
+    if (asset) {
+      if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.size !== bytes.byteLength ||
+          (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw conflict("Existing release asset does not match planned part");
+    } else {
+      asset = await this.repository.uploadReleaseAsset(transaction.releaseId, name, bytes);
+    }
+    if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.name !== name || asset.size !== bytes.byteLength ||
+        (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw new Error("GitHub asset integrity response did not match upload");
+    transaction = structuredClone(transaction);
+    transaction.state = "uploading";
+    transaction.revision++;
+    transaction.updatedAt = nowIso(this.clock);
+    transaction.uploadedParts.push({ blobId: id, partNumber, assetName: name, sizeBytes: bytes.byteLength, sha256: hash,
+      assetId: asset.id, downloadUrl: canonicalReleaseAssetUrl(transaction.releaseTag, name) });
+    transaction.uploadedParts.sort((left, right) => left.partNumber - right.partNumber);
+    await this.repository.commitJson(head, { [path]: transaction }, `Record Announcement part ${transaction.sessionId} ${name}`);
+    return { uploaded: true, assetId: asset.id, downloadUrl: canonicalReleaseAssetUrl(transaction.releaseTag, name) };
+  }
+
+  async finalizeAnnouncementPublication(transactionId) {
+    let { head, path, transaction } = await this.publicationSnapshot(transactionId);
+    if (transaction.state === "finalized") return { job: this.publicPublicationJob(transaction), output: structuredClone(transaction.outputDescriptor), idempotent: true };
+    if (transaction.state === "discarded") throw conflict("Publication job was discarded");
+    if (transaction.uploadedParts.length !== transaction.plan.parts.length) throw conflict("All planned parts must upload before finalization");
+    const assets = await this.repository.listReleaseAssets(transaction.releaseId);
+    const logicalHasher = createHash("sha256");
+    let logicalBytes = 0;
+    for (const uploaded of transaction.uploadedParts) {
+      const asset = assets.find((item) => item.id === uploaded.assetId && item.name === uploaded.assetName);
+      if (!asset || asset.size !== uploaded.sizeBytes ||
+          (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), uploaded.sha256))) {
+        throw conflict("Announcement assets failed final integrity verification");
+      }
+      const bytes = await this.repository.downloadReleaseAsset(uploaded.assetId);
+      if (bytes.byteLength !== uploaded.sizeBytes || !sameDigest(digestBytes(bytes), uploaded.sha256)) {
+        throw conflict("Announcement asset bytes failed final integrity verification");
+      }
+      logicalHasher.update(bytes);
+      logicalBytes += bytes.byteLength;
+    }
+    if (logicalBytes !== transaction.plan.sizeBytes || logicalHasher.digest("hex") !== transaction.plan.sha256) {
+      throw conflict("Announcement logical result failed final integrity verification");
+    }
+    const snapshot = await this.sessionSnapshot(transaction.sessionId);
+    head = snapshot.head;
+    const session = snapshot.session;
+    if (session.revision !== transaction.reservedSessionRevision) throw conflict("Source Session changed after version reservation");
+    if (session.lifecycle.state !== "incoming") throw conflict("Archived Source Session cannot finalize a new Announcement");
+    const recipeRef = recipePath(session.id, transaction.outputId);
+    const existingRecipe = await this.repository.readJson(recipeRef, head);
+    if (existingRecipe && !isDeepStrictEqual(validateAnnouncementRecipe(existingRecipe.data), transaction.recipeSnapshot)) {
+      throw conflict("Immutable Announcement recipe already exists with different content");
+    }
+    const parts = transaction.plan.parts.map((part) => {
+      const uploaded = transaction.uploadedParts.find((item) => item.partNumber === part.partNumber);
+      if (!uploaded) throw conflict("Publication is incomplete");
+      return { partNumber: part.partNumber, sizeBytes: part.sizeBytes, sha256: part.sha256, assetName: part.assetName,
+        assetId: uploaded.assetId, downloadUrl: uploaded.downloadUrl };
+    });
+    const output = {
+      outputId: transaction.outputId, version: transaction.reservedVersion, sessionId: session.id,
+      createdAt: transaction.recipeSnapshot.createdAt, blobId: transaction.blobId, sizeBytes: transaction.plan.sizeBytes,
+      sha256: transaction.plan.sha256, parts, recipeSnapshotRef: recipeRef, processorVersion: transaction.plan.processorVersion
+    };
+    const next = structuredClone(session);
+    if (!next.workflows.announcement.outputs.some((item) => item.outputId === output.outputId)) next.workflows.announcement.outputs.push(output);
+    next.workflows.announcement.outputs.sort((left, right) => left.version - right.version);
+    next.workflows.announcement.status = "result_ready";
+    next.revision++;
+    next.updatedAt = nowIso(this.clock);
+    transaction = validateTransaction({ ...transaction, state: "finalized", revision: transaction.revision + 1,
+      outputDescriptor: output, failure: null, updatedAt: nowIso(this.clock) });
+    const catalogStored = await this.repository.readJson("catalog.json", head);
+    const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
+    await this.commitSession(head, next, catalog, `Finalize Announcement version ${output.version} for ${session.id}`, {
+      [recipeRef]: transaction.recipeSnapshot,
+      [path]: transaction
+    });
+    return { job: this.publicPublicationJob(transaction), output: structuredClone(output), idempotent: false };
+  }
+
+  async cancelAnnouncementPublication(transactionId, body, discard = false) {
+    assertExactKeys(body, ["idempotencyKey"], discard ? "discard publication" : "cancel publication");
+    hashIdempotencyKey(body.idempotencyKey);
+    let { head, path, transaction } = await this.publicationSnapshot(transactionId);
+    if (transaction.state === "finalized") throw conflict("Finalized publication cannot be cancelled");
+    if (transaction.state === "discarded") return { job: this.publicPublicationJob(transaction), idempotent: true };
+    const nextState = discard ? "discarded" : "cancelled";
+    if (transaction.state !== nextState) {
+      transaction = validateTransaction({ ...transaction, state: nextState, revision: transaction.revision + 1, updatedAt: nowIso(this.clock) });
+      if (discard) {
+        const storedSession = await this.repository.readJson(sessionPath(transaction.sessionId), head);
+        const session = storedSession && storedSession.data?.kind !== "deletion_tombstone" ? validateSourceSession(storedSession.data) : null;
+        const otherActive = await this.activePublications(transaction.sessionId, head, transaction.transactionId);
+        if (session && session.revision === transaction.reservedSessionRevision && !session.workflows.announcement.outputs.length &&
+            session.workflows.announcement.status === "in_progress" && !otherActive.length) {
+          const next = structuredClone(session);
+          next.workflows.announcement.status = next.workflows.announcement.currentDraft ? "in_progress" : "new";
+          next.revision++;
+          next.updatedAt = nowIso(this.clock);
+          const catalogStored = await this.repository.readJson("catalog.json", head);
+          const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
+          await this.commitSession(head, next, catalog, `Discard Announcement publication ${transactionId}`, { [path]: transaction });
+          return { job: this.publicPublicationJob(transaction), session: publicSession(next), idempotent: false };
+        }
+      }
+      await this.repository.commitJson(head, { [path]: transaction }, `${discard ? "Discard" : "Cancel"} Announcement publication ${transactionId}`);
+    }
+    return { job: this.publicPublicationJob(transaction), idempotent: false };
+  }
+
+  async getAnnouncementPublication(transactionId) {
+    return this.publicPublicationJob((await this.publicationSnapshot(transactionId)).transaction);
   }
 
   async beginIngestion(body) {
@@ -341,6 +646,9 @@ export class AudioArchiveDomain {
     assertExactKeys(body, ["expectedRevision", "idempotencyKey"], "lifecycle update");
     hashIdempotencyKey(body.idempotencyKey);
     if (!["incoming", "archived"].includes(target)) throw new ValidationError("Invalid lifecycle");
+    if (target === "archived" && (await this.activePublications(sessionId)).length) {
+      throw conflict("Finish or discard pending Announcement publications before archiving");
+    }
     return this.mutateSession(sessionId, body.expectedRevision, (session) => { session.lifecycle.state = target; }, `${target} audio session ${sessionId}`);
   }
 
@@ -362,6 +670,10 @@ export class AudioArchiveDomain {
     const currentRevision = existing ? validateDraft(existing.data).draftRevision : 0;
     if (body.expectedDraftRevision !== currentRevision) throw conflict("Draft changed; reload before saving");
     if (typeof body.payloadSchema !== "string" || body.payloadSchema.length > 100) throw new ValidationError("payloadSchema is invalid");
+    if (workflow === "announcement") {
+      if (body.payloadSchema !== "announcement/v1") throw new ValidationError("Announcement draft schema is invalid");
+      body = { ...body, payload: validateAnnouncementDraftPayload(body.payload) };
+    }
     const draft = validateDraft({
       schemaVersion: SCHEMA_VERSION, sessionId, workflow, draftRevision: currentRevision + 1,
       sourceSessionRevision: session.revision + 1, savedAt: nowIso(this.clock), payloadSchema: body.payloadSchema,
@@ -371,6 +683,7 @@ export class AudioArchiveDomain {
     const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
     const next = structuredClone(session);
     next.workflows[workflow].currentDraft = { path, revision: draft.draftRevision };
+    if (!next.workflows[workflow].outputs.length) next.workflows[workflow].status = "in_progress";
     next.revision++;
     next.updatedAt = nowIso(this.clock);
     const committed = await this.commitSession(head, next, catalog, `Save ${workflow} draft ${sessionId}`, { [path]: draft });
@@ -381,11 +694,12 @@ export class AudioArchiveDomain {
     const { head, session } = await this.sessionSnapshot(sessionId);
     const drafts = [];
     for (const workflow of WORKFLOWS) if (await this.repository.readJson(draftPath(sessionId, workflow), head)) drafts.push(workflow);
+    const pendingAnnouncementPublications = (await this.activePublications(sessionId, head)).length;
     return {
       sessionId, revision: session.revision, sourceTracks: session.sourceTracks.length,
       announcementVersions: session.workflows.announcement.outputs.length,
       speakerVersions: session.workflows.speaker.outputs.length,
-      drafts: drafts.length, draftWorkflows: drafts
+      drafts: drafts.length, draftWorkflows: drafts, pendingAnnouncementPublications
     };
   }
 
@@ -420,6 +734,9 @@ export class AudioArchiveDomain {
       return this.executeDelete(existing.data);
     }
     if (session.revision !== body.expectedRevision) throw conflict();
+    if ((await this.activePublications(sessionId, head)).length) {
+      throw conflict("Finish or discard pending Announcement publications before deletion");
+    }
     if (action.kind === "sources" && body.confirmation !== "Удалить исходники, сохранить результаты") throw new ValidationError("Exact source deletion confirmation is required");
     if (action.kind === "purge" && body.confirmation !== sessionId) throw new ValidationError("Source Session ID confirmation is required");
     const timestamp = nowIso(this.clock);
@@ -465,22 +782,31 @@ export class AudioArchiveDomain {
         const draft = draftPath(session.id, workflow);
         if (await this.repository.readJson(draft, head)) files[draft] = null;
       }
+      for (const recipe of await this.repository.listJson("recipes/", head)) {
+        if (recipe.path.startsWith(`recipes/${session.id}/`)) files[recipe.path] = null;
+      }
       await this.repository.commitJson(head, files, `Purge audio session ${session.id}`);
       return { completed: true, transactionId: transaction.transactionId, tombstone };
     }
     const next = structuredClone(session);
+    const extraFiles = { [path]: transaction };
     if (transaction.action.kind === "output-version") {
       const workflow = next.workflows[transaction.action.workflow];
+      const removed = workflow.outputs.find((output) => output.version === transaction.action.version);
       workflow.outputs = workflow.outputs.filter((output) => output.version !== transaction.action.version);
       workflow.deletedVersions.push(transaction.action.version);
       workflow.deletedVersions.sort((a, b) => a - b);
-      if (!workflow.outputs.length) workflow.status = "new";
+      if (!workflow.outputs.length) workflow.status = workflow.currentDraft ? "in_progress" : "new";
+      if (transaction.action.workflow === "announcement" && removed) extraFiles[recipePath(session.id, removed.outputId)] = null;
     } else if (transaction.action.kind === "output-series") {
       const workflow = next.workflows[transaction.action.workflow];
+      if (transaction.action.workflow === "announcement") {
+        for (const output of workflow.outputs) extraFiles[recipePath(session.id, output.outputId)] = null;
+      }
       workflow.deletedVersions.push(...workflow.outputs.map((output) => output.version));
       workflow.deletedVersions = [...new Set(workflow.deletedVersions)].sort((a, b) => a - b);
       workflow.outputs = [];
-      workflow.status = "new";
+      workflow.status = workflow.currentDraft ? "in_progress" : "new";
     } else if (transaction.action.kind === "sources") {
       next.deletedSources = {
         deletedAt: nowIso(this.clock),
@@ -492,7 +818,8 @@ export class AudioArchiveDomain {
     next.revision++;
     next.updatedAt = nowIso(this.clock);
     transaction = { ...transaction, state: "complete", revision: transaction.revision + 1, updatedAt: nowIso(this.clock) };
-    const result = await this.commitSession(head, next, catalog, `Complete deletion ${transaction.transactionId}`, { [path]: transaction });
+    extraFiles[path] = transaction;
+    const result = await this.commitSession(head, next, catalog, `Complete deletion ${transaction.transactionId}`, extraFiles);
     return { completed: true, transactionId: transaction.transactionId, session: result };
   }
 
@@ -522,14 +849,17 @@ export class AudioArchiveDomain {
         const transaction = validateTransaction(item.data);
         if (!["finalized", "complete", "discarded"].includes(transaction.state)) {
           const totalParts = transaction.kind === "ingestion" ?
-            transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0) : null;
-          const uploadedParts = transaction.kind === "ingestion" ? transaction.uploadedParts.length : null;
+            transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0) :
+            transaction.kind === "publication" ? transaction.plan.parts.length : null;
+          const uploadedParts = ["ingestion", "publication"].includes(transaction.kind) ? transaction.uploadedParts.length : null;
           transactions.push({
             transactionId: transaction.transactionId, kind: transaction.kind, state: transaction.state,
             sessionId: transaction.sessionId, updatedAt: transaction.updatedAt,
             uploadedParts, totalParts,
-            canFinalize: transaction.kind === "ingestion" ? uploadedParts === totalParts : null,
-            requiresOriginalFiles: transaction.kind === "ingestion" ? uploadedParts !== totalParts : false
+            canFinalize: ["ingestion", "publication"].includes(transaction.kind) ? uploadedParts === totalParts : null,
+            requiresOriginalFiles: transaction.kind === "ingestion" ? uploadedParts !== totalParts : false,
+            requiresLocalResult: transaction.kind === "publication" ? uploadedParts !== totalParts : false,
+            reservedVersion: transaction.kind === "publication" ? transaction.reservedVersion : null
           });
         }
       } catch { /* Malformed records are not actionable. */ }
@@ -543,6 +873,16 @@ export class AudioArchiveDomain {
 
   async recoverIncomplete(transactionId, action) {
     if (!["resume", "retry", "discard"].includes(action)) throw new ValidationError("Unknown recovery action");
+    const publication = await this.repository.readJson(publicationPath(transactionId), await this.repository.getHead());
+    if (publication && validateTransaction(publication.data).state !== "finalized") {
+      const transaction = validateTransaction(publication.data);
+      if (action === "discard") return this.cancelAnnouncementPublication(transactionId, { idempotencyKey: `maintenance-discard:${transactionId}` }, true);
+      if (transaction.state === "discarded") throw conflict("Publication job was discarded");
+      if (transaction.uploadedParts.length !== transaction.plan.parts.length) {
+        throw conflict("Local processor result is required to continue this incomplete publication safely");
+      }
+      return this.finalizeAnnouncementPublication(transactionId);
+    }
     const ingest = await this.repository.readJson(transactionPath("ingest", transactionId), await this.repository.getHead());
     if (ingest && validateTransaction(ingest.data).state !== "finalized") {
       const transaction = validateTransaction(ingest.data);

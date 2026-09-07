@@ -241,6 +241,36 @@ export function serializeIngestionPlan(plan) {
   };
 }
 
+export async function createAnnouncementPublicationPlan(blob, recipe, partSize = DEFAULT_AUDIO_PART_BYTES,
+  { idempotencyKey = crypto.randomUUID(), processorVersion = "s07-v1", signal } = {}) {
+  throwIfAborted(signal);
+  if (!(blob instanceof Blob) || !Number.isSafeInteger(blob.size) || blob.size < 1 || blob.size > MAX_AUDIO_SESSION_BYTES) {
+    throw new Error("Результат публикации пуст или превышает 500 МБ.");
+  }
+  if (!Number.isSafeInteger(partSize) || partSize < 1 || partSize > MAX_AUDIO_PART_BYTES) throw new Error("Некорректный размер части результата.");
+  const outputId = await stableUuid(idempotencyKey, "announcement-output", signal);
+  const blobId = await stableUuid(idempotencyKey, "announcement-blob", signal);
+  const logicalHasher = new Sha256();
+  const parts = [];
+  for (let offset = 0, partNumber = 1; offset < blob.size; offset += partSize, partNumber++) {
+    const partBlob = blob.slice(offset, Math.min(blob.size, offset + partSize));
+    const bytes = new Uint8Array(await partBlob.arrayBuffer());
+    throwIfAborted(signal);
+    logicalHasher.update(bytes);
+    parts.push({ partNumber, sizeBytes: bytes.byteLength, sha256: await sha256Hex(bytes, signal),
+      assetName: assetName(blobId, partNumber), blob: partBlob });
+  }
+  const sha256 = logicalHasher.digestHex();
+  return {
+    outputId, blobId, processorVersion, sizeBytes: blob.size, sha256, parts,
+    recipe: { ...structuredClone(recipe), result: { ...structuredClone(recipe.result), sizeBytes: blob.size, sha256 } }
+  };
+}
+
+export function serializeAnnouncementPublicationPlan(plan) {
+  return { ...plan, parts: plan.parts.map(({ blob: _blob, ...part }) => part) };
+}
+
 function isIsoTimestamp(value) {
   return typeof value === "string" && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value);
 }
@@ -298,6 +328,69 @@ function validateWorkflow(value, sessionId) {
     output.parts.reduce((sum, part) => sum + part.sizeBytes, 0) === output.sizeBytes &&
     typeof output.recipeSnapshotRef === "string" && output.recipeSnapshotRef.length > 0 &&
     typeof output.processorVersion === "string" && output.processorVersion.length > 0);
+}
+
+export function validateAnnouncementOutput(output, recipe, sessionId) {
+  const workflow = { workflow: "announcement", status: "result_ready", currentDraft: null,
+    outputs: [output], deletedVersions: [], nextVersion: output?.version + 1 };
+  if (!isUuid(sessionId) || !validateWorkflow(workflow, sessionId) ||
+      output.recipeSnapshotRef !== `recipes/${sessionId}/announcement/${output.outputId}.json` ||
+      !hasExactKeys(recipe, ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "sourceSessionRevision", "sources", "draft", "processing", "result"]) ||
+      recipe.schemaVersion !== 1 || recipe.workflow !== "announcement" || recipe.sessionId !== sessionId ||
+      recipe.outputId !== output.outputId || recipe.version !== output.version || recipe.processorVersion !== output.processorVersion ||
+      !hasExactKeys(recipe.result, ["mediaType", "presentationFilename", "sizeBytes", "sha256", "originalDurationSeconds", "resultDurationSeconds", "removedDurationSeconds", "pauseCount"]) ||
+      recipe.result.sizeBytes !== output.sizeBytes || recipe.result.sha256 !== output.sha256 ||
+      !Object.values(MEDIA_TYPES).includes(recipe.result.mediaType) || recipe.result.presentationFilename !== normalizeAudioFilename(recipe.result.presentationFilename) ||
+      !Number.isSafeInteger(recipe.sourceSessionRevision) || recipe.sourceSessionRevision < 1 || !isIsoTimestamp(recipe.createdAt) ||
+      !/^s07(?:[-.][a-z0-9]+)*$/i.test(recipe.processorVersion) ||
+      !Array.isArray(recipe.sources) || !recipe.sources.length || recipe.sources.length > 32 ||
+      !hasExactKeys(recipe.draft, ["revision", "payloadSchema", "payload"]) || !Number.isSafeInteger(recipe.draft.revision) || recipe.draft.revision < 0 ||
+      recipe.draft.payloadSchema !== "announcement/v1" || !hasExactKeys(recipe.draft.payload, ["trackIds"]) ||
+      !Array.isArray(recipe.draft.payload.trackIds) || !recipe.draft.payload.trackIds.length ||
+      !hasExactKeys(recipe.processing, ["mode", "silenceThresholdDb", "minimumSilenceSeconds", "retainedSilenceSeconds", "detectedIntervals", "removalRanges", "mix", "limiter", "codec"])) return false;
+  const sourceIds = [];
+  for (const [index, source] of recipe.sources.entries()) {
+    if (!hasExactKeys(source, ["trackId", "blobId", "ordinal", "sizeBytes", "sha256", "mediaType"]) ||
+        !isUuid(source.trackId) || !isUuid(source.blobId) || source.ordinal !== index + 1 ||
+        !Number.isSafeInteger(source.sizeBytes) || source.sizeBytes < 1 || !SHA256_PATTERN.test(source.sha256) ||
+        !Object.values(MEDIA_TYPES).includes(source.mediaType)) return false;
+    sourceIds.push(source.trackId);
+  }
+  if (new Set(sourceIds).size !== sourceIds.length || new Set(recipe.sources.map((source) => source.blobId)).size !== recipe.sources.length ||
+      JSON.stringify(sourceIds) !== JSON.stringify(recipe.draft.payload.trackIds)) return false;
+  const processing = recipe.processing;
+  const intervalsValid = (intervals) => Array.isArray(intervals) && intervals.length <= 10000 && intervals.every((interval, index) =>
+    Array.isArray(interval) && interval.length === 2 && Number.isFinite(interval[0]) && Number.isFinite(interval[1]) &&
+    interval[0] >= 0 && interval[1] > interval[0] && (!index || interval[0] >= intervals[index - 1][1]));
+  if (![-45].includes(processing.silenceThresholdDb) || processing.minimumSilenceSeconds !== 2 || processing.retainedSilenceSeconds !== 0.35 ||
+      !intervalsValid(processing.detectedIntervals) || !intervalsValid(processing.removalRanges) ||
+      !["passthrough", "processed_single", "mixed_multi"].includes(processing.mode) ||
+      (processing.mode === "mixed_multi") !== (recipe.sources.length > 1)) return false;
+  if (processing.mode === "passthrough") {
+    if (processing.removalRanges.length || processing.mix !== null || processing.limiter !== null || processing.codec !== null ||
+        output.sizeBytes !== recipe.sources[0].sizeBytes || output.sha256 !== recipe.sources[0].sha256 || recipe.result.mediaType !== recipe.sources[0].mediaType) return false;
+  } else if (!hasExactKeys(processing.codec, ["name", "bitrate"]) || processing.codec.name !== "libmp3lame" || processing.codec.bitrate !== "128k" ||
+      recipe.result.mediaType !== "audio/mpeg" || (processing.mode === "processed_single" && (processing.mix !== null || processing.limiter !== null)) ||
+      (processing.mode === "mixed_multi" && (processing.mix !== "amix=normalize=0" || processing.limiter !== "alimiter=limit=0.95:level=0:latency=1"))) return false;
+  return true;
+}
+
+export async function reconstructAnnouncementOutput(metadata, fetchImpl = fetch) {
+  const { output, recipe } = metadata || {};
+  if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Манифест результата Announcement повреждён.");
+  const chunks = [];
+  const logicalHasher = new Sha256();
+  let totalBytes = 0;
+  for (const [index, part] of output.parts.entries()) {
+    if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей результата.");
+    const response = await fetchImpl(part.downloadUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error("Не удалось загрузить часть результата.");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes) !== part.sha256) throw new Error("Проверка целостности части результата не пройдена.");
+    chunks.push(bytes); totalBytes += bytes.byteLength; logicalHasher.update(bytes);
+  }
+  if (totalBytes !== output.sizeBytes || logicalHasher.digestHex() !== output.sha256) throw new Error("Проверка целостности результата не пройдена.");
+  return new File(chunks, recipe.result.presentationFilename, { type: recipe.result.mediaType, lastModified: 0 });
 }
 
 export function validateSessionManifest(session) {
@@ -428,6 +521,20 @@ export class AudioArchiveGateway {
       return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
     };
   }
+  getAnnouncementOutput(sessionId, outputId) {
+    return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/announcement/${encodeURIComponent(outputId)}`);
+  }
+  announcementPartFetch(metadata) {
+    const { output, recipe } = metadata || {};
+    if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Манифест результата Announcement повреждён.");
+    const parts = new Map(output.parts.map((part) => [part.downloadUrl, part]));
+    return async (url, options = {}) => {
+      const part = parts.get(String(url));
+      if (!part) throw new Error("URL части не принадлежит этому результату.");
+      const path = `/v1/source-sessions/${encodeURIComponent(output.sessionId)}/outputs/announcement/${encodeURIComponent(output.outputId)}/blobs/${encodeURIComponent(output.blobId)}/parts/${part.partNumber}/content`;
+      return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
+    };
+  }
   updateSession(id, expectedRevision, patch, idempotencyKey = crypto.randomUUID()) {
     return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`, { method: "PATCH", body: { expectedRevision, patch, idempotencyKey } });
   }
@@ -455,6 +562,36 @@ export class AudioArchiveGateway {
   listIncomplete() { return this.request("/v1/maintenance/incomplete"); }
   recoverIncomplete(transactionId, action) { return this.request(`/v1/maintenance/incomplete/${encodeURIComponent(transactionId)}/${action}`, { method: "POST", body: { idempotencyKey: crypto.randomUUID() } }); }
   rebuildCatalog() { return this.request("/v1/maintenance/catalog/rebuild", { method: "POST", body: { idempotencyKey: crypto.randomUUID() } }); }
+
+  async publishAnnouncement({ sessionId, expectedRevision, expectedDraftRevision, blob, recipe,
+    idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {}, onStarted = () => {} }) {
+    const plan = await createAnnouncementPublicationPlan(blob, recipe, this.acceptedPartSize, { idempotencyKey, signal });
+    const started = await this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/announcement/publications`, {
+      method: "POST", signal, body: { schemaVersion: 1, expectedRevision, expectedDraftRevision,
+        idempotencyKey, plan: serializeAnnouncementPublicationPlan(plan) }
+    });
+    onStarted(started);
+    let uploadedBytes = 0;
+    for (const part of plan.parts) {
+      await this.request(`/v1/announcement-publications/${encodeURIComponent(started.transactionId)}/blobs/${encodeURIComponent(plan.blobId)}/parts/${part.partNumber}`, {
+        method: "PUT", signal, body: part.blob, headers: { "Content-Type": "application/octet-stream",
+          "X-Part-SHA256": part.sha256, "Idempotency-Key": `${idempotencyKey}:${part.partNumber}` }
+      });
+      uploadedBytes += part.sizeBytes;
+      onProgress({ uploadedBytes, totalBytes: plan.sizeBytes, uploadedParts: part.partNumber, totalParts: plan.parts.length,
+        reservedVersion: started.reservedVersion });
+    }
+    return this.request(`/v1/announcement-publications/${encodeURIComponent(started.transactionId)}/finalize`, {
+      method: "POST", signal, body: { idempotencyKey: `${idempotencyKey}:finalize` }
+    });
+  }
+
+  publicationJob(transactionId) { return this.request(`/v1/announcement-publications/${encodeURIComponent(transactionId)}`); }
+  cancelPublication(transactionId, discard = false, idempotencyKey = crypto.randomUUID()) {
+    return this.request(`/v1/announcement-publications/${encodeURIComponent(transactionId)}/${discard ? "discard" : "cancel"}`, {
+      method: "POST", body: { idempotencyKey }
+    });
+  }
 
   async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {} }) {
     const plan = await createIngestionPlan(files, this.acceptedPartSize, { idempotencyKey, signal });

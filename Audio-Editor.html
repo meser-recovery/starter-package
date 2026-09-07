@@ -67,6 +67,25 @@
             <p>Выбор и обработка файлов остаются локальными. Ничего не загружается и входящая запись не создаётся, пока вы отдельно не нажмёте «Сохранить во входящие».</p>
           </div>
         </section>
+        <section id="source-session-announcement-workspace" class="archive-card announcement-workspace" aria-labelledby="source-session-announcement-heading" hidden>
+          <div class="archive-card__heading">
+            <h2 id="source-session-announcement-heading">Объявление · Announcement workspace</h2>
+            <p id="source-session-announcement-identity"></p>
+            <p id="source-session-announcement-status" class="archive-status" role="status"></p>
+          </div>
+          <h3>Дорожки общего черновика</h3>
+          <ol id="source-session-announcement-tracks" class="announcement-track-order"></ol>
+          <div class="source-session-actions">
+            <button id="source-session-announcement-save" type="button">Сохранить общий черновик</button>
+            <button id="source-session-announcement-close" type="button">Закрыть workspace</button>
+          </div>
+          <div id="source-session-announcement-playback" hidden>
+            <h3 id="source-session-announcement-playback-label">Опубликованный результат</h3>
+            <p id="source-session-announcement-playback-name"></p>
+            <audio id="source-session-announcement-audio" aria-labelledby="source-session-announcement-playback-label" controls preload="metadata"></audio>
+            <a id="source-session-announcement-download" class="archive-download">Скачать проверенный результат</a>
+          </div>
+        </section>
         <section class="archive-card processor-card" aria-labelledby="processor-heading">
           <div class="archive-card__heading">
             <h2 id="processor-heading">Обработка аудио</h2>
@@ -137,7 +156,11 @@
               <div><dt>Удалено тишины</dt><dd id="processor-removed-duration"></dd></div>
               <div><dt id="processor-pause-label">Сокращено длинных пауз</dt><dd id="processor-pause-count"></dd></div>
             </dl>
-            <a id="processor-download" class="archive-download">Скачать обработанный MP3</a>
+            <div class="processor-result-actions">
+              <a id="processor-download" class="archive-download">Скачать обработанный MP3</a>
+              <button id="source-session-publish-announcement" type="button" disabled>Опубликовать объявление</button>
+            </div>
+            <p id="source-session-publish-reason" class="archive-status">Публикация доступна только для активной входящей Source Session.</p>
           </div>
         </section>
         <section class="archive-card" aria-labelledby="archive-heading">
@@ -202,6 +225,19 @@
             <div class="source-session-dialog__actions">
               <button id="source-session-ingest-submit" type="submit">Загрузить и завершить</button>
               <button id="source-session-ingest-cancel" type="button">Отмена</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog id="source-session-publication-dialog" class="source-session-dialog" aria-labelledby="source-session-publication-title">
+          <form id="source-session-publication-form" method="dialog">
+            <h2 id="source-session-publication-title">Опубликовать объявление</h2>
+            <p id="source-session-publication-summary"></p>
+            <p>Версия резервируется при начале операции и больше не используется повторно, даже если публикация отменена.</p>
+            <p id="source-session-publication-status" role="status"></p>
+            <progress id="source-session-publication-progress" max="100" hidden aria-label="Публикация результата"></progress>
+            <div class="source-session-dialog__actions">
+              <button id="source-session-publication-submit" type="submit">Подтвердить публикацию</button>
+              <button id="source-session-publication-cancel" type="button">Отмена</button>
             </div>
           </form>
         </dialog>

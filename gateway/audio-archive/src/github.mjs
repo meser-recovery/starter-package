@@ -2,8 +2,8 @@ import { createSign } from "node:crypto";
 import { MAX_PART_BYTES, UUID_PATTERN } from "./validation.mjs";
 
 const API_VERSION = "2026-03-10";
-const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|transactions\/(?:ingest|delete)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
-const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|transactions\/(?:ingest|delete)-([0-9a-f-]{36})\.json)$/;
+const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|recipes\/[0-9a-f-]{36}\/(?:announcement|speaker)\/[0-9a-f-]{36}\.json|transactions\/(?:ingest|delete|publish)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
+const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|recipes\/([0-9a-f-]{36})\/(?:announcement|speaker)\/([0-9a-f-]{36})\.json|transactions\/(?:ingest|delete|publish)-([0-9a-f-]{36})\.json)$/;
 
 export class GitHubError extends Error {
   constructor(message, status, responseBody = null) {
@@ -20,8 +20,8 @@ function base64url(value) {
 
 function assertStoragePath(path) {
   if (!STORAGE_PATH.test(path) || path.includes("..")) throw new Error("Unsafe internal storage path");
-  const uuid = UUID_STORAGE_PATH.exec(path)?.slice(1).find(Boolean);
-  if (uuid && !UUID_PATTERN.test(uuid)) throw new Error("Unsafe internal UUID path");
+  const uuids = UUID_STORAGE_PATH.exec(path)?.slice(1).filter(Boolean) || [];
+  if (uuids.some((uuid) => !UUID_PATTERN.test(uuid))) throw new Error("Unsafe internal UUID path");
   return path;
 }
 
@@ -116,7 +116,7 @@ export class GitHubArchiveRepository {
   }
 
   async listJson(prefix, ref) {
-    if (!/^(sessions|transactions|drafts)\/$/.test(prefix)) throw new Error("Unsafe internal list prefix");
+    if (!/^(sessions|transactions|drafts|recipes)\/$/.test(prefix)) throw new Error("Unsafe internal list prefix");
     const tree = await this.api(`/git/trees/${encodeURIComponent(ref)}?recursive=1`);
     const items = [];
     for (const entry of tree.tree || []) {
@@ -194,7 +194,8 @@ export class GitHubArchiveRepository {
   }
 
   async uploadReleaseAsset(releaseId, name, bytes) {
-    if (!/^blob-[0-9a-f-]{36}-part-\d{4}\.bin$/.test(name)) throw new Error("Unsafe release asset name");
+    const match = /^blob-([0-9a-f-]{36})-part-\d{4}\.bin$/.exec(name);
+    if (!match || !UUID_PATTERN.test(match[1])) throw new Error("Unsafe release asset name");
     const token = await this.token();
     const response = await this.fetchImpl(`https://uploads.github.com/repos/${this.owner}/${this.repository}/releases/${releaseId}/assets?name=${encodeURIComponent(name)}`, {
       method: "POST",
