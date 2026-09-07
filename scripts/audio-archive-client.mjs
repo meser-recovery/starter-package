@@ -245,7 +245,7 @@ export async function createAnnouncementPublicationPlan(blob, recipe, partSize =
   { idempotencyKey = crypto.randomUUID(), processorVersion = "s07-v1", signal } = {}) {
   throwIfAborted(signal);
   if (!(blob instanceof Blob) || !Number.isSafeInteger(blob.size) || blob.size < 1 || blob.size > MAX_AUDIO_SESSION_BYTES) {
-    throw new Error("Результат публикации пуст или превышает 500 МБ.");
+    throw new Error("Результат обработки пуст или превышает 500 МБ.");
   }
   if (!Number.isSafeInteger(partSize) || partSize < 1 || partSize > MAX_AUDIO_PART_BYTES) throw new Error("Некорректный размер части результата.");
   const outputId = await stableUuid(idempotencyKey, "announcement-output", signal);
@@ -377,7 +377,7 @@ export function validateAnnouncementOutput(output, recipe, sessionId) {
 
 export async function reconstructAnnouncementOutput(metadata, fetchImpl = fetch) {
   const { output, recipe } = metadata || {};
-  if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Манифест результата Announcement повреждён.");
+  if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Данные сохранённого результата «Анонс-мейкер» повреждены.");
   const chunks = [];
   const logicalHasher = new Sha256();
   let totalBytes = 0;
@@ -453,8 +453,8 @@ export async function reconstructTrack(track, sessionId, fetchImpl = fetch) {
 }
 
 export async function reconstructSessionTracks(session, fetchImpl = fetch) {
-  if (!validateSessionManifest(session)) throw new Error("Манифест Source Session повреждён.");
-  if (session.sourceState !== "available") throw new Error("Исходники этой Source Session были удалены.");
+  if (!validateSessionManifest(session)) throw new Error("Данные архивной записи повреждены.");
+  if (session.sourceState !== "available") throw new Error("Исходники этой записи были удалены.");
   const ordered = [...(session.sourceTracks || [])].sort((left, right) => left.ordinal - right.ordinal);
   const files = [];
   for (const track of ordered) files.push(await reconstructTrack(track, session.id, fetchImpl));
@@ -509,14 +509,14 @@ export class AudioArchiveGateway {
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
   getSession(id) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`); }
   sourcePartFetch(session) {
-    if (!validateSessionManifest(session) || session.sourceState !== "available") throw new Error("Манифест Source Session повреждён.");
+    if (!validateSessionManifest(session) || session.sourceState !== "available") throw new Error("Данные архивной записи повреждены.");
     const parts = new Map();
     for (const track of session.sourceTracks) {
       for (const part of track.parts) parts.set(part.downloadUrl, { blobId: track.blobId, partNumber: part.partNumber });
     }
     return async (url, options = {}) => {
       const part = parts.get(String(url));
-      if (!part) throw new Error("URL части не принадлежит этой Source Session.");
+      if (!part) throw new Error("Запрошенная часть не принадлежит этой архивной записи.");
       const path = `/v1/source-sessions/${encodeURIComponent(session.id)}/blobs/${encodeURIComponent(part.blobId)}/parts/${part.partNumber}/content`;
       return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
     };
@@ -526,7 +526,7 @@ export class AudioArchiveGateway {
   }
   announcementPartFetch(metadata) {
     const { output, recipe } = metadata || {};
-    if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Манифест результата Announcement повреждён.");
+    if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Данные сохранённого результата «Анонс-мейкер» повреждены.");
     const parts = new Map(output.parts.map((part) => [part.downloadUrl, part]));
     return async (url, options = {}) => {
       const part = parts.get(String(url));

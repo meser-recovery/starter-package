@@ -30,8 +30,8 @@
         <h1>Редактирование аудио</h1>
         <section class="archive-card source-session-card" aria-labelledby="source-session-heading">
           <div class="archive-card__heading">
-            <h2 id="source-session-heading">Входящий архив</h2>
-            <p>Source Session хранит неизменяемые синхронизированные исходники и независимое состояние работ «Объявление» и «Спикерская».</p>
+            <h2 id="source-session-heading">Исходники</h2>
+            <p>Здесь хранятся неизменяемые синхронизированные дорожки. Готовые результаты находятся ниже — отдельно в архивах «Анонс-мейкер» и «Спикерская».</p>
           </div>
           <div class="source-entry-modes" role="group" aria-label="Источник аудио">
             <button id="source-session-mode-archive" type="button" aria-pressed="true">Из архива</button>
@@ -43,15 +43,15 @@
                 <label for="source-session-lifecycle">Показывать записи</label>
                 <select id="source-session-lifecycle">
                   <option value="incoming">Входящие</option>
-                  <option value="archived">Архивированные</option>
+                  <option value="archived">Архив исходников</option>
                 </select>
               </div>
               <button id="source-session-refresh" type="button">Обновить</button>
               <button id="source-session-create" type="button">Создать входящую запись</button>
               <button id="source-session-authenticate" type="button">Подключить архив</button>
             </div>
-            <p id="source-session-session-status" class="source-session-session-status">Сеанс архива проверяется…</p>
-            <p id="source-session-status" class="archive-status" role="status">Подключение к входящему архиву…</p>
+            <p id="source-session-session-status" class="source-session-session-status">Подключение к архиву проверяется…</p>
+            <p id="source-session-status" class="archive-status" role="status">Подключение к архиву исходников…</p>
             <p id="source-session-count" class="archive-count" hidden></p>
             <div id="source-session-list" class="source-session-list" aria-live="polite"></div>
             <div id="source-session-maintenance" class="source-session-maintenance" hidden>
@@ -67,23 +67,72 @@
             <p>Выбор и обработка файлов остаются локальными. Ничего не загружается и входящая запись не создаётся, пока вы отдельно не нажмёте «Сохранить во входящие».</p>
           </div>
         </section>
+        <section id="source-session-results" class="archive-card result-archive-card" aria-labelledby="source-session-results-heading">
+          <div class="archive-card__heading">
+            <p class="archive-eyebrow">Сохранённые результаты</p>
+            <h2 id="source-session-results-heading">Архив результатов</h2>
+            <p>Оба раздела используют одно защищённое хранилище, но результаты разных типов работы никогда не смешиваются.</p>
+          </div>
+          <div class="result-archive-navigation" role="group" aria-label="Раздел архива результатов">
+            <button id="source-session-results-announcement" type="button" aria-pressed="true">
+              <span>Анонс-мейкер</span>
+              <span id="source-session-results-announcement-count" class="result-archive-count">0</span>
+            </button>
+            <button id="source-session-results-speaker" type="button" aria-pressed="false">
+              <span>Спикерская</span>
+              <span id="source-session-results-speaker-count" class="result-archive-count">0</span>
+            </button>
+          </div>
+          <p id="source-session-results-status" class="archive-status" role="status">Загрузка сохранённых результатов…</p>
+          <section id="source-session-results-announcement-panel" class="result-archive-panel" aria-labelledby="source-session-results-announcement-heading">
+            <div class="result-archive-panel__heading">
+              <h3 id="source-session-results-announcement-heading">Анонс-мейкер</h3>
+              <p>Обработанное аудио, явно сохранённое для анонсов.</p>
+            </div>
+            <div id="source-session-results-announcement-list" class="result-archive-list" aria-live="polite"></div>
+          </section>
+          <section id="source-session-results-speaker-panel" class="result-archive-panel" aria-labelledby="source-session-results-speaker-heading" hidden>
+            <div class="result-archive-panel__heading">
+              <h3 id="source-session-results-speaker-heading">Спикерская</h3>
+              <p>Самостоятельный раздел архива. Обработка и сохранение новых результатов этого типа пока не реализованы.</p>
+            </div>
+            <div id="source-session-results-speaker-list" class="result-archive-list" aria-live="polite"></div>
+          </section>
+          <div id="source-session-announcement-playback" class="result-archive-player" hidden>
+            <div>
+              <p class="archive-eyebrow">Проверенный сохранённый результат</p>
+              <h3 id="source-session-announcement-playback-label">Прослушивание</h3>
+            </div>
+            <p id="source-session-announcement-playback-name"></p>
+            <audio id="source-session-announcement-audio" aria-labelledby="source-session-announcement-playback-label" controls preload="metadata"></audio>
+            <a id="source-session-announcement-download" class="archive-download">Скачать сохранённый результат</a>
+          </div>
+        </section>
         <section id="source-session-announcement-workspace" class="archive-card announcement-workspace" aria-labelledby="source-session-announcement-heading" hidden>
           <div class="archive-card__heading">
-            <h2 id="source-session-announcement-heading">Объявление · Announcement workspace</h2>
+            <p class="archive-eyebrow">Активный тип работы</p>
+            <h2 id="source-session-announcement-heading">Анонс-мейкер</h2>
             <p id="source-session-announcement-identity"></p>
             <p id="source-session-announcement-status" class="archive-status" role="status"></p>
           </div>
-          <h3>Дорожки общего черновика</h3>
-          <ol id="source-session-announcement-tracks" class="announcement-track-order"></ol>
-          <div class="source-session-actions">
-            <button id="source-session-announcement-save" type="button">Сохранить общий черновик</button>
-            <button id="source-session-announcement-close" type="button">Закрыть workspace</button>
+          <div class="workflow-step">
+            <div class="workflow-step__heading">
+              <p class="workflow-step__number" aria-hidden="true">1</p>
+              <div><h3>Черновик обработки</h3><p>Выбранные дорожки используются в указанном порядке.</p></div>
+            </div>
+            <ol id="source-session-announcement-tracks" class="announcement-track-order"></ol>
+            <div class="action-group">
+              <button id="source-session-announcement-save" class="action-primary" type="button">Сохранить черновик обработки</button>
+              <button id="source-session-announcement-close" type="button">Закрыть работу</button>
+            </div>
           </div>
-          <div id="source-session-announcement-playback" hidden>
-            <h3 id="source-session-announcement-playback-label">Опубликованный результат</h3>
-            <p id="source-session-announcement-playback-name"></p>
-            <audio id="source-session-announcement-audio" aria-labelledby="source-session-announcement-playback-label" controls preload="metadata"></audio>
-            <a id="source-session-announcement-download" class="archive-download">Скачать проверенный результат</a>
+          <details class="technical-details">
+            <summary>Технические сведения о записи</summary>
+            <p id="source-session-announcement-technical"></p>
+          </details>
+          <div class="workflow-next-step">
+            <p class="workflow-step__number" aria-hidden="true">2</p>
+            <p>Проверьте дорожки ниже и запустите локальную обработку.</p>
           </div>
         </section>
         <section class="archive-card processor-card" aria-labelledby="processor-heading">
@@ -123,10 +172,16 @@
               <div id="processor-preview-audios" hidden></div>
             </div>
           </div>
-          <div class="processor-actions">
-            <button id="processor-run" type="button" disabled>Обработать</button>
-            <button id="processor-save-incoming" type="button" disabled>Сохранить во входящие</button>
-            <button id="processor-cancel" type="button" hidden>Отменить</button>
+          <div class="processor-action-section">
+            <h3>Локальная обработка</h3>
+            <div class="processor-actions">
+              <button id="processor-run" class="action-primary" type="button" disabled>Обработать</button>
+              <button id="processor-cancel" type="button" hidden>Отменить</button>
+            </div>
+            <div id="processor-device-ingest-actions" class="secondary-action-group">
+              <p>Для сохранения результата из файлов устройства сначала создайте для исходников входящую запись.</p>
+              <button id="processor-save-incoming" type="button" disabled>Сохранить во входящие</button>
+            </div>
           </div>
           <div class="processor-feedback">
             <p id="processor-status" role="status">Обработка аудио не поддерживается в этом браузере.</p>
@@ -157,15 +212,17 @@
               <div><dt id="processor-pause-label">Сокращено длинных пауз</dt><dd id="processor-pause-count"></dd></div>
             </dl>
             <div class="processor-result-actions">
+              <button id="source-session-publish-announcement" class="action-primary" type="button" disabled>Сохранить в архив «Анонс-мейкер»</button>
               <a id="processor-download" class="archive-download">Скачать обработанный MP3</a>
-              <button id="source-session-publish-announcement" type="button" disabled>Опубликовать объявление</button>
             </div>
-            <p id="source-session-publish-reason" class="archive-status">Публикация доступна только для активной входящей Source Session.</p>
+            <p id="source-session-publish-reason" class="archive-status">Сохранение доступно только для активной входящей записи.</p>
           </div>
         </section>
         <section class="archive-card" aria-labelledby="archive-heading">
           <div class="archive-card__heading">
+            <p class="archive-eyebrow">Прежний раздел сайта</p>
             <h2 id="archive-heading">Архив отредактированных аудио</h2>
+            <p>Этот список сохранён для совместимости и не является архивом результатов «Анонс-мейкер» или «Спикерская».</p>
             <p id="archive-status" class="archive-status" role="status">Загрузка архива…</p>
           </div>
           <div id="archive-controls" class="archive-controls" hidden>
@@ -230,13 +287,22 @@
         </dialog>
         <dialog id="source-session-publication-dialog" class="source-session-dialog" aria-labelledby="source-session-publication-title">
           <form id="source-session-publication-form" method="dialog">
-            <h2 id="source-session-publication-title">Опубликовать объявление</h2>
-            <p id="source-session-publication-summary"></p>
-            <p>Версия резервируется при начале операции и больше не используется повторно, даже если публикация отменена.</p>
+            <h2 id="source-session-publication-title">Сохранить в архив «Анонс-мейкер»</h2>
+            <p>Проверьте данные перед сохранением. До подтверждения результат не передаётся и номер версии не резервируется.</p>
+            <dl id="source-session-publication-summary" class="save-summary">
+              <div><dt>Архив назначения</dt><dd id="source-session-publication-destination">Анонс-мейкер</dd></div>
+              <div><dt>Запись</dt><dd id="source-session-publication-source"></dd></div>
+              <div><dt>Режим обработки</dt><dd id="source-session-publication-mode"></dd></div>
+              <div><dt>Результат</dt><dd id="source-session-publication-result"></dd></div>
+              <div><dt>Предварительный номер</dt><dd id="source-session-publication-version"></dd></div>
+            </dl>
+            <div><h3>Дорожки по порядку</h3><ol id="source-session-publication-tracks" class="save-summary-tracks"></ol></div>
+            <details class="technical-details"><summary>Технические сведения о записи</summary><p id="source-session-publication-technical"></p></details>
+            <p>После начала номер версии сохраняется за этой операцией и повторно не используется, даже если передачу остановить.</p>
             <p id="source-session-publication-status" role="status"></p>
-            <progress id="source-session-publication-progress" max="100" hidden aria-label="Публикация результата"></progress>
+            <progress id="source-session-publication-progress" max="100" hidden aria-label="Сохранение результата в архив «Анонс-мейкер»"></progress>
             <div class="source-session-dialog__actions">
-              <button id="source-session-publication-submit" type="submit">Подтвердить публикацию</button>
+              <button id="source-session-publication-submit" class="action-primary" type="submit">Подтвердить сохранение</button>
               <button id="source-session-publication-cancel" type="button">Отмена</button>
             </div>
           </form>
@@ -247,15 +313,16 @@
             <p id="source-session-delete-summary"></p>
             <fieldset>
               <legend>Удалить только выбранный уровень</legend>
-              <label><input type="radio" name="delete-level" value="announcement-series">Все версии «Объявление»</label>
+              <label><input type="radio" name="delete-level" value="announcement-series">Все версии «Анонс-мейкер»</label>
               <label><input type="radio" name="delete-level" value="speaker-series">Все версии «Спикерская»</label>
               <label><input type="radio" name="delete-level" value="sources">Исходники, сохранив результаты</label>
-              <label><input type="radio" name="delete-level" value="purge">Всю Source Session</label>
+              <label><input type="radio" name="delete-level" value="purge">Всю запись</label>
             </fieldset>
             <div class="processor-field">
-              <label for="source-session-delete-confirmation">Для исходников введите «Удалить исходники, сохранить результаты»; для полной очистки — ID записи</label>
+              <label for="source-session-delete-confirmation">Для исходников введите «Удалить исходники, сохранить результаты»; для полной очистки — точный идентификатор из технических сведений ниже</label>
               <input id="source-session-delete-confirmation" type="text" autocomplete="off">
             </div>
+            <details class="technical-details"><summary>Технические сведения для полного удаления</summary><p id="source-session-delete-technical"></p></details>
             <p id="source-session-delete-status" role="status"></p>
             <div class="source-session-dialog__actions">
               <button id="source-session-delete-submit" type="submit">Удалить выбранное</button>

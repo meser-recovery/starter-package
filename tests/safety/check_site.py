@@ -820,8 +820,9 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    if parser.h2_texts[:4] != ["Входящий архив", "Объявление · Announcement workspace", "Обработка аудио", "Архив отредактированных аудио"]:
-        errors.append("Audio-Editor.html: expected Source Session, Announcement workspace, processor, then derived archive H2")
+    expected_h2 = ["Исходники", "Архив результатов", "Анонс-мейкер", "Обработка аудио", "Архив отредактированных аудио"]
+    if parser.h2_texts[:5] != expected_h2:
+        errors.append("Audio-Editor.html: expected sources, result archives, Анонс-мейкер work, processor, then legacy archive H2")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -838,6 +839,9 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "processor-source-scrollbar-thumb": "div", "processor-source-follow": "button",
         "processor-result-waveform-scroll": "div", "processor-result-waveform-control": "button",
         "processor-result-waveform-status": "p", "processor-result-time": "p",
+        "source-session-results-announcement": "button", "source-session-results-speaker": "button",
+        "source-session-results-announcement-list": "div", "source-session-results-speaker-list": "div",
+        "source-session-publish-announcement": "button", "source-session-publication-dialog": "dialog",
     }
     for element_id, element_tag in expected.items():
         if ids.count(element_id) != 1 or not any(tag == element_tag and attrs.get("id") == element_id for tag, attrs in tags):
@@ -941,8 +945,16 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         errors.append("Processor source scrollbar must remain visible while tracks are selected")
     if re.search(r'^import\s+(?!\{\s*sha256Hex\s*\}\s+from\s+"\./audio-archive-client\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
-    if "Прослушать" in source or "processor-track-switcher" in source or "<details" in page.read_text(encoding="utf-8"):
+    page_source = page.read_text(encoding="utf-8")
+    processor_markup = page_source.split('<section class="archive-card processor-card"', 1)[-1].split('</section>', 1)[0]
+    if "Прослушать" in source or "processor-track-switcher" in source or "<details" in processor_markup:
         errors.append("Processor retains the obsolete track switcher/detail waveform UI")
+    for rejected in ("Объявление", "Опубликов", "опубликован", "публикация", "Announcement workspace", "Announcement draft", "Source Session"):
+        if rejected in page_source:
+            errors.append(f"Audio-Editor.html: rejected S08B product language remains: {rejected}")
+    for required_text in ("Анонс-мейкер", "Спикерская", "Сохранить в архив «Анонс-мейкер»", "Черновик обработки"):
+        if required_text not in page_source:
+            errors.append(f"Audio-Editor.html: corrected S08B product language missing: {required_text}")
     forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|wavesurfer|peaks\.js|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
     if re.search(forbidden, source):
         errors.append("Processor has a forbidden external/write API, DSP, or threading dependency")
@@ -994,7 +1006,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
             'credentials: "include"', '"X-CSRF-Token"', "reconstructSessionTracks",
         ),
         "scripts/source-session-archive.mjs": (
-            'setMode("archive")', "С устройства", "Начать работу", "Вернуть в новые",
+            'setMode("archive")', "С устройства", "Анонс-мейкер", "Спикерская",
         ),
         "Audio-Editor.html": ("Из архива", "С устройства", "Создать входящую запись", "Сохранить во входящие"),
         "gateway/audio-archive/src/config.mjs": (
