@@ -3,7 +3,8 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   DEFAULT_AUDIO_PART_BYTES, MAX_AUDIO_PART_BYTES, MAX_AUDIO_SESSION_BYTES, Sha256, assetName,
-  createIngestionPlan, isUuid, reconstructSessionTracks, serializeIngestionPlan, sha256Hex, validateSessionManifest
+  createAnnouncementPublicationPlan, createIngestionPlan, isUuid, reconstructAnnouncementOutput, reconstructSessionTracks,
+  serializeAnnouncementPublicationPlan, serializeIngestionPlan, sha256Hex, validateAnnouncementOutput, validateSessionManifest
 } from "../../../scripts/audio-archive-client.mjs";
 
 function nodeSha(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
@@ -90,4 +91,45 @@ test("ordered parts reconstruct byte-identically and corruption fails closed", a
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()), new Uint8Array(complete));
   await assert.rejects(() => reconstructSessionTracks(session, async () => new Response(Uint8Array.of(9, 9, 9))), /целостности/);
   assert.equal(validateSessionManifest({ ...session, id: "malformed" }), false);
+});
+
+test("Announcement publication planning is deterministic and reconstructed output uses recipe presentation metadata", async () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const trackId = "22222222-2222-4222-8222-222222222222";
+  const sourceBlobId = "33333333-3333-4333-8333-333333333333";
+  const bytes = Uint8Array.of(1, 2, 3, 4, 5);
+  const recipe = {
+    sourceSessionRevision: 2,
+    sources: [{ trackId, blobId: sourceBlobId, ordinal: 1, sizeBytes: 9, sha256: "1".repeat(64), mediaType: "audio/wav" }],
+    draft: { revision: 1, payloadSchema: "announcement/v1", payload: { trackIds: [trackId] } },
+    processing: { mode: "processed_single", silenceThresholdDb: -45, minimumSilenceSeconds: 2, retainedSilenceSeconds: 0.35,
+      detectedIntervals: [[2, 5]], removalRanges: [[2.175, 4.825]], mix: null, limiter: null,
+      codec: { name: "libmp3lame", bitrate: "128k" } },
+    result: { mediaType: "audio/mpeg", presentationFilename: "meeting-edited.mp3", sizeBytes: 0, sha256: "0".repeat(64),
+      originalDurationSeconds: 8, resultDurationSeconds: 5.35, removedDurationSeconds: 2.65, pauseCount: 1 }
+  };
+  const options = { idempotencyKey: "announcement-operation-key", processorVersion: "s07-v1" };
+  const first = await createAnnouncementPublicationPlan(new Blob([bytes], { type: "audio/mpeg" }), recipe, 3, options);
+  const second = await createAnnouncementPublicationPlan(new Blob([bytes], { type: "audio/mpeg" }), recipe, 3, options);
+  assert.deepEqual(serializeAnnouncementPublicationPlan(first), serializeAnnouncementPublicationPlan(second));
+  const output = {
+    outputId: first.outputId, version: 1, sessionId, createdAt: "2026-01-02T03:04:05.000Z", blobId: first.blobId,
+    sizeBytes: first.sizeBytes, sha256: first.sha256,
+    parts: first.parts.map((part, index) => ({ ...serializeAnnouncementPublicationPlan(first).parts[index], assetId: index + 1,
+      downloadUrl: `https://github.com/meser-recovery/audio-archive/releases/download/audio-session-${sessionId}/${part.assetName}` })),
+    recipeSnapshotRef: `recipes/${sessionId}/announcement/${first.outputId}.json`, processorVersion: "s07-v1"
+  };
+  const snapshot = { schemaVersion: 1, workflow: "announcement", sessionId, outputId: first.outputId, version: 1,
+    processorVersion: "s07-v1", createdAt: output.createdAt, ...first.recipe };
+  assert.equal(validateAnnouncementOutput(output, snapshot, sessionId), true);
+  const chunks = first.parts.map((part) => part.blob);
+  const file = await reconstructAnnouncementOutput({ output, recipe: snapshot }, async (url) => {
+    const index = output.parts.findIndex((part) => part.downloadUrl === url);
+    return new Response(chunks[index]);
+  });
+  assert.equal(file.name, "meeting-edited.mp3");
+  assert.equal(file.type, "audio/mpeg");
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), bytes);
+  await assert.rejects(() => reconstructAnnouncementOutput({ output, recipe: snapshot }, async () => new Response(Uint8Array.of(9))), /целостности/);
+  assert.equal(validateAnnouncementOutput(output, { ...snapshot, processing: { ...snapshot.processing, minimumSilenceSeconds: 1 } }, sessionId), false);
 });

@@ -1,4 +1,6 @@
-// Stage 7: local-only, single-thread processing. No engine import before valid selection.
+import { sha256Hex } from "./audio-archive-client.mjs";
+
+// Stage 7 DSP contract: S08B adds provenance/publication only and does not alter these values.
 const MIN_SILENCE_SECONDS = 2.0;
 const TARGET_SILENCE_SECONDS = 0.35;
 const SILENCE_THRESHOLD_DB = -45;
@@ -157,6 +159,9 @@ const resultAudio = byId("result-audio");
 const result = byId("result");
 const download = byId("download");
 let selectedFiles = [];
+let selectedProvenance = [];
+let provenanceContext = null;
+let resultCandidate = null;
 let tracks = [];
 let nextTrackId = 1;
 let resultURL = null;
@@ -184,20 +189,51 @@ let resultZoomMaximum = 2;
 
 function notifyProcessorSelection() {
   window.dispatchEvent(new CustomEvent("audio-processor-selection", {
-    detail: { files: [...selectedFiles] }
+    detail: { files: [...selectedFiles], provenance: structuredClone(selectedProvenance), provenanceContext: structuredClone(provenanceContext) }
   }));
+}
+
+function syncSelectedProvenance() {
+  selectedProvenance = tracks.every((track) => track.provenance)
+    ? tracks.map((track, index) => ({ ...structuredClone(track.provenance), ordinal: index + 1 }))
+    : [];
+}
+
+function notifyProcessorResult() {
+  window.dispatchEvent(new CustomEvent("audio-processor-result", { detail: { candidate: getProcessorResult() } }));
 }
 
 export function getProcessorFiles() {
   return [...selectedFiles];
 }
 
-export function loadProcessorFiles(files) {
+export function getProcessorResult() {
+  return resultCandidate ? { ...structuredClone({ ...resultCandidate, blob: null }), blob: resultCandidate.blob } : null;
+}
+
+export function updateProcessorProvenanceContext(context) {
+  if (active) throw new Error("Дождитесь завершения текущей операции.");
+  if (!selectedProvenance.length) return;
+  clearResult();
+  provenanceContext = structuredClone(context);
+  notifyProcessorSelection();
+}
+
+export function clearProcessorFiles() {
+  if (active) throw new Error("Дождитесь завершения текущей операции.");
+  clearResult();
+  clearTracks();
+  status.textContent = "Выберите файлы и нажмите «Обработать».";
+  setBusy(false);
+}
+
+export function loadProcessorFiles(files, provenance = [], context = null) {
   if (active) throw new Error("Дождитесь завершения текущей операции.");
   const selected = Array.from(files || []);
   const error = validateFiles(selected);
   if (!selected.length || error) throw new Error(error || "Выберите хотя бы одну аудиодорожку.");
-  selectProcessorFiles(selected);
+  if (provenance.length && provenance.length !== selected.length) throw new Error("Происхождение дорожек не соответствует выбранным файлам.");
+  selectProcessorFiles(selected, provenance, context);
 }
 
 const supported = typeof WebAssembly === "object" && typeof WebAssembly.instantiate === "function" && typeof Worker === "function" &&
@@ -229,6 +265,8 @@ function clearResult() {
   byId("result-time").textContent = "0:00 / 0:00";
   download.removeAttribute("href");
   download.removeAttribute("download");
+  resultCandidate = null;
+  notifyProcessorResult();
   byId("mixed-count").hidden = true;
   byId("mixed-count").textContent = "";
   byId("pause-label").textContent = "Сокращено длинных пауз";
@@ -244,7 +282,9 @@ function setBusy(busy) {
   cancel.hidden = !busy;
   progress.hidden = !busy;
   for (const control of byId("source").querySelectorAll("button")) control.disabled = busy;
-  for (const control of result.querySelectorAll("button, input")) control.disabled = busy;
+  for (const control of result.querySelectorAll("button, input")) {
+    if (control.id !== "source-session-publish-announcement") control.disabled = busy;
+  }
   if (!busy) {
     updateSourceZoomRange();
     if (resultWaveformURL) updateResultZoomRange();
@@ -804,6 +844,8 @@ function clearTracks(resetInput = true) {
   for (const track of tracks) revokeTrackURLs(track);
   tracks = [];
   selectedFiles = [];
+  selectedProvenance = [];
+  provenanceContext = null;
   sourceTimelineDuration = NaN;
   sourceLeftVisibleTime = 0;
   sourceViewportDuration = 0;
@@ -831,6 +873,7 @@ function removeTrack(id) {
   tracks.splice(index, 1);
   revokeTrackURLs(removed);
   selectedFiles = tracks.map((track) => track.file);
+  syncSelectedProvenance();
   syncInputFiles();
   notifyProcessorSelection();
   if (!tracks.length) {
@@ -976,7 +1019,7 @@ async function generateWaveforms(candidates = tracks) {
   }
 }
 
-function selectProcessorFiles(candidates) {
+function selectProcessorFiles(candidates, provenance = [], context = null) {
   if (active) return;
   clearResult();
   clearTracks(false);
@@ -984,12 +1027,14 @@ function selectProcessorFiles(candidates) {
   const error = validateFiles(files);
   status.textContent = error || "Выберите файлы и нажмите «Обработать».";
   if (files.length && !error && supported) {
-    tracks = files.map((file) => ({
+    tracks = files.map((file, index) => ({
       id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), waveformURL: null,
       waveformWidth: WAVEFORM_MIN_WIDTH, waveformFailed: false, loading: false, duration: NaN, ordinal: 0,
-      solo: false, muted: false, previewAudio: null
+      solo: false, muted: false, previewAudio: null, provenance: provenance[index] ? structuredClone(provenance[index]) : null
     }));
     selectedFiles = files;
+    syncSelectedProvenance();
+    provenanceContext = context ? structuredClone(context) : null;
     byId("source").hidden = false;
     renderTracks();
     setupPreviewAudios(0, false);
@@ -1138,6 +1183,43 @@ async function buildResultWaveform(currentEngine, operation, duration) {
   }
 }
 
+async function presentResult({ blob, mediaType, filename, originalDuration, intervals, ranges, multiple, mode }, currentEngine, operation) {
+  resultURL = URL.createObjectURL(blob);
+  resultAudio.src = resultURL;
+  const processedDuration = await waitForMetadata(resultAudio, operation);
+  result.hidden = false;
+  await buildResultWaveform(currentEngine, operation, processedDuration);
+  const removedDuration = Math.max(0, originalDuration - processedDuration);
+  for (const [id, value] of [["original-duration", originalDuration], ["processed-duration", processedDuration],
+    ["removed-duration", removedDuration], ["pause-count", intervals.length]]) {
+    byId(id).textContent = id === "pause-count" ? String(value) : formatDuration(value);
+    byId(id).dataset.value = String(value);
+  }
+  byId("mixed-count").hidden = !multiple;
+  byId("mixed-count").textContent = multiple ? `Дорожек сведено: ${selectedFiles.length}` : "";
+  byId("pause-label").textContent = multiple ? "Сокращено общих длинных пауз" : "Сокращено длинных пауз";
+  download.href = resultURL;
+  download.download = filename;
+  download.textContent = mode === "passthrough" ? "Скачать исходный файл без изменений" : "Скачать обработанный MP3";
+  resultCandidate = {
+    blob, processorVersion: "s07-v1", sources: structuredClone(selectedProvenance),
+    provenance: provenanceContext ? { ...structuredClone(provenanceContext), sources: structuredClone(selectedProvenance) } : null,
+    processing: {
+      mode, silenceThresholdDb: SILENCE_THRESHOLD_DB, minimumSilenceSeconds: MIN_SILENCE_SECONDS,
+      retainedSilenceSeconds: TARGET_SILENCE_SECONDS, detectedIntervals: intervals.map((item) => [...item]),
+      removalRanges: ranges.map((item) => [...item]), mix: multiple ? "amix=normalize=0" : null,
+      limiter: multiple ? "alimiter=limit=0.95:level=0:latency=1" : null,
+      codec: mode === "passthrough" ? null : { name: "libmp3lame", bitrate: OUTPUT_BITRATE }
+    },
+    result: {
+      mediaType, presentationFilename: filename, sizeBytes: blob.size, sha256: await sha256Hex(new Uint8Array(await blob.arrayBuffer())),
+      originalDurationSeconds: originalDuration, resultDurationSeconds: processedDuration,
+      removedDurationSeconds: removedDuration, pauseCount: intervals.length
+    }
+  };
+  notifyProcessorResult();
+}
+
 run.addEventListener("click", async () => {
   if (active || !selectedFiles.length || !supported) return;
   const files = selectedFiles;
@@ -1184,6 +1266,9 @@ run.addEventListener("click", async () => {
     const duration = commonTimeline(analyses); // Reject mismatches before any final encoding.
     const intervals = multiple ? commonSilences(analyses, duration) : analyses[0].silences;
     if (!multiple && !intervals.length) {
+      const filename = files[0].name;
+      await presentResult({ blob: files[0], mediaType: files[0].type || "audio/mpeg", filename,
+        originalDuration: duration, intervals: [], ranges: [], multiple: false, mode: "passthrough" }, currentEngine, operation);
       status.textContent = "Длинные паузы не найдены. Файл не изменён.";
       return;
     }
@@ -1200,21 +1285,9 @@ run.addEventListener("click", async () => {
     if (encodeCode !== 0) throw new Error("Не удалось создать MP3. Попробуйте файл меньшего размера.");
     const output = await operation.wait(currentEngine.readFile(OUTPUT_PATH));
     if (!output.byteLength) throw new Error("Не удалось создать MP3.");
-    resultURL = URL.createObjectURL(new Blob([output], { type: "audio/mpeg" }));
-    resultAudio.src = resultURL;
-    const processedDuration = await waitForMetadata(resultAudio, operation);
-    result.hidden = false;
-    await buildResultWaveform(currentEngine, operation, processedDuration);
-    for (const [id, value] of [["original-duration", duration], ["processed-duration", processedDuration],
-      ["removed-duration", Math.max(0, duration - processedDuration)], ["pause-count", intervals.length]]) {
-      byId(id).textContent = id === "pause-count" ? String(value) : formatDuration(value);
-      byId(id).dataset.value = String(value);
-    }
-    byId("mixed-count").hidden = !multiple;
-    byId("mixed-count").textContent = multiple ? `Дорожек сведено: ${files.length}` : "";
-    byId("pause-label").textContent = multiple ? "Сокращено общих длинных пауз" : "Сокращено длинных пауз";
-    download.href = resultURL;
-    download.download = `${files[0].name.replace(/\.[^.]+$/, "")}${multiple ? "-mixed" : ""}-edited.mp3`;
+    const filename = `${files[0].name.replace(/\.[^.]+$/, "")}${multiple ? "-mixed" : ""}-edited.mp3`;
+    await presentResult({ blob: new Blob([output], { type: "audio/mpeg" }), mediaType: "audio/mpeg", filename,
+      originalDuration: duration, intervals, ranges, multiple, mode: multiple ? "mixed_multi" : "processed_single" }, currentEngine, operation);
     status.textContent = multiple && !intervals.length ? MIXED_WITHOUT_CUTS : "Готово.";
   } catch (failure) {
     if (active === operation) {

@@ -81,4 +81,28 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   assert.equal(calls.at(-1)[0], "setLifecycle");
   response = await app(new Request("https://gateway.test/v1/source-sessions/%E0%A4%A", { headers: { Origin: ORIGIN, cookie } }));
   assert.equal(response.status, 400);
+
+  const publicationPath = "/v1/source-sessions/11111111-1111-4111-8111-111111111111/outputs/announcement/publications";
+  response = await app(new Request(`https://gateway.test${publicationPath}`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json" }, body: "{}"
+  }));
+  assert.equal(response.status, 403);
+  response = await app(new Request(`https://gateway.test${publicationPath}`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json", "X-CSRF-Token": payload.csrfToken }, body: "{}"
+  }));
+  assert.equal(response.status, 201);
+  assert.equal(calls.at(-1)[0], "beginAnnouncementPublication");
+  const transactionId = "22222222-2222-4222-8222-222222222222";
+  const blobId = "33333333-3333-4333-8333-333333333333";
+  response = await app(new Request(`https://gateway.test/v1/announcement-publications/${transactionId}/blobs/${blobId}/parts/1`, {
+    method: "PUT", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/octet-stream", "Content-Length": String(16 * 1024 * 1024 + 1),
+      "X-CSRF-Token": payload.csrfToken, "X-Part-SHA256": "0".repeat(64), "Idempotency-Key": "0123456789abcdef" }, body: Uint8Array.of(1)
+  }));
+  assert.equal(response.status, 413);
+  response = await app(new Request(`https://gateway.test/v1/announcement-publications/${transactionId}/cancel`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json", "X-CSRF-Token": payload.csrfToken },
+    body: JSON.stringify({ idempotencyKey: "0123456789abcdef" })
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.at(-1)[0], "cancelAnnouncementPublication");
 });
