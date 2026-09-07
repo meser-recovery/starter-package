@@ -533,9 +533,14 @@ export function validateTransaction(value) {
     if (value.state !== "finalized" && value.outputDescriptor !== null) throw new ValidationError("Incomplete publication cannot expose an output descriptor");
     if (value.failure !== null) {
       assertExactKeys(value.failure, ["code", "message", "at"], "publication failure");
-      if (typeof value.failure.code !== "string" || typeof value.failure.message !== "string") throw new ValidationError("Publication failure metadata is invalid");
+      if (typeof value.failure.code !== "string" || !/^[a-z_]{1,40}$/.test(value.failure.code) ||
+          typeof value.failure.message !== "string" || value.failure.message.length < 1 || value.failure.message.length > 160 ||
+          /[\u0000-\u001f\u007f]|(?:https?:\/\/|bearer\s|token|cookie)/i.test(value.failure.message)) {
+        throw new ValidationError("Publication failure metadata is invalid");
+      }
       assertTimestamp(value.failure.at, "publication failure.at");
     }
+    if (value.state === "finalized" && value.failure !== null) throw new ValidationError("Finalized publication cannot retain failure metadata");
     return structuredClone(value);
   }
   if (value.kind === "pending_delete") {

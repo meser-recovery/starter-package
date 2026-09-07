@@ -301,6 +301,70 @@ test("Announcement publication reserves once, finalizes atomically, and verifies
   assert.equal(repository.files.has(`recipes/${session.id}/announcement/${IDS.output}.json`), false);
 });
 
+test("Announcement upload failures persist only bounded safe metadata and retry the same reserved job", async () => {
+  const { repository, domain, session } = await announcementFixture();
+  const publication = publicationBody(session, Buffer.from("result-mp3"));
+  const started = await domain.beginAnnouncementPublication(session.id, publication.body);
+  const upload = repository.uploadReleaseAsset.bind(repository);
+  repository.uploadReleaseAsset = async () => { throw new Error("provider https://private.invalid token=secret body=/tmp/output.bin"); };
+
+  await assert.rejects(() => domain.uploadAnnouncementPart(started.transactionId, IDS.outputBlob, 1,
+    publication.chunks[0], sha(publication.chunks[0]), `${KEY}:failed-upload`), /private\.invalid/);
+
+  const path = `transactions/publish-${started.transactionId}.json`;
+  let job = repository.files.get(path);
+  assert.deepEqual(job.failure, {
+    code: "upload_failed", message: "Announcement part upload failed; retry is safe.", at: "2026-01-02T03:04:05.000Z"
+  });
+  assert.equal(JSON.stringify(job).includes("private.invalid"), false);
+  assert.equal(JSON.stringify(job).includes("secret"), false);
+  assert.deepEqual((await domain.getAnnouncementPublication(started.transactionId)).failure, job.failure);
+  assert.deepEqual((await domain.listIncomplete()).transactions.find((item) => item.transactionId === started.transactionId).failure, job.failure);
+
+  repository.uploadReleaseAsset = upload;
+  for (const [index, bytes] of publication.chunks.entries()) {
+    await domain.uploadAnnouncementPart(started.transactionId, IDS.outputBlob, index + 1, bytes, sha(bytes), `${KEY}:retry-upload:${index}`);
+    job = repository.files.get(path);
+    assert.equal(job.failure, null);
+    assert.equal(job.reservedVersion, 1);
+  }
+  const finalized = await domain.finalizeAnnouncementPublication(started.transactionId);
+  assert.equal(finalized.job.transactionId, started.transactionId);
+  assert.equal(finalized.output.version, 1);
+  assert.equal((await domain.getSession(session.id)).workflows.announcement.nextVersion, 2);
+});
+
+test("Announcement finalize failures remain safely recoverable without reserving another version", async () => {
+  const { repository, domain, session } = await announcementFixture();
+  const publication = publicationBody(session, Buffer.from("result-mp3"));
+  const started = await domain.beginAnnouncementPublication(session.id, publication.body);
+  for (const [index, bytes] of publication.chunks.entries()) {
+    await domain.uploadAnnouncementPart(started.transactionId, IDS.outputBlob, index + 1, bytes, sha(bytes), `${KEY}:finalize-part:${index}`);
+  }
+  const download = repository.downloadReleaseAsset.bind(repository);
+  repository.downloadReleaseAsset = async () => { throw new Error("provider body cookie=secret https://private.invalid/asset"); };
+
+  await assert.rejects(() => domain.finalizeAnnouncementPublication(started.transactionId), /private\.invalid/);
+
+  const path = `transactions/publish-${started.transactionId}.json`;
+  let job = repository.files.get(path);
+  assert.deepEqual(job.failure, {
+    code: "finalize_failed", message: "Announcement finalization failed; retry or discard is required.", at: "2026-01-02T03:04:05.000Z"
+  });
+  assert.equal(JSON.stringify(job).includes("cookie"), false);
+  assert.equal(JSON.stringify(job).includes("private.invalid"), false);
+  assert.equal(job.reservedVersion, 1);
+
+  repository.downloadReleaseAsset = download;
+  const recovered = await domain.recoverIncomplete(started.transactionId, "retry");
+  job = repository.files.get(path);
+  assert.equal(recovered.job.transactionId, started.transactionId);
+  assert.equal(recovered.output.version, 1);
+  assert.equal(job.failure, null);
+  assert.equal(job.state, "finalized");
+  assert.equal((await domain.getSession(session.id)).workflows.announcement.nextVersion, 2);
+});
+
 test("cancelled publications block destruction until discard and reserved versions are burned", async () => {
   const { domain, session } = await announcementFixture();
   const first = publicationBody(session, Buffer.from("result-one"));

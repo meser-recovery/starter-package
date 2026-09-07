@@ -23,6 +23,14 @@ function nowIso(clock) {
   return new Date(clock()).toISOString();
 }
 
+function publicationFailure(phase, clock) {
+  const failures = {
+    upload: { code: "upload_failed", message: "Announcement part upload failed; retry is safe." },
+    finalize: { code: "finalize_failed", message: "Announcement finalization failed; retry or discard is required." }
+  };
+  return { ...failures[phase], at: nowIso(clock) };
+}
+
 function safeTitle(value) {
   if (typeof value !== "string" || !value.trim() || value.trim().length > 200) throw new ValidationError("Title must contain 1 to 200 characters");
   return value.trim();
@@ -191,8 +199,19 @@ export class AudioArchiveDomain {
       totalParts: requiredParts,
       canFinalize: transaction.uploadedParts.length === requiredParts,
       requiresLocalResult: transaction.uploadedParts.length !== requiredParts,
+      failure: structuredClone(transaction.failure),
       updatedAt: transaction.updatedAt
     };
+  }
+
+  async persistPublicationFailure(transactionId, phase, observedRevision) {
+    try {
+      const { head, path, transaction } = await this.publicationSnapshot(transactionId);
+      if (transaction.revision !== observedRevision || ["finalized", "discarded"].includes(transaction.state)) return;
+      const failed = validateTransaction({ ...transaction, revision: transaction.revision + 1,
+        failure: publicationFailure(phase, this.clock), updatedAt: nowIso(this.clock) });
+      await this.repository.commitJson(head, { [path]: failed }, `Record Announcement ${phase} failure ${transactionId}`);
+    } catch { /* Failure reporting is best effort and must not replace the attributable error. */ }
   }
 
   async activePublications(sessionId, head = null, excluding = null) {
@@ -303,42 +322,56 @@ export class AudioArchiveDomain {
     const hash = assertSha256(suppliedHash, "X-Part-SHA256");
     if (!sameDigest(digestBytes(bytes), hash)) throw new ValidationError("Part SHA-256 does not match its bytes");
     let { head, path, transaction } = await this.publicationSnapshot(transactionId);
-    if (transaction.state === "finalized") return { uploaded: true, finalized: true };
-    if (transaction.state === "discarded") throw conflict("Publication job was discarded");
-    if (transaction.blobId !== id) throw new ValidationError("Blob does not belong to publication job");
-    const planned = transaction.plan.parts.find((item) => item.partNumber === partNumber);
-    if (!planned || planned.sizeBytes !== bytes.byteLength || !sameDigest(planned.sha256, hash)) throw new ValidationError("Part does not match publication plan");
-    const already = transaction.uploadedParts.find((item) => item.partNumber === partNumber);
-    if (already) {
-      if (already.sizeBytes !== bytes.byteLength || !sameDigest(already.sha256, hash)) throw conflict("A different part already occupies this slot");
-      return { uploaded: true, assetId: already.assetId, downloadUrl: already.downloadUrl };
+    const observedRevision = transaction.revision;
+    try {
+      if (transaction.state === "finalized") return { uploaded: true, finalized: true };
+      if (transaction.state === "discarded") throw conflict("Publication job was discarded");
+      if (transaction.blobId !== id) throw new ValidationError("Blob does not belong to publication job");
+      const planned = transaction.plan.parts.find((item) => item.partNumber === partNumber);
+      if (!planned || planned.sizeBytes !== bytes.byteLength || !sameDigest(planned.sha256, hash)) throw new ValidationError("Part does not match publication plan");
+      const already = transaction.uploadedParts.find((item) => item.partNumber === partNumber);
+      if (already) {
+        if (already.sizeBytes !== bytes.byteLength || !sameDigest(already.sha256, hash)) throw conflict("A different part already occupies this slot");
+        if (transaction.failure !== null) {
+          transaction = validateTransaction({ ...transaction, revision: transaction.revision + 1, failure: null, updatedAt: nowIso(this.clock) });
+          await this.repository.commitJson(head, { [path]: transaction }, `Clear Announcement upload failure ${transactionId}`);
+        }
+        return { uploaded: true, assetId: already.assetId, downloadUrl: already.downloadUrl };
+      }
+      const name = assetName(id, partNumber);
+      const assets = await this.repository.listReleaseAssets(transaction.releaseId);
+      const matches = assets.filter((asset) => asset.name === name);
+      if (matches.length > 1) throw conflict("Duplicate release assets occupy the planned slot");
+      let asset = matches[0];
+      if (asset) {
+        if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.size !== bytes.byteLength ||
+            (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw conflict("Existing release asset does not match planned part");
+      } else {
+        asset = await this.repository.uploadReleaseAsset(transaction.releaseId, name, bytes);
+      }
+      if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.name !== name || asset.size !== bytes.byteLength ||
+          (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw new Error("GitHub asset integrity response did not match upload");
+      transaction = structuredClone(transaction);
+      transaction.state = "uploading";
+      transaction.revision++;
+      transaction.failure = null;
+      transaction.updatedAt = nowIso(this.clock);
+      transaction.uploadedParts.push({ blobId: id, partNumber, assetName: name, sizeBytes: bytes.byteLength, sha256: hash,
+        assetId: asset.id, downloadUrl: canonicalReleaseAssetUrl(transaction.releaseTag, name) });
+      transaction.uploadedParts.sort((left, right) => left.partNumber - right.partNumber);
+      transaction = validateTransaction(transaction);
+      await this.repository.commitJson(head, { [path]: transaction }, `Record Announcement part ${transaction.sessionId} ${name}`);
+      return { uploaded: true, assetId: asset.id, downloadUrl: canonicalReleaseAssetUrl(transaction.releaseTag, name) };
+    } catch (error) {
+      await this.persistPublicationFailure(transactionId, "upload", observedRevision);
+      throw error;
     }
-    const name = assetName(id, partNumber);
-    const assets = await this.repository.listReleaseAssets(transaction.releaseId);
-    const matches = assets.filter((asset) => asset.name === name);
-    if (matches.length > 1) throw conflict("Duplicate release assets occupy the planned slot");
-    let asset = matches[0];
-    if (asset) {
-      if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.size !== bytes.byteLength ||
-          (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw conflict("Existing release asset does not match planned part");
-    } else {
-      asset = await this.repository.uploadReleaseAsset(transaction.releaseId, name, bytes);
-    }
-    if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.name !== name || asset.size !== bytes.byteLength ||
-        (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), hash))) throw new Error("GitHub asset integrity response did not match upload");
-    transaction = structuredClone(transaction);
-    transaction.state = "uploading";
-    transaction.revision++;
-    transaction.updatedAt = nowIso(this.clock);
-    transaction.uploadedParts.push({ blobId: id, partNumber, assetName: name, sizeBytes: bytes.byteLength, sha256: hash,
-      assetId: asset.id, downloadUrl: canonicalReleaseAssetUrl(transaction.releaseTag, name) });
-    transaction.uploadedParts.sort((left, right) => left.partNumber - right.partNumber);
-    await this.repository.commitJson(head, { [path]: transaction }, `Record Announcement part ${transaction.sessionId} ${name}`);
-    return { uploaded: true, assetId: asset.id, downloadUrl: canonicalReleaseAssetUrl(transaction.releaseTag, name) };
   }
 
   async finalizeAnnouncementPublication(transactionId) {
     let { head, path, transaction } = await this.publicationSnapshot(transactionId);
+    const observedRevision = transaction.revision;
+    try {
     if (transaction.state === "finalized") return { job: this.publicPublicationJob(transaction), output: structuredClone(transaction.outputDescriptor), idempotent: true };
     if (transaction.state === "discarded") throw conflict("Publication job was discarded");
     if (transaction.uploadedParts.length !== transaction.plan.parts.length) throw conflict("All planned parts must upload before finalization");
@@ -397,6 +430,10 @@ export class AudioArchiveDomain {
       [path]: transaction
     });
     return { job: this.publicPublicationJob(transaction), output: structuredClone(output), idempotent: false };
+    } catch (error) {
+      await this.persistPublicationFailure(transactionId, "finalize", observedRevision);
+      throw error;
+    }
   }
 
   async cancelAnnouncementPublication(transactionId, body, discard = false) {
@@ -859,7 +896,8 @@ export class AudioArchiveDomain {
             canFinalize: ["ingestion", "publication"].includes(transaction.kind) ? uploadedParts === totalParts : null,
             requiresOriginalFiles: transaction.kind === "ingestion" ? uploadedParts !== totalParts : false,
             requiresLocalResult: transaction.kind === "publication" ? uploadedParts !== totalParts : false,
-            reservedVersion: transaction.kind === "publication" ? transaction.reservedVersion : null
+            reservedVersion: transaction.kind === "publication" ? transaction.reservedVersion : null,
+            failure: transaction.kind === "publication" ? structuredClone(transaction.failure) : null
           });
         }
       } catch { /* Malformed records are not actionable. */ }

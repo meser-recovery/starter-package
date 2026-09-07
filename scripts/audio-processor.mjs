@@ -193,6 +193,12 @@ function notifyProcessorSelection() {
   }));
 }
 
+function syncSelectedProvenance() {
+  selectedProvenance = tracks.every((track) => track.provenance)
+    ? tracks.map((track, index) => ({ ...structuredClone(track.provenance), ordinal: index + 1 }))
+    : [];
+}
+
 function notifyProcessorResult() {
   window.dispatchEvent(new CustomEvent("audio-processor-result", { detail: { candidate: getProcessorResult() } }));
 }
@@ -867,7 +873,7 @@ function removeTrack(id) {
   tracks.splice(index, 1);
   revokeTrackURLs(removed);
   selectedFiles = tracks.map((track) => track.file);
-  selectedProvenance = tracks.map((track) => track.provenance).filter(Boolean);
+  syncSelectedProvenance();
   syncInputFiles();
   notifyProcessorSelection();
   if (!tracks.length) {
@@ -1027,7 +1033,7 @@ function selectProcessorFiles(candidates, provenance = [], context = null) {
       solo: false, muted: false, previewAudio: null, provenance: provenance[index] ? structuredClone(provenance[index]) : null
     }));
     selectedFiles = files;
-    selectedProvenance = tracks.map((track) => track.provenance).filter(Boolean);
+    syncSelectedProvenance();
     provenanceContext = context ? structuredClone(context) : null;
     byId("source").hidden = false;
     renderTracks();
