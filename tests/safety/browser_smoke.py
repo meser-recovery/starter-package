@@ -1348,7 +1348,7 @@ def check_source_session_archive(browser, base_url: str) -> None:
     def route_request(route):
         request = route.request
         parsed = urlparse(request.url)
-        if parsed.netloc == urlparse(base_url).netloc and parsed.path == AUDIO_EDITOR_PATH:
+        if parsed.netloc == urlparse(base_url).netloc and parsed.path.endswith(AUDIO_EDITOR_PATH):
             response = route.fetch()
             body, replacements = re.subn(r'(<meta name="audio-archive-gateway" content=")[^"]*(">)',
                 r'\1https://gateway.test\2', response.body().decode("utf-8"), count=1)
@@ -1413,6 +1413,7 @@ def check_source_session_archive(browser, base_url: str) -> None:
         except Error as error:
             raise AssertionError({"error": str(error), "pageErrors": page_errors, "status": page.locator("#source-session-status").inner_text(), "calls": gateway_calls})
         assert page.locator(".processor-track__name").inner_text() == "archive-source.wav"
+        page.wait_for_function("!document.getElementById('processor-file').disabled")
         assert any(method == "GET" and path.endswith(f"/blobs/{blob_id}/parts/1/content") for method, path, _ in gateway_calls)
         assert session["lifecycle"]["state"] == "incoming"
         session["lifecycle"]["state"] = "archived"
@@ -2089,7 +2090,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
 
     def isolate_processor_gateway(route):
         parsed = urlparse(route.request.url)
-        if parsed.netloc == site_host and parsed.path == AUDIO_EDITOR_PATH and route.request.resource_type == "document":
+        if parsed.netloc == site_host and parsed.path.endswith(AUDIO_EDITOR_PATH) and route.request.resource_type == "document":
             response = route.fetch()
             body, replacements = re.subn(r'(<meta name="audio-archive-gateway" content=")[^"]*(">)',
                 r'\1\2', response.body().decode("utf-8"), count=1)
