@@ -1350,8 +1350,10 @@ def check_source_session_archive(browser, base_url: str) -> None:
         parsed = urlparse(request.url)
         if parsed.netloc == urlparse(base_url).netloc and parsed.path == AUDIO_EDITOR_PATH:
             response = route.fetch()
-            body = response.body().decode("utf-8").replace('name="audio-archive-gateway" content=""',
-                'name="audio-archive-gateway" content="https://gateway.test"')
+            body, replacements = re.subn(r'(<meta name="audio-archive-gateway" content=")[^"]*(">)',
+                r'\1https://gateway.test\2', response.body().decode("utf-8"), count=1)
+            if replacements != 1:
+                raise AssertionError("Audio archive gateway hook could not be isolated for the mock")
             route.fulfill(response=response, body=body)
             return
         if parsed.netloc != "gateway.test":
@@ -2084,7 +2086,22 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
     errors = []
     context.on("request", lambda request: requests.append((request.method, request.url, request.post_data)))
     site_host = urlparse(base_url).netloc
-    context.route("**/*", lambda route: route.continue_() if urlparse(route.request.url).netloc in {"", site_host} else route.abort())
+
+    def isolate_processor_gateway(route):
+        parsed = urlparse(route.request.url)
+        if parsed.netloc == site_host and parsed.path == AUDIO_EDITOR_PATH and route.request.resource_type == "document":
+            response = route.fetch()
+            body, replacements = re.subn(r'(<meta name="audio-archive-gateway" content=")[^"]*(">)',
+                r'\1\2', response.body().decode("utf-8"), count=1)
+            if replacements != 1:
+                raise AssertionError("Audio archive gateway hook could not be disabled for the processor smoke")
+            route.fulfill(response=response, body=body)
+        elif parsed.netloc in {"", site_host}:
+            route.continue_()
+        else:
+            route.abort()
+
+    context.route("**/*", isolate_processor_gateway)
     # Observe native workers and object URLs without replacing the engine or its work.
     context.add_init_script("""(() => {
         window.processorProbe = {workers: 0, terminated: 0, messages: [], urls: [], revoked: [], phases: [], files: {}, logs: []};

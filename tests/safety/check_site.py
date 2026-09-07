@@ -1059,8 +1059,8 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
             source = path.read_text(encoding="utf-8")
             if source.count('name="audio-archive-gateway"') != 1:
                 errors.append(f"{relative}: expected one audio archive gateway configuration hook")
-            if source.count('<meta name="audio-archive-gateway" content="">') != 1:
-                errors.append(f"{relative}: audio archive gateway hook must remain empty before deployment")
+            if source.count('<meta name="audio-archive-gateway" content="https://meserproject.duckdns.org">') != 1:
+                errors.append(f"{relative}: audio archive gateway hook must contain the exact production origin")
 
     active_provider_paths = [
         ROOT / "gateway/audio-archive/src/config.mjs",

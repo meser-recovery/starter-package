@@ -79,13 +79,13 @@ test("runbook is gated, unresolved values fail closed, and provider remnants are
   assert.doesNotMatch(activeFiles, /-----BEGIN (?:RSA )?PRIVATE KEY-----|scrypt\$[^`\s]+/);
 });
 
-test("all frontend gateway hooks remain present and empty before deployment", () => {
+test("all frontend gateway hooks contain the exact production origin", () => {
   for (const relative of [
     "Admin-panel.html",
     "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html",
     "Audio-Editor.html"
   ]) {
     const html = read(resolve(repositoryRoot, relative));
-    assert.equal((html.match(/<meta name="audio-archive-gateway" content="">/g) || []).length, 1, relative);
+    assert.equal((html.match(/<meta name="audio-archive-gateway" content="https:\/\/meserproject\.duckdns\.org">/g) || []).length, 1, relative);
   }
 });
