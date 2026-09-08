@@ -32,6 +32,7 @@
 .audio-editor-content > .service-logout { justify-self: center; margin-top: 0; }
 
 .processor-card { min-width: 0; }
+.processor-card[hidden] { display: none; }
 .processor-card p, .processor-card h3 { margin: 0; }
 .processor-card [hidden] { display: none; }
 .processor-field, .processor-preview, .processor-feedback { display: grid; gap: var(--space-2); min-width: 0; }
@@ -163,6 +164,57 @@
 .source-workflow { display: grid; gap: var(--space-2); min-width: 0; padding: var(--space-3); background: #f1f6fb; border-radius: var(--radius-sm); }
 .source-output-version { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; }
 .source-session-danger { color: #8b1d1d !important; border-color: #b84a4a !important; background: #fff !important; }
+.speaker-open-action { color: #17472f !important; border-color: #57906c !important; background: #f1f7f3 !important; }
+
+.speaker-editor { min-width: 0; border-color: #8c5d15; }
+.speaker-editor[hidden], .speaker-editor [hidden] { display: none; }
+.speaker-editor h3, .speaker-editor h4, .speaker-editor p { margin: 0; }
+.speaker-toolbar, .speaker-selection__actions, .speaker-track__buttons, .speaker-result__actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.speaker-toolbar button, .speaker-selection button, .speaker-track button, .speaker-region-row button, .speaker-result__actions button {
+  min-height: 2.75rem; padding: .5rem .8rem; color: var(--color-text); background: var(--color-action-surface); border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-action); font: inherit; font-weight: 700; cursor: pointer;
+}
+.speaker-toolbar button:disabled, .speaker-track button:disabled { cursor: not-allowed; opacity: .6; }
+.speaker-toolbar button:focus-visible, .speaker-selection button:focus-visible, .speaker-selection input:focus-visible, .speaker-selection select:focus-visible,
+.speaker-track button:focus-visible, .speaker-dsp select:focus-visible, .speaker-region-row button:focus-visible, .speaker-region-row input:focus-visible,
+.speaker-waveform:focus-visible, .speaker-scrollbar:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
+.speaker-selection, .speaker-source, .speaker-regions, .speaker-render, .speaker-result { display: grid; gap: var(--space-4); min-width: 0; padding: var(--space-4); background: #fbf8f1; border: 1px solid #dbc79f; border-radius: var(--radius-sm); }
+.speaker-selection__fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: var(--space-3); }
+.speaker-selection__fields label, .speaker-dsp-field { display: grid; gap: .35rem; min-width: 0; font-weight: 700; }
+.speaker-selection__fields input, .speaker-selection__fields select, .speaker-dsp select, .speaker-region-row input { width: 100%; min-width: 0; min-height: 2.75rem; padding: .45rem .55rem; border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-sm); font: inherit; background: #fff; }
+.speaker-selection__fields output { display: flex; min-height: 2.75rem; align-items: center; padding: .45rem .55rem; background: #fff; border: 1px solid var(--color-palette-light-2); border-radius: var(--radius-sm); font-variant-numeric: tabular-nums; }
+.speaker-error { min-height: 1.5rem; color: #8b1d1d; font-weight: 700; }
+.speaker-source__heading { display: flex; justify-content: space-between; gap: var(--space-4); align-items: end; }
+.speaker-source__heading > div { display: grid; gap: var(--space-1); }
+.speaker-source audio, .speaker-result audio { width: 100%; min-width: 0; }
+.speaker-tracks { display: grid; gap: var(--space-3); min-width: 0; margin: 0; padding: 0; list-style: none; }
+.speaker-track { display: grid; gap: var(--space-3); min-width: 0; padding: var(--space-3); background: #fff; border: 2px solid #b7c9d8; border-radius: var(--radius-sm); }
+.speaker-track.is-excluded { background: #f1f1f1; border-style: dashed; }
+.speaker-track__header { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: var(--space-3); align-items: center; }
+.speaker-track__identity { display: flex; flex-wrap: wrap; gap: .25rem .65rem; align-items: baseline; min-width: 0; }
+.speaker-track__identity h4 { overflow-wrap: anywhere; }
+.speaker-track__number { color: #8c5d15; font-weight: 800; }
+.speaker-track__buttons { justify-content: flex-end; }
+.speaker-track__buttons button[aria-pressed="true"] { color: #fff; background: var(--color-palette-dark-1); }
+.speaker-dsp { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-3); }
+.speaker-track__summary { color: #555; font-size: .92rem; font-weight: 700; }
+.speaker-waveform-scroll { width: 100%; min-width: 0; height: 104px; overflow-x: auto; overflow-y: hidden; background: #13293d; border-radius: .45rem; overscroll-behavior-inline: contain; }
+.speaker-track .speaker-waveform-scroll { scrollbar-width: none; }
+.speaker-track .speaker-waveform-scroll::-webkit-scrollbar { display: none; }
+.speaker-waveform { position: relative; display: block; width: 100%; height: 100px; min-width: 100%; padding: 0; overflow: hidden; background: #13293d; border: 2px solid transparent; border-radius: .45rem; cursor: crosshair; touch-action: pan-y; }
+.speaker-waveform canvas { display: block; width: 100%; height: 100%; pointer-events: none; }
+.speaker-region-overlay { position: absolute; z-index: 2; top: 0; bottom: 0; min-width: 2px; pointer-events: none; }
+.speaker-region-overlay--cut { background: rgba(214, 58, 58, .55); border-inline: 2px solid #ffb3b3; }
+.speaker-region-overlay--silence { top: 14px; bottom: 14px; background: rgba(245, 190, 48, .55); border: 2px dashed #fff0b0; }
+.speaker-playhead { position: absolute; z-index: 3; inset-block: 0; left: 0; width: 3px; background: #fff; box-shadow: 0 0 0 1px #13293d; pointer-events: none; }
+.speaker-scrollbar { position: relative; width: 100%; height: 1.75rem; overflow: hidden; background: #e1d7c4; border: 1px solid #bda77b; border-radius: 999px; cursor: pointer; }
+.speaker-scrollbar span { position: absolute; inset-block: .2rem; left: 0; min-width: 2.25rem; background: #8c5d15; border: 2px solid #fff; border-radius: 999px; pointer-events: none; }
+.speaker-region-list { display: grid; gap: var(--space-2); }
+.speaker-region-row { display: grid; grid-template-columns: minmax(10rem, .35fr) minmax(0, 1fr); gap: var(--space-3); align-items: center; padding: var(--space-3); background: #fff; border-left: .4rem solid #c33; border-radius: var(--radius-sm); }
+.speaker-region-row--silence { border-left-color: #d39a00; }
+.speaker-region-row__fields { display: grid; grid-template-columns: repeat(2, minmax(6rem, 1fr)) repeat(3, auto); gap: var(--space-2); }
+.speaker-render progress { width: 100%; accent-color: #8c5d15; }
+.speaker-not-saved { padding: var(--space-3); color: #663f00; background: #fff0c7; border: 1px solid #d59a22; border-radius: var(--radius-sm); font-weight: 800; }
+.speaker-result__actions .archive-download { justify-content: center; }
 .source-session-maintenance { display: grid; gap: var(--space-3); padding-top: var(--space-4); border-top: 1px solid var(--color-palette-light-2); }
 .source-recovery-item { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center; padding-block: var(--space-2); }
 .source-session-dialog { width: min(42rem, calc(100% - 2rem)); max-height: calc(100% - 2rem); padding: 0; overflow: auto; color: var(--color-text); background: var(--color-surface); border: 2px solid var(--color-brand); border-radius: 1rem; box-shadow: 0 1rem 3rem rgba(1, 58, 91, .35); }
@@ -194,4 +246,14 @@
   .source-workflows { grid-template-columns: 1fr; }
   .source-entry-modes > *, .source-session-toolbar > button, .source-session-dialog__actions > button { flex: 1 1 100%; }
   .source-session-dialog { width: calc(100% - 1rem); max-height: calc(100% - 1rem); }
+  .speaker-toolbar > *, .speaker-selection__actions > *, .speaker-track__buttons > *, .speaker-result__actions > * { flex: 1 1 100%; justify-content: center; }
+  .speaker-selection__fields, .speaker-dsp, .speaker-track__header, .speaker-region-row, .speaker-region-row__fields { grid-template-columns: 1fr; }
+  .speaker-source__heading { align-items: start; flex-direction: column; }
+}
+
+@media (min-width: 36.01rem) and (max-width: 55rem) {
+  .speaker-selection__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .speaker-track__header, .speaker-region-row { grid-template-columns: 1fr; }
+  .speaker-track__buttons { justify-content: flex-start; }
+  .speaker-region-row__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

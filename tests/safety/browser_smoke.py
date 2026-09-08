@@ -1155,7 +1155,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").all_text_contents()[:5] != ["Исходники", "Архив результатов", "Анонс-мейкер", "Обработка аудио", "Архив отредактированных аудио"]:
+    if page.locator("h2").all_text_contents()[:6] != ["Исходники", "Архив результатов", "Анонс-мейкер", "Спикерская", "Обработка аудио", "Архив отредактированных аудио"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1321,7 +1321,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
     blob_ids = ["33333333-3333-4333-8333-333333333333", "66666666-6666-4666-8666-666666666666",
         "88888888-8888-4888-8888-888888888888"]
     names = ["archive-first.wav", "archive-middle.wav", "archive-last.wav"]
-    wavs = [wav_payload(name, ((.1, True),), frequency=frequency, sample_rate=8000)["buffer"]
+    wavs = [wav_payload(name, ((3, True),), frequency=frequency, sample_rate=8000)["buffer"]
         for name, frequency in zip(names, (330, 440, 550))]
     digests = [hashlib.sha256(wav).hexdigest() for wav in wavs]
     asset_names = [f"blob-{blob_id}-part-0001.bin" for blob_id in blob_ids]
@@ -1354,7 +1354,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
     }
     session["workflows"]["speaker"].update({"status": "result_ready", "outputs": [speaker_output], "nextVersion": 2})
     gateway_calls = []
-    mock = {"draft": None, "publication": None, "output": None, "output_recipe": None,
+    mock = {"draft": None, "speaker_draft": None, "publication": None, "output": None, "output_recipe": None,
             "output_bytes": None, "held_upload": None, "list_failure": None}
     publication_id = "44444444-4444-4444-8444-444444444444"
     site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
@@ -1411,6 +1411,17 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             session["workflows"]["announcement"]["currentDraft"] = {"path": f"drafts/{session_id}/announcement.json", "revision": 1}
             session["workflows"]["announcement"]["status"] = "in_progress"
             fulfill_json(route, {"draft": mock["draft"], "session": session})
+        elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/speaker" and request.method == "GET":
+            fulfill_json(route, {"draft": mock["speaker_draft"]})
+        elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/speaker" and request.method == "PUT":
+            body = json.loads(request.post_data)
+            session["revision"] += 1
+            draft_revision = (mock["speaker_draft"] or {}).get("draftRevision", 0) + 1
+            mock["speaker_draft"] = {"schemaVersion": 1, "sessionId": session_id, "workflow": "speaker",
+                "draftRevision": draft_revision, "sourceSessionRevision": session["revision"],
+                "savedAt": "2026-01-02T03:04:05.000Z", "payloadSchema": "speaker/v1", "payload": body["payload"]}
+            session["workflows"]["speaker"]["currentDraft"] = {"path": f"drafts/{session_id}/speaker.json", "revision": draft_revision}
+            fulfill_json(route, {"draft": mock["speaker_draft"], "session": session})
         elif parsed.path == f"/v1/source-sessions/{session_id}/deletion-preview" and request.method == "GET":
             fulfill_json(route, {"sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
                 "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0})
@@ -1507,6 +1518,155 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 page.evaluate("scrollTo(0, 0)")
                 page.screenshot(path=str(screenshot_dir / f"s08b-archive-overview-{width}.png"), full_page=True)
             page.set_viewport_size({"width": 390, "height": 900})
+        page.get_by_role("button", name="Открыть в «Спикерская»", exact=True).click()
+        page.locator("#speaker-editor .speaker-track").nth(2).wait_for(timeout=30000)
+        assert page.locator("#speaker-editor").is_visible()
+        assert page.locator("#source-session-announcement-workspace").is_hidden()
+        assert page.locator("#speaker-editor-undo").is_disabled() and page.locator("#speaker-editor-redo").is_disabled()
+        assert page.locator("#speaker-editor-render").is_enabled()
+        assert "активная работа «Спикерская»" in page.locator("#speaker-editor-identity").inner_text()
+        assert page.locator("#announcement-processor-card").is_hidden()
+        for width in (320, 390, 768, 1280):
+            page.set_viewport_size({"width": width, "height": 900})
+            assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
+            box = page.locator("#speaker-editor").bounding_box()
+            assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (width, box)
+        page.locator(".skip-link").evaluate("element => element.style.display = 'none'")
+        if screenshot_dir:
+            page.evaluate("document.activeElement?.blur()")
+            page.set_viewport_size({"width": 1280, "height": 900})
+            page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-speaker-opened-1280.png"))
+            page.set_viewport_size({"width": 390, "height": 900})
+            page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-speaker-opened-390.png"))
+        page.locator("#speaker-editor-selection-start").fill("0.5")
+        page.locator("#speaker-editor-selection-end").fill("1")
+        page.locator("#speaker-editor-add-cut").click()
+        assert page.locator(".speaker-region-overlay--cut").count() == 3
+        assert page.locator("#speaker-editor-undo").is_enabled() and page.locator("#speaker-editor-redo").is_disabled()
+        page.locator("#speaker-editor-selection-start").fill("1.5")
+        page.locator("#speaker-editor-selection-end").fill("2")
+        page.locator("#speaker-editor-add-silence").click()
+        assert page.locator(".speaker-region-overlay--silence").count() == 1
+        assert page.locator(".speaker-region-row--cut").count() == 1 and page.locator(".speaker-region-row--silence").count() == 1
+        if screenshot_dir:
+            page.evaluate("document.activeElement?.blur()")
+            page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-regions-distinct-390.png"))
+        second = page.locator(".speaker-track").nth(1)
+        second.get_by_role("button", name="Исключить из микса", exact=True).click()
+        assert "исключена из финального микса" in page.locator(".speaker-track").nth(1).inner_text()
+        page.locator(".speaker-dsp select").nth(0).select_option("gentle")
+        page.locator(".speaker-dsp select").nth(2).select_option("medium")
+        if screenshot_dir:
+            page.evaluate("document.activeElement?.blur()")
+            page.set_viewport_size({"width": 768, "height": 900})
+            page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-excluded-dsp-768.png"))
+            page.set_viewport_size({"width": 390, "height": 900})
+        page.locator(".speaker-track").first.get_by_role("button", name="Исключить из микса", exact=True).click()
+        page.locator(".speaker-track").nth(2).get_by_role("button", name="Исключить из микса", exact=True).click()
+        assert page.locator("#speaker-editor-render").is_disabled()
+        assert "Все дорожки исключены" in page.locator("#speaker-editor-render-reason").inner_text()
+        page.locator("#speaker-editor-undo").click()
+        page.locator("#speaker-editor-undo").click()
+        page.keyboard.press("Control+z")
+        assert page.locator("#speaker-editor-redo").is_enabled()
+        page.keyboard.press("Control+Shift+z")
+        assert page.locator("#speaker-editor-redo").is_enabled()
+        page.locator(".speaker-dsp select").nth(2).select_option("strong")
+        assert page.locator("#speaker-editor-redo").is_disabled()
+        page.locator(".speaker-dsp select").nth(2).select_option("medium")
+        if screenshot_dir:
+            page.evaluate("document.activeElement?.blur()")
+            page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-undo-redo-390.png"))
+        page.locator("#speaker-editor-save").click()
+        page.get_by_text("Черновик сохранён, ревизия 1.", exact=True).wait_for()
+        assert mock["speaker_draft"]["payloadSchema"] == "speaker/v1"
+        assert mock["speaker_draft"]["payload"]["excludedTrackIds"] == [track_ids[1]]
+        assert mock["speaker_draft"]["payload"]["globalCuts"] == [{"regionId": mock["speaker_draft"]["payload"]["globalCuts"][0]["regionId"], "startSeconds": .5, "endSeconds": 1}]
+        # Cancellation is local: no candidate and no Speaker output route may be called.
+        page.locator("#speaker-editor-render").click()
+        page.locator("#speaker-editor-cancel").wait_for(state="visible")
+        if screenshot_dir:
+            page.evaluate("document.activeElement?.blur()")
+            page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-render-progress-cancel-390.png"))
+        page.locator("#speaker-editor-cancel").click()
+        assert page.locator("#speaker-editor-result").is_hidden()
+        page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
+        page.locator("#speaker-editor-render").click()
+        page.get_by_text("Локальный MP3 готов. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
+        page.locator("#speaker-editor-result").wait_for(state="visible")
+        assert "ещё не сохранён в архиве «Спикерская»" in page.locator(".speaker-not-saved").inner_text()
+        candidate = page.evaluate("""async () => {
+            const candidate = (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate();
+            const bytes = new Uint8Array(await candidate.blob.arrayBuffer());
+            const hash = [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map(v => v.toString(16).padStart(2, '0')).join('');
+            const context = new AudioContext(); const decoded = await context.decodeAudioData(bytes.buffer.slice(0));
+            const data = decoded.getChannelData(0), rate = decoded.sampleRate;
+            let bitrate = null;
+            for (let index = 0; index < Math.min(bytes.length - 4, 65536); index++) {
+                if (bytes[index] === 0xff && (bytes[index + 1] & 0xe0) === 0xe0) {
+                    const version = (bytes[index + 1] >> 3) & 3, layer = (bytes[index + 1] >> 1) & 3;
+                    const bitrateIndex = bytes[index + 2] >> 4;
+                    if (version === 3 && layer === 1 && bitrateIndex > 0 && bitrateIndex < 15) {
+                        bitrate = [0,32,40,48,56,64,80,96,112,128,160,192,224,256,320][bitrateIndex]; break;
+                    }
+                }
+            }
+            const energy = (frequency, start, end) => {
+                let real = 0, imaginary = 0, total = 0;
+                const first = Math.floor(start * rate), last = Math.min(data.length, Math.floor(end * rate));
+                for (let index = first; index < last; index++) { const value = data[index]; const phase = 2 * Math.PI * frequency * index / rate;
+                    real += value * Math.cos(phase); imaginary += value * Math.sin(phase); total += value * value; }
+                return {tone: (real * real + imaginary * imaginary) / Math.max(1, (last - first) ** 2), rms: Math.sqrt(total / Math.max(1, last - first))};
+            };
+            const result = {type: candidate.candidateType, processor: candidate.processorVersion, mediaType: candidate.mediaType,
+                size: candidate.sizeBytes, byteLength: bytes.byteLength, hash, candidateHash: candidate.sha256, bitrate,
+                duration: decoded.duration, firstSilenced: energy(330, 1.02, 1.48), firstLater: energy(330, 1.65, 2.15),
+                otherDuringSilence: energy(550, 1.02, 1.48), excluded: energy(440, 1.65, 2.15), included: energy(550, 1.65, 2.15)};
+            await context.close(); return result;
+        }""")
+        assert candidate["type"] == "speaker" and candidate["processor"] == "speaker-editor-v1" and candidate["mediaType"] == "audio/mpeg"
+        assert candidate["size"] == candidate["byteLength"] and candidate["hash"] == candidate["candidateHash"]
+        assert candidate["bitrate"] == 128, candidate
+        assert abs(candidate["duration"] - 2.5) < .08, candidate
+        assert candidate["firstSilenced"]["tone"] < candidate["firstLater"]["tone"] * .02, candidate
+        assert candidate["otherDuringSilence"]["tone"] > 1e-5, candidate
+        assert candidate["excluded"]["tone"] < candidate["included"]["tone"] * .02, candidate
+        assert candidate["included"]["tone"] > 1e-5 and candidate["firstLater"]["tone"] > 1e-5, candidate
+        # An unchanged canonical save only rebinds revisions and retains the exact local bytes/result.
+        page.locator("#speaker-editor-save").click()
+        page.get_by_text("Черновик сохранён, ревизия 2.", exact=True).wait_for()
+        assert page.locator("#speaker-editor-result").is_visible()
+        rebound = page.evaluate("""async () => {
+            const candidate = (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate();
+            return {draftRevision: candidate.draftRevision, sourceSessionRevision: candidate.sourceSessionRevision, sha256: candidate.sha256};
+        }""")
+        assert rebound == {"draftRevision": 2, "sourceSessionRevision": session["revision"], "sha256": candidate["hash"]}
+        # Monitoring does not invalidate; a render-affecting DSP edit does.
+        page.locator('.speaker-track button[data-action="solo"]').first.click()
+        assert page.locator("#speaker-editor-result").is_visible()
+        page.locator(".speaker-dsp select").nth(0).select_option("off")
+        assert page.locator("#speaker-editor-result").is_hidden()
+        page.locator("#speaker-editor-undo").click()
+        page.locator("#speaker-editor-render").click()
+        page.get_by_text("Локальный MP3 готов. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
+        if screenshot_dir:
+            page.evaluate("document.activeElement?.blur()")
+            page.set_viewport_size({"width": 1280, "height": 900})
+            page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-1280.png"))
+            page.set_viewport_size({"width": 390, "height": 900})
+            page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-390.png"))
+        page.locator(".skip-link").evaluate("element => element.style.removeProperty('display')")
+        # Exercise measured two-pass loudnorm in the real browser engine.
+        page.locator(".speaker-dsp select").nth(0).select_option("off")
+        page.locator(".speaker-dsp select").nth(1).select_option("on")
+        page.locator(".speaker-dsp select").nth(2).select_option("off")
+        page.locator("#speaker-editor-render").click()
+        page.get_by_text("Локальный MP3 готов. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
+        assert page.locator("#speaker-editor-result").is_visible()
+        assert not any("/outputs/speaker/" in path or "/speaker-publications" in path for _, path, _ in gateway_calls)
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.locator("#speaker-editor-close").click()
+        assert page.locator("#speaker-editor").is_hidden()
         page.get_by_role("button", name="Открыть в «Анонс-мейкер»", exact=True).click()
         try:
             page.locator(".processor-track").first.wait_for(timeout=30000)

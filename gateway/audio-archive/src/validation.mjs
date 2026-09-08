@@ -10,6 +10,8 @@ export const WORKFLOWS = Object.freeze(["announcement", "speaker"]);
 export const WORKFLOW_STATES = Object.freeze(["new", "in_progress", "result_ready"]);
 export const MEDIA_TYPES = Object.freeze({ mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav" });
 export const PUBLICATION_STATES = Object.freeze(["uploading", "cancelled", "finalized", "discarded"]);
+export const SPEAKER_PAYLOAD_MAX_BYTES = 900 * 1024;
+export const SPEAKER_MAX_REGIONS = 10000;
 
 export function canonicalReleaseAssetUrl(releaseTag, assetName) {
   return `https://github.com/meser-recovery/audio-archive/releases/download/${releaseTag}/${assetName}`;
@@ -178,6 +180,95 @@ export function validateAnnouncementDraftPayload(value) {
   const ids = value.trackIds.map((id) => assertUuid(id, "announcement draft trackId"));
   if (new Set(ids).size !== ids.length) throw new ValidationError("Announcement draft track IDs must be unique");
   return { trackIds: ids };
+}
+
+function assertMicrosecond(value, minimum, maximum, label) {
+  assertFinite(value, minimum, maximum, label);
+  if (Math.round(value * 1e6) / 1e6 !== value) throw new ValidationError(`${label} must use microsecond precision`);
+  return value;
+}
+
+function validateSpeakerRegions(value, trackIds = null) {
+  const allRegionIds = new Set();
+  const validateRegionId = (regionId, label) => {
+    const id = assertUuid(regionId, label);
+    if (allRegionIds.has(id)) throw new ValidationError("Speaker region IDs must be unique");
+    allRegionIds.add(id);
+    return id;
+  };
+  if (!Array.isArray(value.globalCuts) || value.globalCuts.length > SPEAKER_MAX_REGIONS) {
+    throw new ValidationError("Speaker globalCuts must be a bounded array");
+  }
+  let previousEnd = -1;
+  for (const [index, region] of value.globalCuts.entries()) {
+    assertExactKeys(region, ["regionId", "startSeconds", "endSeconds"], `speaker globalCut ${index}`);
+    validateRegionId(region.regionId, `speaker globalCut ${index} regionId`);
+    const start = assertMicrosecond(region.startSeconds, 0, 7 * 24 * 60 * 60, `speaker globalCut ${index} startSeconds`);
+    const end = assertMicrosecond(region.endSeconds, 0, 7 * 24 * 60 * 60, `speaker globalCut ${index} endSeconds`);
+    if (end <= start || start <= previousEnd) throw new ValidationError("Speaker globalCuts must be a sorted non-overlapping union");
+    previousEnd = end;
+  }
+  if (!Array.isArray(value.trackSilenceRegions) || value.trackSilenceRegions.length > SPEAKER_MAX_REGIONS) {
+    throw new ValidationError("Speaker trackSilenceRegions must be a bounded array");
+  }
+  const previousByTrack = new Map();
+  let previousTrackIndex = -1;
+  for (const [index, region] of value.trackSilenceRegions.entries()) {
+    assertExactKeys(region, ["regionId", "trackId", "startSeconds", "endSeconds"], `speaker trackSilenceRegion ${index}`);
+    validateRegionId(region.regionId, `speaker trackSilenceRegion ${index} regionId`);
+    const trackId = assertUuid(region.trackId, `speaker trackSilenceRegion ${index} trackId`);
+    const trackIndex = trackIds ? trackIds.indexOf(trackId) : 0;
+    if (trackIds && trackIndex < 0) throw new ValidationError("Speaker silence region references an unknown track");
+    if (trackIds && trackIndex < previousTrackIndex) throw new ValidationError("Speaker silence regions must follow track order");
+    previousTrackIndex = trackIndex;
+    const start = assertMicrosecond(region.startSeconds, 0, 7 * 24 * 60 * 60, `speaker trackSilenceRegion ${index} startSeconds`);
+    const end = assertMicrosecond(region.endSeconds, 0, 7 * 24 * 60 * 60, `speaker trackSilenceRegion ${index} endSeconds`);
+    const prior = previousByTrack.get(trackId) ?? -1;
+    if (end <= start || start <= prior) throw new ValidationError("Speaker silence regions must be normalized independently per track");
+    previousByTrack.set(trackId, end);
+  }
+}
+
+export function validateSpeakerDraftPayload(value, expectedTrackIds = null) {
+  assertExactKeys(value, ["trackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"], "speaker draft payload");
+  if (Buffer.byteLength(JSON.stringify(value), "utf8") > SPEAKER_PAYLOAD_MAX_BYTES) {
+    throw new ValidationError("Speaker draft payload is too large");
+  }
+  if (!Array.isArray(value.trackIds) || !value.trackIds.length || value.trackIds.length > 32) {
+    throw new ValidationError("Speaker draft must contain one to 32 track IDs");
+  }
+  const trackIds = value.trackIds.map((id) => assertUuid(id, "speaker draft trackId"));
+  if (new Set(trackIds).size !== trackIds.length) throw new ValidationError("Speaker draft track IDs must be unique");
+  if (expectedTrackIds) {
+    const expected = expectedTrackIds.map((id) => assertUuid(id, "source trackId"));
+    if (expected.length !== trackIds.length || expected.some((id) => !trackIds.includes(id))) {
+      throw new ValidationError("Speaker draft must contain every current source track exactly once");
+    }
+  }
+  if (!Array.isArray(value.excludedTrackIds)) throw new ValidationError("Speaker excludedTrackIds must be an array");
+  const excludedTrackIds = value.excludedTrackIds.map((id) => assertUuid(id, "speaker excluded trackId"));
+  if (new Set(excludedTrackIds).size !== excludedTrackIds.length || excludedTrackIds.some((id) => !trackIds.includes(id))) {
+    throw new ValidationError("Speaker excludedTrackIds must be a unique subset of trackIds");
+  }
+  if (excludedTrackIds.some((id, index) => id !== trackIds.filter((trackId) => excludedTrackIds.includes(trackId))[index])) {
+    throw new ValidationError("Speaker excludedTrackIds must follow track order");
+  }
+  if (!Array.isArray(value.trackProcessing) || value.trackProcessing.length !== trackIds.length) {
+    throw new ValidationError("Speaker trackProcessing must cover every track");
+  }
+  const processed = new Set();
+  for (const [index, setting] of value.trackProcessing.entries()) {
+    assertExactKeys(setting, ["trackId", "enhancement", "leveling", "compression"], `speaker trackProcessing ${index}`);
+    const trackId = assertUuid(setting.trackId, `speaker trackProcessing ${index} trackId`);
+    if (processed.has(trackId) || trackId !== trackIds[index]) throw new ValidationError("Speaker trackProcessing must follow and exactly cover trackIds");
+    processed.add(trackId);
+    if (!["off", "gentle"].includes(setting.enhancement) || !["off", "on"].includes(setting.leveling) ||
+        !["off", "light", "medium", "strong"].includes(setting.compression)) {
+      throw new ValidationError("Speaker processing enum is invalid");
+    }
+  }
+  validateSpeakerRegions(value, trackIds);
+  return structuredClone({ ...value, trackIds, excludedTrackIds });
 }
 
 function validateRecipeSources(sources) {
@@ -430,6 +521,7 @@ export function validateDraft(draft) {
   assertInteger(draft.sourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "sourceSessionRevision");
   assertTimestamp(draft.savedAt, "savedAt");
   if (typeof draft.payloadSchema !== "string" || !/^[-a-z0-9_.:/]{1,100}$/i.test(draft.payloadSchema)) throw new ValidationError("payloadSchema is invalid");
+  if (draft.workflow === "speaker" && draft.payloadSchema === "speaker/v1") validateSpeakerDraftPayload(draft.payload);
   JSON.stringify(draft.payload);
   return structuredClone(draft);
 }

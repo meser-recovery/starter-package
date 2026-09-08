@@ -747,7 +747,8 @@ def check_audio_editor_contract(errors: list[str]) -> None:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
         if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),
-                       ("scripts/audio-processor.mjs", False), ("scripts/source-session-archive.mjs", False)]:
+                       ("scripts/audio-processor.mjs", False), ("scripts/speaker-editor.mjs", False),
+                       ("scripts/source-session-archive.mjs", False)]:
             errors.append("Audio-Editor.html: expected guard before dedicated archive runtime")
         gateway_meta = [attrs for tag, attrs in parser.start_tags if tag == "meta" and attrs.get("name") == "audio-archive-gateway"]
         if len(gateway_meta) != 1:
@@ -820,9 +821,9 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    expected_h2 = ["Исходники", "Архив результатов", "Анонс-мейкер", "Обработка аудио", "Архив отредактированных аудио"]
-    if parser.h2_texts[:5] != expected_h2:
-        errors.append("Audio-Editor.html: expected sources, result archives, Анонс-мейкер work, processor, then legacy archive H2")
+    expected_h2 = ["Исходники", "Архив результатов", "Анонс-мейкер", "Спикерская", "Обработка аудио", "Архив отредактированных аудио"]
+    if parser.h2_texts[:6] != expected_h2:
+        errors.append("Audio-Editor.html: expected sources, result archives, separate Анонс-мейкер and Спикерская workspaces, processor, then legacy archive H2")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -842,6 +843,9 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         "source-session-results-announcement": "button", "source-session-results-speaker": "button",
         "source-session-results-announcement-list": "div", "source-session-results-speaker-list": "div",
         "source-session-publish-announcement": "button", "source-session-publication-dialog": "dialog",
+        "speaker-editor": "section", "speaker-editor-undo": "button", "speaker-editor-redo": "button",
+        "speaker-editor-save": "button", "speaker-editor-render": "button", "speaker-editor-cancel": "button",
+        "speaker-editor-tracks": "ol", "speaker-editor-regions": "div", "speaker-editor-download": "a",
     }
     for element_id, element_tag in expected.items():
         if ids.count(element_id) != 1 or not any(tag == element_tag and attrs.get("id") == element_id for tag, attrs in tags):
@@ -888,7 +892,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         if tag in {"script", "link"} and "ffmpeg" in (attrs.get("src") or attrs.get("href") or "").lower():
             errors.append("Audio-Editor.html: FFmpeg must not load/preload on page open")
     scripts = [attrs for tag, attrs in tags if tag == "script"]
-    if ([attrs.get("src") for attrs in scripts] != ["scripts/service-landing.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/source-session-archive.mjs"] or
+    if ([attrs.get("src") for attrs in scripts] != ["scripts/service-landing.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/speaker-editor.mjs", "scripts/source-session-archive.mjs"] or
             not scripts or any(key in scripts[0] for key in ("async", "defer", "type"))):
         errors.append("Audio-Editor.html: early blocking guard/archive/module order changed")
     for text in ("Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.",
