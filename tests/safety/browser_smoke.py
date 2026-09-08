@@ -12,6 +12,7 @@ import re
 import struct
 import sys
 import time
+import traceback
 import wave
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
@@ -1154,7 +1155,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").all_text_contents()[:4] != ["Входящий архив", "Объявление · Announcement workspace", "Обработка аудио", "Архив отредактированных аудио"]:
+    if page.locator("h2").all_text_contents()[:5] != ["Исходники", "Архив результатов", "Анонс-мейкер", "Обработка аудио", "Архив отредактированных аудио"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1193,7 +1194,7 @@ def check_audio_editor_shell(page, width: int) -> None:
     page.keyboard.press("Tab")
     if not file_input.evaluate("element => document.activeElement === element"):
         raise AssertionError(f"Processor file input is not keyboard accessible at {width}px")
-    for selector in (".source-session-card", ".processor-card", '[aria-labelledby="archive-heading"]', "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
+    for selector in (".source-session-card", ".result-archive-card", ".processor-card", '[aria-labelledby="archive-heading"]', "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
         element = page.locator(selector)
         box = element.bounding_box()
         if not box or box["x"] < 0 or box["x"] + box["width"] > width + 1 or box["width"] < 44:
@@ -1341,8 +1342,20 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         "relations": {"supersedesSessionId": None, "supersededBySessionId": None},
         "transaction": {"state": "finalized", "id": session_id},
     }
+    speaker_output = {
+        "outputId": "99999999-9999-4999-8999-999999999999", "version": 1, "sessionId": session_id,
+        "createdAt": "2026-01-01T02:00:00.000Z", "blobId": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "sizeBytes": len(wavs[0]), "sha256": digests[0], "parts": [{"partNumber": 1,
+            "sizeBytes": len(wavs[0]), "sha256": digests[0],
+            "assetName": "blob-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-part-0001.bin", "assetId": 40,
+            "downloadUrl": f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/blob-aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa-part-0001.bin"}],
+        "recipeSnapshotRef": f"recipes/{session_id}/speaker/99999999-9999-4999-8999-999999999999.json",
+        "processorVersion": "speaker-v1",
+    }
+    session["workflows"]["speaker"].update({"status": "result_ready", "outputs": [speaker_output], "nextVersion": 2})
     gateway_calls = []
-    mock = {"draft": None, "publication": None}
+    mock = {"draft": None, "publication": None, "output": None, "output_recipe": None,
+            "output_bytes": None, "held_upload": None, "list_failure": None}
     publication_id = "44444444-4444-4444-8444-444444444444"
     site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
 
@@ -1378,8 +1391,13 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         elif parsed.path == "/v1/session":
             fulfill_json(route, {"authenticated": True, "expiresAt": 2000000000, "csrfToken": "mock-csrf"})
         elif parsed.path == "/v1/source-sessions" and request.method == "GET":
-            lifecycle = parse_qs(parsed.query).get("lifecycle", ["incoming"])[0]
-            fulfill_json(route, {"revision": session["revision"], "sessions": [session] if session["lifecycle"]["state"] == lifecycle else []})
+            if mock["list_failure"] == "server":
+                fulfill_json(route, {"error": "English backend failure with provider details"}, 500)
+            elif mock["list_failure"] == "network":
+                route.abort("connectionfailed")
+            else:
+                lifecycle = parse_qs(parsed.query).get("lifecycle", ["incoming"])[0]
+                fulfill_json(route, {"revision": session["revision"], "sessions": [session] if session["lifecycle"]["state"] == lifecycle else []})
         elif parsed.path == f"/v1/source-sessions/{session_id}" and request.method == "GET":
             fulfill_json(route, session)
         elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/announcement" and request.method == "GET":
@@ -1393,6 +1411,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             session["workflows"]["announcement"]["currentDraft"] = {"path": f"drafts/{session_id}/announcement.json", "revision": 1}
             session["workflows"]["announcement"]["status"] = "in_progress"
             fulfill_json(route, {"draft": mock["draft"], "session": session})
+        elif parsed.path == f"/v1/source-sessions/{session_id}/deletion-preview" and request.method == "GET":
+            fulfill_json(route, {"sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
+                "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0})
         elif parsed.path in {f"/v1/source-sessions/{session_id}/blobs/{blob_id}/parts/1/content" for blob_id in blob_ids} and request.method == "GET":
             source_index = blob_ids.index(parsed.path.split("/blobs/")[1].split("/")[0])
             route.fulfill(status=200, content_type="application/octet-stream", headers={
@@ -1409,6 +1430,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 "state": "uploading", "reservedVersion": reserved, "reservedSessionRevision": session["revision"],
                 "uploadedParts": 0, "totalParts": len(mock["publication"]["plan"]["parts"]), "canFinalize": False,
                 "requiresLocalResult": True, "updatedAt": "2026-01-02T03:04:05.000Z"}, 201)
+        elif parsed.path.startswith(f"/v1/announcement-publications/{publication_id}/blobs/") and request.method == "PUT":
+            mock["output_bytes"] = bytes(request.post_data_buffer or b"")
+            mock["held_upload"] = route
         elif parsed.path == f"/v1/announcement-publications/{publication_id}/finalize" and request.method == "POST":
             plan = mock["publication"]["plan"]
             output_asset_url = f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/{plan['parts'][0]['assetName']}"
@@ -1420,7 +1444,18 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             session["workflows"]["announcement"]["outputs"] = [output]
             session["workflows"]["announcement"]["status"] = "result_ready"
             session["revision"] += 1
+            mock["output"] = output
+            mock["output_recipe"] = {"schemaVersion": 1, "workflow": "announcement", "sessionId": session_id,
+                "outputId": output["outputId"], "version": output["version"], "processorVersion": output["processorVersion"],
+                "createdAt": output["createdAt"], **plan["recipe"]}
             fulfill_json(route, {"job": {"transactionId": publication_id, "state": "finalized"}, "output": output, "idempotent": False})
+        elif mock["output"] and parsed.path == f"/v1/source-sessions/{session_id}/outputs/announcement/{mock['output']['outputId']}" and request.method == "GET":
+            fulfill_json(route, {"output": mock["output"], "recipe": mock["output_recipe"]})
+        elif mock["output"] and parsed.path.startswith(f"/v1/source-sessions/{session_id}/outputs/announcement/{mock['output']['outputId']}/blobs/") and request.method == "GET":
+            route.fulfill(status=200, content_type="application/octet-stream", headers={
+                "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
+                "Cache-Control": "no-store",
+            }, body=mock["output_bytes"])
         elif parsed.path.endswith("/workflows/announcement/status") and request.method == "PUT":
             session["workflows"]["announcement"]["status"] = "in_progress"
             session["revision"] += 1
@@ -1445,63 +1480,170 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 "meta": page.locator('meta[name="audio-archive-gateway"]').get_attribute("content"), "calls": gateway_calls})
         assert page.locator("#source-session-mode-archive").get_attribute("aria-pressed") == "true"
         assert page.locator(".source-session-item h3").inner_text() == "Архивная запись"
-        assert page.get_by_text("Статус: Новая", exact=True).count() == 2
-        page.locator(".source-workflow").nth(0).get_by_role("button", name="Открыть workspace", exact=True).click()
+        assert page.locator("#source-session-results-announcement-count").inner_text() == "0"
+        assert page.locator("#source-session-results-speaker-count").inner_text() == "1"
+        assert page.locator("#source-session-announcement-workspace").is_hidden()
+        page.locator("#source-session-results-speaker").click()
+        assert page.locator("#source-session-results-speaker-panel").is_visible()
+        assert page.get_by_text("Архивная запись · Версия 1", exact=True).count() == 1
+        assert page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Слушать", exact=True).count() == 0
+        delete_button = page.locator("#source-session-results-speaker-panel button")
+        delete_button.click()
+        page.locator("#source-session-delete-dialog").wait_for(state="visible")
+        assert "Спикерская" in page.locator("#source-session-delete-summary").inner_text()
+        assert session_id not in page.locator("#source-session-delete-summary").inner_text()
+        assert session_id in page.locator("#source-session-delete-technical").text_content()
+        assert "раздела «Спикерская»" in page.locator("#source-session-delete-status").inner_text()
+        assert page.locator("#source-session-delete-dialog").evaluate("dialog => dialog.contains(document.activeElement)")
+        page.keyboard.press("Escape")
+        page.locator("#source-session-delete-dialog").wait_for(state="hidden")
+        assert delete_button.evaluate("button => document.activeElement === button")
+        page.locator("#source-session-results-announcement").click()
+        assert page.locator("#source-session-results-announcement-panel").is_visible()
+        if screenshot_dir:
+            for width in (390, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.evaluate("document.activeElement?.blur()")
+                page.evaluate("scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08b-archive-overview-{width}.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 900})
+        page.get_by_role("button", name="Открыть в «Анонс-мейкер»", exact=True).click()
         try:
             page.locator(".processor-track").first.wait_for(timeout=30000)
         except Error as error:
             raise AssertionError({"error": str(error), "pageErrors": page_errors, "status": page.locator("#source-session-status").inner_text(), "calls": gateway_calls})
         page.wait_for_function("document.querySelectorAll('.processor-track').length === 3")
         assert page.locator(".processor-track__name").all_inner_texts() == names
-        assert session_id in page.locator("#source-session-announcement-identity").inner_text()
-        assert all(track_id in page.locator("#source-session-announcement-tracks").inner_text() for track_id in track_ids)
+        assert "Архивная запись" in page.locator("#source-session-announcement-identity").inner_text()
+        assert session_id not in page.locator("#source-session-announcement-identity").inner_text()
+        assert all(name in page.locator("#source-session-announcement-tracks").inner_text() for name in names)
+        assert all(track_id not in page.locator("#source-session-announcement-tracks").inner_text() for track_id in track_ids)
+        assert session_id in page.locator("#source-session-announcement-technical").text_content()
         assert page.locator("#source-session-publish-announcement").is_disabled()
+        if screenshot_dir:
+            for width in (390, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.evaluate("document.activeElement?.blur()")
+                page.evaluate("scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08b-selected-work-{width}.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 900})
         page.locator('.processor-track button[data-track-action="remove"]').nth(1).click()
         page.wait_for_function("document.querySelectorAll('.processor-track').length === 2")
         assert page.locator(".processor-track__name").all_inner_texts() == [names[0], names[2]]
+        page.locator('.processor-track button[data-track-action="move-up"]').nth(1).click()
+        assert page.locator(".processor-track__name").all_inner_texts() == [names[2], names[0]]
         page.locator("#source-session-announcement-save").click()
-        page.get_by_text("Общий черновик сохранён, ревизия 1.", exact=True).wait_for()
-        assert mock["draft"]["payload"]["trackIds"] == [track_ids[0], track_ids[2]]
+        page.get_by_text("Черновик обработки сохранён, ревизия 1.", exact=True).wait_for()
+        assert mock["draft"]["payload"]["trackIds"] == [track_ids[2], track_ids[0]]
         page.wait_for_function("!document.getElementById('processor-file').disabled")
         page.locator("#processor-run").click()
         wait_processor_status(page, "Длинные общие паузы не найдены. Дорожки сведены без сокращения пауз.")
         assert not page.locator("#source-session-publish-announcement").is_disabled()
+        if screenshot_dir:
+            for width in (390, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.evaluate("document.activeElement?.blur()")
+                page.evaluate("scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08b-local-result-{width}.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 900})
+        calls_before_confirmation = len(gateway_calls)
+        page.locator("#source-session-publish-announcement").click()
+        assert page.locator("#source-session-publication-dialog").evaluate("dialog => dialog.contains(document.activeElement)")
+        page.keyboard.press("Escape")
+        page.locator("#source-session-publication-dialog").wait_for(state="hidden")
+        assert page.locator("#source-session-publish-announcement").evaluate("button => document.activeElement === button")
+        assert not any(method == "POST" and path.endswith("/outputs/announcement/publications")
+            for method, path, _ in gateway_calls[calls_before_confirmation:])
         page.locator("#source-session-publish-announcement").click()
         summary = page.locator("#source-session-publication-summary").inner_text()
-        assert session_id in summary and names[0] in summary and names[2] in summary and names[1] not in summary
-        assert "сведение нескольких дорожек" in summary and "audio/mpeg" in summary and "предварительно версия 1" in summary
+        tracks_summary = page.locator("#source-session-publication-tracks").inner_text()
+        assert "Архивная запись" in summary and session_id not in summary
+        assert names[0] in tracks_summary and names[2] in tracks_summary and names[1] not in tracks_summary
+        assert tracks_summary.index(names[2]) < tracks_summary.index(names[0])
+        assert "сведение нескольких дорожек" in summary and "MP3" in summary and "Версия 1 (предварительно)" in summary
+        assert page.locator("#source-session-publication-destination").inner_text() == "Анонс-мейкер"
         if screenshot_dir:
+            for width in (390, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.evaluate("document.activeElement?.blur()")
+                page.screenshot(path=str(screenshot_dir / f"s08b-save-confirmation-{width}.png"))
+                if width == 390:
+                    page.locator("#source-session-publication-dialog").evaluate("dialog => { dialog.scrollTop = dialog.scrollHeight; }")
+                    page.screenshot(path=str(screenshot_dir / "s08b-save-confirmation-actions-390.png"))
+                    page.locator("#source-session-publication-dialog").evaluate("dialog => { dialog.scrollTop = 0; }")
             page.set_viewport_size({"width": 390, "height": 900})
-            page.screenshot(path=str(screenshot_dir / "s08b-publication-confirmation-390.png"), full_page=True)
-        page.locator("#source-session-publication-submit").click()
-        page.get_by_text("Объявление версии 1 опубликовано.", exact=True).wait_for(timeout=30000)
+        page.locator("#source-session-publication-submit").click(no_wait_after=True)
+        page.wait_for_function("() => Boolean(window)")
+        for _ in range(100):
+            if mock["held_upload"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["held_upload"] is not None
+        assert page.locator("#source-session-publication-progress").is_visible()
+        assert float(page.locator("#source-session-publication-progress").get_attribute("value")) < 100
+        if screenshot_dir:
+            for width in (390, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.evaluate("document.activeElement?.blur()")
+                if width == 390:
+                    page.locator("#source-session-publication-dialog").evaluate("dialog => { dialog.scrollTop = dialog.scrollHeight; }")
+                page.screenshot(path=str(screenshot_dir / f"s08b-save-progress-{width}.png"))
+                page.locator("#source-session-publication-dialog").evaluate("dialog => { dialog.scrollTop = 0; }")
+            page.set_viewport_size({"width": 390, "height": 900})
+        mock["held_upload"].fulfill(status=200, content_type="application/json", headers={
+            "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
+        }, body=json.dumps({"uploaded": True, "assetId": 99, "downloadUrl": asset_urls[0]}))
+        mock["held_upload"] = None
+        page.get_by_text("Версия 1 сохранена в архиве «Анонс-мейкер».", exact=True).wait_for(timeout=30000)
         recipe_sources = mock["publication"]["plan"]["recipe"]["sources"]
-        assert [source["trackId"] for source in recipe_sources] == [track_ids[0], track_ids[2]]
+        assert [source["trackId"] for source in recipe_sources] == [track_ids[2], track_ids[0]]
         assert [source["ordinal"] for source in recipe_sources] == [1, 2]
         assert [track["ordinal"] for track in session["sourceTracks"]] == [1, 2, 3]
-        page.get_by_text(re.compile(r"Версия 1 ·"), exact=False).wait_for(timeout=30000)
-        assert page.get_by_role("button", name="Слушать", exact=True).count() == 1
-        assert page.get_by_role("button", name="Скачать", exact=True).count() == 1
-        assert page.get_by_role("button", name="Удалить версию", exact=True).count() == 1
+        page.wait_for_function("document.getElementById('source-session-results-announcement-count').textContent === '1'")
+        assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Слушать", exact=True).count() == 1
+        assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Скачать", exact=True).count() == 1
+        assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Удалить версию", exact=True).count() == 1
+        assert page.locator("#source-session-results-speaker-panel button").count() == 1
         if screenshot_dir:
             page.locator("#source-session-publication-dialog").wait_for(state="hidden")
             for width in (390, 1280):
                 page.set_viewport_size({"width": width, "height": 900})
                 assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
-                page.screenshot(path=str(screenshot_dir / f"s08b-published-history-{width}.png"), full_page=True)
+                page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08b-saved-history-{width}.png"), full_page=True)
         assert all(any(method == "GET" and path.endswith(f"/blobs/{blob_id}/parts/1/content") for method, path, _ in gateway_calls)
             for blob_id in blob_ids)
         assert session["lifecycle"]["state"] == "incoming"
         session["lifecycle"]["state"] = "archived"
         page.locator("#source-session-lifecycle").select_option("archived")
         page.locator(".source-session-item").wait_for()
+        assert page.locator("#source-session-results-announcement-count").inner_text() == "1"
         calls_before_archived_open = len(gateway_calls)
-        page.get_by_role("button", name="Открыть результаты", exact=True).click()
+        page.get_by_role("button", name="Открыть запись", exact=True).click()
         page.get_by_text("Архивированная запись открыта без загрузки в обработчик.", exact=True).wait_for(timeout=30000)
         assert page.get_by_text(re.compile("Архивированная запись доступна только"), exact=False).is_visible()
         assert page.locator("#source-session-publish-announcement").is_disabled()
         assert session["lifecycle"]["state"] == "archived"
         assert not any(path.endswith("/restore") for _, path, _ in gateway_calls[calls_before_archived_open:])
+        session["sourceState"] = "deleted"
+        session["deletedSources"] = {"deletedAt": "2026-01-03T00:00:00.000Z", "tracks": [
+            {"trackId": track_id, "blobId": blob_id, "sizeBytes": len(wav), "sha256": digest}
+            for track_id, blob_id, wav, digest in zip(track_ids, blob_ids, wavs, digests)]}
+        session["sourceTracks"] = []
+        page.locator("#source-session-refresh").click()
+        page.get_by_text(re.compile("исходники удалены"), exact=False).first.wait_for()
+        assert page.locator("#source-session-results-announcement-count").inner_text() == "1"
+        calls_before_result = len(gateway_calls)
+        page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Слушать", exact=True).click()
+        page.locator("#source-session-announcement-audio").wait_for(state="visible")
+        page.wait_for_function("document.getElementById('source-session-announcement-audio').src.startsWith('blob:')")
+        assert not any(method not in {"GET", "OPTIONS"} for method, _, _ in gateway_calls[calls_before_result:])
+        assert page.get_by_text(re.compile("Целостность сохранённого результата проверена"), exact=False).is_visible()
+        if screenshot_dir:
+            for width in (320, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08b-restored-result-{width}.png"), full_page=True)
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
@@ -1512,9 +1654,21 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-ingest-name").fill("Ручная запись")
         page.locator("#source-session-ingest-submit").click()
         page.get_by_text("Входящая запись создана.", exact=True).wait_for(timeout=30000)
+        page.locator("#source-session-ingest-dialog").wait_for(state="hidden")
         assert any(method == "POST" and path == "/v1/source-sessions/ingestions" for method, path, _ in gateway_calls)
         assert any(method == "PUT" and "/parts/1" in path for method, path, _ in gateway_calls)
         assert any(method == "POST" and path.endswith("/finalize") for method, path, _ in gateway_calls)
+        mock["list_failure"] = "server"
+        page.locator("#source-session-refresh").click()
+        page.get_by_text("Архив временно недоступен. Повторите действие позже.", exact=True).wait_for()
+        assert "English backend failure" not in page.locator("body").inner_text()
+        mock["list_failure"] = "network"
+        page.locator("#source-session-refresh").click()
+        page.get_by_text("Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.", exact=True).wait_for()
+        mock["list_failure"] = None
+        visible_text = page.locator("body").inner_text()
+        for rejected in ("Source Session", "Announcement workspace", "Announcement draft", "publication", "Опубликов", "публикац", "опубликован"):
+            assert rejected not in visible_text, rejected
         print("Source Session mock gateway passed: archive list/status, byte reconstruction, local adapter, manual ingestion and 320/390/768/1280 layout.")
     finally:
         context.close()
@@ -1705,7 +1859,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     capture_state("mix-one-selected")
     select_tracks([track_a, track_b])
     assert page.locator(".processor-track .processor-waveform img").count() == 2
-    assert page.locator("#processor-track-switcher, .processor-waveform-detail, details, summary").count() == 0
+    assert page.locator("#processor-track-switcher, .processor-waveform-detail, .processor-card details, .processor-card summary").count() == 0
     assert page.get_by_text("Соло и «Заглушить» влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
     assert page.locator("#processor-preview-audios .processor-preview-audio").count() == 1
     waveform_urls = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.src)")
@@ -2332,7 +2486,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-run").click()
         wait_processor_status(page, "Готово.")
         assert page.locator("#source-session-publish-announcement").is_disabled()
-        assert "активной Source Session" in page.locator("#source-session-publish-reason").inner_text()
+        assert "активной входящей записи" in page.locator("#source-session-publish-reason").inner_text()
         assert page.locator(".processor-track__name").inner_text() == "fixture.wav"
         assert page.locator("#processor-source-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
         source_duration = float(page.locator("#processor-original-duration").get_attribute("data-value"))
@@ -2813,4 +2967,5 @@ if __name__ == "__main__":
         raise SystemExit(main())
     except (AssertionError, Error) as exc:
         print(f"BROWSER SMOKE FAILED: {exc}", file=sys.stderr)
+        traceback.print_exc()
         raise SystemExit(1)

@@ -574,6 +574,22 @@ function renderTracks() {
     mute.setAttribute("aria-pressed", String(track.muted));
     mute.textContent = "Заглушить";
     mute.addEventListener("click", () => toggleMonitoring(track.id, "mute"));
+    const moveUp = document.createElement("button");
+    moveUp.type = "button";
+    moveUp.dataset.trackId = String(track.id);
+    moveUp.dataset.trackAction = "move-up";
+    moveUp.disabled = index === 0;
+    moveUp.setAttribute("aria-label", `Переместить дорожку ${track.ordinal} вверх: ${track.file.name}`);
+    moveUp.textContent = "Вверх";
+    moveUp.addEventListener("click", () => moveTrack(track.id, -1));
+    const moveDown = document.createElement("button");
+    moveDown.type = "button";
+    moveDown.dataset.trackId = String(track.id);
+    moveDown.dataset.trackAction = "move-down";
+    moveDown.disabled = index === tracks.length - 1;
+    moveDown.setAttribute("aria-label", `Переместить дорожку ${track.ordinal} вниз: ${track.file.name}`);
+    moveDown.textContent = "Вниз";
+    moveDown.addEventListener("click", () => moveTrack(track.id, 1));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.dataset.trackId = String(track.id);
@@ -581,7 +597,7 @@ function renderTracks() {
     remove.setAttribute("aria-label", `Удалить дорожку ${track.ordinal}: ${track.file.name}`);
     remove.textContent = "Удалить";
     remove.addEventListener("click", () => removeTrack(track.id));
-    actions.append(solo, mute, remove);
+    actions.append(solo, mute, moveUp, moveDown, remove);
     top.append(heading, actions);
     item.append(top, scroll);
     list.append(item);
@@ -882,6 +898,28 @@ function removeTrack(id) {
     setBusy(false);
     return;
   }
+  renderTracks();
+  setupPreviewAudios(position, resume);
+  initializeSourceZoom();
+  status.textContent = selectionStatus();
+  setBusy(false);
+}
+
+function moveTrack(id, offset) {
+  if (active) return;
+  const index = tracks.findIndex((track) => track.id === Number(id));
+  const destination = index + offset;
+  if (index < 0 || destination < 0 || destination >= tracks.length) return;
+  clearResult();
+  const position = sourceAudio.currentTime;
+  const resume = !sourceAudio.paused && !sourceAudio.ended;
+  clearPreviewAudios(true);
+  const [track] = tracks.splice(index, 1);
+  tracks.splice(destination, 0, track);
+  selectedFiles = tracks.map((item) => item.file);
+  syncSelectedProvenance();
+  syncInputFiles();
+  notifyProcessorSelection();
   renderTracks();
   setupPreviewAudios(position, resume);
   initializeSourceZoom();
