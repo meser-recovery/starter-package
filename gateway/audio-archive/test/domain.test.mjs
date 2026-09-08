@@ -118,18 +118,20 @@ test("workflow states are independent and stale session mutations conflict", asy
 
 test("shared draft reopens and stale draft or source revisions cannot overwrite it", async () => {
   const { domain, session } = await finalizedFixture();
+  const speakerPayload = { trackIds: [IDS.track], excludedTrackIds: [], globalCuts: [], trackSilenceRegions: [],
+    trackProcessing: [{ trackId: IDS.track, enhancement: "off", leveling: "off", compression: "off" }] };
   const saved = await domain.saveDraft(session.id, "speaker", {
     schemaVersion: 1, expectedDraftRevision: 0, expectedSourceSessionRevision: session.revision,
-    payloadSchema: "speaker-foundation/v1", payload: { markers: [1, 2] }, idempotencyKey: `${KEY}:draft-one`
+    payloadSchema: "speaker/v1", payload: speakerPayload, idempotencyKey: `${KEY}:draft-one`
   });
-  assert.deepEqual((await domain.loadDraft(session.id, "speaker")).payload, { markers: [1, 2] });
+  assert.deepEqual((await domain.loadDraft(session.id, "speaker")).payload, speakerPayload);
   await assert.rejects(() => domain.saveDraft(session.id, "speaker", {
     schemaVersion: 1, expectedDraftRevision: 0, expectedSourceSessionRevision: saved.session.revision,
-    payloadSchema: "speaker-foundation/v1", payload: {}, idempotencyKey: `${KEY}:draft-two`
+    payloadSchema: "speaker/v1", payload: speakerPayload, idempotencyKey: `${KEY}:draft-two`
   }), (error) => error.status === 409);
   await assert.rejects(() => domain.saveDraft(session.id, "speaker", {
     schemaVersion: 1, expectedDraftRevision: 1, expectedSourceSessionRevision: session.revision,
-    payloadSchema: "speaker-foundation/v1", payload: {}, idempotencyKey: `${KEY}:draft-three`
+    payloadSchema: "speaker/v1", payload: speakerPayload, idempotencyKey: `${KEY}:draft-three`
   }), (error) => error.status === 409);
 });
 
@@ -138,6 +140,12 @@ test("archive and restore mutate metadata without touching release assets", asyn
   const before = JSON.stringify([...repository.releases.values()]);
   const archived = await domain.setLifecycle(session.id, "archived", { expectedRevision: session.revision, idempotencyKey: `${KEY}:archive` });
   assert.equal(archived.lifecycle.state, "archived");
+  await assert.rejects(() => domain.saveDraft(session.id, "speaker", {
+    schemaVersion: 1, expectedDraftRevision: 0, expectedSourceSessionRevision: archived.revision,
+    payloadSchema: "speaker/v1", payload: { trackIds: [IDS.track], excludedTrackIds: [], globalCuts: [], trackSilenceRegions: [],
+      trackProcessing: [{ trackId: IDS.track, enhancement: "off", leveling: "off", compression: "off" }] },
+    idempotencyKey: `${KEY}:archived-speaker-draft`
+  }), (error) => error.status === 409);
   assert.equal((await domain.listSessions("incoming")).sessions.length, 0);
   assert.equal((await domain.listSessions("archived")).sessions.length, 1);
   const restored = await domain.setLifecycle(session.id, "incoming", { expectedRevision: archived.revision, idempotencyKey: `${KEY}:restore` });

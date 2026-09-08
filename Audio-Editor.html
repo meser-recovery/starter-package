@@ -13,6 +13,7 @@
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
+    <script src="scripts/speaker-editor.mjs" type="module"></script>
     <script src="scripts/source-session-archive.mjs" type="module"></script>
   </head>
   <body class="site-page">
@@ -94,7 +95,7 @@
           <section id="source-session-results-speaker-panel" class="result-archive-panel" aria-labelledby="source-session-results-speaker-heading" hidden>
             <div class="result-archive-panel__heading">
               <h3 id="source-session-results-speaker-heading">Спикерская</h3>
-              <p>Самостоятельный раздел архива. Обработка и сохранение новых результатов этого типа пока не реализованы.</p>
+              <p>Самостоятельный раздел архива. Локальная сборка доступна в редакторе; сохранение новых результатов появится на следующем этапе.</p>
             </div>
             <div id="source-session-results-speaker-list" class="result-archive-list" aria-live="polite"></div>
           </section>
@@ -135,8 +136,94 @@
             <p>Проверьте дорожки ниже и запустите локальную обработку.</p>
           </div>
         </section>
-        <section class="archive-card processor-card" aria-labelledby="processor-heading">
+        <section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
           <div class="archive-card__heading">
+            <p class="archive-eyebrow">Активный тип работы</p>
+            <h2 id="speaker-editor-heading">Спикерская</h2>
+            <p id="speaker-editor-identity"></p>
+            <p id="speaker-editor-status" class="archive-status" role="status"></p>
+          </div>
+          <div class="speaker-toolbar" role="group" aria-label="История и черновик Спикерской">
+            <button id="speaker-editor-undo" type="button" disabled>Отменить</button>
+            <button id="speaker-editor-redo" type="button" disabled>Повторить</button>
+            <button id="speaker-editor-save" class="action-primary" type="button">Сохранить черновик обработки</button>
+            <button id="speaker-editor-close" type="button">Закрыть работу</button>
+          </div>
+          <details class="technical-details"><summary>Технические сведения о записи</summary><p id="speaker-editor-technical"></p></details>
+          <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
+            <div>
+              <h3 id="speaker-selection-heading">Выделение на исходной шкале</h3>
+              <p>Координаты всегда относятся к неизменяемой исходной записи. Глобальные вырезы не сдвигают следующие выделения.</p>
+            </div>
+            <div class="speaker-selection__fields">
+              <label>Начало, с<input id="speaker-editor-selection-start" type="number" min="0" step="0.000001" inputmode="decimal"></label>
+              <label>Конец, с<input id="speaker-editor-selection-end" type="number" min="0" step="0.000001" inputmode="decimal"></label>
+              <label>Длительность, с<output id="speaker-editor-selection-duration">0.000000</output></label>
+              <label>Дорожка для тишины<select id="speaker-editor-selection-track"></select></label>
+            </div>
+            <div class="speaker-selection__actions">
+              <button id="speaker-editor-add-cut" type="button">Вырезать на всех дорожках</button>
+              <button id="speaker-editor-add-silence" type="button">Заменить тишиной на этой дорожке</button>
+            </div>
+            <p id="speaker-editor-selection-error" class="speaker-error" role="status"></p>
+          </section>
+          <section class="speaker-source" aria-labelledby="speaker-source-heading">
+            <div class="speaker-source__heading">
+              <div><h3 id="speaker-source-heading">Синхронизированные исходники</h3><p>Соло и «Заглушить» относятся только к прослушиванию. «Исключить из микса» влияет на результат.</p></div>
+              <p id="speaker-editor-source-time" class="processor-source-time">0:00 / 0:00 · исходная шкала</p>
+            </div>
+            <audio id="speaker-editor-source-audio" aria-labelledby="speaker-source-heading" controls preload="metadata"></audio>
+            <div id="speaker-editor-preview-audios" hidden></div>
+            <div class="processor-zoom" role="group" aria-label="Масштаб исходников Спикерской">
+              <span>Масштаб</span>
+              <button id="speaker-editor-zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
+              <input id="speaker-editor-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Масштаб исходников">
+              <button id="speaker-editor-zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
+              <button id="speaker-editor-zoom-fit" type="button">Вписать</button>
+              <button id="speaker-editor-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
+            </div>
+            <div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
+            <ol id="speaker-editor-tracks" class="speaker-tracks"></ol>
+          </section>
+          <section class="speaker-regions" aria-labelledby="speaker-regions-heading">
+            <div><h3 id="speaker-regions-heading">Регионы монтажа</h3><p>Можно изменить точные границы или удалить регион без изменения исходных файлов.</p></div>
+            <div id="speaker-editor-regions" class="speaker-region-list"></div>
+          </section>
+          <section class="speaker-render" aria-labelledby="speaker-render-heading">
+            <div><h3 id="speaker-render-heading">Локальная сборка результата</h3><p id="speaker-editor-render-reason">Проверка исходников и состояния…</p></div>
+            <div class="processor-actions">
+              <button id="speaker-editor-render" class="action-primary" type="button" disabled>Собрать MP3</button>
+              <button id="speaker-editor-cancel" type="button" hidden>Отменить</button>
+            </div>
+            <progress id="speaker-editor-progress" max="100" hidden aria-label="Сборка результата Спикерской"></progress>
+            <p id="speaker-editor-render-status" role="status"></p>
+          </section>
+          <section id="speaker-editor-result" class="speaker-result" aria-labelledby="speaker-result-heading" hidden>
+            <div><h3 id="speaker-result-heading">Локальный результат «Спикерская»</h3><p class="speaker-not-saved">Результат собран локально и ещё не сохранён в архиве «Спикерская».</p></div>
+            <audio id="speaker-editor-result-audio" controls preload="metadata" aria-labelledby="speaker-result-heading"></audio>
+            <div id="speaker-editor-result-waveform-scroll" class="speaker-waveform-scroll">
+              <button id="speaker-editor-result-waveform" class="speaker-waveform" type="button" aria-label="Форма сигнала локального результата"><canvas height="100"></canvas><span class="speaker-playhead" aria-hidden="true"></span></button>
+            </div>
+            <p id="speaker-editor-result-time" class="processor-source-time">0:00 / 0:00</p>
+            <div class="processor-zoom" role="group" aria-label="Масштаб результата Спикерской">
+              <span>Масштаб результата</span><input id="speaker-editor-result-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Масштаб локального результата Спикерской">
+            </div>
+            <dl class="processor-statistics">
+              <div><dt>Исходная длительность</dt><dd id="speaker-editor-original-duration"></dd></div>
+              <div><dt>Результат</dt><dd id="speaker-editor-result-duration"></dd></div>
+              <div><dt>Глобально удалено</dt><dd id="speaker-editor-removed-duration"></dd></div>
+              <div><dt>Формат и размер</dt><dd id="speaker-editor-result-format"></dd></div>
+            </dl>
+            <div class="speaker-result__actions">
+              <a id="speaker-editor-download" class="archive-download">Скачать локальный MP3</a>
+              <button type="button" disabled aria-describedby="speaker-editor-archive-unavailable">Сохранение в архив недоступно до следующего этапа</button>
+            </div>
+            <p id="speaker-editor-archive-unavailable">На этом этапе результат не передаётся в архив.</p>
+          </section>
+        </section>
+        <section id="announcement-processor-card" class="archive-card processor-card" aria-labelledby="processor-heading">
+          <div class="archive-card__heading">
+            <p class="archive-eyebrow">Активный тип работы: Анонс-мейкер</p>
             <h2 id="processor-heading">Обработка аудио</h2>
             <p>Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.</p>
             <p>Выберите одну дорожку или несколько уже синхронизированных дорожек одной записи Zoom. Сокращаются только участки, где все выбранные дорожки одновременно молчат. Затем дорожки сводятся в один MP3.</p>

@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
   assertTimestamp, assertUuid, assetName, catalogEntry, hashIdempotencyKey, normalizeFilename, normalizeMediaType,
-  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, recipePath, validateAnnouncementDraftPayload, validateAnnouncementRecipe,
+  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, recipePath, validateAnnouncementDraftPayload, validateSpeakerDraftPayload, validateAnnouncementRecipe,
   validateCatalog, validateDraft, validateIngestionPlan, validatePublicationPlan, validateSourceSession, validateTombstone, validateTransaction
 } from "./validation.mjs";
 
@@ -703,6 +703,9 @@ export class AudioArchiveDomain {
     const path = draftPath(sessionId, workflow);
     const { head, session } = await this.sessionSnapshot(sessionId);
     if (session.revision !== body.expectedSourceSessionRevision) throw conflict("Source Session changed; reload before saving draft");
+    if (workflow === "speaker" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) {
+      throw conflict("Restore an available Source Session before saving a Speaker draft");
+    }
     const existing = await this.repository.readJson(path, head);
     const currentRevision = existing ? validateDraft(existing.data).draftRevision : 0;
     if (body.expectedDraftRevision !== currentRevision) throw conflict("Draft changed; reload before saving");
@@ -710,6 +713,9 @@ export class AudioArchiveDomain {
     if (workflow === "announcement") {
       if (body.payloadSchema !== "announcement/v1") throw new ValidationError("Announcement draft schema is invalid");
       body = { ...body, payload: validateAnnouncementDraftPayload(body.payload) };
+    } else {
+      if (body.payloadSchema !== "speaker/v1") throw new ValidationError("Speaker draft schema is invalid");
+      body = { ...body, payload: validateSpeakerDraftPayload(body.payload, session.sourceTracks.map((track) => track.trackId)) };
     }
     const draft = validateDraft({
       schemaVersion: SCHEMA_VERSION, sessionId, workflow, draftRevision: currentRevision + 1,

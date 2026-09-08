@@ -1,5 +1,6 @@
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, reconstructAnnouncementOutput, reconstructSessionTracks } from "./audio-archive-client.mjs";
 import { clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
+import { closeSpeakerEditor, openSpeakerEditor, speakerEditorSessionId } from "./speaker-editor.mjs";
 
 const byId = (id) => document.getElementById(`source-session-${id}`);
 const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ ||
@@ -78,6 +79,7 @@ function updateSessionStatus() {
 }
 
 function setMode(mode) {
+  if (mode === "device" && !closeSpeakerEditor(false)) return;
   state.mode = mode;
   const archive = mode === "archive";
   byId("archive-panel").hidden = !archive;
@@ -228,6 +230,9 @@ async function mutateSession(action) {
     setArchiveStatus("Сохранение изменений…");
     const result = await action();
     const updated = result?.session || result;
+    if (updated?.id === speakerEditorSessionId() && (updated.lifecycle.state !== "incoming" || updated.sourceState !== "available")) {
+      closeSpeakerEditor(true);
+    }
     if (updated?.id && state.activeManifest?.id === updated.id) {
       state.activeSession = updated;
       state.activeManifest = updated;
@@ -245,6 +250,7 @@ async function mutateSession(action) {
 }
 
 async function loadSession(session) {
+  if (!closeSpeakerEditor(false)) return;
   const sequence = ++state.sessionSequence;
   state.candidate = null;
   updatePublishState();
@@ -286,6 +292,44 @@ async function loadSession(session) {
     if (sequence !== state.sessionSequence) return;
     state.loadingArchive = false;
     onGatewayError(error, "Не удалось восстановить исходные дорожки.");
+  }
+}
+
+async function loadSpeakerSession(session) {
+  if (session.lifecycle.state !== "incoming" || session.sourceState !== "available") {
+    setArchiveStatus("Спикерская доступна только для входящей записи с доступными исходниками. Сначала верните запись во входящие.");
+    return;
+  }
+  const sequence = ++state.sessionSequence;
+  setArchiveStatus("Загрузка и проверка исходников для «Спикерская»…");
+  try {
+    const complete = await gateway.getSession(session.id);
+    if (sequence !== state.sessionSequence) return;
+    const draft = (await gateway.loadDraft(session.id, "speaker")).draft;
+    if (sequence !== state.sessionSequence) return;
+    if (complete.lifecycle.state !== "incoming" || complete.sourceState !== "available") throw new Error("Запись больше не доступна для редактирования.");
+    const files = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
+    if (sequence !== state.sessionSequence) return;
+    clearProcessorFiles();
+    closeAnnouncementWorkspace(false);
+    const opened = await openSpeakerEditor({
+      session: complete,
+      files,
+      draft,
+      saveDraft: (envelope) => gateway.saveDraft(complete.id, "speaker", envelope),
+      onSaved: ({ session: updated }) => {
+        state.activeSession = updated;
+        const index = state.sessions.findIndex((item) => item.id === updated.id);
+        if (index >= 0) state.sessions[index] = updated;
+        const allIndex = state.allSessions.findIndex((item) => item.id === updated.id);
+        if (allIndex >= 0) state.allSessions[allIndex] = updated;
+        renderSessions();
+      }
+    });
+    setArchiveStatus(opened ? `Открыта работа «Спикерская»: ${complete.title}. Исходники проверены и не изменены.` : "Не удалось подготовить исходники для «Спикерская».");
+  } catch (error) {
+    if (sequence !== state.sessionSequence) return;
+    onGatewayError(error, "Не удалось открыть запись в «Спикерская».");
   }
 }
 
@@ -365,7 +409,7 @@ function renderResultArchive() {
     list.replaceChildren();
     if (!membership[name].length) {
       const empty = document.createElement("p");
-      empty.textContent = name === "speaker" ? "Сохранённых результатов пока нет. Новая обработка для «Спикерская» появится на следующем этапе." : "Сохранённых результатов пока нет.";
+      empty.textContent = name === "speaker" ? "Сохранённых результатов пока нет. Локально собранный результат нельзя сохранить сюда до следующего этапа." : "Сохранённых результатов пока нет.";
       list.append(empty);
     } else {
       for (const { session, output } of membership[name]) list.append(resultArchiveItem(session, name, output));
@@ -406,7 +450,13 @@ function renderSessions() {
     actions.className = "source-session-actions";
     const open = button(session.lifecycle.state === "archived" ? "Открыть запись" : "Открыть в «Анонс-мейкер»", () => loadSession(session), "action-primary");
     actions.append(open);
-    if (session.lifecycle.state === "incoming") actions.append(button("Архивировать", () => mutateSession(() => gateway.setLifecycle(session.id, "archive", session.revision))));
+    if (session.lifecycle.state === "incoming" && session.sourceState === "available") {
+      actions.append(button("Открыть в «Спикерская»", () => loadSpeakerSession(session), "speaker-open-action"));
+    }
+    if (session.lifecycle.state === "incoming") actions.append(button("Архивировать", () => {
+      if (session.id === speakerEditorSessionId() && !closeSpeakerEditor(false)) return;
+      mutateSession(() => gateway.setLifecycle(session.id, "archive", session.revision));
+    }));
     else actions.append(button("Вернуть во входящие", () => mutateSession(() => gateway.setLifecycle(session.id, "restore", session.revision))));
     actions.append(button("Удаление…", () => openDeleteDialog(session), "source-session-danger"));
     summary.append(heading, metadata, workflows);
@@ -644,6 +694,7 @@ async function submitDeletion(event) {
     else if (selected.kind === "sources") result = await gateway.deleteSources(target.session.id, body);
     else if (selected.kind === "purge") result = await gateway.purgeSession(target.session.id, body);
     else throw new Error("Неизвестный уровень удаления.");
+    if (target.session.id === speakerEditorSessionId()) closeSpeakerEditor(true);
     clearOutputPlayback();
     if (state.activeManifest?.id === target.session.id) {
       if (result?.session) {
