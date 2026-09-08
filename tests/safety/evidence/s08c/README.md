@@ -17,10 +17,11 @@ regression suite were removed.
   included track shows gentle enhancement and medium compression.
 - `s08c-undo-redo-390.png`: completed edit history state with correct Undo/Redo availability after a new
   edit cleared the Redo branch.
-- `s08c-render-progress-cancel-390.png`: bounded local progress beside an enabled cancel action and no result.
+- `s08c-render-progress-cancel-390.png`: bounded local progress beside an enabled cancel action and no result;
+  every render-affecting control is disabled while monitoring and navigation remain available.
 - `s08c-local-result-390.png` and `s08c-local-result-1280.png`: independent result player/waveform,
   3.0 s original duration, 2.499 s result after one 0.5 s global cut, MP3 128 kbit/s metadata, local download,
-  and the explicit not-saved-to-Speaker warning.
+  the result waveform filling its complete independent timeline, and the explicit not-saved-to-Speaker warning.
 
 All eight images were visually inspected after generation. Labels are readable, the region colors remain
 distinct, controls stay inside their cards, and no horizontal page overflow or overlap is visible at the

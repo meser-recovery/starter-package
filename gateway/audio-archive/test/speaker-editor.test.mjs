@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
   SpeakerHistory, buildLevelingAnalysisFilter, buildSpeakerCandidate, buildSpeakerFilterGraph,
-  buildTrackFilter, candidateAffectedBy, defaultSpeakerPayload, mapSilenceToResult, microseconds,
+  buildTrackFilter, candidateAffectedBy, createSpeakerRenderSnapshot, defaultSpeakerPayload, mapSilenceToResult, microseconds,
   normalizeSpeakerPayload, originalToResultTime, parseLoudnormMeasurements, rebindSpeakerCandidate,
   removedDuration, resultDuration, SPEAKER_FRAME_TOLERANCE_SECONDS
 } from "../../../scripts/speaker-editor-core.mjs";
@@ -104,19 +104,23 @@ test("candidate hash, durations, invalidation, unchanged-save rebinding and fram
   const bytes = new TextEncoder().encode("mp3-bytes");
   const blob = new Blob([bytes], { type: "audio/mpeg" });
   const session = { id: IDS.session, revision: 4, title: "Запись", sourceTracks: [
-    { trackId: IDS.track, blobId: IDS.blob, originalName: "one.wav", mediaType: "audio/wav", sizeBytes: 10, sha256: "1".repeat(64) },
-    { trackId: TRACK_2, blobId: BLOB_2, originalName: "two.wav", mediaType: "audio/wav", sizeBytes: 20, sha256: "2".repeat(64) }
+    { trackId: IDS.track, blobId: IDS.blob, ordinal: 1, originalName: "one.wav", mediaType: "audio/wav", sizeBytes: 10, sha256: "1".repeat(64) },
+    { trackId: TRACK_2, blobId: BLOB_2, ordinal: 2, originalName: "two.wav", mediaType: "audio/wav", sizeBytes: 20, sha256: "2".repeat(64) }
   ] };
   const hash = async (input) => createHash("sha256").update(input).digest("hex");
-  const candidate = await buildSpeakerCandidate({ blob, session, draftRevision: 0, payload: normalized,
-    originalDurationSeconds: 10, resultDurationSeconds: 8 + SPEAKER_FRAME_TOLERANCE_SECONDS / 2, sha256: hash });
+  const snapshot = createSpeakerRenderSnapshot({ session, draftRevision: 0, payload: normalized, originalDurationSeconds: 10,
+    tracks: [{ trackId: IDS.track, file: new Blob([new Uint8Array(10)]) }, { trackId: TRACK_2, file: new Blob([new Uint8Array(20)]) }] });
+  const candidate = await buildSpeakerCandidate({ blob, snapshot,
+    resultDurationSeconds: 8 + SPEAKER_FRAME_TOLERANCE_SECONDS / 2, sha256: hash });
   assert.equal(candidate.sha256, await hash(bytes)); assert.equal(candidate.sizeBytes, bytes.byteLength);
   assert.equal(candidate.globallyRemovedDurationSeconds, 2); assert.equal(candidate.trackSilenceRegions.length, 1);
   assert.equal(rebindSpeakerCandidate(candidate, normalized, 5, 1).draftRevision, 1);
-  const changed = structuredClone(normalized); changed.excludedTrackIds = [TRACK_2];
+  normalized.excludedTrackIds = [TRACK_2]; session.revision = 99;
+  assert.deepEqual(snapshot.payload.excludedTrackIds, []); assert.equal(snapshot.sourceSessionRevision, 4);
+  assert.equal(Object.isFrozen(snapshot.payload), true); assert.equal(Object.isFrozen(snapshot.sources), true);
+  const changed = structuredClone(snapshot.payload); changed.excludedTrackIds = [TRACK_2];
   assert.equal(rebindSpeakerCandidate(candidate, changed, 5, 1), null);
   for (const action of ["globalCuts", "trackSilenceRegions", "excludedTrackIds", "trackIds", "enhancement", "leveling", "compression", "sourceReplacement"]) assert.equal(candidateAffectedBy(action), true);
   for (const action of ["solo", "mute", "seek", "zoom", "pan", "follow"]) assert.equal(candidateAffectedBy(action), false);
-  await assert.rejects(() => buildSpeakerCandidate({ blob, session, draftRevision: 0, payload: normalized,
-    originalDurationSeconds: 10, resultDurationSeconds: 8.1, sha256: hash }));
+  await assert.rejects(() => buildSpeakerCandidate({ blob, snapshot, resultDurationSeconds: 8.1, sha256: hash }));
 });

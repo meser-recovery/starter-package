@@ -270,6 +270,42 @@ export function payloadFingerprint(payload) {
   return JSON.stringify(payload);
 }
 
+function deepFreeze(value) {
+  if (!value || typeof value !== "object" || value instanceof Blob || Object.isFrozen(value)) return value;
+  for (const item of Object.values(value)) deepFreeze(item);
+  return Object.freeze(value);
+}
+
+export function createSpeakerRenderSnapshot({ session, draftRevision = 0, payload, originalDurationSeconds, tracks }) {
+  if (!session || !Array.isArray(session.sourceTracks)) fail("Состав исходной записи недоступен.");
+  const availableTrackIds = session.sourceTracks.map((track) => track.trackId);
+  const normalized = normalizeSpeakerPayload(payload, availableTrackIds, originalDurationSeconds);
+  if (!Array.isArray(tracks) || tracks.length !== normalized.trackIds.length) fail("Состав подготовленных исходников не совпадает с записью.");
+  const tracksById = new Map();
+  for (const track of tracks) {
+    const trackId = uuid(track?.trackId, "Подготовленная дорожка");
+    if (tracksById.has(trackId) || !(track.file instanceof Blob)) fail("Подготовленные исходники неполны или повторяются.");
+    tracksById.set(trackId, track);
+  }
+  const sources = normalized.trackIds.map((trackId) => {
+    const prepared = tracksById.get(trackId);
+    const identity = session.sourceTracks.find((track) => track.trackId.toLowerCase() === trackId);
+    if (!prepared || !identity || prepared.file.size !== identity.sizeBytes) fail("Подготовленный исходник не совпадает с записью.");
+    return Object.freeze({ trackId, file: prepared.file, identity: deepFreeze(structuredClone(identity)) });
+  });
+  const snapshot = {
+    payload: deepFreeze(structuredClone(normalized)),
+    payloadFingerprint: payloadFingerprint(normalized),
+    session: deepFreeze(structuredClone(session)),
+    sessionId: session.id,
+    sourceSessionRevision: session.revision,
+    draftRevision: Number.isInteger(draftRevision) && draftRevision >= 0 ? draftRevision : 0,
+    originalDurationSeconds: microseconds(originalDurationSeconds, "Исходная длительность"),
+    sources: Object.freeze(sources)
+  };
+  return Object.freeze(snapshot);
+}
+
 export function candidateAffectedBy(action) {
   return new Set(["globalCuts", "trackSilenceRegions", "excludedTrackIds", "trackIds", "enhancement", "leveling", "compression",
     "sourceReplacement", "sourceProvenance"]).has(action);
@@ -280,8 +316,10 @@ export function rebindSpeakerCandidate(candidate, payload, sessionRevision, draf
   return Object.freeze({ ...candidate, sourceSessionRevision: sessionRevision, draftRevision });
 }
 
-export async function buildSpeakerCandidate({ blob, session, draftRevision, payload, originalDurationSeconds, resultDurationSeconds, renderedAt = new Date().toISOString(), sha256 }) {
-  const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDurationSeconds);
+export async function buildSpeakerCandidate({ blob, snapshot, resultDurationSeconds, renderedAt = new Date().toISOString(), sha256 }) {
+  if (!snapshot || snapshot.payloadFingerprint !== payloadFingerprint(snapshot.payload)) fail("Снимок локальной сборки повреждён.");
+  const normalized = snapshot.payload;
+  const originalDurationSeconds = snapshot.originalDurationSeconds;
   const expected = resultDuration(originalDurationSeconds, normalized.globalCuts);
   if (!Number.isFinite(resultDurationSeconds) || Math.abs(resultDurationSeconds - expected) > SPEAKER_FRAME_TOLERANCE_SECONDS) {
     fail("Длительность результата не совпадает с выбранными глобальными вырезами.");
@@ -290,16 +328,15 @@ export async function buildSpeakerCandidate({ blob, session, draftRevision, payl
   const excluded = new Set(normalized.excludedTrackIds);
   return Object.freeze({
     candidateType: "speaker", processorVersion: SPEAKER_PROCESSOR_VERSION, payloadSchema: SPEAKER_PAYLOAD_SCHEMA,
-    sessionId: session.id, sourceSessionRevision: session.revision, draftRevision: draftRevision || 0,
-    sources: normalized.trackIds.map((trackId, index) => {
-      const track = session.sourceTracks.find((item) => item.trackId === trackId);
-      return { trackId, blobId: track.blobId, ordinal: index + 1, originalFilename: track.originalName,
-        mediaType: track.mediaType, sizeBytes: track.sizeBytes, sha256: track.sha256 };
+    sessionId: snapshot.sessionId, sourceSessionRevision: snapshot.sourceSessionRevision, draftRevision: snapshot.draftRevision,
+    sources: snapshot.sources.map(({ trackId, identity }) => {
+      return { trackId, blobId: identity.blobId, ordinal: identity.ordinal, originalFilename: identity.originalName,
+        mediaType: identity.mediaType, sizeBytes: identity.sizeBytes, sha256: identity.sha256 };
     }),
     globalCuts: structuredClone(normalized.globalCuts), trackSilenceRegions: structuredClone(normalized.trackSilenceRegions),
     includedTrackIds: normalized.trackIds.filter((id) => !excluded.has(id)), excludedTrackIds: [...normalized.excludedTrackIds],
     trackProcessing: structuredClone(normalized.trackProcessing), blob, mediaType: "audio/mpeg",
-    presentationFilename: `${String(session.title || "speaker").replace(/[\\/\u0000-\u001f]/g, "-").slice(0, 220)}-speaker.mp3`,
+    presentationFilename: `${String(snapshot.session.title || "speaker").replace(/[\\/\u0000-\u001f]/g, "-").slice(0, 220)}-speaker.mp3`,
     sizeBytes: blob.size, sha256: hash, originalDurationSeconds, resultDurationSeconds,
     globallyRemovedDurationSeconds: removedDuration(normalized.globalCuts), renderedAt,
     payloadFingerprint: payloadFingerprint(normalized)

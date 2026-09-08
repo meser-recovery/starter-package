@@ -1323,6 +1323,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
     names = ["archive-first.wav", "archive-middle.wav", "archive-last.wav"]
     wavs = [wav_payload(name, ((3, True),), frequency=frequency, sample_rate=8000)["buffer"]
         for name, frequency in zip(names, (330, 440, 550))]
+    served_wavs = list(wavs)
     digests = [hashlib.sha256(wav).hexdigest() for wav in wavs]
     asset_names = [f"blob-{blob_id}-part-0001.bin" for blob_id in blob_ids]
     asset_urls = [f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/{name}"
@@ -1430,7 +1431,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             route.fulfill(status=200, content_type="application/octet-stream", headers={
                 "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
                 "Cache-Control": "no-store",
-            }, body=wavs[source_index])
+            }, body=served_wavs[source_index])
         elif parsed.path == f"/v1/source-sessions/{session_id}/outputs/announcement/publications" and request.method == "POST":
             mock["publication"] = json.loads(request.post_data)
             session["revision"] += 1
@@ -1518,6 +1519,28 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 page.evaluate("scrollTo(0, 0)")
                 page.screenshot(path=str(screenshot_dir / f"s08b-archive-overview-{width}.png"), full_page=True)
             page.set_viewport_size({"width": 390, "height": 900})
+        # A decoded duration mismatch fails closed after the common duration is known: no editable partial workspace,
+        # save request, render operation, or retained source URL survives.
+        mismatch_wav = wav_payload(names[2], ((3.75, True),), frequency=550, sample_rate=8000)["buffer"]
+        served_wavs[2] = mismatch_wav
+        session["sourceTracks"][2]["sizeBytes"] = len(mismatch_wav)
+        session["sourceTracks"][2]["sha256"] = hashlib.sha256(mismatch_wav).hexdigest()
+        session["sourceTracks"][2]["parts"][0]["sizeBytes"] = len(mismatch_wav)
+        session["sourceTracks"][2]["parts"][0]["sha256"] = session["sourceTracks"][2]["sha256"]
+        speaker_puts_before = len([call for call in gateway_calls if call[0] == "PUT" and call[1].endswith("/drafts/speaker")])
+        page.get_by_role("button", name="Открыть в «Спикерская»", exact=True).click()
+        page.get_by_text("Длительность дорожек различается больше чем на 0,5 секунды.", exact=True).wait_for(timeout=30000)
+        assert page.locator("#speaker-editor-save").is_disabled() and page.locator("#speaker-editor-render").is_disabled()
+        assert page.locator("#speaker-editor-add-cut").is_disabled() and page.locator("#speaker-editor-tracks").locator("li").count() == 0
+        assert page.locator("#speaker-editor-cancel").is_hidden() and page.locator("#speaker-editor-result").is_hidden()
+        assert page.evaluate("""async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate() === null""")
+        assert len([call for call in gateway_calls if call[0] == "PUT" and call[1].endswith("/drafts/speaker")]) == speaker_puts_before
+        assert page.evaluate("performance.getEntriesByType('resource').every(entry => !entry.name.includes('/vendor/ffmpeg/core/'))")
+        served_wavs[2] = wavs[2]
+        session["sourceTracks"][2]["sizeBytes"] = len(wavs[2])
+        session["sourceTracks"][2]["sha256"] = digests[2]
+        session["sourceTracks"][2]["parts"][0]["sizeBytes"] = len(wavs[2])
+        session["sourceTracks"][2]["parts"][0]["sha256"] = digests[2]
         page.get_by_role("button", name="Открыть в «Спикерская»", exact=True).click()
         page.locator("#speaker-editor .speaker-track").nth(2).wait_for(timeout=30000)
         assert page.locator("#speaker-editor").is_visible()
@@ -1526,6 +1549,23 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor-render").is_enabled()
         assert "активная работа «Спикерская»" in page.locator("#speaker-editor-identity").inner_text()
         assert page.locator("#announcement-processor-card").is_hidden()
+        # Speaker monitoring has one master clock: active seeks realign every preview, rate/volume propagate,
+        # and periodic correction bounds deliberate drift without touching mix membership.
+        page.locator("#speaker-editor-source-audio").evaluate("""async audio => {
+            audio.volume = .37; audio.playbackRate = 1.25; audio.currentTime = .4; await audio.play();
+        }""")
+        page.wait_for_function("""() => [...document.querySelectorAll('#speaker-editor-preview-audios audio')].length === 2 &&
+            [...document.querySelectorAll('#speaker-editor-preview-audios audio')].every(audio => !audio.paused &&
+                Math.abs(audio.currentTime - document.getElementById('speaker-editor-source-audio').currentTime) < .12 &&
+                audio.playbackRate === 1.25 && Math.abs(audio.volume - .37) < .001)""", timeout=5000)
+        page.locator("#speaker-editor-source-audio").evaluate("audio => { audio.currentTime = 1.4; audio.dispatchEvent(new Event('seeking')); }")
+        page.wait_for_function("""() => [...document.querySelectorAll('#speaker-editor-preview-audios audio')].every(audio =>
+            Math.abs(audio.currentTime - document.getElementById('speaker-editor-source-audio').currentTime) < .12)""", timeout=3000)
+        page.locator("#speaker-editor-preview-audios audio").first.evaluate("audio => { audio.currentTime = 0; }")
+        page.wait_for_function("""() => Math.abs(document.querySelector('#speaker-editor-preview-audios audio').currentTime -
+            document.getElementById('speaker-editor-source-audio').currentTime) < .12""", timeout=3000)
+        page.locator("#speaker-editor-source-audio").evaluate("audio => { audio.pause(); audio.currentTime = 0; audio.volume = 1; audio.playbackRate = 1; }")
+        assert page.locator("#speaker-editor-preview-audios audio").evaluate_all("items => items.every(audio => audio.paused)")
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth")
@@ -1592,6 +1632,14 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor-result").is_hidden()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
         page.locator("#speaker-editor-render").click()
+        page.locator("#speaker-editor-cancel").wait_for(state="visible")
+        assert page.locator("#speaker-editor-add-cut").is_disabled()
+        assert page.locator(".speaker-dsp select").first.is_disabled()
+        assert page.locator('.speaker-track button').filter(has_text="Исключить из микса").first.is_disabled()
+        # Even a synthetic event cannot alter the captured render snapshot while the operation is active.
+        page.locator(".speaker-dsp select").first.evaluate("""select => {
+            select.value = 'off'; select.dispatchEvent(new Event('change', {bubbles: true}));
+        }""")
         page.get_by_text("Локальный MP3 готов. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
         page.locator("#speaker-editor-result").wait_for(state="visible")
         assert "ещё не сохранён в архиве «Спикерская»" in page.locator(".speaker-not-saved").inner_text()
@@ -1620,11 +1668,13 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             };
             const result = {type: candidate.candidateType, processor: candidate.processorVersion, mediaType: candidate.mediaType,
                 size: candidate.sizeBytes, byteLength: bytes.byteLength, hash, candidateHash: candidate.sha256, bitrate,
+                enhancement: candidate.trackProcessing[0].enhancement, excludedTrackIds: candidate.excludedTrackIds,
                 duration: decoded.duration, firstSilenced: energy(330, 1.02, 1.48), firstLater: energy(330, 1.65, 2.15),
                 otherDuringSilence: energy(550, 1.02, 1.48), excluded: energy(440, 1.65, 2.15), included: energy(550, 1.65, 2.15)};
             await context.close(); return result;
         }""")
         assert candidate["type"] == "speaker" and candidate["processor"] == "speaker-editor-v1" and candidate["mediaType"] == "audio/mpeg"
+        assert candidate["enhancement"] == "gentle" and candidate["excludedTrackIds"] == [track_ids[1]], candidate
         assert candidate["size"] == candidate["byteLength"] and candidate["hash"] == candidate["candidateHash"]
         assert candidate["bitrate"] == 128, candidate
         assert abs(candidate["duration"] - 2.5) < .08, candidate
@@ -1632,6 +1682,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert candidate["otherDuringSilence"]["tone"] > 1e-5, candidate
         assert candidate["excluded"]["tone"] < candidate["included"]["tone"] * .02, candidate
         assert candidate["included"]["tone"] > 1e-5 and candidate["firstLater"]["tone"] > 1e-5, candidate
+        result_canvas = page.locator("#speaker-editor-result-waveform canvas")
+        assert result_canvas.get_attribute("data-used-width") == str(result_canvas.evaluate("canvas => canvas.width"))
+        assert abs(float(result_canvas.get_attribute("data-timeline-duration")) - candidate["duration"]) < .08
         # An unchanged canonical save only rebinds revisions and retains the exact local bytes/result.
         page.locator("#speaker-editor-save").click()
         page.get_by_text("Черновик сохранён, ревизия 2.", exact=True).wait_for()
@@ -1641,6 +1694,29 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             return {draftRevision: candidate.draftRevision, sourceSessionRevision: candidate.sourceSessionRevision, sha256: candidate.sha256};
         }""")
         assert rebound == {"draftRevision": 2, "sourceSessionRevision": session["revision"], "sha256": candidate["hash"]}
+        # Delayed result-waveform decoding is tied to this render token. Cancellation invalidates the pending
+        # presentation, and its continuation cannot reveal either the old or the cancelled candidate.
+        page.evaluate("""() => {
+            const nativeDecode = AudioContext.prototype.decodeAudioData;
+            window.speakerDecodeGate = {delay: 1200, entered: false};
+            AudioContext.prototype.decodeAudioData = function(buffer, ...rest) {
+                const decoded = nativeDecode.call(this, buffer, ...rest);
+                if (!window.speakerDecodeGate.delay) return decoded;
+                window.speakerDecodeGate.entered = true;
+                return new Promise((resolve, reject) => setTimeout(() => decoded.then(resolve, reject), window.speakerDecodeGate.delay));
+            };
+        }""")
+        page.locator("#speaker-editor-render").click()
+        page.wait_for_function("window.speakerDecodeGate.entered", timeout=180000)
+        assert page.locator("#speaker-editor-result").is_hidden()
+        page.locator("#speaker-editor-cancel").click()
+        page.wait_for_timeout(1500)
+        assert page.locator("#speaker-editor-result").is_hidden()
+        assert page.evaluate("""async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate() === null""")
+        page.evaluate("window.speakerDecodeGate.delay = 0")
+        page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=5000)
+        page.locator("#speaker-editor-render").click()
+        page.get_by_text("Локальный MP3 готов. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
         # Monitoring does not invalidate; a render-affecting DSP edit does.
         page.locator('.speaker-track button[data-action="solo"]').first.click()
         assert page.locator("#speaker-editor-result").is_visible()

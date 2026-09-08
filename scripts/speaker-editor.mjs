@@ -1,7 +1,7 @@
 import { sha256Hex } from "./audio-archive-client.mjs";
 import {
   SpeakerHistory, buildLevelingAnalysisFilter, buildSpeakerCandidate, buildSpeakerFilterGraph,
-  defaultSpeakerPayload, microseconds, normalizeSpeakerPayload, parseLoudnormMeasurements,
+  createSpeakerRenderSnapshot, defaultSpeakerPayload, microseconds, normalizeSpeakerPayload, parseLoudnormMeasurements,
   rebindSpeakerCandidate, removedDuration, resultDuration, SPEAKER_PAYLOAD_SCHEMA
 } from "./speaker-editor-core.mjs";
 
@@ -11,7 +11,8 @@ const encoder = new TextEncoder();
 const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
-  operation: null, pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
+  operation: null, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
+  pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
@@ -63,6 +64,7 @@ function updateSelectionDuration() {
 }
 
 function clearCandidate() {
+  state.presentationEpoch += 1;
   state.candidate = null;
   byId("result").hidden = true;
   byId("result-audio").pause(); byId("result-audio").removeAttribute("src"); byId("result-audio").load();
@@ -72,6 +74,10 @@ function clearCandidate() {
 }
 
 function commitPayload(next, action) {
+  if (!state.ready || state.operation) {
+    byId("selection-error").textContent = state.operation ? "Дождитесь окончания локальной сборки или отмените её." : "Исходники ещё не готовы для редактирования.";
+    return;
+  }
   try {
     const normalized = normalizeSpeakerPayload(next, state.session.sourceTracks.map((track) => track.trackId), state.originalDuration);
     if (fingerprint(normalized) === fingerprint(state.payload)) return;
@@ -83,12 +89,12 @@ function commitPayload(next, action) {
 }
 
 function undo() {
-  if (!state.history?.canUndo) return;
+  if (!state.ready || state.operation || !state.history?.canUndo) return;
   state.payload = state.history.undo(); clearCandidate(); byId("status").textContent = "Последнее изменение отменено."; render();
 }
 
 function redo() {
-  if (!state.history?.canRedo) return;
+  if (!state.ready || state.operation || !state.history?.canRedo) return;
   state.payload = state.history.redo(); clearCandidate(); byId("status").textContent = "Изменение повторено."; render();
 }
 
@@ -151,12 +157,13 @@ function makeButton(text, action, trackId, disabled = false) {
   if (trackId) button.dataset.trackId = trackId; button.addEventListener("click", action); return button;
 }
 
-function drawCanvas(canvas, track) {
+function drawCanvas(canvas, track, timelineDuration = state.originalDuration) {
   const width = 1400; const height = 100; canvas.width = width; canvas.height = height;
   const context = canvas.getContext("2d"); context.fillStyle = "#13293d"; context.fillRect(0, 0, width, height);
   context.strokeStyle = "#74b2e6"; context.lineWidth = 1; context.beginPath();
   const samples = track.samples || new Float32Array(width);
-  const usedWidth = Math.max(1, Math.round(width * Math.min(1, track.duration / state.originalDuration)));
+  const usedWidth = Math.max(1, Math.round(width * Math.min(1, track.duration / timelineDuration)));
+  canvas.dataset.usedWidth = String(usedWidth); canvas.dataset.timelineDuration = String(timelineDuration);
   for (let x = 0; x < usedWidth; x++) {
     const sample = samples[Math.min(samples.length - 1, Math.floor(x / usedWidth * samples.length))] || 0;
     context.moveTo(x, height / 2 - sample * height * .46); context.lineTo(x, height / 2 + sample * height * .46);
@@ -204,7 +211,8 @@ function pointerTime(event, scroll) {
 function selectControl(label, value, values, change) {
   const wrapper = element("label", "speaker-dsp-field", label); const select = document.createElement("select");
   for (const [key, text] of values) { const option = document.createElement("option"); option.value = key; option.textContent = text; select.append(option); }
-  select.value = value; select.addEventListener("change", () => change(select.value)); wrapper.append(select); return wrapper;
+  select.value = value; select.disabled = Boolean(state.operation) || !state.ready;
+  select.addEventListener("change", () => change(select.value)); wrapper.append(select); return wrapper;
 }
 
 function renderTracks() {
@@ -219,8 +227,10 @@ function renderTracks() {
     const monitor = element("div", "speaker-track__buttons");
     const solo = makeButton("Соло", () => toggleMonitoring(trackId, "solo"), trackId); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
     const mute = makeButton("Заглушить", () => toggleMonitoring(trackId, "mute"), trackId); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
-    const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId);
-    const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, index === 0); const down = makeButton("Вниз", () => moveTrack(trackId, 1), trackId, index === state.payload.trackIds.length - 1);
+    const editsDisabled = Boolean(state.operation) || !state.ready;
+    const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
+    const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
+    const down = makeButton("Вниз", () => moveTrack(trackId, 1), trackId, editsDisabled || index === state.payload.trackIds.length - 1);
     monitor.append(solo, mute, include, up, down); header.append(heading, monitor);
     const dsp = element("div", "speaker-dsp");
     dsp.append(selectControl("Улучшение", setting.enhancement, [["off", "Выкл."], ["gentle", "Мягкое"]], (value) => changeTrack(trackId, "enhancement", value)),
@@ -241,38 +251,44 @@ function renderRegions() {
     const row = element("article", `speaker-region-row speaker-region-row--${region.kind}`); row.dataset.regionId = region.regionId;
     const title = element("h4", "", region.kind === "cut" ? "Глобальный вырез" : `Тишина · ${state.tracks.find((track) => track.trackId === region.trackId)?.file.name}`);
     const fields = element("div", "speaker-region-row__fields");
-    const start = document.createElement("input"); start.type = "number"; start.step = "0.000001"; start.min = "0"; start.value = region.startSeconds; start.setAttribute("aria-label", `${title.textContent}, начало в секундах`);
-    const end = document.createElement("input"); end.type = "number"; end.step = "0.000001"; end.min = "0"; end.value = region.endSeconds; end.setAttribute("aria-label", `${title.textContent}, конец в секундах`);
+    const editsDisabled = Boolean(state.operation) || !state.ready;
+    const start = document.createElement("input"); start.type = "number"; start.step = "0.000001"; start.min = "0"; start.value = region.startSeconds; start.disabled = editsDisabled; start.setAttribute("aria-label", `${title.textContent}, начало в секундах`);
+    const end = document.createElement("input"); end.type = "number"; end.step = "0.000001"; end.min = "0"; end.value = region.endSeconds; end.disabled = editsDisabled; end.setAttribute("aria-label", `${title.textContent}, конец в секундах`);
     const apply = makeButton("Применить границы", () => {
       const next = structuredClone(state.payload); const collection = region.kind === "cut" ? next.globalCuts : next.trackSilenceRegions;
       const target = collection.find((item) => item.regionId === region.regionId); target.startSeconds = Number(start.value); target.endSeconds = Number(end.value);
       commitPayload(next, "границы региона");
-    });
+    }, null, editsDisabled);
     const select = makeButton("Выбрать", () => { setSelection(region.startSeconds, region.endSeconds, region.trackId); row.scrollIntoView({ block: "nearest" }); });
     const remove = makeButton("Удалить", () => {
       const next = structuredClone(state.payload); const key = region.kind === "cut" ? "globalCuts" : "trackSilenceRegions";
       next[key] = next[key].filter((item) => item.regionId !== region.regionId); commitPayload(next, "удаление региона");
-    });
+    }, null, editsDisabled);
     fields.append(start, end, apply, select, remove); row.append(title, fields); container.append(row);
   }
 }
 
 function updateRenderState() {
-  const allExcluded = state.payload?.excludedTrackIds.length === state.payload?.trackIds.length;
-  const disabled = !state.session || !Number.isFinite(state.originalDuration) || allExcluded || Boolean(state.operation);
+  const allExcluded = Boolean(state.payload && state.payload.excludedTrackIds.length === state.payload.trackIds.length);
+  const disabled = !state.ready || !state.session || !Number.isFinite(state.originalDuration) || allExcluded || Boolean(state.operation);
   byId("render").disabled = disabled;
   byId("render-reason").textContent = allExcluded ? "Все дорожки исключены. Верните хотя бы одну дорожку в микс." :
-    state.operation ? "Идёт локальная сборка." : "В результат войдут только дорожки, оставленные в финальном миксе.";
-  byId("save").disabled = !state.session || Boolean(state.operation);
+    state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
+      "В результат войдут только дорожки, оставленные в финальном миксе.";
+  byId("save").disabled = !state.ready || !state.session || Boolean(state.operation);
+  for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence"]) byId(id).disabled = !state.ready || Boolean(state.operation);
 }
 
 function render() {
   if (!state.session) return;
-  renderTracks(); renderRegions(); updateHistoryControls(); updateRenderState();
+  if (state.payload) { renderTracks(); renderRegions(); }
+  else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
+  updateHistoryControls(); updateRenderState();
   byId("status").dataset.dirty = String(currentDirty());
 }
 
 function addRegion(kind) {
+  if (!state.ready || state.operation) return;
   try {
     const selection = readSelection(); const next = structuredClone(state.payload);
     if (kind === "cut") next.globalCuts.push({ regionId: crypto.randomUUID(), ...selection });
@@ -309,6 +325,7 @@ function updateWaveWidths() {
 function seekSource(seconds) {
   const target = Math.max(0, Math.min(state.originalDuration, seconds));
   for (const track of state.tracks) if (track.audio) { try { track.audio.currentTime = Math.min(target, track.duration); } catch { /* metadata settled asynchronously */ } }
+  synchronizePlayback();
   updatePlayheads();
 }
 
@@ -322,22 +339,45 @@ function updatePlayheads() {
 }
 
 function setupPlayback() {
+  stopMonitoringSynchronization();
   const masterTrack = state.tracks.reduce((best, track) => track.duration > best.duration ? track : best, state.tracks[0]);
   const master = byId("source-audio"); const hidden = byId("preview-audios"); hidden.replaceChildren();
   for (const track of state.tracks) {
     const audio = track === masterTrack ? master : document.createElement("audio"); audio.src = track.url; audio.preload = "auto"; track.audio = audio;
     if (audio !== master) hidden.append(audio);
   }
-  master.onplay = synchronizePlayback;
+  master.onplay = () => { synchronizePlayback(); scheduleMonitoringSynchronization(); };
   applyMonitoring();
 }
 
 function synchronizePlayback() {
   const master = byId("source-audio");
-  for (const track of state.tracks) if (track.audio !== master) { track.audio.currentTime = Math.min(master.currentTime, track.duration); void track.audio.play().catch(() => {}); }
+  for (const track of state.tracks) if (track.audio !== master) {
+    const preview = track.audio; const target = Math.min(master.currentTime, track.duration);
+    preview.playbackRate = master.playbackRate; preview.volume = master.volume;
+    if (Math.abs(preview.currentTime - target) > .04) preview.currentTime = target;
+    if (!master.paused && master.currentTime < track.duration) void preview.play().catch(() => {}); else preview.pause();
+  }
 }
 
-function stopOtherPlayback() { const master = byId("source-audio"); for (const track of state.tracks) if (track.audio !== master) track.audio?.pause(); }
+function scheduleMonitoringSynchronization() {
+  stopMonitoringSynchronization(false);
+  if (byId("source-audio").paused || !state.ready) return;
+  state.monitorTimer = setTimeout(() => {
+    state.monitorTimer = null; synchronizePlayback(); scheduleMonitoringSynchronization();
+  }, 200);
+}
+
+function stopMonitoringSynchronization(pausePreviews = false) {
+  if (state.monitorTimer !== null) clearTimeout(state.monitorTimer);
+  state.monitorTimer = null;
+  if (pausePreviews) {
+    const master = byId("source-audio");
+    for (const track of state.tracks) if (track.audio !== master) track.audio?.pause();
+  }
+}
+
+function stopOtherPlayback() { stopMonitoringSynchronization(true); }
 
 async function metadataFor(url) {
   const audio = document.createElement("audio"); audio.preload = "metadata"; audio.src = url;
@@ -359,19 +399,36 @@ async function waveformSamples(file) {
   } finally { await context.close(); }
 }
 
-async function prepareSources() {
+async function prepareSources(epoch) {
   byId("status").textContent = "Проверка длительности и подготовка форм сигнала…";
-  for (const track of state.tracks) track.duration = await metadataFor(track.url);
-  state.originalDuration = Math.max(...state.tracks.map((track) => track.duration));
-  if (state.originalDuration - Math.min(...state.tracks.map((track) => track.duration)) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды.");
-  state.payload = normalizeSpeakerPayload(state.payload, state.session.sourceTracks.map((track) => track.trackId), state.originalDuration);
-  state.history.reset(state.payload); state.savedFingerprint = state.draft ? fingerprint(state.payload) : fingerprint(defaultSpeakerPayload(state.payload.trackIds));
-  for (const track of state.tracks) { try { track.samples = await waveformSamples(track.file); } catch { track.samples = null; } }
-  setupPlayback(); render(); byId("status").textContent = state.draft ? `Черновик открыт, ревизия ${state.draft.draftRevision}.` : "Новый черновик готов. Все настройки выключены.";
+  const tracks = [...state.tracks]; const session = state.session; const payload = state.payload; const draft = state.draft;
+  const current = () => state.sourceEpoch === epoch && state.session === session;
+  const durations = await Promise.all(tracks.map((track) => metadataFor(track.url)));
+  if (!current()) throw new DOMException("cancelled", "AbortError");
+  const originalDuration = Math.max(...durations);
+  if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды.");
+  const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
+  const samples = await Promise.all(tracks.map((track) => waveformSamples(track.file)));
+  if (!current()) throw new DOMException("cancelled", "AbortError");
+  if (samples.some((item) => !item)) throw new Error("Не удалось подготовить формы сигнала исходных дорожек.");
+  tracks.forEach((track, index) => { track.duration = durations[index]; track.samples = samples[index]; });
+  state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
+  state.savedFingerprint = draft ? fingerprint(normalized) : fingerprint(defaultSpeakerPayload(normalized.trackIds));
+  setupPlayback(); state.ready = true; render();
+  byId("status").textContent = draft ? `Черновик открыт, ревизия ${draft.draftRevision}.` : "Новый черновик готов. Все настройки выключены.";
+}
+
+function failSourcePreparation() {
+  stopMonitoringSynchronization(true); clearCandidate();
+  const master = byId("source-audio"); master.pause(); master.removeAttribute("src"); master.load();
+  for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
+  byId("preview-audios").replaceChildren(); state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
+  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.ready = false;
+  render();
 }
 
 async function saveDraft() {
-  if (!state.session || !state.saveDraft) return;
+  if (!state.ready || state.operation || !state.session || !state.saveDraft) return;
   byId("status").textContent = "Сохранение черновика обработки…"; byId("save").disabled = true;
   const before = fingerprint(state.payload);
   try {
@@ -405,36 +462,44 @@ async function resultMetadata(blob) {
 }
 
 async function renderSpeaker() {
-  if (state.operation || byId("render").disabled) return;
-  clearCandidate(); const controller = operation(); const inputPaths = state.payload.trackIds.map((_, index) => `speaker-input-${index}`);
+  if (!state.ready || state.operation || byId("render").disabled) return;
+  let snapshot;
+  try {
+    snapshot = createSpeakerRenderSnapshot({ session: state.session, draftRevision: state.draft?.draftRevision || 0,
+      payload: state.payload, originalDurationSeconds: state.originalDuration, tracks: state.tracks });
+  } catch (error) {
+    byId("render-status").textContent = userMessage(error, "Не удалось зафиксировать безопасное состояние для сборки."); return;
+  }
+  clearCandidate(); const controller = operation(); const inputPaths = snapshot.sources.map((_, index) => `speaker-input-${index}`);
   const outputPath = "speaker-output.mp3"; const filterPath = "speaker-filter.txt"; const measurements = {}; let logListener = null;
   byId("cancel").hidden = false; byId("progress").hidden = false; byId("progress").value = 2; byId("render-status").textContent = "Подготовка локального обработчика…"; render();
   try {
     const engine = await ensureEngine(controller); abortCheck(controller);
-    for (let index = 0; index < state.payload.trackIds.length; index++) {
-      const file = state.filesById.get(state.payload.trackIds[index]); await engine.writeFile(inputPaths[index], new Uint8Array(await file.arrayBuffer())); abortCheck(controller);
-      byId("progress").value = 10 + Math.round((index + 1) / state.payload.trackIds.length * 20);
+    for (let index = 0; index < snapshot.sources.length; index++) {
+      const file = snapshot.sources[index].file; await engine.writeFile(inputPaths[index], new Uint8Array(await file.arrayBuffer())); abortCheck(controller);
+      byId("progress").value = 10 + Math.round((index + 1) / snapshot.sources.length * 20);
     }
-    const included = state.payload.trackIds.filter((id) => !state.payload.excludedTrackIds.includes(id));
-    for (const trackId of included.filter((id) => state.payload.trackProcessing.find((item) => item.trackId === id).leveling === "on")) {
+    const included = snapshot.payload.trackIds.filter((id) => !snapshot.payload.excludedTrackIds.includes(id));
+    for (const trackId of included.filter((id) => snapshot.payload.trackProcessing.find((item) => item.trackId === id).leveling === "on")) {
       const logs = []; logListener = ({ message }) => logs.push(message); engine.on("log", logListener);
-      byId("render-status").textContent = `Измерение громкости: дорожка ${state.payload.trackIds.indexOf(trackId) + 1}…`;
-      const graph = buildLevelingAnalysisFilter({ inputIndex: state.payload.trackIds.indexOf(trackId), trackId, duration: state.originalDuration, payload: state.payload });
+      byId("render-status").textContent = `Измерение громкости: дорожка ${snapshot.payload.trackIds.indexOf(trackId) + 1}…`;
+      const graph = buildLevelingAnalysisFilter({ inputIndex: snapshot.payload.trackIds.indexOf(trackId), trackId,
+        duration: snapshot.originalDurationSeconds, payload: snapshot.payload });
       const code = await engine.exec(["-hide_banner", "-nostats", "-xerror", ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
         "-filter_complex", graph, "-map", "[analysis]", "-f", "null", "-"]);
       engine.off("log", logListener); logListener = null; abortCheck(controller); if (code !== 0) throw new Error("Не удалось измерить громкость дорожки.");
       measurements[trackId] = parseLoudnormMeasurements(logs);
     }
     byId("progress").value = 55; byId("render-status").textContent = "Применение монтажа, обработки и финального лимитера…";
-    const graph = buildSpeakerFilterGraph(state.payload, state.originalDuration, measurements); await engine.writeFile(filterPath, encoder.encode(graph));
+    const graph = buildSpeakerFilterGraph(snapshot.payload, snapshot.originalDurationSeconds, measurements); await engine.writeFile(filterPath, encoder.encode(graph));
     const code = await engine.exec(["-hide_banner", "-nostats", "-xerror", ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
       "-filter_complex_script", filterPath, "-map", "[speaker_mix]", "-vn", "-sn", "-dn", "-c:a", "libmp3lame", "-b:a", "128k", outputPath]);
     abortCheck(controller); if (code !== 0) throw new Error("Не удалось создать MP3. Проверьте исходники и повторите.");
     const bytes = await engine.readFile(outputPath); if (!bytes.byteLength) throw new Error("Не удалось создать MP3.");
     const blob = new Blob([bytes], { type: "audio/mpeg" }); const actualDuration = await resultMetadata(blob); abortCheck(controller);
-    state.candidate = await buildSpeakerCandidate({ blob, session: state.session, draftRevision: state.draft?.draftRevision || 0,
-      payload: state.payload, originalDurationSeconds: state.originalDuration, resultDurationSeconds: actualDuration, sha256: sha256Hex });
-    presentCandidate(); byId("progress").value = 100; byId("render-status").textContent = "Локальный MP3 готов. В архив ничего не передавалось.";
+    const candidate = await buildSpeakerCandidate({ blob, snapshot, resultDurationSeconds: actualDuration, sha256: sha256Hex }); abortCheck(controller);
+    await presentCandidate(candidate, controller); abortCheck(controller);
+    byId("progress").value = 100; byId("render-status").textContent = "Локальный MP3 готов. В архив ничего не передавалось.";
   } catch (error) {
     clearCandidate(); byId("render-status").textContent = userMessage(error, "Не удалось собрать результат. Черновик и исходники остались в памяти.");
   } finally {
@@ -450,16 +515,19 @@ function cancelRender() {
   byId("render-status").textContent = "Сборка отменена. Черновик и исходники сохранены в памяти."; byId("cancel").hidden = true; byId("progress").hidden = true; render();
 }
 
-async function resultSamples(blob) { try { return await waveformSamples(new File([blob], "result.mp3", { type: "audio/mpeg" })); } catch { return null; } }
+async function resultSamples(blob) { return waveformSamples(new File([blob], "result.mp3", { type: "audio/mpeg" })); }
 
-async function presentCandidate() {
-  const candidate = state.candidate; if (!candidate) return;
+async function presentCandidate(candidate, controller) {
+  const epoch = state.presentationEpoch;
+  const samples = await resultSamples(candidate.blob); abortCheck(controller);
+  if (epoch !== state.presentationEpoch) throw new DOMException("cancelled", "AbortError");
+  state.candidate = candidate;
   state.candidateUrl = URL.createObjectURL(candidate.blob); byId("result-audio").src = state.candidateUrl;
   byId("download").href = state.candidateUrl; byId("download").download = candidate.presentationFilename;
   byId("original-duration").textContent = durationText(candidate.originalDurationSeconds); byId("result-duration").textContent = durationText(candidate.resultDurationSeconds);
   byId("removed-duration").textContent = durationText(candidate.globallyRemovedDurationSeconds); byId("result-format").textContent = `MP3 · 128 кбит/с · ${bytesText(candidate.sizeBytes)}`;
   state.resultDuration = candidate.resultDurationSeconds; const canvas = byId("result-waveform").querySelector("canvas");
-  const samples = await resultSamples(candidate.blob); drawCanvas(canvas, { samples, duration: state.resultDuration });
+  drawCanvas(canvas, { samples, duration: state.resultDuration }, state.resultDuration);
   byId("result").hidden = false; updateResultWidth(); updateResultPlayhead();
 }
 
@@ -475,10 +543,11 @@ function updateResultPlayhead() {
 }
 
 function teardown() {
-  cancelRender(); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
+  state.sourceEpoch += 1;
+  cancelRender(); stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
-  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; workspace.hidden = true;
+  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.ready = false; workspace.hidden = true;
   document.getElementById("announcement-processor-card").hidden = false;
 }
 
@@ -494,7 +563,8 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый черновик имеет неподдерживаемую схему и не будет перезаписан.");
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
   if (files.length !== orderedManifest.length) throw new Error("Состав загруженных исходников не совпадает с записью.");
-  state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
+  const epoch = ++state.sourceEpoch;
+  state.ready = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null }));
   state.payload = draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
   state.history = new SpeakerHistory(state.payload); state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;
@@ -503,8 +573,14 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
   setSelection(0, ""); clearCandidate();
-  try { await prepareSources(); workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
-  catch (error) { byId("status").textContent = userMessage(error, "Не удалось подготовить Спикерскую."); updateRenderState(); return false; }
+  updateRenderState();
+  try { await prepareSources(epoch); workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
+  catch (error) {
+    if (state.sourceEpoch !== epoch) return false;
+    const message = userMessage(error, "Не удалось подготовить Спикерскую."); failSourcePreparation();
+    byId("status").textContent = message; byId("render-status").textContent = "Сохранение и локальная сборка отключены до повторного открытия исправных исходников.";
+    return false;
+  }
 }
 
 byId("selection-start").addEventListener("input", updateSelectionDuration); byId("selection-end").addEventListener("input", updateSelectionDuration);
@@ -514,7 +590,11 @@ byId("close").addEventListener("click", () => closeSpeakerEditor(false)); byId("
 byId("zoom").addEventListener("input", updateWaveWidths); byId("zoom-out").addEventListener("click", () => { byId("zoom").value = Math.max(1, Number(byId("zoom").value) - .5); updateWaveWidths(); });
 byId("zoom-in").addEventListener("click", () => { byId("zoom").value = Math.min(8, Number(byId("zoom").value) + .5); updateWaveWidths(); }); byId("zoom-fit").addEventListener("click", () => { byId("zoom").value = 1; updateWaveWidths(); });
 byId("follow").addEventListener("click", () => { state.follow = !state.follow; byId("follow").setAttribute("aria-pressed", String(state.follow)); });
-byId("source-audio").addEventListener("pause", stopOtherPlayback); for (const name of ["timeupdate", "seeked", "play", "ended"]) byId("source-audio").addEventListener(name, updatePlayheads);
+byId("source-audio").addEventListener("pause", stopOtherPlayback);
+byId("source-audio").addEventListener("ended", stopOtherPlayback);
+for (const name of ["seeking", "seeked"]) byId("source-audio").addEventListener(name, synchronizePlayback);
+for (const name of ["ratechange", "volumechange"]) byId("source-audio").addEventListener(name, synchronizePlayback);
+for (const name of ["timeupdate", "seeked", "play", "ended"]) byId("source-audio").addEventListener(name, updatePlayheads);
 byId("source-scrollbar").addEventListener("click", (event) => { const rail = byId("source-scrollbar"); const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first) return; first.scrollLeft = (event.clientX - rail.getBoundingClientRect().left) / rail.clientWidth * maximumScroll(); syncScroll(first); });
 byId("source-scrollbar").addEventListener("keydown", (event) => { if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first) return; first.scrollLeft = event.key === "Home" ? 0 : event.key === "End" ? maximumScroll() : first.scrollLeft + (event.key === "ArrowLeft" ? -60 : 60); syncScroll(first); });
 byId("result-zoom").addEventListener("input", updateResultWidth); byId("result-audio").addEventListener("timeupdate", updateResultPlayhead);
