@@ -1,0 +1,77 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://meser-recovery.github.io/audio-archive/schemas/v1/speaker-recipe.schema.json",
+  "title": "Immutable Speaker output recipe v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"],
+  "properties": {
+    "schemaVersion": { "const": 1 },
+    "workflow": { "const": "speaker" },
+    "sessionId": { "$ref": "#/$defs/uuid" },
+    "outputId": { "$ref": "#/$defs/uuid" },
+    "version": { "type": "integer", "minimum": 1 },
+    "processorVersion": { "const": "speaker-editor-v1" },
+    "createdAt": { "type": "string", "format": "date-time" },
+    "renderedAt": { "type": "string", "format": "date-time" },
+    "sourceSessionRevision": { "type": "integer", "minimum": 1 },
+    "candidateFingerprint": { "$ref": "#/$defs/sha256" },
+    "draft": {
+      "type": "object", "additionalProperties": false,
+      "required": ["revision", "payloadSchema", "payload"],
+      "properties": {
+        "revision": { "type": "integer", "minimum": 1 },
+        "payloadSchema": { "const": "speaker/v1" },
+        "payload": { "$ref": "#/$defs/payload" }
+      }
+    },
+    "sources": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "$ref": "#/$defs/source" } },
+    "editState": {
+      "type": "object", "additionalProperties": false,
+      "required": ["orderedTrackIds", "includedTrackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"],
+      "properties": {
+        "orderedTrackIds": { "$ref": "#/$defs/trackIds" },
+        "includedTrackIds": { "$ref": "#/$defs/trackIds" },
+        "excludedTrackIds": { "type": "array", "items": { "$ref": "#/$defs/uuid" }, "uniqueItems": true },
+        "globalCuts": { "$ref": "#/$defs/globalCuts" },
+        "trackSilenceRegions": { "$ref": "#/$defs/trackSilences" },
+        "trackProcessing": { "$ref": "#/$defs/trackProcessing" }
+      }
+    },
+    "renderer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sampleRate", "enhancement", "loudnorm", "compression", "mix", "limiter", "codec"],
+      "properties": {
+        "sampleRate": { "const": 48000 },
+        "enhancement": { "const": "highpass=f=80,lowpass=f=16000" },
+        "mix": { "const": "amix=duration=longest:normalize=0" },
+        "limiter": { "const": "alimiter=limit=0.95:level=0:latency=1" },
+        "codec": { "type": "object", "additionalProperties": false, "required": ["name", "bitrate"], "properties": { "name": { "const": "libmp3lame" }, "bitrate": { "const": "128k" } } },
+        "compression": { "type": "object", "additionalProperties": false, "required": ["light", "medium", "strong"], "properties": { "light": { "type": "string" }, "medium": { "type": "string" }, "strong": { "type": "string" } } },
+        "loudnorm": { "type": "object", "additionalProperties": false, "required": ["integratedLufs", "truePeakDb", "loudnessRangeLufs", "measurements"], "properties": { "integratedLufs": { "const": -19 }, "truePeakDb": { "const": -3 }, "loudnessRangeLufs": { "const": 11 }, "measurements": { "type": "array", "items": { "$ref": "#/$defs/measurement" } } } }
+      }
+    },
+    "result": {
+      "type": "object", "additionalProperties": false,
+      "required": ["mediaType", "presentationFilename", "sizeBytes", "sha256", "originalDurationSeconds", "resultDurationSeconds", "globallyRemovedDurationSeconds"],
+      "properties": {
+        "mediaType": { "const": "audio/mpeg" }, "presentationFilename": { "type": "string", "minLength": 1, "maxLength": 255 },
+        "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 524288000 }, "sha256": { "$ref": "#/$defs/sha256" },
+        "originalDurationSeconds": { "type": "number", "minimum": 0 }, "resultDurationSeconds": { "type": "number", "minimum": 0 },
+        "globallyRemovedDurationSeconds": { "type": "number", "minimum": 0 }
+      }
+    }
+  },
+  "$defs": {
+    "uuid": { "type": "string", "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$" },
+    "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "trackIds": { "type": "array", "minItems": 1, "maxItems": 32, "uniqueItems": true, "items": { "$ref": "#/$defs/uuid" } },
+    "region": { "type": "object", "additionalProperties": false, "required": ["regionId", "startSeconds", "endSeconds"], "properties": { "regionId": { "$ref": "#/$defs/uuid" }, "startSeconds": { "type": "number", "minimum": 0 }, "endSeconds": { "type": "number", "exclusiveMinimum": 0 } } },
+    "globalCuts": { "type": "array", "maxItems": 10000, "items": { "$ref": "#/$defs/region" } },
+    "trackSilences": { "type": "array", "maxItems": 10000, "items": { "type": "object", "additionalProperties": false, "required": ["regionId", "trackId", "startSeconds", "endSeconds"], "properties": { "regionId": { "$ref": "#/$defs/uuid" }, "trackId": { "$ref": "#/$defs/uuid" }, "startSeconds": { "type": "number", "minimum": 0 }, "endSeconds": { "type": "number", "exclusiveMinimum": 0 } } } },
+    "trackProcessing": { "type": "array", "minItems": 1, "maxItems": 32, "items": { "type": "object", "additionalProperties": false, "required": ["trackId", "enhancement", "leveling", "compression"], "properties": { "trackId": { "$ref": "#/$defs/uuid" }, "enhancement": { "enum": ["off", "gentle"] }, "leveling": { "enum": ["off", "on"] }, "compression": { "enum": ["off", "light", "medium", "strong"] } } } },
+    "payload": { "type": "object", "additionalProperties": false, "required": ["trackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"], "properties": { "trackIds": { "$ref": "#/$defs/trackIds" }, "excludedTrackIds": { "type": "array", "items": { "$ref": "#/$defs/uuid" }, "uniqueItems": true }, "globalCuts": { "$ref": "#/$defs/globalCuts" }, "trackSilenceRegions": { "$ref": "#/$defs/trackSilences" }, "trackProcessing": { "$ref": "#/$defs/trackProcessing" } } },
+    "source": { "type": "object", "additionalProperties": false, "required": ["trackId", "blobId", "ordinal", "originalFilename", "mediaType", "sizeBytes", "sha256"], "properties": { "trackId": { "$ref": "#/$defs/uuid" }, "blobId": { "$ref": "#/$defs/uuid" }, "ordinal": { "type": "integer", "minimum": 1, "maximum": 32 }, "originalFilename": { "type": "string", "minLength": 1, "maxLength": 255 }, "mediaType": { "enum": ["audio/mpeg", "audio/mp4", "audio/wav"] }, "sizeBytes": { "type": "integer", "minimum": 1, "maximum": 524288000 }, "sha256": { "$ref": "#/$defs/sha256" } } },
+    "measurement": { "type": "object", "additionalProperties": false, "required": ["trackId", "measured_I", "measured_TP", "measured_LRA", "measured_thresh", "offset"], "properties": { "trackId": { "$ref": "#/$defs/uuid" }, "measured_I": { "type": "number", "minimum": -120, "maximum": 120 }, "measured_TP": { "type": "number", "minimum": -120, "maximum": 120 }, "measured_LRA": { "type": "number", "minimum": -120, "maximum": 120 }, "measured_thresh": { "type": "number", "minimum": -120, "maximum": 120 }, "offset": { "type": "number", "minimum": -120, "maximum": 120 } } }
+  }
+}

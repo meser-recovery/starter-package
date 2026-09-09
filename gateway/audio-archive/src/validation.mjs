@@ -102,10 +102,11 @@ export function assetName(blobId, partNumber) {
   return `blob-${id}-part-${String(partNumber).padStart(4, "0")}.bin`;
 }
 
-export function recipePath(sessionId, outputId) {
+export function recipePath(sessionId, outputId, workflow = "announcement") {
   const session = assertUuid(sessionId, "sessionId");
   const output = assertUuid(outputId, "outputId");
-  return `recipes/${session}/announcement/${output}.json`;
+  if (!WORKFLOWS.includes(workflow)) throw new ValidationError("Unknown recipe workflow");
+  return `recipes/${session}/${workflow}/${output}.json`;
 }
 
 export function hashIdempotencyKey(value) {
@@ -288,6 +289,108 @@ function validateRecipeSources(sources) {
   }
 }
 
+function validateSpeakerRecipeSources(sources) {
+  if (!Array.isArray(sources) || !sources.length || sources.length > 32) throw new ValidationError("Speaker recipe sources are invalid");
+  const trackIds = new Set();
+  const blobIds = new Set();
+  const ordinals = new Set();
+  for (const source of sources) {
+    assertExactKeys(source, ["trackId", "blobId", "ordinal", "originalFilename", "mediaType", "sizeBytes", "sha256"], "speaker recipe source");
+    const trackId = assertUuid(source.trackId, "speaker recipe trackId");
+    const blobId = assertUuid(source.blobId, "speaker recipe blobId");
+    if (trackIds.has(trackId) || blobIds.has(blobId)) throw new ValidationError("Speaker recipe source identities must be unique");
+    trackIds.add(trackId); blobIds.add(blobId);
+    assertInteger(source.ordinal, 1, sources.length, "speaker recipe source ordinal");
+    if (ordinals.has(source.ordinal) || source.originalFilename !== normalizeFilename(source.originalFilename)) {
+      throw new ValidationError("Speaker recipe source order or filename is invalid");
+    }
+    ordinals.add(source.ordinal);
+    if (!Object.values(MEDIA_TYPES).includes(source.mediaType)) throw new ValidationError("Speaker recipe source media type is invalid");
+    assertInteger(source.sizeBytes, 1, MAX_SESSION_BYTES, "speaker recipe source sizeBytes");
+    assertSha256(source.sha256, "speaker recipe source sha256");
+  }
+}
+
+function validateLoudnormMeasurement(value, expectedTrackId) {
+  assertExactKeys(value, ["trackId", "measured_I", "measured_TP", "measured_LRA", "measured_thresh", "offset"], "speaker loudnorm measurement");
+  if (assertUuid(value.trackId, "speaker loudnorm trackId") !== expectedTrackId) throw new ValidationError("Speaker loudnorm measurements must follow track order");
+  for (const key of ["measured_I", "measured_TP", "measured_LRA", "measured_thresh", "offset"]) {
+    assertFinite(value[key], -120, 120, `speaker loudnorm ${key}`);
+  }
+}
+
+function validateSpeakerRenderer(value, payload) {
+  assertExactKeys(value, ["sampleRate", "enhancement", "loudnorm", "compression", "mix", "limiter", "codec"], "speaker renderer");
+  if (value.sampleRate !== 48000 || value.enhancement !== "highpass=f=80,lowpass=f=16000" ||
+      value.mix !== "amix=duration=longest:normalize=0" || value.limiter !== "alimiter=limit=0.95:level=0:latency=1") {
+    throw new ValidationError("Speaker renderer parameters are invalid");
+  }
+  assertExactKeys(value.compression, ["light", "medium", "strong"], "speaker compression mappings");
+  const expectedCompression = {
+    light: "acompressor=threshold=0.177828:ratio=2:attack=20:release=250:knee=2:makeup=1.25",
+    medium: "acompressor=threshold=0.125893:ratio=3:attack=15:release=300:knee=2.5:makeup=1.5",
+    strong: "acompressor=threshold=0.089125:ratio=4:attack=10:release=350:knee=3:makeup=1.75"
+  };
+  if (!isDeepEqual(value.compression, expectedCompression)) throw new ValidationError("Speaker compression mappings are invalid");
+  assertExactKeys(value.loudnorm, ["integratedLufs", "truePeakDb", "loudnessRangeLufs", "measurements"], "speaker loudnorm");
+  if (value.loudnorm.integratedLufs !== -19 || value.loudnorm.truePeakDb !== -3 || value.loudnorm.loudnessRangeLufs !== 11 ||
+      !Array.isArray(value.loudnorm.measurements)) throw new ValidationError("Speaker loudnorm targets are invalid");
+  const leveled = payload.trackProcessing.filter((item) => item.leveling === "on" && !payload.excludedTrackIds.includes(item.trackId)).map((item) => item.trackId);
+  if (value.loudnorm.measurements.length !== leveled.length) throw new ValidationError("Speaker loudnorm measurements are incomplete");
+  value.loudnorm.measurements.forEach((measurement, index) => validateLoudnormMeasurement(measurement, leveled[index]));
+  assertExactKeys(value.codec, ["name", "bitrate"], "speaker codec");
+  if (value.codec.name !== "libmp3lame" || value.codec.bitrate !== "128k") throw new ValidationError("Speaker codec is invalid");
+}
+
+function isDeepEqual(left, right) {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function validateSpeakerRecipeResult(value) {
+  assertExactKeys(value, ["mediaType", "presentationFilename", "sizeBytes", "sha256", "originalDurationSeconds", "resultDurationSeconds", "globallyRemovedDurationSeconds"], "speaker recipe result");
+  if (value.mediaType !== MEDIA_TYPES.mp3 || value.presentationFilename !== normalizeFilename(value.presentationFilename)) {
+    throw new ValidationError("Speaker recipe result format is invalid");
+  }
+  assertInteger(value.sizeBytes, 1, MAX_SESSION_BYTES, "speaker recipe result sizeBytes");
+  assertSha256(value.sha256, "speaker recipe result sha256");
+  assertFinite(value.originalDurationSeconds, 0, 7 * 24 * 60 * 60, "speaker originalDurationSeconds");
+  assertFinite(value.resultDurationSeconds, 0, 7 * 24 * 60 * 60, "speaker resultDurationSeconds");
+  assertFinite(value.globallyRemovedDurationSeconds, 0, 7 * 24 * 60 * 60, "speaker globallyRemovedDurationSeconds");
+}
+
+export function validateSpeakerRecipe(recipe) {
+  assertExactKeys(recipe, ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"], "speaker recipe");
+  if (recipe.schemaVersion !== SCHEMA_VERSION || recipe.workflow !== "speaker" || recipe.processorVersion !== "speaker-editor-v1") {
+    throw new ValidationError("Speaker recipe identity is invalid");
+  }
+  assertUuid(recipe.sessionId, "speaker recipe sessionId");
+  assertUuid(recipe.outputId, "speaker recipe outputId");
+  assertInteger(recipe.version, 1, Number.MAX_SAFE_INTEGER, "speaker recipe version");
+  assertTimestamp(recipe.createdAt, "speaker recipe createdAt");
+  assertTimestamp(recipe.renderedAt, "speaker recipe renderedAt");
+  assertInteger(recipe.sourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "speaker recipe sourceSessionRevision");
+  assertExactKeys(recipe.draft, ["revision", "payloadSchema", "payload"], "speaker recipe draft");
+  assertInteger(recipe.draft.revision, 1, Number.MAX_SAFE_INTEGER, "speaker recipe draft revision");
+  if (recipe.draft.payloadSchema !== "speaker/v1") throw new ValidationError("Speaker recipe draft schema is invalid");
+  const payload = validateSpeakerDraftPayload(recipe.draft.payload);
+  validateSpeakerRecipeSources(recipe.sources);
+  if (!isDeepEqual(recipe.sources.map((source) => source.trackId), payload.trackIds)) throw new ValidationError("Speaker recipe sources must follow draft track order");
+  assertExactKeys(recipe.editState, ["orderedTrackIds", "includedTrackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"], "speaker edit state");
+  const expectedEditState = {
+    orderedTrackIds: payload.trackIds,
+    includedTrackIds: payload.trackIds.filter((id) => !payload.excludedTrackIds.includes(id)),
+    excludedTrackIds: payload.excludedTrackIds,
+    globalCuts: payload.globalCuts,
+    trackSilenceRegions: payload.trackSilenceRegions,
+    trackProcessing: payload.trackProcessing
+  };
+  if (!isDeepEqual(recipe.editState, expectedEditState)) throw new ValidationError("Speaker edit state does not match its canonical draft");
+  validateSpeakerRenderer(recipe.renderer, payload);
+  assertSha256(recipe.candidateFingerprint, "speaker candidateFingerprint");
+  validateSpeakerRecipeResult(recipe.result);
+  return structuredClone(recipe);
+}
+
 function validateProcessing(value) {
   assertExactKeys(value, ["mode", "silenceThresholdDb", "minimumSilenceSeconds", "retainedSilenceSeconds", "detectedIntervals", "removalRanges", "mix", "limiter", "codec"], "recipe processing");
   if (!["passthrough", "processed_single", "mixed_multi"].includes(value.mode)) throw new ValidationError("Processing mode is invalid");
@@ -368,6 +471,24 @@ export function validatePublicationPlan(plan, acceptedPartBytes = DEFAULT_PART_B
   if (plan.recipe.result.sizeBytes !== plan.sizeBytes || plan.recipe.result.sha256 !== plan.sha256) throw new ValidationError("Publication result does not match its plan");
   if (plan.recipe.processing.mode !== "passthrough" && plan.recipe.result.mediaType !== MEDIA_TYPES.mp3) throw new ValidationError("Processed Announcement output must be MP3");
   if (outputId === blobId) throw new ValidationError("Output and blob identities must be distinct");
+  return structuredClone(plan);
+}
+
+export function validateSpeakerPublicationPlan(plan, acceptedPartBytes = DEFAULT_PART_BYTES) {
+  assertInteger(acceptedPartBytes, 1, MAX_PART_BYTES, "acceptedPartBytes");
+  assertExactKeys(plan, ["outputId", "blobId", "processorVersion", "sizeBytes", "sha256", "parts", "recipe"], "speaker save plan");
+  const outputId = assertUuid(plan.outputId, "speaker outputId");
+  const blobId = assertUuid(plan.blobId, "speaker blobId");
+  if (outputId === blobId || plan.processorVersion !== "speaker-editor-v1") throw new ValidationError("Speaker save identities are invalid");
+  assertInteger(plan.sizeBytes, 1, MAX_SESSION_BYTES, "speaker save sizeBytes");
+  assertSha256(plan.sha256, "speaker save sha256");
+  if (!Array.isArray(plan.parts) || !plan.parts.length || plan.parts.length > 9999) throw new ValidationError("Speaker save parts are invalid");
+  const total = plan.parts.reduce((sum, part, index) => sum + validatePlannedPart(part, blobId, index + 1, acceptedPartBytes), 0);
+  if (total !== plan.sizeBytes) throw new ValidationError("Speaker save part sizes do not match logical size");
+  assertExactKeys(plan.recipe, ["renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"], "speaker recipe template");
+  const candidate = validateSpeakerRecipe({ schemaVersion: SCHEMA_VERSION, workflow: "speaker", sessionId: "11111111-1111-4111-8111-111111111111",
+    outputId, version: 1, processorVersion: plan.processorVersion, createdAt: "2000-01-01T00:00:00.000Z", ...plan.recipe });
+  if (candidate.result.sizeBytes !== plan.sizeBytes || candidate.result.sha256 !== plan.sha256) throw new ValidationError("Speaker result does not match its save plan");
   return structuredClone(plan);
 }
 
@@ -583,7 +704,7 @@ export function validateTransaction(value) {
     assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "requestFingerprint", "revision", "state", "sessionId", "workflow", "outputId", "blobId", "expectedRevision", "reservedSessionRevision", "reservedVersion", "releaseId", "releaseTag", "plan", "uploadedParts", "recipeSnapshot", "outputDescriptor", "failure", "createdAt", "updatedAt"], "publication transaction");
     validateTransactionBase(value, "publication", PUBLICATION_STATES);
     assertSha256(value.requestFingerprint, "requestFingerprint");
-    if (value.workflow !== "announcement") throw new ValidationError("Publication workflow is invalid");
+    if (!WORKFLOWS.includes(value.workflow)) throw new ValidationError("Publication workflow is invalid");
     if (assertUuid(value.outputId, "publication outputId") !== value.plan?.outputId ||
         assertUuid(value.blobId, "publication blobId") !== value.plan?.blobId) throw new ValidationError("Publication identities do not match plan");
     assertInteger(value.expectedRevision, 1, Number.MAX_SAFE_INTEGER, "publication expectedRevision");
@@ -591,8 +712,8 @@ export function validateTransaction(value) {
     assertInteger(value.reservedVersion, 1, Number.MAX_SAFE_INTEGER, "publication reservedVersion");
     assertInteger(value.releaseId, 1, Number.MAX_SAFE_INTEGER, "publication releaseId");
     if (value.releaseTag !== `audio-session-${value.sessionId}`) throw new ValidationError("Publication release tag is invalid");
-    const plan = validatePublicationPlan(value.plan, MAX_PART_BYTES);
-    const recipe = validateAnnouncementRecipe(value.recipeSnapshot);
+    const plan = value.workflow === "speaker" ? validateSpeakerPublicationPlan(value.plan, MAX_PART_BYTES) : validatePublicationPlan(value.plan, MAX_PART_BYTES);
+    const recipe = value.workflow === "speaker" ? validateSpeakerRecipe(value.recipeSnapshot) : validateAnnouncementRecipe(value.recipeSnapshot);
     if (recipe.sessionId !== value.sessionId || recipe.outputId !== value.outputId || recipe.version !== value.reservedVersion ||
         recipe.processorVersion !== plan.processorVersion || recipe.sourceSessionRevision !== value.expectedRevision) {
       throw new ValidationError("Publication recipe identity is invalid");
@@ -615,7 +736,7 @@ export function validateTransaction(value) {
     if (value.outputDescriptor !== null) {
       validateOutput(value.outputDescriptor, value.sessionId);
       if (value.outputDescriptor.outputId !== value.outputId || value.outputDescriptor.version !== value.reservedVersion ||
-          value.outputDescriptor.blobId !== value.blobId || value.outputDescriptor.recipeSnapshotRef !== recipePath(value.sessionId, value.outputId)) {
+          value.outputDescriptor.blobId !== value.blobId || value.outputDescriptor.recipeSnapshotRef !== recipePath(value.sessionId, value.outputId, value.workflow)) {
         throw new ValidationError("Publication output descriptor is invalid");
       }
     }

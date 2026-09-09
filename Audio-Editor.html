@@ -95,7 +95,7 @@
           <section id="source-session-results-speaker-panel" class="result-archive-panel" aria-labelledby="source-session-results-speaker-heading" hidden>
             <div class="result-archive-panel__heading">
               <h3 id="source-session-results-speaker-heading">Спикерская</h3>
-              <p>Самостоятельный раздел архива. Локальная сборка доступна в редакторе; сохранение новых результатов появится на следующем этапе.</p>
+              <p>Отдельные неизменяемые версии, сохранённые из локально проверенного результата Спикерской.</p>
             </div>
             <div id="source-session-results-speaker-list" class="result-archive-list" aria-live="polite"></div>
           </section>
@@ -216,9 +216,9 @@
             </dl>
             <div class="speaker-result__actions">
               <a id="speaker-editor-download" class="archive-download">Скачать локальный MP3</a>
-              <button type="button" disabled aria-describedby="speaker-editor-archive-unavailable">Сохранение в архив недоступно до следующего этапа</button>
+              <button id="speaker-editor-archive-save" class="action-primary" type="button" disabled aria-describedby="speaker-editor-archive-unavailable">Сохранить в архив «Спикерская»</button>
             </div>
-            <p id="speaker-editor-archive-unavailable">На этом этапе результат не передаётся в архив.</p>
+            <p id="speaker-editor-archive-unavailable" role="status">Сначала сохраните текущий черновик обработки.</p>
           </section>
         </section>
         <section id="announcement-processor-card" class="archive-card processor-card" aria-labelledby="processor-heading">
@@ -391,6 +391,25 @@
             <div class="source-session-dialog__actions">
               <button id="source-session-publication-submit" class="action-primary" type="submit">Подтвердить сохранение</button>
               <button id="source-session-publication-cancel" type="button">Отмена</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog id="speaker-editor-save-dialog" class="source-session-dialog" aria-labelledby="speaker-editor-save-dialog-title">
+          <form id="speaker-editor-save-form" method="dialog">
+            <h2 id="speaker-editor-save-dialog-title">Сохранить в архив «Спикерская»</h2>
+            <p>Будут переданы ровно байты текущего локально прослушанного MP3. До подтверждения удалённое состояние не создаётся.</p>
+            <dl class="save-summary">
+              <div><dt>Архив назначения</dt><dd>Спикерская</dd></div>
+              <div><dt>Запись</dt><dd id="speaker-editor-save-source"></dd></div>
+              <div><dt>Результат</dt><dd id="speaker-editor-save-result"></dd></div>
+              <div><dt>Номер</dt><dd id="speaker-editor-save-version"></dd></div>
+            </dl>
+            <p>После успешного резервирования номер версии не переиспользуется, даже после отмены, удаления незавершённого сохранения или удаления результата.</p>
+            <p id="speaker-editor-save-status" role="status"></p>
+            <progress id="speaker-editor-save-progress" max="100" hidden aria-label="Сохранение результата в архив «Спикерская»"></progress>
+            <div class="source-session-dialog__actions">
+              <button id="speaker-editor-save-submit" class="action-primary" type="submit">Подтвердить сохранение</button>
+              <button id="speaker-editor-save-cancel" type="button">Отмена</button>
             </div>
           </form>
         </dialog>

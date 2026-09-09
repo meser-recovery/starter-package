@@ -11,11 +11,12 @@ const encoder = new TextEncoder();
 const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
-  operation: null, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
+  operation: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
+const editorBusy = () => Boolean(state.operation) || state.saveLocked;
 const clock = (seconds) => {
   if (!Number.isFinite(seconds)) return "—";
   const total = Math.max(0, Math.floor(seconds));
@@ -40,6 +41,29 @@ export function speakerEditorHasUnsavedChanges() { return currentDirty(); }
 export function speakerEditorSessionId() { return state.session?.id || null; }
 export function getSpeakerCandidate() {
   return state.candidate ? { ...structuredClone({ ...state.candidate, blob: null }), blob: state.candidate.blob } : null;
+}
+export function getSpeakerSaveState() {
+  return {
+    session: state.session ? structuredClone(state.session) : null,
+    draft: state.draft ? structuredClone(state.draft) : null,
+    payload: state.payload ? structuredClone(state.payload) : null,
+    candidate: getSpeakerCandidate(),
+    ready: state.ready,
+    saving: state.saveLocked
+  };
+}
+export function setSpeakerSaveLocked(locked) {
+  state.saveLocked = Boolean(locked);
+  render();
+}
+export function updateSpeakerSession(session) {
+  if (state.session?.id !== session?.id) return;
+  state.session = structuredClone(session);
+  render();
+}
+
+function notifyState() {
+  window.dispatchEvent(new CustomEvent("speaker-editor-state", { detail: getSpeakerSaveState() }));
 }
 
 function setSelection(start, end, trackId = null) {
@@ -74,8 +98,8 @@ function clearCandidate() {
 }
 
 function commitPayload(next, action) {
-  if (!state.ready || state.operation) {
-    byId("selection-error").textContent = state.operation ? "Дождитесь окончания локальной сборки или отмените её." : "Исходники ещё не готовы для редактирования.";
+  if (!state.ready || editorBusy()) {
+    byId("selection-error").textContent = editorBusy() ? "Дождитесь окончания текущей операции или отмените её." : "Исходники ещё не готовы для редактирования.";
     return;
   }
   try {
@@ -89,18 +113,18 @@ function commitPayload(next, action) {
 }
 
 function undo() {
-  if (!state.ready || state.operation || !state.history?.canUndo) return;
+  if (!state.ready || editorBusy() || !state.history?.canUndo) return;
   state.payload = state.history.undo(); clearCandidate(); byId("status").textContent = "Последнее изменение отменено."; render();
 }
 
 function redo() {
-  if (!state.ready || state.operation || !state.history?.canRedo) return;
+  if (!state.ready || editorBusy() || !state.history?.canRedo) return;
   state.payload = state.history.redo(); clearCandidate(); byId("status").textContent = "Изменение повторено."; render();
 }
 
 function updateHistoryControls() {
-  byId("undo").disabled = !state.history?.canUndo || Boolean(state.operation);
-  byId("redo").disabled = !state.history?.canRedo || Boolean(state.operation);
+  byId("undo").disabled = !state.history?.canUndo || editorBusy();
+  byId("redo").disabled = !state.history?.canRedo || editorBusy();
 }
 
 function processingLabel(setting) {
@@ -211,7 +235,7 @@ function pointerTime(event, scroll) {
 function selectControl(label, value, values, change) {
   const wrapper = element("label", "speaker-dsp-field", label); const select = document.createElement("select");
   for (const [key, text] of values) { const option = document.createElement("option"); option.value = key; option.textContent = text; select.append(option); }
-  select.value = value; select.disabled = Boolean(state.operation) || !state.ready;
+  select.value = value; select.disabled = editorBusy() || !state.ready;
   select.addEventListener("change", () => change(select.value)); wrapper.append(select); return wrapper;
 }
 
@@ -227,7 +251,7 @@ function renderTracks() {
     const monitor = element("div", "speaker-track__buttons");
     const solo = makeButton("Соло", () => toggleMonitoring(trackId, "solo"), trackId); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
     const mute = makeButton("Заглушить", () => toggleMonitoring(trackId, "mute"), trackId); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
-    const editsDisabled = Boolean(state.operation) || !state.ready;
+    const editsDisabled = editorBusy() || !state.ready;
     const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
     const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
     const down = makeButton("Вниз", () => moveTrack(trackId, 1), trackId, editsDisabled || index === state.payload.trackIds.length - 1);
@@ -251,7 +275,7 @@ function renderRegions() {
     const row = element("article", `speaker-region-row speaker-region-row--${region.kind}`); row.dataset.regionId = region.regionId;
     const title = element("h4", "", region.kind === "cut" ? "Глобальный вырез" : `Тишина · ${state.tracks.find((track) => track.trackId === region.trackId)?.file.name}`);
     const fields = element("div", "speaker-region-row__fields");
-    const editsDisabled = Boolean(state.operation) || !state.ready;
+    const editsDisabled = editorBusy() || !state.ready;
     const start = document.createElement("input"); start.type = "number"; start.step = "0.000001"; start.min = "0"; start.value = region.startSeconds; start.disabled = editsDisabled; start.setAttribute("aria-label", `${title.textContent}, начало в секундах`);
     const end = document.createElement("input"); end.type = "number"; end.step = "0.000001"; end.min = "0"; end.value = region.endSeconds; end.disabled = editsDisabled; end.setAttribute("aria-label", `${title.textContent}, конец в секундах`);
     const apply = makeButton("Применить границы", () => {
@@ -270,13 +294,13 @@ function renderRegions() {
 
 function updateRenderState() {
   const allExcluded = Boolean(state.payload && state.payload.excludedTrackIds.length === state.payload.trackIds.length);
-  const disabled = !state.ready || !state.session || !Number.isFinite(state.originalDuration) || allExcluded || Boolean(state.operation);
+  const disabled = !state.ready || !state.session || !Number.isFinite(state.originalDuration) || allExcluded || editorBusy();
   byId("render").disabled = disabled;
   byId("render-reason").textContent = allExcluded ? "Все дорожки исключены. Верните хотя бы одну дорожку в микс." :
-    state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
+    state.saveLocked ? "Идёт сохранение в архив «Спикерская»." : state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
       "В результат войдут только дорожки, оставленные в финальном миксе.";
-  byId("save").disabled = !state.ready || !state.session || Boolean(state.operation);
-  for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence"]) byId(id).disabled = !state.ready || Boolean(state.operation);
+  byId("save").disabled = !state.ready || !state.session || editorBusy();
+  for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence"]) byId(id).disabled = !state.ready || editorBusy();
 }
 
 function render() {
@@ -285,10 +309,11 @@ function render() {
   else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
   updateHistoryControls(); updateRenderState();
   byId("status").dataset.dirty = String(currentDirty());
+  notifyState();
 }
 
 function addRegion(kind) {
-  if (!state.ready || state.operation) return;
+  if (!state.ready || editorBusy()) return;
   try {
     const selection = readSelection(); const next = structuredClone(state.payload);
     if (kind === "cut") next.globalCuts.push({ regionId: crypto.randomUUID(), ...selection });
@@ -428,7 +453,7 @@ function failSourcePreparation() {
 }
 
 async function saveDraft() {
-  if (!state.ready || state.operation || !state.session || !state.saveDraft) return;
+  if (!state.ready || editorBusy() || !state.session || !state.saveDraft) return;
   byId("status").textContent = "Сохранение черновика обработки…"; byId("save").disabled = true;
   const before = fingerprint(state.payload);
   try {
@@ -439,7 +464,7 @@ async function saveDraft() {
     state.candidate = rebindSpeakerCandidate(state.candidate, state.payload, result.session.revision, result.draft.draftRevision);
     state.onSaved?.(result); byId("status").textContent = `Черновик сохранён, ревизия ${result.draft.draftRevision}.`;
   } catch (error) { byId("status").textContent = userMessage(error, "Не удалось сохранить черновик. Изменения и исходники остались в памяти."); }
-  finally { updateRenderState(); }
+  finally { updateRenderState(); notifyState(); }
 }
 
 function operation() {
@@ -462,7 +487,7 @@ async function resultMetadata(blob) {
 }
 
 async function renderSpeaker() {
-  if (!state.ready || state.operation || byId("render").disabled) return;
+  if (!state.ready || editorBusy() || byId("render").disabled) return;
   let snapshot;
   try {
     snapshot = createSpeakerRenderSnapshot({ session: state.session, draftRevision: state.draft?.draftRevision || 0,
@@ -497,7 +522,7 @@ async function renderSpeaker() {
     abortCheck(controller); if (code !== 0) throw new Error("Не удалось создать MP3. Проверьте исходники и повторите.");
     const bytes = await engine.readFile(outputPath); if (!bytes.byteLength) throw new Error("Не удалось создать MP3.");
     const blob = new Blob([bytes], { type: "audio/mpeg" }); const actualDuration = await resultMetadata(blob); abortCheck(controller);
-    const candidate = await buildSpeakerCandidate({ blob, snapshot, resultDurationSeconds: actualDuration, sha256: sha256Hex }); abortCheck(controller);
+    const candidate = await buildSpeakerCandidate({ blob, snapshot, measurements, resultDurationSeconds: actualDuration, sha256: sha256Hex }); abortCheck(controller);
     await presentCandidate(candidate, controller); abortCheck(controller);
     byId("progress").value = 100; byId("render-status").textContent = "Локальный MP3 готов. В архив ничего не передавалось.";
   } catch (error) {
@@ -547,8 +572,9 @@ function teardown() {
   cancelRender(); stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
-  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.ready = false; workspace.hidden = true;
+  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
   document.getElementById("announcement-processor-card").hidden = false;
+  notifyState();
 }
 
 export function closeSpeakerEditor(force = false) {
@@ -564,7 +590,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
   if (files.length !== orderedManifest.length) throw new Error("Состав загруженных исходников не совпадает с записью.");
   const epoch = ++state.sourceEpoch;
-  state.ready = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
+  state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null }));
   state.payload = draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
   state.history = new SpeakerHistory(state.payload); state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;

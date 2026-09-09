@@ -1,8 +1,9 @@
-import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, reconstructAnnouncementOutput, reconstructSessionTracks } from "./audio-archive-client.mjs";
+import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
 import { clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
-import { closeSpeakerEditor, openSpeakerEditor, speakerEditorSessionId } from "./speaker-editor.mjs";
+import { closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
 const byId = (id) => document.getElementById(`source-session-${id}`);
+const speakerId = (id) => document.getElementById(`speaker-editor-${id}`);
 const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ ||
   document.querySelector('meta[name="audio-archive-gateway"]')?.content.trim().replace(/\/$/, "") || "";
 const gateway = new AudioArchiveGateway(baseUrl);
@@ -30,6 +31,10 @@ const state = {
   publicationKey: null,
   publicationController: null,
   publicationTransactionId: null,
+  speakerSaveKey: null,
+  speakerSaveController: null,
+  speakerSaveTransactionId: null,
+  speakerSaveSnapshot: null,
   outputUrl: null
 };
 
@@ -333,18 +338,168 @@ async function loadSpeakerSession(session) {
   }
 }
 
-async function openAnnouncementOutput(session, output, downloadOnly = false) {
+function speakerSaveReason(snapshot = getSpeakerSaveState()) {
+  const { session, draft, payload, candidate, saving } = snapshot;
+  if (!session) return "Откройте входящую запись в «Спикерская».";
+  if (session.lifecycle.state !== "incoming") return "Верните запись во входящие перед сохранением новой версии.";
+  if (session.sourceState !== "available") return "Исходники этой записи недоступны.";
+  if (saving) return "Идёт сохранение текущего локального результата.";
+  if (!candidate) return "Сначала соберите и проверьте локальный MP3.";
+  if (!draft || draft.draftRevision < 1) return "Сохраните текущий черновик обработки перед сохранением результата.";
+  if (candidate.sessionId !== session.id) return "Локальный результат относится к другой записи.";
+  if (candidate.sourceSessionRevision !== session.revision || candidate.draftRevision !== draft.draftRevision) return "Запись или черновик изменились после локальной сборки. Соберите результат заново.";
+  if (JSON.stringify(candidate.payload) !== JSON.stringify(payload) || JSON.stringify(draft.payload) !== JSON.stringify(payload)) return "Текущий черновик не совпадает с локальным результатом. Сохраните черновик и соберите MP3 заново.";
+  if (candidate.mediaType !== "audio/mpeg" || !(candidate.blob instanceof Blob) || candidate.blob.size !== candidate.sizeBytes || !candidate.sizeBytes) return "Локальный MP3 повреждён. Соберите результат заново.";
+  const sourcesMatch = candidate.sources.length === session.sourceTracks.length && candidate.sources.every((source) => {
+    const track = session.sourceTracks.find((item) => item.trackId === source.trackId);
+    return track && source.blobId === track.blobId && source.ordinal === track.ordinal &&
+      source.originalFilename === track.originalName && source.mediaType === track.mediaType && source.sizeBytes === track.sizeBytes && source.sha256 === track.sha256;
+  });
+  return sourcesMatch ? "" : "Состав или целостность исходников изменились. Откройте запись заново.";
+}
+
+function updateSpeakerSaveState(snapshot = getSpeakerSaveState()) {
+  const save = speakerId("archive-save");
+  const reason = speakerId("archive-unavailable");
+  if (!save || !reason) return;
+  const message = speakerSaveReason(snapshot);
+  save.disabled = Boolean(message);
+  reason.textContent = message || "Результат готов к сохранению в архив «Спикерская».";
+}
+
+function speakerRecipe(candidate, draft) {
+  const payload = structuredClone(candidate.payload);
+  return {
+    renderedAt: candidate.renderedAt,
+    sourceSessionRevision: candidate.sourceSessionRevision,
+    draft: { revision: draft.draftRevision, payloadSchema: "speaker/v1", payload },
+    sources: structuredClone(candidate.sources),
+    editState: {
+      orderedTrackIds: [...payload.trackIds],
+      includedTrackIds: [...candidate.includedTrackIds],
+      excludedTrackIds: [...payload.excludedTrackIds],
+      globalCuts: structuredClone(payload.globalCuts),
+      trackSilenceRegions: structuredClone(payload.trackSilenceRegions),
+      trackProcessing: structuredClone(payload.trackProcessing)
+    },
+    renderer: structuredClone(candidate.renderer),
+    candidateFingerprint: candidate.candidateFingerprint,
+    result: {
+      mediaType: candidate.mediaType,
+      presentationFilename: candidate.presentationFilename,
+      sizeBytes: candidate.sizeBytes,
+      sha256: candidate.sha256,
+      originalDurationSeconds: candidate.originalDurationSeconds,
+      resultDurationSeconds: candidate.resultDurationSeconds,
+      globallyRemovedDurationSeconds: candidate.globallyRemovedDurationSeconds
+    }
+  };
+}
+
+function openSpeakerSaveDialog() {
+  const snapshot = getSpeakerSaveState();
+  updateSpeakerSaveState(snapshot);
+  if (speakerId("archive-save").disabled) return;
+  state.speakerSaveSnapshot = { session: snapshot.session, draft: snapshot.draft, candidate: snapshot.candidate };
+  state.speakerSaveKey = crypto.randomUUID();
+  speakerId("save-source").textContent = `${snapshot.session.title} · ${formatDate(snapshot.session.recordedAt)}`;
+  speakerId("save-result").textContent = `${snapshot.candidate.presentationFilename} · MP3 · ${formatBytes(snapshot.candidate.sizeBytes)}`;
+  speakerId("save-version").textContent = `Следующая версия будет зарезервирована сервером (сейчас ожидается Версия ${snapshot.session.workflows.speaker.nextVersion})`;
+  speakerId("save-status").textContent = "Проверьте запись и локальный результат.";
+  speakerId("save-progress").hidden = true;
+  speakerId("save-submit").disabled = false;
+  speakerId("save-cancel").textContent = "Отмена";
+  speakerId("save-dialog").showModal();
+}
+
+async function submitSpeakerSave(event) {
+  event.preventDefault();
+  const snapshot = state.speakerSaveSnapshot;
+  if (!snapshot || speakerSaveReason({ ...getSpeakerSaveState(), ...snapshot })) {
+    speakerId("save-status").textContent = "Состояние результата изменилось. Закройте подтверждение и проверьте причину рядом с кнопкой сохранения.";
+    return;
+  }
+  const immutable = { session: structuredClone(snapshot.session), draft: structuredClone(snapshot.draft),
+    candidate: { ...structuredClone({ ...snapshot.candidate, blob: null }), blob: snapshot.candidate.blob } };
+  state.speakerSaveController = new AbortController();
+  state.speakerSaveTransactionId = null;
+  setSpeakerSaveLocked(true);
+  speakerId("save-submit").disabled = true;
+  speakerId("save-cancel").textContent = "Отменить передачу";
+  speakerId("save-progress").hidden = false;
+  speakerId("save-progress").value = 0;
+  let completed = false;
+  try {
+    const phaseText = { preparing: "Подготовка точных частей результата…", reserving: "Резервирование версии…",
+      uploading: "Передача частей…", verifying: "Проверка целостности и финализация…", saved: "Сохранено." };
+    const result = await gateway.saveSpeaker({
+      sessionId: immutable.session.id,
+      expectedRevision: immutable.session.revision,
+      expectedDraftRevision: immutable.draft.draftRevision,
+      blob: immutable.candidate.blob,
+      recipe: speakerRecipe(immutable.candidate, immutable.draft),
+      idempotencyKey: state.speakerSaveKey,
+      signal: state.speakerSaveController.signal,
+      onPhase: (phase) => { speakerId("save-status").textContent = phaseText[phase]; },
+      onStarted: (job) => {
+        state.speakerSaveTransactionId = job.transactionId;
+        speakerId("save-version").textContent = `Версия ${job.reservedVersion}`;
+      },
+      onProgress: ({ uploadedBytes, totalBytes, uploadedParts, totalParts, reservedVersion }) => {
+        speakerId("save-progress").value = Math.min(95, Math.round(uploadedBytes / totalBytes * 100));
+        speakerId("save-status").textContent = `Версия ${reservedVersion}: передано частей ${uploadedParts} из ${totalParts}.`;
+      }
+    });
+    speakerId("save-progress").value = 100;
+    speakerId("save-status").textContent = `Версия ${result.output.version} сохранена в архиве «Спикерская».`;
+    const updated = await gateway.getSession(immutable.session.id);
+    updateSpeakerSession(updated);
+    state.speakerSaveKey = null;
+    state.speakerSaveTransactionId = null;
+    completed = true;
+    await refreshSessions();
+    setTimeout(() => speakerId("save-dialog").close(), 600);
+  } catch (error) {
+    speakerId("save-status").textContent = error?.name === "AbortError" ?
+      "Передача остановлена. Зарезервированная версия сохранена для продолжения или явного удаления незавершённого сохранения." :
+      `${userError(error, "Не удалось завершить сохранение.")} Незавершённая версия остаётся доступной для безопасного восстановления.`;
+    await showIncomplete();
+  } finally {
+    state.speakerSaveController = null;
+    state.speakerSaveSnapshot = completed ? null : immutable;
+    setSpeakerSaveLocked(false);
+    speakerId("save-submit").disabled = completed;
+    speakerId("save-cancel").textContent = "Закрыть";
+    updateSpeakerSaveState();
+  }
+}
+
+async function cancelSpeakerSaveDialog() {
+  if (state.speakerSaveController) {
+    state.speakerSaveController.abort();
+    if (state.speakerSaveTransactionId) {
+      try { await gateway.cancelSpeakerSave(state.speakerSaveTransactionId); }
+      catch (error) { speakerId("save-status").textContent = userError(error, "Не удалось подтвердить отмену. Проверьте незавершённые сохранения."); }
+    }
+    return;
+  }
+  speakerId("save-dialog").close();
+}
+
+async function openArchivedOutput(session, output, workflow = "announcement", downloadOnly = false) {
   const sequence = ++state.outputSequence;
   try {
     byId("results-status").textContent = "Загрузка и проверка сохранённого результата…";
-    const metadata = await gateway.getAnnouncementOutput(session.id, output.outputId);
-    const file = await reconstructAnnouncementOutput(metadata, gateway.announcementPartFetch(metadata));
-    if (sequence !== state.outputSequence || state.resultArchive !== "announcement") return;
+    const metadata = workflow === "speaker" ? await gateway.getSpeakerOutput(session.id, output.outputId) : await gateway.getAnnouncementOutput(session.id, output.outputId);
+    const file = workflow === "speaker" ? await reconstructSpeakerOutput(metadata, gateway.speakerPartFetch(metadata)) :
+      await reconstructAnnouncementOutput(metadata, gateway.announcementPartFetch(metadata));
+    if (sequence !== state.outputSequence || state.resultArchive !== workflow) return;
     if (state.outputUrl) URL.revokeObjectURL(state.outputUrl);
     state.outputUrl = URL.createObjectURL(file);
     const link = byId("announcement-download");
     link.href = state.outputUrl;
     link.download = file.name;
+    byId("announcement-playback-label").textContent = `Прослушивание · ${workflowLabel(workflow)}`;
     byId("announcement-playback-name").textContent = `${session.title} · Версия ${output.version} · ${file.name} · ${formatBytes(file.size)}`;
     byId("announcement-audio").src = state.outputUrl;
     byId("announcement-playback").hidden = false;
@@ -380,10 +535,8 @@ function resultArchiveItem(session, workflowName, output) {
   details.append(heading, metadata);
   const actions = document.createElement("div");
   actions.className = "result-archive-item__actions";
-  if (workflowName === "announcement") {
-    actions.append(button("Слушать", () => openAnnouncementOutput(session, output)));
-    actions.append(button("Скачать", () => openAnnouncementOutput(session, output, true)));
-  }
+  actions.append(button("Слушать", () => openArchivedOutput(session, output, workflowName)));
+  actions.append(button("Скачать", () => openArchivedOutput(session, output, workflowName, true)));
   actions.append(button("Удалить версию", () => openDeleteDialog(session, { kind: "output-version", workflow: workflowName, version: output.version }), "source-session-danger"));
   item.append(details, actions);
   return item;
@@ -409,7 +562,7 @@ function renderResultArchive() {
     list.replaceChildren();
     if (!membership[name].length) {
       const empty = document.createElement("p");
-      empty.textContent = name === "speaker" ? "Сохранённых результатов пока нет. Локально собранный результат нельзя сохранить сюда до следующего этапа." : "Сохранённых результатов пока нет.";
+      empty.textContent = "Сохранённых результатов пока нет.";
       list.append(empty);
     } else {
       for (const { session, output } of membership[name]) list.append(resultArchiveItem(session, name, output));
@@ -660,7 +813,7 @@ async function openDeleteDialog(session, selection = null) {
   try {
     const preview = await gateway.dependencyPreview(session.id);
     state.deleteTarget = { session, selection, preview };
-    byId("delete-summary").textContent = `${session.title}: исходников ${preview.sourceTracks}; версий «Анонс-мейкер» ${preview.announcementVersions}; версий «Спикерская» ${preview.speakerVersions}; черновиков ${preview.drafts}; незавершённых сохранений ${preview.pendingAnnouncementPublications}. Другие уровни автоматически удалены не будут.`;
+    byId("delete-summary").textContent = `${session.title}: исходников ${preview.sourceTracks}; версий «Анонс-мейкер» ${preview.announcementVersions}; версий «Спикерская» ${preview.speakerVersions}; черновиков ${preview.drafts}; незавершённых сохранений ${preview.pendingAnnouncementPublications + (preview.pendingSpeakerSaves || 0)}. Другие уровни автоматически удалены не будут.`;
     byId("delete-technical").textContent = `Точный идентификатор записи: ${session.id}`;
     byId("delete-confirmation").value = "";
     byId("delete-status").textContent = "";
@@ -732,10 +885,14 @@ async function showIncomplete() {
         else row.append(document.createTextNode("Для безопасного продолжения нужны исходные файлы и исходный ключ операции. Если окно загрузки уже закрыто, удалите незавершённую операцию и создайте новую."));
         row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
       } else if (transaction.kind === "publication") {
-        row.append(document.createTextNode(`Незавершённое сохранение в «Анонс-мейкер» · версия ${transaction.reservedVersion} · передано частей ${transaction.uploadedParts} из ${transaction.totalParts}. `));
-        if (transaction.canFinalize) row.append(button("Завершить", () => recover(transaction.transactionId, "resume")));
-        else row.append(document.createTextNode("Для продолжения нужен локальный результат и исходный ключ сохранения. "));
-        row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
+        const label = transaction.workflow === "speaker" ? "Спикерская" : "Анонс-мейкер";
+        row.append(document.createTextNode(`Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${label}» · передано частей ${transaction.uploadedParts} из ${transaction.totalParts}. `));
+        if (transaction.canFinalize) row.append(button("Завершить сохранение", () => recover(transaction.transactionId, "resume")));
+        else if (transaction.workflow === "speaker") {
+          row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
+          row.append(document.createTextNode(" Требуется точно тот же локальный результат. "));
+        } else row.append(document.createTextNode("Для продолжения нужен локальный результат и исходный ключ сохранения. "));
+        row.append(button("Удалить незавершённое сохранение", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
       } else {
         row.append(document.createTextNode("Незнакомая незавершённая операция. Автоматическое продолжение отключено."));
         row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
@@ -754,12 +911,39 @@ async function showIncomplete() {
 }
 
 async function recover(transactionId, action) {
+  if (action === "discard" && !globalThis.confirm("Удалить только это незавершённое сохранение? Зарезервированный номер версии останется использованным.")) return;
   try {
     await gateway.recoverIncomplete(transactionId, action);
     await showIncomplete();
     await refreshSessions();
   } catch (error) {
     byId("recovery-list").textContent = userError(error, "Не удалось восстановить незавершённую операцию.");
+  }
+}
+
+async function resumeSpeakerIncomplete(transaction) {
+  const candidate = getSpeakerSaveState().candidate;
+  if (!candidate) {
+    byId("recovery-list").textContent = "Для продолжения передачи откройте эту запись в Спикерской и соберите точно тот же локальный результат.";
+    return;
+  }
+  try {
+    setSpeakerSaveLocked(true);
+    await gateway.resumeSpeakerSave(transaction.transactionId, {
+      blob: candidate.blob,
+      candidateFingerprint: candidate.candidateFingerprint,
+      onProgress: ({ uploadedParts, totalParts, reservedVersion }) => {
+        byId("recovery-list").textContent = `Версия ${reservedVersion}: продолжение передачи, частей ${uploadedParts} из ${totalParts}.`;
+      }
+    });
+    const updated = await gateway.getSession(candidate.sessionId);
+    updateSpeakerSession(updated);
+    await showIncomplete();
+    await refreshSessions();
+  } catch (error) {
+    byId("recovery-list").textContent = userError(error, "Не удалось продолжить передачу. Незавершённое сохранение не удалено.");
+  } finally {
+    setSpeakerSaveLocked(false);
   }
 }
 
@@ -777,6 +961,7 @@ async function initialize() {
   }
   updateSessionStatus();
   await refreshSessions();
+  if (state.authenticated) await showIncomplete();
 }
 
 byId("mode-archive").addEventListener("click", () => setMode("archive"));
@@ -801,6 +986,15 @@ window.addEventListener("audio-processor-result", (event) => {
   state.candidate = event.detail.candidate;
   state.publicationKey = crypto.randomUUID();
   updatePublishState();
+});
+window.addEventListener("speaker-editor-state", (event) => updateSpeakerSaveState(event.detail));
+speakerId("archive-save").addEventListener("click", openSpeakerSaveDialog);
+speakerId("save-form").addEventListener("submit", submitSpeakerSave);
+speakerId("save-cancel").addEventListener("click", cancelSpeakerSaveDialog);
+speakerId("save-dialog").addEventListener("cancel", (event) => {
+  if (!state.speakerSaveController) return;
+  event.preventDefault();
+  cancelSpeakerSaveDialog();
 });
 byId("announcement-save").addEventListener("click", saveAnnouncementDraft);
 byId("announcement-close").addEventListener("click", () => closeAnnouncementWorkspace(true));
