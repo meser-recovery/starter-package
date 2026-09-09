@@ -711,20 +711,22 @@ export class AudioArchiveGateway {
     return result;
   }
 
-  speakerSaveJob(transactionId) { return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}`); }
+  speakerSaveJob(transactionId, signal) { return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}`, { signal }); }
   cancelSpeakerSave(transactionId, discard = false, idempotencyKey = crypto.randomUUID()) {
     return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/${discard ? "discard" : "cancel"}`, {
       method: "POST", body: { idempotencyKey }
     });
   }
 
-  finalizeSpeakerSave(transactionId, idempotencyKey = crypto.randomUUID()) {
-    return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/finalize`, { method: "POST", body: { idempotencyKey } });
+  finalizeSpeakerSave(transactionId, idempotencyKey = crypto.randomUUID(), signal) {
+    return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/finalize`, { method: "POST", signal, body: { idempotencyKey } });
   }
 
   async resumeSpeakerSave(transactionId, { blob, candidateFingerprint, signal, onProgress = () => {} } = {}) {
-    const job = await this.speakerSaveJob(transactionId);
-    if (job.canFinalize) return this.finalizeSpeakerSave(transactionId);
+    signal?.throwIfAborted();
+    const job = await this.speakerSaveJob(transactionId, signal);
+    signal?.throwIfAborted();
+    if (job.canFinalize) return this.finalizeSpeakerSave(transactionId, crypto.randomUUID(), signal);
     if (!(blob instanceof Blob) || blob.size !== job.sizeBytes || candidateFingerprint !== job.candidateFingerprint ||
         await sha256Hex(new Uint8Array(await blob.arrayBuffer()), signal) !== job.sha256) {
       throw new Error("Для продолжения нужен точно тот же локальный результат Спикерской.");
@@ -745,7 +747,8 @@ export class AudioArchiveGateway {
       accepted.add(part.partNumber); uploadedBytes += part.sizeBytes;
       onProgress({ uploadedBytes, totalBytes: job.sizeBytes, uploadedParts: accepted.size, totalParts: job.parts.length, reservedVersion: job.reservedVersion });
     }
-    return this.finalizeSpeakerSave(transactionId);
+    signal?.throwIfAborted();
+    return this.finalizeSpeakerSave(transactionId, crypto.randomUUID(), signal);
   }
 
   publicationJob(transactionId) { return this.request(`/v1/announcement-publications/${encodeURIComponent(transactionId)}`); }

@@ -14,7 +14,7 @@ The begin request contains the expected revisions, an idempotency key, and a pla
 
 The persisted internal `publication` transaction additionally records its UUID, hashed idempotency key, immutable request fingerprint, workflow/session/output/blob identities, expected and reserved Source Session revisions, reserved version, Release identity, uploaded-part progress, completed recipe snapshot, optional finalized output descriptor, sanitized failure field, timestamps, revision, and state. User-facing surfaces call this saving to the archive «Анонс-мейкер».
 
-Allowed states are `uploading`, `cancelled`, `finalized`, and `discarded`. `uploading` and `cancelled` remain recoverable. Only `finalized` contains an output descriptor. A discarded version remains burned.
+Allowed states are `uploading`, `cancelled`, `finalizing`, `discarding`, `finalized`, and `discarded`. The transitional claims make finalization and destructive discard mutually exclusive; interrupted claims remain recoverable. Only `finalized` contains an output descriptor. A discarded version remains burned.
 
 ## Immutable recipe
 

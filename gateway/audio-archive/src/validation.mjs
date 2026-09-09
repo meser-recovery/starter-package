@@ -9,7 +9,7 @@ export const SHA256_PATTERN = /^[0-9a-f]{64}$/;
 export const WORKFLOWS = Object.freeze(["announcement", "speaker"]);
 export const WORKFLOW_STATES = Object.freeze(["new", "in_progress", "result_ready"]);
 export const MEDIA_TYPES = Object.freeze({ mp3: "audio/mpeg", m4a: "audio/mp4", wav: "audio/wav" });
-export const PUBLICATION_STATES = Object.freeze(["uploading", "cancelled", "finalized", "discarded"]);
+export const PUBLICATION_STATES = Object.freeze(["uploading", "cancelled", "finalizing", "discarding", "finalized", "discarded"]);
 export const SPEAKER_PAYLOAD_MAX_BYTES = 900 * 1024;
 export const SPEAKER_MAX_REGIONS = 10000;
 

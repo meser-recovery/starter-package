@@ -6,7 +6,7 @@ S08D extends the existing internal `publication` transaction record to `workflow
 
 `POST /v1/source-sessions/<sessionId>/outputs/speaker/saves` accepts the expected Source Session and non-zero Speaker draft revisions, an idempotency key, and a strict plan. The plan contains deterministic output/blob UUIDs, `speaker-editor-v1`, whole-file size/SHA-256, ordered opaque multipart descriptors, and an immutable recipe template. Successful begin atomically increments only `workflows.speaker.nextVersion`; that number is never reclaimed.
 
-Transactions remain under `transactions/publish-<transactionId>.json` for v1 storage compatibility. They expose the workflow, reserved version, accepted part slots, exact candidate fingerprint/size/hash, finalization capability, attributable failure phase, and timestamps. Upload, cancel, finalize, and discard use `/v1/speaker-saves/<transactionId>/...`. Discard removes only uploaded assets attributable to the incomplete job and retains the consumed version.
+Transactions remain under `transactions/publish-<transactionId>.json` for v1 storage compatibility. They expose the workflow, reserved version, accepted part slots, exact candidate fingerprint/size/hash, finalization capability, attributable failure phase, and timestamps. The `finalizing` and `discarding` claims make canonical finalization and destructive asset removal mutually exclusive and allow an interrupted discard to resume safely. Upload, cancel, finalize, and discard use `/v1/speaker-saves/<transactionId>/...`. Discard removes only uploaded assets attributable to the incomplete job and retains the consumed version.
 
 ## Immutable recipe
 

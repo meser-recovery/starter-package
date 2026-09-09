@@ -14,8 +14,7 @@ function draftPayload() {
     trackProcessing: [{ trackId: IDS.track, enhancement: "gentle", leveling: "on", compression: "light" }] };
 }
 
-async function fixture() {
-  const repository = new MemoryRepository();
+async function fixture(repository = new MemoryRepository()) {
   const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4, clock: CLOCK });
   const source = Buffer.from("source-audio");
   const sourceParts = [source.subarray(0, 4), source.subarray(4, 8), source.subarray(8)];
@@ -29,6 +28,53 @@ async function fixture() {
   const saved = await domain.saveDraft(ingested.session.id, "speaker", { schemaVersion: 1, expectedDraftRevision: 0,
     expectedSourceSessionRevision: ingested.session.revision, payloadSchema: "speaker/v1", payload: draftPayload(), idempotencyKey: `${KEY}:draft` });
   return { repository, domain, session: saved.session, draft: saved.draft, source };
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((done) => { resolve = done; });
+  return { promise, resolve };
+}
+
+class ControlledRepository extends MemoryRepository {
+  constructor() {
+    super();
+    this.commitGate = null;
+    this.interruptDelete = false;
+  }
+
+  pauseAfterCommit(messagePrefix) {
+    this.commitGate = { messagePrefix, entered: deferred(), release: deferred() };
+    return this.commitGate;
+  }
+
+  async commitJson(expectedHead, files, message) {
+    const result = await super.commitJson(expectedHead, files, message);
+    if (this.commitGate?.messagePrefix && message.startsWith(this.commitGate.messagePrefix)) {
+      const gate = this.commitGate;
+      this.commitGate = null;
+      gate.entered.resolve();
+      await gate.release.promise;
+    }
+    return result;
+  }
+
+  async deleteAsset(assetId) {
+    await super.deleteAsset(assetId);
+    if (this.interruptDelete) {
+      this.interruptDelete = false;
+      throw new Error("simulated interrupted discard");
+    }
+  }
+}
+
+async function beginUploadedSpeakerSave(domain, session, key = `${KEY}:race`) {
+  const save = saveBody(session, Buffer.from("speaker-result"), key);
+  const started = await domain.beginSpeakerPublication(session.id, save.body);
+  for (const [index, chunk] of save.chunks.entries()) {
+    await domain.uploadSpeakerPart(started.transactionId, OUTPUT_BLOB, index + 1, chunk, sha(chunk), `${key}:part:${index}`);
+  }
+  return { save, started };
 }
 
 function saveBody(session, bytes = Buffer.from("speaker-result"), key = `${KEY}:save`, outputId = OUTPUT, blobId = OUTPUT_BLOB) {
@@ -144,6 +190,59 @@ test("fully uploaded Speaker save finalizes after reload without local bytes and
   denied.body.plan.recipe.draft.revision = archived.workflows.speaker.currentDraft.revision;
   denied.body.plan.recipe.sourceSessionRevision = archived.revision;
   await assert.rejects(() => domain.beginSpeakerPublication(session.id, denied.body), (error) => error.status === 409 && /restored/.test(error.message));
+});
+
+test("Speaker finalize and discard are mutually exclusive when finalization commits first", async () => {
+  const repository = new ControlledRepository();
+  const { domain, session } = await fixture(repository);
+  const { save, started } = await beginUploadedSpeakerSave(domain, session, `${KEY}:finalize-wins`);
+  const gate = repository.pauseAfterCommit("Finalize speaker version");
+  const finalizing = domain.finalizeSpeakerPublication(started.transactionId);
+  await gate.entered.promise;
+  await assert.rejects(
+    () => domain.cancelSpeakerPublication(started.transactionId, { idempotencyKey: `${KEY}:discard-late` }, true),
+    (error) => error.status === 409 && /finalized/i.test(error.message)
+  );
+  gate.release.resolve();
+  const finalized = await finalizing;
+  assert.equal(finalized.output.version, 1);
+  const restored = await Promise.all(save.chunks.map(async (_, index) =>
+    (await domain.downloadSpeakerPart(session.id, OUTPUT, OUTPUT_BLOB, index + 1)).bytes));
+  assert.deepEqual(Buffer.concat(restored), Buffer.from("speaker-result"));
+});
+
+test("Speaker finalize and discard are mutually exclusive when discard claims first", async () => {
+  const repository = new ControlledRepository();
+  const { domain, session } = await fixture(repository);
+  const { started } = await beginUploadedSpeakerSave(domain, session, `${KEY}:discard-wins`);
+  const gate = repository.pauseAfterCommit("Claim speaker discard");
+  const discarding = domain.cancelSpeakerPublication(started.transactionId, { idempotencyKey: `${KEY}:discard-first` }, true);
+  await gate.entered.promise;
+  await assert.rejects(
+    () => domain.finalizeSpeakerPublication(started.transactionId),
+    (error) => error.status === 409 && /discard/.test(error.message)
+  );
+  gate.release.resolve();
+  const discarded = await discarding;
+  assert.equal(discarded.job.state, "discarded");
+  assert.equal(repository.releases.get(1).assets.some((asset) => asset.name.startsWith(`blob-${OUTPUT_BLOB}`)), false);
+  assert.equal(repository.files.has(`recipes/${session.id}/speaker/${OUTPUT}.json`), false);
+});
+
+test("Speaker discard resumes safely after deletion is interrupted", async () => {
+  const repository = new ControlledRepository();
+  const { domain, session } = await fixture(repository);
+  const { started } = await beginUploadedSpeakerSave(domain, session, `${KEY}:interrupted-discard`);
+  repository.interruptDelete = true;
+  await assert.rejects(
+    () => domain.cancelSpeakerPublication(started.transactionId, { idempotencyKey: `${KEY}:discard-interrupted` }, true),
+    /simulated interrupted discard/
+  );
+  assert.equal((await domain.getSpeakerPublication(started.transactionId)).state, "discarding");
+  const discarded = await domain.cancelSpeakerPublication(started.transactionId, { idempotencyKey: `${KEY}:discard-retry` }, true);
+  assert.equal(discarded.job.state, "discarded");
+  assert.equal(discarded.session.workflows.speaker.nextVersion, 2);
+  assert.equal(repository.releases.get(1).assets.some((asset) => asset.name.startsWith(`blob-${OUTPUT_BLOB}`)), false);
 });
 
 test("Speaker series deletion removes only its recipes and assets while retaining draft, sources, and counter", async () => {

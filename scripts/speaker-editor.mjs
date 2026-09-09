@@ -300,6 +300,7 @@ function updateRenderState() {
     state.saveLocked ? "Идёт сохранение в архив «Спикерская»." : state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
       "В результат войдут только дорожки, оставленные в финальном миксе.";
   byId("save").disabled = !state.ready || !state.session || editorBusy();
+  byId("close").disabled = state.saveLocked;
   for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence"]) byId(id).disabled = !state.ready || editorBusy();
 }
 
@@ -579,6 +580,10 @@ function teardown() {
 
 export function closeSpeakerEditor(force = false) {
   if (!state.session) return true;
+  if (state.saveLocked) {
+    byId("status").textContent = "Сохранение в архив ещё выполняется. Сначала отмените или завершите передачу.";
+    return false;
+  }
   if (!force && currentDirty() && !globalThis.confirm("Закрыть работу и отбросить несохранённые изменения Спикерской?")) return false;
   teardown(); return true;
 }
