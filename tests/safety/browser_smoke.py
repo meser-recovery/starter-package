@@ -1359,7 +1359,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             "output_bytes": None, "held_upload": None, "speaker_save": None, "speaker_output": None,
             "speaker_output_recipe": None, "speaker_output_bytes": None, "speaker_held_upload": None,
             "speaker_jobs": {}, "resume_held_upload": None, "hold_resume": False,
-            "speaker_output_corrupt": False, "incomplete": [], "list_failure": None}
+            "speaker_output_corrupt": False, "hold_incomplete": False, "held_incomplete": None,
+            "incomplete": [], "list_failure": None}
     publication_id = "44444444-4444-4444-8444-444444444444"
     speaker_save_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
@@ -1396,7 +1397,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         elif parsed.path == "/v1/session":
             fulfill_json(route, {"authenticated": True, "expiresAt": 2000000000, "csrfToken": "mock-csrf"})
         elif parsed.path == "/v1/maintenance/incomplete" and request.method == "GET":
-            fulfill_json(route, {"transactions": mock["incomplete"], "orphans": []})
+            if mock["hold_incomplete"]:
+                mock["held_incomplete"] = route
+            else:
+                fulfill_json(route, {"transactions": mock["incomplete"], "orphans": []})
         elif parsed.path == "/v1/source-sessions" and request.method == "GET":
             if mock["list_failure"] == "server":
                 fulfill_json(route, {"error": "English backend failure with provider details"}, 500)
@@ -1943,8 +1947,30 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-incomplete").click()
         page.get_by_text(re.compile("Есть незавершённое сохранение Версии 3"), exact=False).wait_for()
         mock["hold_resume"] = True
-        page.get_by_role("button", name="Продолжить передачу", exact=True).click()
+        resume_gets_before = len([call for call in gateway_calls if call[0] == "GET" and call[1] == f"/v1/speaker-saves/{partial_id}"])
+        page.get_by_role("button", name="Продолжить передачу", exact=True).evaluate("button => { button.click(); button.click(); }")
         page.get_by_role("button", name="Отменить продолжение", exact=True).wait_for(timeout=30000)
+        for _ in range(200):
+            if mock["resume_held_upload"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["resume_held_upload"] is not None
+        assert len([call for call in gateway_calls if call[0] == "GET" and call[1] == f"/v1/speaker-saves/{partial_id}"]) == resume_gets_before + 1
+        assert len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{partial_id}/" in call[1]]) == 1
+        mock["hold_incomplete"] = True
+        page.locator("#source-session-incomplete").click()
+        assert page.get_by_role("button", name="Отменить продолжение", exact=True).is_visible()
+        for _ in range(200):
+            if mock["held_incomplete"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["held_incomplete"] is not None
+        fulfill_json(mock["held_incomplete"], {"transactions": [partial_job], "orphans": []})
+        mock["held_incomplete"] = None
+        mock["hold_incomplete"] = False
+        page.wait_for_timeout(100)
+        assert page.get_by_role("button", name="Отменить продолжение", exact=True).is_visible()
+        assert "Версия 3" in page.locator("#source-session-recovery-list").inner_text()
         assert page.locator("#speaker-editor-save").is_disabled()
         assert page.locator("#speaker-editor-render").is_disabled()
         assert page.locator("#speaker-editor-close").is_disabled()
@@ -1963,6 +1989,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         held_resume_upload.abort("aborted")
         page.get_by_text(re.compile("Продолжение Версии 3 остановлено"), exact=False).wait_for(timeout=30000)
         assert partial_job["state"] == "cancelled"
+        assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().saving") is False
+        assert page.locator("#speaker-editor-close").is_enabled()
         mock["resume_held_upload"] = None
         mock["hold_resume"] = False
         page.locator("#source-session-incomplete").click()

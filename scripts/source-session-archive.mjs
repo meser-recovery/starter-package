@@ -15,6 +15,7 @@ const state = {
   refreshSequence: 0,
   sessionSequence: 0,
   outputSequence: 0,
+  incompleteSequence: 0,
   mode: "archive",
   pendingFiles: [],
   pendingOrigin: "manual",
@@ -38,6 +39,8 @@ const state = {
   speakerResumeController: null,
   speakerResumeTransactionId: null,
   speakerResumeSnapshot: null,
+  speakerResumeStatus: null,
+  speakerResumeCancellable: false,
   outputUrl: null
 };
 
@@ -921,10 +924,16 @@ async function submitDeletion(event) {
 }
 
 async function showIncomplete() {
+  const sequence = ++state.incompleteSequence;
   const container = byId("recovery-list");
-  container.replaceChildren();
   try {
     const result = await gateway.listIncomplete();
+    if (sequence !== state.incompleteSequence) return;
+    if (state.speakerResumeController) {
+      renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
+      return;
+    }
+    container.replaceChildren();
     for (const transaction of result.transactions || []) {
       const row = document.createElement("div");
       row.className = "source-recovery-item";
@@ -958,6 +967,11 @@ async function showIncomplete() {
     }
     if (!container.childElementCount) container.textContent = "Незавершённых операций и данных для ручной проверки не найдено.";
   } catch (error) {
+    if (sequence !== state.incompleteSequence) return;
+    if (state.speakerResumeController) {
+      renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
+      return;
+    }
     container.textContent = userError(error, "Не удалось проверить незавершённые операции.");
   }
 }
@@ -975,7 +989,7 @@ async function recover(transactionId, action) {
 
 async function resumeSpeakerIncomplete(transaction) {
   if (state.speakerResumeController) {
-    byId("recovery-list").textContent = "Продолжение передачи уже выполняется.";
+    renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи уже выполняется.", state.speakerResumeCancellable);
     return;
   }
   const candidate = getSpeakerSaveState().candidate;
@@ -994,6 +1008,7 @@ async function resumeSpeakerIncomplete(transaction) {
   state.speakerResumeController = new AbortController();
   state.speakerResumeTransactionId = immutable.transaction.transactionId;
   state.speakerResumeSnapshot = immutable;
+  let refreshRecovery = false;
   try {
     setSpeakerSaveLocked(true);
     renderSpeakerResumeStatus(`Версия ${immutable.transaction.reservedVersion}: проверка локального результата…`, true);
@@ -1007,8 +1022,8 @@ async function resumeSpeakerIncomplete(transaction) {
     });
     const updated = await gateway.getSession(immutable.candidate.sessionId);
     updateSpeakerSession(updated);
-    await showIncomplete();
     await refreshSessions();
+    refreshRecovery = true;
   } catch (error) {
     if (error?.name === "AbortError") {
       try { await gateway.cancelSpeakerSave(immutable.transaction.transactionId); } catch { /* authoritative read below */ }
@@ -1029,18 +1044,23 @@ async function resumeSpeakerIncomplete(transaction) {
     state.speakerResumeController = null;
     state.speakerResumeTransactionId = null;
     state.speakerResumeSnapshot = null;
+    state.speakerResumeStatus = null;
+    state.speakerResumeCancellable = false;
     setSpeakerSaveLocked(false);
   }
+  if (refreshRecovery) await showIncomplete();
 }
 
 function renderSpeakerResumeStatus(message, cancellable = false) {
+  state.speakerResumeStatus = message;
+  state.speakerResumeCancellable = Boolean(cancellable);
   const container = byId("recovery-list");
   container.replaceChildren(document.createTextNode(message));
   if (cancellable) container.append(document.createTextNode(" "), button("Отменить продолжение", cancelSpeakerResume));
 }
 
 function cancelSpeakerResume() {
-  if (!state.speakerResumeController) return;
+  if (!state.speakerResumeController || state.speakerResumeController.signal.aborted) return;
   state.speakerResumeController.abort();
   renderSpeakerResumeStatus("Останавливаем продолжение и проверяем состояние на сервере…");
 }
