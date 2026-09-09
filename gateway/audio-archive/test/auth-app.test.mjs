@@ -105,4 +105,16 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   }));
   assert.equal(response.status, 200);
   assert.equal(calls.at(-1)[0], "cancelAnnouncementPublication");
+  const speakerPath = "/v1/source-sessions/11111111-1111-4111-8111-111111111111/outputs/speaker/saves";
+  response = await app(new Request(`https://gateway.test${speakerPath}`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json", "X-CSRF-Token": payload.csrfToken }, body: "{}"
+  }));
+  assert.equal(response.status, 201);
+  assert.equal(calls.at(-1)[0], "beginSpeakerPublication");
+  response = await app(new Request(`https://gateway.test/v1/speaker-saves/${transactionId}/cancel`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json", "X-CSRF-Token": payload.csrfToken },
+    body: JSON.stringify({ idempotencyKey: "0123456789abcdef" })
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.at(-1)[0], "cancelSpeakerPublication");
 });

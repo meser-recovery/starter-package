@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AudioArchiveDomain } from "../src/domain.mjs";
-import { assetName } from "../src/validation.mjs";
+import { assetName, uuidFromIdempotencyKey } from "../src/validation.mjs";
 import { IDS, MemoryRepository, sampleOutput, sha } from "./helpers.mjs";
 
 const KEY = "0123456789abcdef";
@@ -307,6 +307,20 @@ test("Announcement publication reserves once, finalizes atomically, and verifies
   assert.equal(deleted.session.workflows.announcement.nextVersion, 2);
   assert.equal(deleted.session.workflows.announcement.status, "in_progress");
   assert.equal(repository.files.has(`recipes/${session.id}/announcement/${IDS.output}.json`), false);
+});
+
+test("Announcement publication replays the legacy S08B transaction identity", async () => {
+  const { repository, domain, session } = await announcementFixture();
+  const idempotencyKey = `${KEY}:legacy-announcement-publication`;
+  const publication = publicationBody(session, Buffer.from("legacy-result"), idempotencyKey);
+  const legacyTransactionId = uuidFromIdempotencyKey(`publication:${session.id}:${idempotencyKey}`);
+  const incompatiblePrefixedId = uuidFromIdempotencyKey(`publication:announcement:${session.id}:${idempotencyKey}`);
+  const started = await domain.beginAnnouncementPublication(session.id, publication.body);
+  assert.equal(started.transactionId, legacyTransactionId);
+  assert.equal(repository.files.has(`transactions/publish-${legacyTransactionId}.json`), true);
+  assert.equal(repository.files.has(`transactions/publish-${incompatiblePrefixedId}.json`), false);
+  assert.deepEqual(await domain.beginAnnouncementPublication(session.id, publication.body), started);
+  assert.equal((await domain.getSession(session.id)).workflows.announcement.nextVersion, 2);
 });
 
 test("Announcement upload failures persist only bounded safe metadata and retry the same reserved job", async () => {

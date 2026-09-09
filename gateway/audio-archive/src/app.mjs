@@ -123,8 +123,14 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/announcement\/publications$/)) && request.method === "POST") {
         return cors(json(await domain.beginAnnouncementPublication(assertUuid(match[0], "sessionId"), await jsonBody(request)), 201), config.allowedOrigin);
       }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/speaker\/saves$/)) && request.method === "POST") {
+        return cors(json(await domain.beginSpeakerPublication(assertUuid(match[0], "sessionId"), await jsonBody(request)), 201), config.allowedOrigin);
+      }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/announcement\/([^/]+)$/)) && request.method === "GET") {
         return cors(json(await domain.getAnnouncementOutput(assertUuid(match[0], "sessionId"), assertUuid(match[1], "outputId"))), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/speaker\/([^/]+)$/)) && request.method === "GET") {
+        return cors(json(await domain.getSpeakerOutput(assertUuid(match[0], "sessionId"), assertUuid(match[1], "outputId"))), config.allowedOrigin);
       }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/announcement\/([^/]+)\/blobs\/([^/]+)\/parts\/(\d+)\/content$/)) && request.method === "GET") {
         const result = await domain.downloadAnnouncementPart(assertUuid(match[0], "sessionId"), assertUuid(match[1], "outputId"),
@@ -134,8 +140,19 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
           "Content-Disposition": `attachment; filename="${result.assetName}"`
         } }), config.allowedOrigin);
       }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/speaker\/([^/]+)\/blobs\/([^/]+)\/parts\/(\d+)\/content$/)) && request.method === "GET") {
+        const result = await domain.downloadSpeakerPart(assertUuid(match[0], "sessionId"), assertUuid(match[1], "outputId"),
+          assertUuid(match[2], "blobId"), Number(match[3]));
+        return cors(new Response(result.bytes, { status: 200, headers: {
+          "Content-Type": "application/octet-stream", "Content-Length": String(result.bytes.byteLength),
+          "Content-Disposition": `attachment; filename="${result.assetName}"`
+        } }), config.allowedOrigin);
+      }
       if ((match = routeMatch(url.pathname, /^\/v1\/announcement-publications\/([^/]+)$/)) && request.method === "GET") {
         return cors(json(await domain.getAnnouncementPublication(assertUuid(match[0], "transactionId"))), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/speaker-saves\/([^/]+)$/)) && request.method === "GET") {
+        return cors(json(await domain.getSpeakerPublication(assertUuid(match[0], "transactionId"))), config.allowedOrigin);
       }
       if ((match = routeMatch(url.pathname, /^\/v1\/announcement-publications\/([^/]+)\/blobs\/([^/]+)\/parts\/(\d+)$/)) && request.method === "PUT") {
         const maximum = config.acceptedPartBytes;
@@ -147,11 +164,27 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
           request.headers.get("x-part-sha256"), request.headers.get("idempotency-key"));
         return cors(json(result), config.allowedOrigin);
       }
+      if ((match = routeMatch(url.pathname, /^\/v1\/speaker-saves\/([^/]+)\/blobs\/([^/]+)\/parts\/(\d+)$/)) && request.method === "PUT") {
+        const maximum = config.acceptedPartBytes;
+        const declared = Number(request.headers.get("content-length"));
+        if (Number.isFinite(declared) && declared > maximum) { const error = new ValidationError("Part is too large"); error.status = 413; throw error; }
+        const bytes = Buffer.from(await request.arrayBuffer());
+        if (bytes.byteLength < 1 || bytes.byteLength > maximum) { const error = new ValidationError("Part is too large or empty"); error.status = 413; throw error; }
+        const result = await domain.uploadSpeakerPart(assertUuid(match[0], "transactionId"), assertUuid(match[1], "blobId"), Number(match[2]), bytes,
+          request.headers.get("x-part-sha256"), request.headers.get("idempotency-key"));
+        return cors(json(result), config.allowedOrigin);
+      }
       if ((match = routeMatch(url.pathname, /^\/v1\/announcement-publications\/([^/]+)\/(finalize|cancel|discard)$/)) && request.method === "POST") {
         const body = actionBody(await jsonBody(request));
         const transactionId = assertUuid(match[0], "transactionId");
         if (match[1] === "finalize") return cors(json(await domain.finalizeAnnouncementPublication(transactionId)), config.allowedOrigin);
         return cors(json(await domain.cancelAnnouncementPublication(transactionId, body, match[1] === "discard")), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/speaker-saves\/([^/]+)\/(finalize|cancel|discard)$/)) && request.method === "POST") {
+        const body = actionBody(await jsonBody(request));
+        const transactionId = assertUuid(match[0], "transactionId");
+        if (match[1] === "finalize") return cors(json(await domain.finalizeSpeakerPublication(transactionId)), config.allowedOrigin);
+        return cors(json(await domain.cancelSpeakerPublication(transactionId, body, match[1] === "discard")), config.allowedOrigin);
       }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)$/))) {
         const sessionId = assertUuid(match[0], "sessionId");

@@ -101,6 +101,8 @@ test("centralized filters use identical cuts, equal-duration silence, every DSP 
 
 test("candidate hash, durations, invalidation, unchanged-save rebinding and frame tolerance are exact", async () => {
   const normalized = normalizeSpeakerPayload(payload(), [IDS.track, TRACK_2], 10);
+  normalized.trackIds.reverse();
+  normalized.trackProcessing.reverse();
   const bytes = new TextEncoder().encode("mp3-bytes");
   const blob = new Blob([bytes], { type: "audio/mpeg" });
   const session = { id: IDS.session, revision: 4, title: "Запись", sourceTracks: [
@@ -113,6 +115,8 @@ test("candidate hash, durations, invalidation, unchanged-save rebinding and fram
   const candidate = await buildSpeakerCandidate({ blob, snapshot,
     resultDurationSeconds: 8 + SPEAKER_FRAME_TOLERANCE_SECONDS / 2, sha256: hash });
   assert.equal(candidate.sha256, await hash(bytes)); assert.equal(candidate.sizeBytes, bytes.byteLength);
+  assert.deepEqual(candidate.sources.map((source) => source.trackId), [TRACK_2, IDS.track]);
+  assert.deepEqual(candidate.sources.map((source) => source.ordinal), [2, 1]);
   assert.equal(candidate.globallyRemovedDurationSeconds, 2); assert.equal(candidate.trackSilenceRegions.length, 1);
   assert.equal(rebindSpeakerCandidate(candidate, normalized, 5, 1).draftRevision, 1);
   normalized.excludedTrackIds = [TRACK_2]; session.revision = 99;

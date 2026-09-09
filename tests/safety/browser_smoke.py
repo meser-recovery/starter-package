@@ -1356,8 +1356,13 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
     session["workflows"]["speaker"].update({"status": "result_ready", "outputs": [speaker_output], "nextVersion": 2})
     gateway_calls = []
     mock = {"draft": None, "speaker_draft": None, "publication": None, "output": None, "output_recipe": None,
-            "output_bytes": None, "held_upload": None, "list_failure": None}
+            "output_bytes": None, "held_upload": None, "speaker_save": None, "speaker_output": None,
+            "speaker_output_recipe": None, "speaker_output_bytes": None, "speaker_held_upload": None,
+            "speaker_jobs": {}, "resume_held_upload": None, "hold_resume": False,
+            "speaker_output_corrupt": False, "hold_incomplete": False, "held_incomplete": None,
+            "incomplete": [], "list_failure": None}
     publication_id = "44444444-4444-4444-8444-444444444444"
+    speaker_save_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
 
     def fulfill_json(route, value, status=200):
@@ -1391,6 +1396,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             fulfill_json(route, {"schemaVersion": 1, "acceptedPartSize": 16777216, "maximumPartSize": 67108864, "maximumSessionSize": 524288000})
         elif parsed.path == "/v1/session":
             fulfill_json(route, {"authenticated": True, "expiresAt": 2000000000, "csrfToken": "mock-csrf"})
+        elif parsed.path == "/v1/maintenance/incomplete" and request.method == "GET":
+            if mock["hold_incomplete"]:
+                mock["held_incomplete"] = route
+            else:
+                fulfill_json(route, {"transactions": mock["incomplete"], "orphans": []})
         elif parsed.path == "/v1/source-sessions" and request.method == "GET":
             if mock["list_failure"] == "server":
                 fulfill_json(route, {"error": "English backend failure with provider details"}, 500)
@@ -1468,6 +1478,97 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
                 "Cache-Control": "no-store",
             }, body=mock["output_bytes"])
+        elif parsed.path == f"/v1/source-sessions/{session_id}/outputs/speaker/saves" and request.method == "POST":
+            mock["speaker_save"] = json.loads(request.post_data)
+            session["revision"] += 1
+            reserved = session["workflows"]["speaker"]["nextVersion"]
+            session["workflows"]["speaker"]["nextVersion"] += 1
+            plan = mock["speaker_save"]["plan"]
+            job = {"transactionId": speaker_save_id, "sessionId": session_id, "workflow": "speaker",
+                "outputId": plan["outputId"], "blobId": plan["blobId"], "state": "uploading",
+                "reservedVersion": reserved, "reservedSessionRevision": session["revision"], "uploadedParts": 0,
+                "uploadedPartNumbers": [], "totalParts": len(plan["parts"]), "canFinalize": False,
+                "requiresLocalResult": True, "candidateFingerprint": plan["recipe"]["candidateFingerprint"],
+                "sizeBytes": plan["sizeBytes"], "sha256": plan["sha256"], "parts": plan["parts"],
+                "updatedAt": "2026-01-02T03:04:05.000Z"}
+            mock["speaker_jobs"][speaker_save_id] = job
+            fulfill_json(route, job, 201)
+        elif parsed.path.startswith(f"/v1/speaker-saves/{speaker_save_id}/blobs/") and request.method == "PUT":
+            mock["speaker_output_bytes"] = bytes(request.post_data_buffer or b"")
+            mock["speaker_held_upload"] = route
+        elif parsed.path == f"/v1/speaker-saves/{speaker_save_id}/finalize" and request.method == "POST":
+            plan = mock["speaker_save"]["plan"]
+            output = {"outputId": plan["outputId"], "version": 2, "sessionId": session_id,
+                "createdAt": "2026-01-02T03:04:05.000Z", "blobId": plan["blobId"], "sizeBytes": plan["sizeBytes"],
+                "sha256": plan["sha256"], "parts": [{**part, "assetId": 120 + index,
+                    "downloadUrl": f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/{part['assetName']}"}
+                    for index, part in enumerate(plan["parts"])],
+                "recipeSnapshotRef": f"recipes/{session_id}/speaker/{plan['outputId']}.json",
+                "processorVersion": plan["processorVersion"]}
+            session["workflows"]["speaker"]["outputs"].append(output)
+            session["workflows"]["speaker"]["status"] = "result_ready"
+            session["revision"] += 1
+            mock["speaker_output"] = output
+            mock["speaker_output_recipe"] = {"schemaVersion": 1, "workflow": "speaker", "sessionId": session_id,
+                "outputId": output["outputId"], "version": output["version"], "processorVersion": output["processorVersion"],
+                "createdAt": output["createdAt"], **plan["recipe"]}
+            mock["speaker_jobs"][speaker_save_id].update({"state": "finalized", "canFinalize": False,
+                "requiresLocalResult": False, "uploadedParts": len(plan["parts"]),
+                "uploadedPartNumbers": [part["partNumber"] for part in plan["parts"]]})
+            fulfill_json(route, {"job": mock["speaker_jobs"][speaker_save_id],
+                "output": output, "idempotent": False})
+        elif mock["speaker_output"] and parsed.path == f"/v1/source-sessions/{session_id}/outputs/speaker/{mock['speaker_output']['outputId']}" and request.method == "GET":
+            fulfill_json(route, {"output": mock["speaker_output"], "recipe": mock["speaker_output_recipe"]})
+        elif mock["speaker_output"] and parsed.path.startswith(f"/v1/source-sessions/{session_id}/outputs/speaker/{mock['speaker_output']['outputId']}/blobs/") and request.method == "GET":
+            route.fulfill(status=200, content_type="application/octet-stream", headers={
+                "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",
+                "Cache-Control": "no-store",
+            }, body=b"corrupt" if mock["speaker_output_corrupt"] else mock["speaker_output_bytes"])
+        elif (match := re.fullmatch(r"/v1/speaker-saves/([0-9a-f-]+)", parsed.path)) and request.method == "GET":
+            job = mock["speaker_jobs"].get(match.group(1))
+            fulfill_json(route, job if job else {"error": "missing"}, 200 if job else 404)
+        elif (match := re.fullmatch(r"/v1/speaker-saves/([0-9a-f-]+)/cancel", parsed.path)) and request.method == "POST":
+            job = mock["speaker_jobs"].get(match.group(1))
+            if not job:
+                fulfill_json(route, {"error": "missing"}, 404)
+            elif job["state"] == "finalized":
+                fulfill_json(route, {"error": "already finalized"}, 409)
+            else:
+                job.update({"state": "cancelled", "canFinalize": job["uploadedParts"] == job["totalParts"]})
+                fulfill_json(route, {"job": job})
+        elif (match := re.fullmatch(r"/v1/speaker-saves/([0-9a-f-]+)/blobs/([0-9a-f-]+)/parts/(\d+)", parsed.path)) and request.method == "PUT":
+            job = mock["speaker_jobs"].get(match.group(1))
+            if not job:
+                fulfill_json(route, {"error": "missing"}, 404)
+            elif mock["hold_resume"]:
+                mock["resume_held_upload"] = route
+            else:
+                part_number = int(match.group(3))
+                if part_number not in job["uploadedPartNumbers"]:
+                    job["uploadedPartNumbers"].append(part_number)
+                job["uploadedParts"] = len(job["uploadedPartNumbers"])
+                job["canFinalize"] = job["uploadedParts"] == job["totalParts"]
+                fulfill_json(route, {"uploaded": True, "assetId": 220 + part_number, "downloadUrl": "https://gateway.test/mock-part"})
+        elif (match := re.fullmatch(r"/v1/speaker-saves/([0-9a-f-]+)/finalize", parsed.path)) and request.method == "POST":
+            job = mock["speaker_jobs"].get(match.group(1))
+            if not job:
+                fulfill_json(route, {"error": "missing"}, 404)
+            else:
+                job.update({"state": "finalized", "canFinalize": False, "requiresLocalResult": False})
+                mock["incomplete"] = [item for item in mock["incomplete"] if item["transactionId"] != job["transactionId"]]
+                fulfill_json(route, {"job": job, "output": {"version": job["reservedVersion"]}, "idempotent": False})
+        elif (match := re.fullmatch(r"/v1/maintenance/incomplete/([0-9a-f-]+)/(resume|discard)", parsed.path)) and request.method == "POST":
+            job = mock["speaker_jobs"].get(match.group(1))
+            if not job:
+                fulfill_json(route, {"error": "missing"}, 404)
+            elif match.group(2) == "resume":
+                job.update({"state": "finalized", "canFinalize": False, "requiresLocalResult": False})
+                mock["incomplete"] = [item for item in mock["incomplete"] if item["transactionId"] != job["transactionId"]]
+                fulfill_json(route, {"job": job, "output": {"version": job["reservedVersion"]}, "idempotent": False})
+            else:
+                job.update({"state": "discarded", "canFinalize": False, "requiresLocalResult": False})
+                mock["incomplete"] = [item for item in mock["incomplete"] if item["transactionId"] != job["transactionId"]]
+                fulfill_json(route, {"job": job, "discarded": True})
         elif parsed.path.endswith("/workflows/announcement/status") and request.method == "PUT":
             session["workflows"]["announcement"]["status"] = "in_progress"
             session["revision"] += 1
@@ -1498,8 +1599,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-results-speaker").click()
         assert page.locator("#source-session-results-speaker-panel").is_visible()
         assert page.get_by_text("Архивная запись · Версия 1", exact=True).count() == 1
-        assert page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Слушать", exact=True).count() == 0
-        delete_button = page.locator("#source-session-results-speaker-panel button")
+        assert page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Слушать", exact=True).count() == 1
+        assert page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Скачать", exact=True).count() == 1
+        delete_button = page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Удалить версию", exact=True)
         delete_button.click()
         page.locator("#source-session-delete-dialog").wait_for(state="visible")
         assert "Спикерская" in page.locator("#source-session-delete-summary").inner_text()
@@ -1736,13 +1838,201 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator(".speaker-dsp select").nth(0).select_option("off")
         page.locator(".speaker-dsp select").nth(1).select_option("on")
         page.locator(".speaker-dsp select").nth(2).select_option("off")
+        page.locator("#speaker-editor-save").click()
+        page.get_by_text("Черновик сохранён, ревизия 3.", exact=True).wait_for()
         page.locator("#speaker-editor-render").click()
         page.get_by_text("Локальный MP3 готов. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
         assert page.locator("#speaker-editor-result").is_visible()
         assert not any("/outputs/speaker/" in path or "/speaker-publications" in path for _, path, _ in gateway_calls)
+        saved_candidate = page.evaluate("""async () => {
+            const candidate = (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate();
+            return {sha256: candidate.sha256, draftRevision: candidate.draftRevision,
+                sourceSessionRevision: candidate.sourceSessionRevision, candidateFingerprint: candidate.candidateFingerprint};
+        }""")
+        assert page.locator("#speaker-editor-archive-save").is_enabled()
+        page.locator("#speaker-editor-archive-save").click()
+        page.locator("#speaker-editor-save-dialog").wait_for(state="visible")
+        assert "Архивная запись" in page.locator("#speaker-editor-save-source").inner_text()
+        assert "MP3" in page.locator("#speaker-editor-save-result").inner_text()
+        assert "Версия 2" in page.locator("#speaker-editor-save-version").inner_text()
+        if screenshot_dir:
+            for width in (320, 390, 768, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.evaluate("document.activeElement?.blur()")
+                page.locator("#speaker-editor-save-dialog").evaluate("dialog => { dialog.scrollTop = 0; }")
+                page.screenshot(path=str(screenshot_dir / f"s08d-speaker-save-confirmation-{width}.png"))
+                if width in (320, 390):
+                    page.locator("#speaker-editor-save-dialog").evaluate("dialog => { dialog.scrollTop = dialog.scrollHeight; }")
+                    page.screenshot(path=str(screenshot_dir / f"s08d-speaker-save-confirmation-actions-{width}.png"))
+            page.set_viewport_size({"width": 390, "height": 900})
+        page.locator("#speaker-editor-save-submit").click(no_wait_after=True)
+        for _ in range(200):
+            if mock["speaker_held_upload"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["speaker_held_upload"] is not None
+        assert page.locator("#speaker-editor-save-progress").is_visible()
+        assert page.locator("#speaker-editor-save").is_disabled()
+        assert page.locator("#speaker-editor-render").is_disabled()
+        if screenshot_dir:
+            for width in (320, 390, 768, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.evaluate("document.activeElement?.blur()")
+                page.locator("#speaker-editor-save-dialog").evaluate("dialog => { dialog.scrollTop = 0; }")
+                page.screenshot(path=str(screenshot_dir / f"s08d-speaker-save-progress-{width}.png"))
+            page.set_viewport_size({"width": 390, "height": 900})
+        # The server finalizes after the last upload while the browser still waits for that response.
+        # Cancelling must reconcile the authoritative finalized job instead of claiming it was stopped.
+        plan = mock["speaker_save"]["plan"]
+        finalized_output = {"outputId": plan["outputId"], "version": 2, "sessionId": session_id,
+            "createdAt": "2026-01-02T03:04:05.000Z", "blobId": plan["blobId"], "sizeBytes": plan["sizeBytes"],
+            "sha256": plan["sha256"], "parts": [{**part, "assetId": 120 + index,
+                "downloadUrl": f"https://github.com/meser-recovery/audio-archive/releases/download/audio-session-{session_id}/{part['assetName']}"}
+                for index, part in enumerate(plan["parts"])],
+            "recipeSnapshotRef": f"recipes/{session_id}/speaker/{plan['outputId']}.json",
+            "processorVersion": plan["processorVersion"]}
+        session["workflows"]["speaker"]["outputs"].append(finalized_output)
+        session["workflows"]["speaker"]["status"] = "result_ready"
+        session["revision"] += 1
+        mock["speaker_output"] = finalized_output
+        mock["speaker_output_recipe"] = {"schemaVersion": 1, "workflow": "speaker", "sessionId": session_id,
+            "outputId": finalized_output["outputId"], "version": finalized_output["version"],
+            "processorVersion": finalized_output["processorVersion"], "createdAt": finalized_output["createdAt"], **plan["recipe"]}
+        mock["speaker_jobs"][speaker_save_id].update({"state": "finalized", "canFinalize": False,
+            "requiresLocalResult": False, "uploadedParts": len(plan["parts"]),
+            "uploadedPartNumbers": [part["partNumber"] for part in plan["parts"]]})
+        held_speaker_upload = mock["speaker_held_upload"]
+        page.locator("#speaker-editor-save-cancel").click()
+        held_speaker_upload.abort("aborted")
+        mock["speaker_held_upload"] = None
+        page.get_by_text("Версия 2 сохранена в архиве «Спикерская».", exact=True).wait_for(timeout=30000)
+        assert mock["speaker_output_bytes"] is not None
+        assert hashlib.sha256(mock["speaker_output_bytes"]).hexdigest() == saved_candidate["sha256"]
+        assert mock["speaker_save"]["plan"]["recipe"]["draft"]["revision"] == saved_candidate["draftRevision"] == 3
+        assert mock["speaker_save"]["plan"]["recipe"]["sourceSessionRevision"] == saved_candidate["sourceSessionRevision"]
+        assert mock["speaker_save"]["plan"]["recipe"]["candidateFingerprint"] == saved_candidate["candidateFingerprint"]
+        page.locator("#speaker-editor-save-dialog").wait_for(state="hidden")
+        page.wait_for_function("document.getElementById('source-session-results-speaker-count').textContent === '2'")
+        assert page.locator("#source-session-results-speaker-panel button").count() == 6
+        assert page.locator("#source-session-results-speaker-panel button").all_inner_texts().count("Слушать") == 2
+        assert page.locator("#source-session-results-speaker-panel button").all_inner_texts().count("Скачать") == 2
+        if screenshot_dir:
+            for width in (320, 390, 768, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08d-speaker-saved-history-{width}.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 900})
+        partial_id = "cccccccc-cccc-4ccc-8ccc-cccccccccccc"
+        mismatch_id = "eeeeeeee-eeee-4eee-8eee-eeeeeeeeeeee"
+        complete_id = "dddddddd-dddd-4ddd-8ddd-dddddddddddd"
+        recovery_plan = mock["speaker_save"]["plan"]
+
+        def recovery_job(transaction_id, version, *, fingerprint=saved_candidate["candidateFingerprint"], complete=False):
+            return {"kind": "publication", "workflow": "speaker", "transactionId": transaction_id,
+                "sessionId": session_id, "outputId": recovery_plan["outputId"], "blobId": recovery_plan["blobId"],
+                "state": "cancelled", "reservedVersion": version, "reservedSessionRevision": session["revision"],
+                "uploadedParts": len(recovery_plan["parts"]) if complete else 0,
+                "uploadedPartNumbers": [part["partNumber"] for part in recovery_plan["parts"]] if complete else [],
+                "totalParts": len(recovery_plan["parts"]), "canFinalize": complete,
+                "requiresLocalResult": not complete, "candidateFingerprint": fingerprint,
+                "sizeBytes": recovery_plan["sizeBytes"], "sha256": recovery_plan["sha256"],
+                "parts": recovery_plan["parts"], "updatedAt": "2026-01-02T03:04:05.000Z"}
+
+        partial_job = recovery_job(partial_id, 3)
+        mock["speaker_jobs"][partial_id] = partial_job
+        mock["incomplete"] = [partial_job]
+        page.locator("#source-session-incomplete").click()
+        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 3"), exact=False).wait_for()
+        mock["hold_resume"] = True
+        resume_gets_before = len([call for call in gateway_calls if call[0] == "GET" and call[1] == f"/v1/speaker-saves/{partial_id}"])
+        page.get_by_role("button", name="Продолжить передачу", exact=True).evaluate("button => { button.click(); button.click(); }")
+        page.get_by_role("button", name="Отменить продолжение", exact=True).wait_for(timeout=30000)
+        for _ in range(200):
+            if mock["resume_held_upload"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["resume_held_upload"] is not None
+        assert len([call for call in gateway_calls if call[0] == "GET" and call[1] == f"/v1/speaker-saves/{partial_id}"]) == resume_gets_before + 1
+        assert len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{partial_id}/" in call[1]]) == 1
+        mock["hold_incomplete"] = True
+        page.locator("#source-session-incomplete").click()
+        assert page.get_by_role("button", name="Отменить продолжение", exact=True).is_visible()
+        for _ in range(200):
+            if mock["held_incomplete"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["held_incomplete"] is not None
+        fulfill_json(mock["held_incomplete"], {"transactions": [partial_job], "orphans": []})
+        mock["held_incomplete"] = None
+        mock["hold_incomplete"] = False
+        page.wait_for_timeout(100)
+        assert page.get_by_role("button", name="Отменить продолжение", exact=True).is_visible()
+        assert "Версия 3" in page.locator("#source-session-recovery-list").inner_text()
+        assert page.locator("#speaker-editor-save").is_disabled()
+        assert page.locator("#speaker-editor-render").is_disabled()
+        assert page.locator("#speaker-editor-close").is_disabled()
+        page.locator("#source-session-mode-device").click()
+        assert page.locator("#source-session-mode-archive").get_attribute("aria-pressed") == "true"
+        assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).closeSpeakerEditor(true)") is False
+        if screenshot_dir:
+            for width in (320, 390, 768, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08d-speaker-resume-locked-{width}.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 900})
+        held_resume_upload = mock["resume_held_upload"]
+        page.get_by_role("button", name="Отменить продолжение", exact=True).click()
+        held_resume_upload.abort("aborted")
+        page.get_by_text(re.compile("Продолжение Версии 3 остановлено"), exact=False).wait_for(timeout=30000)
+        assert partial_job["state"] == "cancelled"
+        assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().saving") is False
+        assert page.locator("#speaker-editor-close").is_enabled()
+        mock["resume_held_upload"] = None
+        mock["hold_resume"] = False
+        page.locator("#source-session-incomplete").click()
+        page.get_by_role("button", name="Продолжить передачу", exact=True).click()
+        page.wait_for_function("document.getElementById('source-session-recovery-list').textContent.includes('не найдено')", timeout=30000)
+        assert partial_job["state"] == "finalized"
+
+        mismatch_job = recovery_job(mismatch_id, 4, fingerprint="different-candidate-fingerprint")
+        mock["speaker_jobs"][mismatch_id] = mismatch_job
+        mock["incomplete"] = [mismatch_job]
+        page.locator("#source-session-incomplete").click()
+        page.get_by_role("button", name="Продолжить передачу", exact=True).click()
+        page.get_by_text(re.compile("точно тот же локальный результат"), exact=False).wait_for(timeout=30000)
+        assert mismatch_job["state"] == "cancelled"
+        page.locator("#source-session-incomplete").click()
+        page.once("dialog", lambda dialog: dialog.accept())
+        page.get_by_role("button", name="Удалить незавершённое сохранение", exact=True).click()
+        page.wait_for_function("document.getElementById('source-session-recovery-list').textContent.includes('не найдено')")
+        assert mismatch_job["state"] == "discarded"
+
         page.once("dialog", lambda dialog: dialog.accept())
         page.locator("#speaker-editor-close").click()
         assert page.locator("#speaker-editor").is_hidden()
+        complete_job = recovery_job(complete_id, 5, complete=True)
+        mock["speaker_jobs"][complete_id] = complete_job
+        mock["incomplete"] = [complete_job]
+        uploads_before_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
+        page.reload(wait_until="domcontentloaded")
+        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 5"), exact=False).wait_for(timeout=30000)
+        assert page.get_by_role("button", name="Завершить сохранение", exact=True).count() == 1
+        if screenshot_dir:
+            for width in (320, 390, 768, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08d-speaker-recovery-{width}.png"), full_page=True)
+            page.set_viewport_size({"width": 390, "height": 900})
+        page.get_by_role("button", name="Завершить сохранение", exact=True).click()
+        page.wait_for_function("document.getElementById('source-session-recovery-list').textContent.includes('не найдено')")
+        assert complete_job["state"] == "finalized"
+        uploads_after_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
+        assert uploads_after_reload_recovery == uploads_before_reload_recovery
         page.get_by_role("button", name="Открыть в «Анонс-мейкер»", exact=True).click()
         try:
             page.locator(".processor-track").first.wait_for(timeout=30000)
@@ -1839,7 +2129,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Слушать", exact=True).count() == 1
         assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Скачать", exact=True).count() == 1
         assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Удалить версию", exact=True).count() == 1
-        assert page.locator("#source-session-results-speaker-panel button").count() == 1
+        assert page.locator("#source-session-results-speaker-panel button").count() == 6
         if screenshot_dir:
             page.locator("#source-session-publication-dialog").wait_for(state="hidden")
             for width in (390, 1280):
@@ -1869,6 +2159,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-refresh").click()
         page.get_by_text(re.compile("исходники удалены"), exact=False).first.wait_for()
         assert page.locator("#source-session-results-announcement-count").inner_text() == "1"
+        assert page.locator("#source-session-results-speaker-count").inner_text() == "2"
         calls_before_result = len(gateway_calls)
         page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Слушать", exact=True).click()
         page.locator("#source-session-announcement-audio").wait_for(state="visible")
@@ -1883,6 +2174,35 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+
+        # A full page reload and deleted source assets do not affect the independently saved Speaker result.
+        page.reload(wait_until="domcontentloaded")
+        page.wait_for_function("document.getElementById('source-session-results-speaker-count').textContent === '2'", timeout=30000)
+        page.locator("#source-session-results-speaker").click()
+        saved_speaker = page.locator("#source-session-results-speaker-list .result-archive-item").first
+        assert "Версия 2" in saved_speaker.inner_text() and "исходники удалены" in saved_speaker.inner_text()
+        calls_before_speaker_result = len(gateway_calls)
+        saved_speaker.get_by_role("button", name="Слушать", exact=True).click()
+        page.locator("#source-session-announcement-audio").wait_for(state="visible")
+        page.wait_for_function("document.getElementById('source-session-announcement-audio').src.startsWith('blob:')")
+        assert page.locator("#source-session-announcement-playback-label").inner_text() == "Прослушивание · Спикерская"
+        assert page.locator("#source-session-announcement-download").get_attribute("download") == mock["speaker_output_recipe"]["result"]["presentationFilename"]
+        assert not any(method not in {"GET", "OPTIONS"} for method, _, _ in gateway_calls[calls_before_speaker_result:])
+        assert any(path.endswith(f"/outputs/speaker/{mock['speaker_output']['outputId']}") for _, path, _ in gateway_calls[calls_before_speaker_result:])
+        assert page.get_by_text(re.compile("Целостность сохранённого результата проверена"), exact=False).is_visible()
+        mock["speaker_output_corrupt"] = True
+        saved_speaker.get_by_role("button", name="Слушать", exact=True).click()
+        page.get_by_text("Не удалось проверить и открыть сохранённый результат.", exact=True).wait_for(timeout=30000)
+        assert page.locator("#source-session-announcement-playback").is_hidden()
+        assert page.locator("#source-session-announcement-download").get_attribute("href") is None
+        assert page.locator("#source-session-announcement-audio").get_attribute("src") is None
+        mock["speaker_output_corrupt"] = False
+        if screenshot_dir:
+            for width in (320, 390, 768, 1280):
+                page.set_viewport_size({"width": width, "height": 900})
+                assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), width
+                page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
+                page.screenshot(path=str(screenshot_dir / f"s08d-speaker-restored-result-{width}.png"), full_page=True)
 
         page.locator("#source-session-mode-archive").click()
         page.get_by_role("button", name="Создать входящую запись", exact=True).click()

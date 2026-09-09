@@ -267,9 +267,37 @@ export async function createAnnouncementPublicationPlan(blob, recipe, partSize =
   };
 }
 
+export async function createSpeakerSavePlan(blob, recipe, partSize = DEFAULT_AUDIO_PART_BYTES,
+  { idempotencyKey = crypto.randomUUID(), signal } = {}) {
+  throwIfAborted(signal);
+  if (!(blob instanceof Blob) || blob.type !== "audio/mpeg" || !Number.isSafeInteger(blob.size) || blob.size < 1 || blob.size > MAX_AUDIO_SESSION_BYTES) {
+    throw new Error("Локальный результат Спикерской пуст, повреждён или превышает 500 МБ.");
+  }
+  if (!Number.isSafeInteger(partSize) || partSize < 1 || partSize > MAX_AUDIO_PART_BYTES) throw new Error("Некорректный размер части результата.");
+  const outputId = await stableUuid(idempotencyKey, "speaker-output", signal);
+  const blobId = await stableUuid(idempotencyKey, "speaker-blob", signal);
+  const logicalHasher = new Sha256();
+  const parts = [];
+  for (let offset = 0, partNumber = 1; offset < blob.size; offset += partSize, partNumber++) {
+    const partBlob = blob.slice(offset, Math.min(blob.size, offset + partSize), "application/octet-stream");
+    const bytes = new Uint8Array(await partBlob.arrayBuffer());
+    throwIfAborted(signal);
+    logicalHasher.update(bytes);
+    parts.push({ partNumber, sizeBytes: bytes.byteLength, sha256: await sha256Hex(bytes, signal),
+      assetName: assetName(blobId, partNumber), blob: partBlob });
+  }
+  const sha256 = logicalHasher.digestHex();
+  if (recipe?.result?.sizeBytes !== blob.size || recipe?.result?.sha256 !== sha256) {
+    throw new Error("Локальные байты не совпадают с зафиксированным результатом Спикерской.");
+  }
+  return { outputId, blobId, processorVersion: "speaker-editor-v1", sizeBytes: blob.size, sha256, parts, recipe: structuredClone(recipe) };
+}
+
 export function serializeAnnouncementPublicationPlan(plan) {
   return { ...plan, parts: plan.parts.map(({ blob: _blob, ...part }) => part) };
 }
+
+export const serializeSpeakerSavePlan = serializeAnnouncementPublicationPlan;
 
 function isIsoTimestamp(value) {
   return typeof value === "string" && !Number.isNaN(Date.parse(value)) && /^\d{4}-\d{2}-\d{2}T/.test(value);
@@ -391,6 +419,57 @@ export async function reconstructAnnouncementOutput(metadata, fetchImpl = fetch)
   }
   if (totalBytes !== output.sizeBytes || logicalHasher.digestHex() !== output.sha256) throw new Error("Проверка целостности результата не пройдена.");
   return new File(chunks, recipe.result.presentationFilename, { type: recipe.result.mediaType, lastModified: 0 });
+}
+
+export function validateSpeakerOutput(output, recipe, sessionId) {
+  const workflow = { workflow: "speaker", status: "result_ready", currentDraft: null,
+    outputs: [output], deletedVersions: [], nextVersion: (output?.version || 0) + 1 };
+  if (!isUuid(sessionId) || !validateWorkflow(workflow, sessionId) ||
+      output.recipeSnapshotRef !== `recipes/${sessionId}/speaker/${output.outputId}.json` ||
+      !hasExactKeys(recipe, ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"]) ||
+      recipe.schemaVersion !== 1 || recipe.workflow !== "speaker" || recipe.sessionId !== sessionId || recipe.outputId !== output.outputId ||
+      recipe.version !== output.version || recipe.processorVersion !== "speaker-editor-v1" || output.processorVersion !== "speaker-editor-v1" ||
+      !isIsoTimestamp(recipe.createdAt) || !isIsoTimestamp(recipe.renderedAt) || !Number.isSafeInteger(recipe.sourceSessionRevision) || recipe.sourceSessionRevision < 1 ||
+      !SHA256_PATTERN.test(recipe.candidateFingerprint) || !hasExactKeys(recipe.draft, ["revision", "payloadSchema", "payload"]) ||
+      !Number.isSafeInteger(recipe.draft.revision) || recipe.draft.revision < 1 || recipe.draft.payloadSchema !== "speaker/v1" ||
+      !Array.isArray(recipe.sources) || !recipe.sources.length || !hasExactKeys(recipe.editState, ["orderedTrackIds", "includedTrackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"]) ||
+      !hasExactKeys(recipe.renderer, ["sampleRate", "enhancement", "loudnorm", "compression", "mix", "limiter", "codec"]) || recipe.renderer.sampleRate !== 48000 ||
+      !hasExactKeys(recipe.result, ["mediaType", "presentationFilename", "sizeBytes", "sha256", "originalDurationSeconds", "resultDurationSeconds", "globallyRemovedDurationSeconds"]) ||
+      recipe.result.mediaType !== "audio/mpeg" || recipe.result.presentationFilename !== normalizeAudioFilename(recipe.result.presentationFilename) ||
+      recipe.result.sizeBytes !== output.sizeBytes || recipe.result.sha256 !== output.sha256) return false;
+  const payload = recipe.draft.payload;
+  if (!hasExactKeys(payload, ["trackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"]) ||
+      JSON.stringify(recipe.editState.orderedTrackIds) !== JSON.stringify(payload.trackIds) ||
+      JSON.stringify(recipe.editState.excludedTrackIds) !== JSON.stringify(payload.excludedTrackIds) ||
+      JSON.stringify(recipe.editState.globalCuts) !== JSON.stringify(payload.globalCuts) ||
+      JSON.stringify(recipe.editState.trackSilenceRegions) !== JSON.stringify(payload.trackSilenceRegions) ||
+      JSON.stringify(recipe.editState.trackProcessing) !== JSON.stringify(payload.trackProcessing) ||
+      JSON.stringify(recipe.editState.includedTrackIds) !== JSON.stringify(payload.trackIds.filter((id) => !payload.excludedTrackIds.includes(id)))) return false;
+  const ordinals = recipe.sources.map((source) => source?.ordinal);
+  return new Set(ordinals).size === recipe.sources.length && recipe.sources.every((source, index) =>
+    hasExactKeys(source, ["trackId", "blobId", "ordinal", "originalFilename", "mediaType", "sizeBytes", "sha256"]) &&
+    source.trackId === payload.trackIds[index] && isUuid(source.trackId) && isUuid(source.blobId) &&
+    Number.isSafeInteger(source.ordinal) && source.ordinal >= 1 && source.ordinal <= recipe.sources.length &&
+    source.originalFilename === normalizeAudioFilename(source.originalFilename) && Object.values(MEDIA_TYPES).includes(source.mediaType) &&
+    Number.isSafeInteger(source.sizeBytes) && source.sizeBytes > 0 && SHA256_PATTERN.test(source.sha256));
+}
+
+export async function reconstructSpeakerOutput(metadata, fetchImpl = fetch) {
+  const { output, recipe } = metadata || {};
+  if (!validateSpeakerOutput(output, recipe, output?.sessionId)) throw new Error("Данные сохранённого результата «Спикерская» повреждены.");
+  const chunks = [];
+  const logicalHasher = new Sha256();
+  let totalBytes = 0;
+  for (const [index, part] of output.parts.entries()) {
+    if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей результата Спикерской.");
+    const response = await fetchImpl(part.downloadUrl, { cache: "no-store" });
+    if (!response.ok) throw new Error("Не удалось загрузить часть результата Спикерской.");
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes) !== part.sha256) throw new Error("Проверка целостности части результата Спикерской не пройдена.");
+    chunks.push(bytes); totalBytes += bytes.byteLength; logicalHasher.update(bytes);
+  }
+  if (totalBytes !== output.sizeBytes || logicalHasher.digestHex() !== output.sha256) throw new Error("Проверка целостности результата Спикерской не пройдена.");
+  return new File(chunks, recipe.result.presentationFilename, { type: "audio/mpeg", lastModified: 0 });
 }
 
 export function validateSessionManifest(session) {
@@ -524,6 +603,9 @@ export class AudioArchiveGateway {
   getAnnouncementOutput(sessionId, outputId) {
     return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/announcement/${encodeURIComponent(outputId)}`);
   }
+  getSpeakerOutput(sessionId, outputId) {
+    return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/speaker/${encodeURIComponent(outputId)}`);
+  }
   announcementPartFetch(metadata) {
     const { output, recipe } = metadata || {};
     if (!validateAnnouncementOutput(output, recipe, output?.sessionId)) throw new Error("Данные сохранённого результата «Анонс-мейкер» повреждены.");
@@ -532,6 +614,17 @@ export class AudioArchiveGateway {
       const part = parts.get(String(url));
       if (!part) throw new Error("URL части не принадлежит этому результату.");
       const path = `/v1/source-sessions/${encodeURIComponent(output.sessionId)}/outputs/announcement/${encodeURIComponent(output.outputId)}/blobs/${encodeURIComponent(output.blobId)}/parts/${part.partNumber}/content`;
+      return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
+    };
+  }
+  speakerPartFetch(metadata) {
+    const { output, recipe } = metadata || {};
+    if (!validateSpeakerOutput(output, recipe, output?.sessionId)) throw new Error("Данные сохранённого результата «Спикерская» повреждены.");
+    const parts = new Map(output.parts.map((part) => [part.downloadUrl, part]));
+    return async (url, options = {}) => {
+      const part = parts.get(String(url));
+      if (!part) throw new Error("URL части не принадлежит результату Спикерской.");
+      const path = `/v1/source-sessions/${encodeURIComponent(output.sessionId)}/outputs/speaker/${encodeURIComponent(output.outputId)}/blobs/${encodeURIComponent(output.blobId)}/parts/${part.partNumber}/content`;
       return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
     };
   }
@@ -584,6 +677,78 @@ export class AudioArchiveGateway {
     return this.request(`/v1/announcement-publications/${encodeURIComponent(started.transactionId)}/finalize`, {
       method: "POST", signal, body: { idempotencyKey: `${idempotencyKey}:finalize` }
     });
+  }
+
+  async saveSpeaker({ sessionId, expectedRevision, expectedDraftRevision, blob, recipe,
+    idempotencyKey = crypto.randomUUID(), signal, onPhase = () => {}, onProgress = () => {}, onStarted = () => {} }) {
+    onPhase("preparing");
+    const plan = await createSpeakerSavePlan(blob, recipe, this.acceptedPartSize, { idempotencyKey, signal });
+    onPhase("reserving");
+    const started = await this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/speaker/saves`, {
+      method: "POST", signal, body: { schemaVersion: 1, expectedRevision, expectedDraftRevision,
+        idempotencyKey, plan: serializeSpeakerSavePlan(plan) }
+    });
+    onStarted(started);
+    const accepted = new Set(started.uploadedPartNumbers || []);
+    let uploadedBytes = plan.parts.filter((part) => accepted.has(part.partNumber)).reduce((sum, part) => sum + part.sizeBytes, 0);
+    onPhase("uploading");
+    for (const part of plan.parts) {
+      if (accepted.has(part.partNumber)) continue;
+      await this.request(`/v1/speaker-saves/${encodeURIComponent(started.transactionId)}/blobs/${encodeURIComponent(plan.blobId)}/parts/${part.partNumber}`, {
+        method: "PUT", signal, body: part.blob, headers: { "Content-Type": "application/octet-stream",
+          "X-Part-SHA256": part.sha256, "Idempotency-Key": `${idempotencyKey}:${part.partNumber}` }
+      });
+      uploadedBytes += part.sizeBytes;
+      onProgress({ uploadedBytes, totalBytes: plan.sizeBytes, uploadedParts: accepted.size + 1, totalParts: plan.parts.length,
+        reservedVersion: started.reservedVersion });
+      accepted.add(part.partNumber);
+    }
+    onPhase("verifying");
+    const result = await this.request(`/v1/speaker-saves/${encodeURIComponent(started.transactionId)}/finalize`, {
+      method: "POST", signal, body: { idempotencyKey: `${idempotencyKey}:finalize` }
+    });
+    onPhase("saved");
+    return result;
+  }
+
+  speakerSaveJob(transactionId, signal) { return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}`, { signal }); }
+  cancelSpeakerSave(transactionId, discard = false, idempotencyKey = crypto.randomUUID()) {
+    return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/${discard ? "discard" : "cancel"}`, {
+      method: "POST", body: { idempotencyKey }
+    });
+  }
+
+  finalizeSpeakerSave(transactionId, idempotencyKey = crypto.randomUUID(), signal) {
+    return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/finalize`, { method: "POST", signal, body: { idempotencyKey } });
+  }
+
+  async resumeSpeakerSave(transactionId, { blob, candidateFingerprint, signal, onProgress = () => {} } = {}) {
+    signal?.throwIfAborted();
+    const job = await this.speakerSaveJob(transactionId, signal);
+    signal?.throwIfAborted();
+    if (job.canFinalize) return this.finalizeSpeakerSave(transactionId, crypto.randomUUID(), signal);
+    if (!(blob instanceof Blob) || blob.size !== job.sizeBytes || candidateFingerprint !== job.candidateFingerprint ||
+        await sha256Hex(new Uint8Array(await blob.arrayBuffer()), signal) !== job.sha256) {
+      throw new Error("Для продолжения нужен точно тот же локальный результат Спикерской.");
+    }
+    const accepted = new Set(job.uploadedPartNumbers || []);
+    let offset = 0;
+    let uploadedBytes = job.parts.filter((part) => accepted.has(part.partNumber)).reduce((sum, part) => sum + part.sizeBytes, 0);
+    for (const part of job.parts) {
+      const partBlob = blob.slice(offset, offset + part.sizeBytes, "application/octet-stream");
+      offset += part.sizeBytes;
+      if (accepted.has(part.partNumber)) continue;
+      const bytes = new Uint8Array(await partBlob.arrayBuffer());
+      if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes, signal) !== part.sha256) throw new Error("Локальный результат не совпадает с планом незавершённого сохранения.");
+      await this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/blobs/${encodeURIComponent(job.blobId)}/parts/${part.partNumber}`, {
+        method: "PUT", signal, body: partBlob, headers: { "Content-Type": "application/octet-stream", "X-Part-SHA256": part.sha256,
+          "Idempotency-Key": `speaker-resume:${transactionId}:${part.partNumber}` }
+      });
+      accepted.add(part.partNumber); uploadedBytes += part.sizeBytes;
+      onProgress({ uploadedBytes, totalBytes: job.sizeBytes, uploadedParts: accepted.size, totalParts: job.parts.length, reservedVersion: job.reservedVersion });
+    }
+    signal?.throwIfAborted();
+    return this.finalizeSpeakerSave(transactionId, crypto.randomUUID(), signal);
   }
 
   publicationJob(transactionId) { return this.request(`/v1/announcement-publications/${encodeURIComponent(transactionId)}`); }

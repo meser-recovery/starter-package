@@ -1096,7 +1096,8 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
             errors.append(f"S08A deployment artifact appears to embed secret material: {path.relative_to(ROOT)}")
 
     schema_dir = ROOT / "gateway/audio-archive/storage-repository/schemas/v1"
-    expected_schemas = {"catalog.schema.json", "deletion-tombstone.schema.json", "draft.schema.json", "source-session.schema.json", "transaction.schema.json"}
+    expected_schemas = {"catalog.schema.json", "deletion-tombstone.schema.json", "draft.schema.json", "source-session.schema.json",
+        "speaker-recipe.schema.json", "transaction.schema.json"}
     if schema_dir.is_dir():
         actual_schemas = {path.name for path in schema_dir.glob("*.json")}
         if actual_schemas != expected_schemas:

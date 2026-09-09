@@ -15,6 +15,25 @@ const COMPRESSION_FILTERS = Object.freeze({
   strong: "acompressor=threshold=0.089125:ratio=4:attack=10:release=350:knee=3:makeup=1.75"
 });
 
+export function speakerRendererMetadata(payload, measurements = {}) {
+  const included = payload.trackIds.filter((id) => !payload.excludedTrackIds.includes(id));
+  const leveled = included.filter((id) => payload.trackProcessing.find((item) => item.trackId === id)?.leveling === "on");
+  return {
+    sampleRate: SPEAKER_SAMPLE_RATE,
+    enhancement: "highpass=f=80,lowpass=f=16000",
+    loudnorm: {
+      integratedLufs: -19,
+      truePeakDb: -3,
+      loudnessRangeLufs: 11,
+      measurements: leveled.map((trackId) => ({ trackId, ...structuredClone(measurements[trackId]) }))
+    },
+    compression: structuredClone(COMPRESSION_FILTERS),
+    mix: "amix=duration=longest:normalize=0",
+    limiter: "alimiter=limit=0.95:level=0:latency=1",
+    codec: { name: "libmp3lame", bitrate: "128k" }
+  };
+}
+
 function fail(message) {
   throw new Error(message);
 }
@@ -316,7 +335,7 @@ export function rebindSpeakerCandidate(candidate, payload, sessionRevision, draf
   return Object.freeze({ ...candidate, sourceSessionRevision: sessionRevision, draftRevision });
 }
 
-export async function buildSpeakerCandidate({ blob, snapshot, resultDurationSeconds, renderedAt = new Date().toISOString(), sha256 }) {
+export async function buildSpeakerCandidate({ blob, snapshot, measurements = {}, resultDurationSeconds, renderedAt = new Date().toISOString(), sha256 }) {
   if (!snapshot || snapshot.payloadFingerprint !== payloadFingerprint(snapshot.payload)) fail("Снимок локальной сборки повреждён.");
   const normalized = snapshot.payload;
   const originalDurationSeconds = snapshot.originalDurationSeconds;
@@ -326,6 +345,12 @@ export async function buildSpeakerCandidate({ blob, snapshot, resultDurationSeco
   }
   const hash = await sha256(new Uint8Array(await blob.arrayBuffer()));
   const excluded = new Set(normalized.excludedTrackIds);
+  const renderer = speakerRendererMetadata(normalized, measurements);
+  const resultIdentity = { sessionId: snapshot.sessionId, payload: normalized,
+    sources: snapshot.sources.map(({ trackId, identity }) => ({ trackId, blobId: identity.blobId, ordinal: identity.ordinal,
+      originalFilename: identity.originalName, mediaType: identity.mediaType, sizeBytes: identity.sizeBytes, sha256: identity.sha256 })),
+    renderer, sizeBytes: blob.size, sha256: hash, renderedAt };
+  const candidateFingerprint = await sha256(new TextEncoder().encode(JSON.stringify(resultIdentity)));
   return Object.freeze({
     candidateType: "speaker", processorVersion: SPEAKER_PROCESSOR_VERSION, payloadSchema: SPEAKER_PAYLOAD_SCHEMA,
     sessionId: snapshot.sessionId, sourceSessionRevision: snapshot.sourceSessionRevision, draftRevision: snapshot.draftRevision,
@@ -339,6 +364,7 @@ export async function buildSpeakerCandidate({ blob, snapshot, resultDurationSeco
     presentationFilename: `${String(snapshot.session.title || "speaker").replace(/[\\/\u0000-\u001f]/g, "-").slice(0, 220)}-speaker.mp3`,
     sizeBytes: blob.size, sha256: hash, originalDurationSeconds, resultDurationSeconds,
     globallyRemovedDurationSeconds: removedDuration(normalized.globalCuts), renderedAt,
+    payload: structuredClone(normalized), renderer, candidateFingerprint,
     payloadFingerprint: payloadFingerprint(normalized)
   });
 }

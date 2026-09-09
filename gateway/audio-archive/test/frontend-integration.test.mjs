@@ -1,6 +1,6 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { AudioArchiveGateway, reconstructAnnouncementOutput, reconstructSessionTracks } from "../../../scripts/audio-archive-client.mjs";
+import { AudioArchiveGateway, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput, sha256Hex } from "../../../scripts/audio-archive-client.mjs";
 import { createApp } from "../src/app.mjs";
 import { createPasswordVerifier } from "../src/auth.mjs";
 import { AudioArchiveDomain } from "../src/domain.mjs";
@@ -175,4 +175,49 @@ test("real frontend and gateway publish, retrieve, and verify one Announcement o
   assert.equal(file.type, "audio/mpeg");
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()), outputBytes);
   assert.equal(harness.repository.files.has(`recipes/${session.id}/announcement/${published.output.outputId}.json`), true);
+});
+
+test("real frontend and gateway save, retrieve, and verify one Speaker output", async () => {
+  const harness = await frontendHarness();
+  const source = new File([Uint8Array.of(1, 2, 3, 4)], "speaker.wav", { type: "audio/wav" });
+  const ingested = await harness.gateway.ingestFiles({ files: [source], title: "Спикер", origin: "manual", idempotencyKey: `${KEY}:speaker-source` });
+  let session = ingested.session;
+  const track = session.sourceTracks[0];
+  const payload = { trackIds: [track.trackId], excludedTrackIds: [], globalCuts: [], trackSilenceRegions: [],
+    trackProcessing: [{ trackId: track.trackId, enhancement: "off", leveling: "off", compression: "off" }] };
+  const saved = await harness.gateway.saveDraft(session.id, "speaker", { schemaVersion: 1, expectedDraftRevision: 0,
+    expectedSourceSessionRevision: session.revision, payloadSchema: "speaker/v1", payload, idempotencyKey: `${KEY}:speaker-draft` });
+  session = saved.session;
+  const outputBytes = Uint8Array.of(9, 8, 7, 6, 5, 4);
+  const outputHash = await sha256Hex(outputBytes);
+  const recipe = {
+    renderedAt: "2026-01-02T03:00:00.000Z", sourceSessionRevision: session.revision,
+    draft: { revision: saved.draft.draftRevision, payloadSchema: "speaker/v1", payload },
+    sources: [{ trackId: track.trackId, blobId: track.blobId, ordinal: 1, originalFilename: track.originalName,
+      mediaType: track.mediaType, sizeBytes: track.sizeBytes, sha256: track.sha256 }],
+    editState: { orderedTrackIds: payload.trackIds, includedTrackIds: payload.trackIds, excludedTrackIds: [], globalCuts: [],
+      trackSilenceRegions: [], trackProcessing: payload.trackProcessing },
+    renderer: { sampleRate: 48000, enhancement: "highpass=f=80,lowpass=f=16000",
+      loudnorm: { integratedLufs: -19, truePeakDb: -3, loudnessRangeLufs: 11, measurements: [] },
+      compression: {
+        light: "acompressor=threshold=0.177828:ratio=2:attack=20:release=250:knee=2:makeup=1.25",
+        medium: "acompressor=threshold=0.125893:ratio=3:attack=15:release=300:knee=2.5:makeup=1.5",
+        strong: "acompressor=threshold=0.089125:ratio=4:attack=10:release=350:knee=3:makeup=1.75"
+      }, mix: "amix=duration=longest:normalize=0", limiter: "alimiter=limit=0.95:level=0:latency=1",
+      codec: { name: "libmp3lame", bitrate: "128k" } },
+    candidateFingerprint: await sha256Hex("speaker-candidate"),
+    result: { mediaType: "audio/mpeg", presentationFilename: "speaker-speaker.mp3", sizeBytes: outputBytes.length,
+      sha256: outputHash, originalDurationSeconds: 3, resultDurationSeconds: 3, globallyRemovedDurationSeconds: 0 }
+  };
+  const phases = [];
+  const finalized = await harness.gateway.saveSpeaker({ sessionId: session.id, expectedRevision: session.revision,
+    expectedDraftRevision: saved.draft.draftRevision, blob: new Blob([outputBytes], { type: "audio/mpeg" }), recipe,
+    idempotencyKey: `${KEY}:speaker-save`, onPhase: (phase) => phases.push(phase) });
+  assert.equal(finalized.output.version, 1);
+  assert.deepEqual(phases, ["preparing", "reserving", "uploading", "verifying", "saved"]);
+  const metadata = await harness.gateway.getSpeakerOutput(session.id, finalized.output.outputId);
+  const file = await reconstructSpeakerOutput(metadata, harness.gateway.speakerPartFetch(metadata));
+  assert.equal(file.name, "speaker-speaker.mp3");
+  assert.deepEqual(new Uint8Array(await file.arrayBuffer()), outputBytes);
+  assert.equal(harness.repository.files.has(`recipes/${session.id}/speaker/${finalized.output.outputId}.json`), true);
 });
