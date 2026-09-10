@@ -258,42 +258,63 @@ async function mutateSession(action) {
   }
 }
 
+function newerSpeakerSession(prepared) {
+  const active = getSpeakerSaveState().session;
+  return active?.id === prepared.id && active.revision > prepared.revision ? active : null;
+}
+
 async function loadSession(session) {
   if (state.publicationController || state.uploadController) return;
-  if (!await closeSpeakerEditor(false)) return;
   const sequence = ++state.sessionSequence, auth = state.authSequence;
-  state.candidate = null;
-  updatePublishState();
+  const current = () => sequence === state.sessionSequence && auth === state.authSequence;
   setArchiveStatus(session.lifecycle.state === "archived" ? "Открытие записи, убранной из рабочего списка…" : "Загрузка и проверка исходных дорожек…");
   try {
+    // Prepare in local variables. A failed/expired load must not clear the active editor or its Blob URLs.
     const complete = await gateway.getSession(session.id);
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (!current()) return;
     const draft = (await gateway.loadDraft(session.id, "announcement")).draft;
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
-    state.activeSession = session;
-    state.activeManifest = complete;
-    state.announcementDraft = draft;
+    if (!current()) return;
     if (draft && draft.payloadSchema !== "announcement/v1") throw new Error("Неподдерживаемые сохранённые настройки; они не будут перезаписаны.");
-    const order = state.announcementDraft?.payload?.trackIds || complete.sourceTracks.map((track) => track.trackId);
+    const order = draft?.payload?.trackIds || complete.sourceTracks.map((track) => track.trackId);
     const tracksById = new Map(complete.sourceTracks.map((track) => [track.trackId, track]));
     if (order.some((id) => !tracksById.has(id))) throw new Error("Проект обработки ссылается на отсутствующую дорожку.");
     const selectedTracks = order.map((id) => tracksById.get(id));
-    state.processorProvenance = selectedTracks.map((track, index) => ({ trackId: track.trackId, blobId: track.blobId,
+    const provenance = selectedTracks.map((track, index) => ({ trackId: track.trackId, blobId: track.blobId,
       ordinal: index + 1, sizeBytes: track.sizeBytes, sha256: track.sha256, mediaType: track.mediaType }));
-    activateMode("announcement");
-    renderAnnouncementWorkspace();
-    if (complete.lifecycle.state === "incoming" && complete.sourceState === "available") {
+    const available = complete.lifecycle.state === "incoming" && complete.sourceState === "available";
+    let files = [];
+    if (available) {
       const allFiles = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
-      if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+      if (!current()) return;
       const filesById = new Map(complete.sourceTracks.map((track, index) => [track.trackId, allFiles[index]]));
-      const files = order.map((id) => filesById.get(id));
+      files = order.map((id) => filesById.get(id));
+    }
+    // Check the latest montage only when the replacement is ready, and fence the dialog/save completion too.
+    if (!current()) return;
+    if (!await closeSpeakerEditor(false, () => current() && !newerSpeakerSession(complete))) {
+      // Save-and-continue can advance this very source while the confirmation is open.
+      // Fetch its new lineage before replacing the current editor.
+      const newer = newerSpeakerSession(complete);
+      if (current() && newer) return loadSession(newer);
+      return;
+    }
+    if (!current()) return;
+    state.activeSession = complete;
+    state.activeManifest = complete;
+    state.announcementDraft = draft;
+    state.processorProvenance = provenance;
+    state.candidate = null;
+    activateMode("announcement");
+    if (available) {
       state.loadingArchive = true;
-      loadProcessorFiles(files, state.processorProvenance, { sessionId: complete.id, sourceSessionRevision: complete.revision });
+      loadProcessorFiles(files, provenance, { sessionId: complete.id, sourceSessionRevision: complete.revision });
       state.loadingArchive = false;
       setArchiveStatus(`Загружено дорожек: ${files.length}. Целостность исходников проверена; запись не изменена.`);
       document.getElementById("processor-heading").scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
+      state.loadingArchive = true;
       clearProcessorFiles();
+      state.loadingArchive = false;
       state.processorProvenance = [];
       state.candidate = null;
       setArchiveStatus(complete.lifecycle.state === "archived" ? "Запись убрана из рабочего списка. Верните её для обработки." :
@@ -301,7 +322,7 @@ async function loadSession(session) {
       byId("announcement-workspace").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (!current()) return;
     state.loadingArchive = false;
     onGatewayError(error, "Не удалось восстановить исходные дорожки.", () => { if (sequence === state.sessionSequence) return loadSession(session); });
   }
@@ -309,7 +330,6 @@ async function loadSession(session) {
 
 async function loadSpeakerSession(session) {
   if (state.publicationController || state.uploadController) return;
-  if (!await protectSpeakerTransition()) return;
   if (session.lifecycle.state !== "incoming" || session.sourceState !== "available") {
     setArchiveStatus("Спикерская доступна только для исходной записи с доступными исходниками. Сначала верните запись для обработки.");
     return;
@@ -324,14 +344,12 @@ async function loadSpeakerSession(session) {
     if (complete.lifecycle.state !== "incoming" || complete.sourceState !== "available") throw new Error("Запись больше не доступна для редактирования.");
     const files = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
-    closeAnnouncementWorkspace(false);
-    await closeSpeakerEditor(true);
     const project = new ProjectSave(gateway);
-    state.activeManifest = complete;
     const opened = await openSpeakerEditor({
       session: complete,
       files,
       draft,
+      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && !newerSpeakerSession(complete),
       saveDraft: ({ session, draft, payload, signal }) => withReconnect(() => project.save(session, draft, payload, signal)),
       onSaved: ({ session: updated }) => {
         state.activeSession = updated; state.activeManifest = updated;
@@ -342,7 +360,14 @@ async function loadSpeakerSession(session) {
         renderSessions();
       }
     });
-    if (opened) activateMode("speaker");
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    const newer = newerSpeakerSession(complete);
+    if (!opened && newer) return loadSpeakerSession(newer);
+    if (opened) {
+      closeAnnouncementWorkspace(false);
+      state.activeManifest = complete;
+      activateMode("speaker");
+    }
     setArchiveStatus(opened ? `Открыта работа «Спикерская»: ${complete.title}. Исходники проверены и не изменены.` : "Не удалось подготовить исходники для «Спикерская».");
   } catch (error) {
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
@@ -723,9 +748,12 @@ async function openLocalSpeaker() {
 }
 async function openLocalAnnouncement() {
   if (state.publicationController || state.uploadController) return;
-  if (!await closeSpeakerEditor(false)) return;
-  ++state.sessionSequence;
   if (state.activeManifest) return loadSession(state.activeManifest);
+  ++state.sessionSequence;
+  if (!await protectSpeakerTransition()) return;
+  // Save-and-continue may just have made local sources canonical; load them before closing Speaker.
+  if (state.activeManifest) return loadSession(state.activeManifest);
+  if (!await closeSpeakerEditor(true)) return;
   if (!getProcessorFiles().length) { setArchiveStatus("Выберите исходные дорожки в разделе Импорт."); return; }
   activateMode("announcement");
 }
@@ -1211,6 +1239,7 @@ byId("authenticate").addEventListener("click", () => ensureAuthenticated(refresh
 
 document.getElementById("processor-save-incoming").addEventListener("click", () => ensureAuthenticated(() => openIngestDialog(workingFiles())).catch(() => {}));
 window.addEventListener("audio-processor-selection", (event) => {
+  if (!state.loadingArchive) ++state.sessionSequence;
   if (!state.loadingArchive && state.editorMode !== "speaker" && event.detail.files.length && !event.detail.provenance.length) {
     setMode("device"); state.activeManifest = null; state.processorProvenance = [];
     state.localContext = localSourceContext(event.detail.files); state.localProject = new ProjectSave(gateway);
@@ -1320,6 +1349,10 @@ for (const dialog of [byId("ingest-dialog"), byId("publication-dialog"), speaker
   const reconnect = button("Подключиться снова", () => ensureAuthenticated().catch(() => {}));
   dialog.append(reconnect);
 }
+
+speakerId("close").addEventListener("click", () => {
+  ++state.sessionSequence; state.retryAction = null; updateSessionStatus();
+});
 
 window.addEventListener("speaker-editor-closed", () => { if (state.editorMode === "speaker") { state.editorMode = null; delete document.body.dataset.editing; } });
 

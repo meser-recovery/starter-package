@@ -170,6 +170,8 @@ async function refresh() {
       const result = await gateway.loadDraft(session.id, 'speaker'); return [session.id, { draft: result.draft, projection: projectProjection(session, result.draft) }];
     }));
     if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
+    const projectAuthFailure = projects.find(r => r.status === 'rejected' && [401, 403].includes(r.reason.status));
+    if (projectAuthFailure) { report(projectAuthFailure.reason); return; }
     for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
     for (const session of state.sessions.filter(s => s.workflows.speaker.currentDraft)) if (!state.projects.has(session.id)) state.projects.set(session.id, { error: true });
   }

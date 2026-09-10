@@ -3539,6 +3539,8 @@ def main() -> int:
         check_archive_management_cors(browser)
         from s09a_smoke import check_s09a
         check_s09a(browser, base_url, args.screenshot_dir)
+        from s09a_acceptance_smoke import check_s09a_acceptance
+        check_s09a_acceptance(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
         check_audio_processor(browser, base_url, args.screenshot_dir)

@@ -1,5 +1,7 @@
 # S09A implementation validation
 
+Current PR #35 Acceptance corrections and regressions: [Acceptance repair record](S09A-acceptance-fixes.md). The original validation below is historical evidence for its stated SHAs.
+
 This is implementation/PR evidence, not ACCEPT, stage closure or production E2E evidence.
 
 - Contract: `S09A-Implementation-Contract-Audio-Editor-Archive-UX-Redesign.md`, SHA-256 `8c2ece54e97839a7e31b7978c8d0adea2a56dac5a9a9f67c0bf370e865b19002`.

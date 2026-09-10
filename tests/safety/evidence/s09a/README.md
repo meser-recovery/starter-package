@@ -1,5 +1,7 @@
 # S09A screenshot and validation index
 
+PR #35 Acceptance corrections have a [separate before/after evidence index](acceptance-fixes/README.md); the captures below retain their original source SHA.
+
 Final implementation/source SHA for all images except `before-*`: `884ef5345cdcc3049e58eb9b97f771a00a815388`.
 Implementation commits: `87c5d8f6e7a962843d74f86c6b81bc122572b584` and the narrow 320px label correction `884ef5345cdcc3049e58eb9b97f771a00a815388`.
 Base and `before-*` source SHA: `240e9e5fc45661d815f4193597cc04451bb1bdf0`.

@@ -659,22 +659,24 @@ function teardown() {
   window.dispatchEvent(new Event("speaker-editor-closed"));
 }
 
-export async function closeSpeakerEditor(force = false) {
+export async function closeSpeakerEditor(force = false, isCurrent = () => true) {
+  if (!isCurrent()) return false;
   if (!state.session) return true;
   if (state.saveLocked || state.projectSaving) {
     byId("status").textContent = "Сохранение в архив ещё выполняется. Сначала отмените или завершите передачу.";
     return false;
   }
   if (!force && !await protectSpeakerTransition()) return false;
+  if (!isCurrent()) return false;
   teardown(); return true;
 }
 
-export async function openSpeakerEditor({ session, files, draft = null, saveDraft: save, onSaved }) {
-  if (!await closeSpeakerEditor(false)) return false;
+export async function openSpeakerEditor({ session, files, draft = null, saveDraft: save, onSaved, isCurrent = () => true }) {
   if (session.kind !== "local" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) throw new Error("Для обработки спикерской нужны доступные исходники. Верните запись для обработки.");
   if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый проект имеет неподдерживаемую схему и не будет перезаписан.");
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
   if (files.length !== orderedManifest.length) throw new Error("Состав загруженных исходников не совпадает с записью.");
+  if (!await closeSpeakerEditor(false, isCurrent) || !isCurrent()) return false;
   const epoch = ++state.sourceEpoch;
   state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null }));
@@ -686,7 +688,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
   setSelection(0, ""); clearCandidate();
   updateRenderState();
-  try { await prepareSources(epoch); workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
+  try { await prepareSources(epoch); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
   catch (error) {
     if (state.sourceEpoch !== epoch) return false;
     const message = userMessage(error, "Не удалось подготовить Спикерскую."); failSourcePreparation();
