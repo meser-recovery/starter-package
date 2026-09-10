@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="styles/foundation.css">
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
+    <link rel="stylesheet" href="styles/audio-workspace.css">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -165,9 +166,11 @@
           <div class="archive-card__heading">
             <p class="archive-eyebrow">Сейчас открыто: Редактирование для анонс-мейкера</p>
             <h2 id="processor-heading">Редактирование для анонс-мейкера</h2>
+            <details class="daw-workflow-help"><summary>Как работает обработка пауз</summary>
             <p>Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.</p>
             <p>Выберите одну дорожку или несколько уже синхронизированных дорожек одной записи Zoom. Сокращаются только участки, где все выбранные дорожки одновременно молчат. Затем дорожки сводятся в один MP3.</p>
             <p id="processor-privacy">Исходные файлы обрабатываются локально в браузере и не отправляются на сервер.</p>
+            </details>
           </div>
 
           <div id="processor-source" class="processor-preview" hidden>

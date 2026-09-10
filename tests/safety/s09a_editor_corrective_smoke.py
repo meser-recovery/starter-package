@@ -179,6 +179,18 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         page.wait_for_function("document.getElementById('processor-download').href.startsWith('blob:')", timeout=60000)
         with page.expect_download() as download: page.locator('#processor-download').click()
         assert download.value.failure() is None
+        # A result must stop the synchronized source preview. Opening the other
+        # editor must explicitly pause this result as well, not merely hide it.
+        page.locator('#processor-source-audio-play').click()
+        page.wait_for_function("!document.getElementById('processor-source-audio').paused")
+        page.evaluate("""async () => {
+            const result = document.getElementById('processor-result-audio');
+            await result.play();
+            window.inactiveResultPauses = 0;
+            const pause = result.pause;
+            result.pause = function(...args) { window.inactiveResultPauses++; return pause.apply(this, args); };
+        }""")
+        page.wait_for_function("[...document.querySelectorAll('#processor-source audio')].every(a => a.paused)")
         # A delayed decoder load must not resurrect a closed editor.
         fault['hold_wasm']=True
         page.evaluate('''async () => {
@@ -190,6 +202,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
             if held: break
             page.wait_for_timeout(20)
         assert held
+        assert page.evaluate("inactiveResultPauses > 0 && document.getElementById('processor-result-audio').paused")
         page.locator('#speaker-editor-close').click(); page.locator('#speaker-unsaved-discard').click()
         for route in held: route.continue_()
         held.clear(); page.wait_for_timeout(200)

@@ -1,4 +1,5 @@
 import { renderSourceTimeline } from "./audio-timeline.mjs";
+import { createAudioTransport } from "./audio-transport.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 
 // Stage 7 DSP contract: S08B adds provenance/publication only and does not alter these values.
@@ -187,6 +188,10 @@ let resultDuration = NaN;
 let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
 let resultZoomMinimum = 2;
 let resultZoomMaximum = 2;
+const sourceTransport = createAudioTransport({
+  audio: sourceAudio, resultAudio, canPlay: () => !active && tracks.length > 0 && tracks.every(track => Number.isFinite(track.duration)),
+  seek: seekSources, reportError: message => { status.textContent = message; }
+});
 
 function notifyProcessorSelection() {
   window.dispatchEvent(new CustomEvent("audio-processor-selection", {
@@ -300,6 +305,7 @@ function setBusy(busy) {
     updateSourceZoomRange();
     if (resultWaveformURL) updateResultZoomRange();
   }
+  sourceTransport.refresh();
 }
 
 function stop() {

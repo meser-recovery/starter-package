@@ -743,7 +743,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared footer is missing")
         styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
-        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css"]:
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
         if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),
@@ -947,7 +947,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if "navigation.hidden = displayWidth" in source or "navigation.hidden ? 0" in source:
         errors.append("Processor source scrollbar must remain visible while tracks are selected")
-    if re.search(r'^import\s+(?!\{\s*(?:sha256Hex|renderSourceTimeline)\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline)\.mjs";)', source, re.M):
+    if re.search(r'^import\s+(?!\{\s*(?:sha256Hex|renderSourceTimeline|createAudioTransport)\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline|audio-transport)\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     page_source = page.read_text(encoding="utf-8")
     processor_markup = re.split(r'<section[^>]+id="announcement-processor-card"[^>]*>', page_source, maxsplit=1)[-1].split('</section>', 1)[0]

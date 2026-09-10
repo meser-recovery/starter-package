@@ -1,0 +1,119 @@
+/* Shared source workspace. Archive/import layouts stay outside this component. */
+#speaker-editor.daw-workspace, #announcement-processor-card.daw-workspace {
+  --lane-panel: 280px;
+  display: grid; gap: 0; padding: 0; min-width: 0;
+  border: 1px solid #91a6b8; border-radius: 8px; background: #eef3f7; color: #20364a;
+  isolation: isolate;
+}
+#speaker-editor.daw-workspace[hidden], #announcement-processor-card.daw-workspace[hidden] { display: none; }
+.daw-workspace > .archive-card__heading { padding: .6rem .8rem; background: #243d50; color: #e5eff7; border-radius: 7px 7px 0 0; gap: .15rem; }
+.daw-workspace .archive-eyebrow { font-size: .65rem; color: #a6c9e1; letter-spacing: .04em; }
+.daw-workspace .archive-card__heading h2 { font-size: 1rem; line-height: 1.3; }
+.daw-workspace .archive-card__heading p { font-size: .75rem; overflow-wrap: anywhere; }
+.daw-workspace .archive-card__heading .archive-status { color: #e5eff7; }
+.daw-workspace > .speaker-toolbar { padding: .35rem .8rem; margin: 0; background: #dfe9f0; border-bottom: 1px solid #afc1cf; gap: .4rem; }
+.daw-workspace .speaker-toolbar button { min-height: 32px; }
+.daw-workspace > .technical-details { margin: 0; padding: .2rem .8rem; font-size: .7rem; }
+.daw-workflow-help { font-size: .75rem; }
+.daw-workflow-help summary { cursor: pointer; padding-block: .2rem; }
+.daw-workflow-help[open] p { max-width: 80ch; margin-top: .5rem; }
+body[data-editing] #active-editor-mode { display: none; }
+body[data-editing="speaker"] #open-local-speaker, body[data-editing="announcement"] #open-local-announcement { color: #fff; background: #255c82; box-shadow: inset 0 -3px #82cafa; }
+body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height: 36px; font-size: .8rem; }
+.daw-workspace .speaker-source, .daw-workspace #processor-source { padding: 0; gap: 0; border: 0; border-radius: 0; background: #dce6ee; min-width: 0; }
+.daw-workspace .speaker-transport, .daw-workspace .processor-source-player {
+  position: sticky; top: 0; z-index: 7; display: flex; flex-wrap: wrap;
+  align-items: center; gap: .3rem .55rem; padding: .45rem .6rem;
+  margin: 0; background: #dce6ee; border-bottom: 1px solid #92aabc; border-radius: 0;
+  max-height: 45svh; overflow-y: auto; scrollbar-gutter: stable;
+}
+.daw-workspace .daw-media-clock { display: none !important; }
+.daw-playback { display: flex; flex: 0 1 auto; align-items: center; gap: .25rem; min-width: 0; }
+.daw-workspace .daw-playback button, .daw-workspace .processor-zoom button {
+  display: inline-flex; align-items: center; justify-content: center; min-width: 32px; min-height: 32px;
+  margin: 0; padding: .25rem .45rem; border: 1px solid #8aa3b5; border-radius: 4px;
+  background: #c9d9e5; color: #203b50; font: 600 .75rem/1.2 var(--font-sans); cursor: pointer;
+}
+.daw-workspace .daw-playback button.daw-play { color: #fff; background: #236c58; border-color: #205b4b; }
+.daw-workspace .daw-playback svg { width: 19px; height: 19px; fill: currentColor; }
+.daw-workspace .processor-zoom svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.daw-workspace .daw-monitor-volume svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; }
+.daw-workspace button:hover:not(:disabled) { filter: brightness(1.08); }
+.daw-workspace button:disabled { cursor: not-allowed; opacity: .45; }
+.daw-workspace button:focus-visible, .daw-workspace input:focus-visible, .daw-workspace summary:focus-visible, .daw-workspace select:focus-visible { outline: 3px solid #257fb6; outline-offset: 2px; }
+.daw-monitor-volume { display: flex; align-items: center; padding-inline: .2rem; }
+.daw-monitor-volume span { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.daw-monitor-volume input { width: 62px; min-width: 0; accent-color: #276b91; }
+.daw-workspace .speaker-source__heading { display: contents; }
+.daw-workspace .speaker-source__heading > div, .daw-workspace .processor-source-player > h3 { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+.daw-workspace .speaker-source__heading > p, .daw-workspace #processor-source-time { order: 1; margin: 0; font: 600 .75rem/1.2 monospace; color: #203b50; }
+.daw-workspace .processor-zoom { order: 2; display: flex; flex-wrap: wrap; flex: 1 1 auto; justify-content: flex-end; align-items: center; gap: .25rem; margin: 0; min-width: 0; }
+.daw-workspace .processor-zoom > span { display: none; }
+.daw-workspace .processor-zoom input { width: 72px; min-width: 36px; max-width: 120px; flex: 0 1 72px; accent-color: #276b91; }
+.daw-workspace .processor-zoom button[aria-pressed="true"] { background: #255c82; color: #fff; }
+.daw-workspace .processor-monitoring-note { display: none; }
+.daw-workspace .processor-source-player > .audio-help { order: 4; flex: 1 1 100%; font-size: .7rem; }
+.daw-workspace .processor-source-player > .audio-help summary { padding: .1rem 0; }
+.daw-workspace #processor-source-navigation { order: 5; flex: 1 1 100%; padding: 0; margin: 0; }
+.daw-workspace #processor-selection-summary { padding: .25rem .6rem; font-size: .75rem; }
+.daw-workspace .speaker-selection {
+  order: 3; flex: 1 1 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto;
+  gap: .2rem .6rem; padding: .4rem 0 0; margin: 0; min-width: 0;
+  color: #203b50; background: transparent; border: 0; border-top: 1px solid #a4b9c9; border-radius: 0;
+}
+.daw-workspace .speaker-selection-context { align-self: center; grid-column: 1; }
+.daw-workspace .speaker-selection-context h3 { font-size: .65rem; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+.daw-workspace #speaker-selection-summary { color: #124c73; font-size: .75rem; }
+.daw-workspace .speaker-selection__actions { grid-column: 2; display: flex; gap: .25rem; }
+.daw-workspace .speaker-selection button.edit-tool { flex-direction: column; justify-content: center; gap: .15rem; min-height: 42px; min-width: 62px; padding: .25rem .4rem; font-size: .65rem; background: #c7dbe9; color: #203b50; border-color: #829fb5; }
+.daw-workspace .speaker-selection .edit-tool svg { flex: 0 0 18px; width: 18px; height: 18px; }
+.daw-workspace .speaker-selection .edit-tool small { display: none; }
+.daw-workspace .speaker-selection button.edit-tool--cut { background: #ead2c8; color: #713a2a; border-color: #b48672; }
+.daw-workspace .speaker-selection button.edit-tool--silence { background: #bfe0de; color: #20575a; border-color: #76a8a6; }
+.daw-workspace #speaker-editor-selection-scope { grid-column: 1; font-size: .65rem; align-self: center; }
+.daw-workspace .speaker-selection > details { grid-column: 2; margin: 0; font-size: .7rem; }
+.daw-workspace .speaker-selection > details > summary { padding: .2rem 0; text-align: end; }
+.daw-workspace .speaker-selection > details[open] { grid-column: 1 / -1; border-color: #a4b9c9; }
+.daw-workspace .speaker-selection > details[open] > summary { text-align: start; }
+.daw-workspace .speaker-selection .speaker-error { color: #96372c; grid-column: 1 / -1; }
+.daw-workspace .speaker-selection__fields { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .5rem; }
+.daw-workspace .speaker-selection__fields input, .daw-workspace .speaker-selection__fields select { min-height: 32px; }
+.daw-workspace .speaker-track, .daw-workspace .processor-track, .daw-workspace .audio-timeline-row { grid-template-columns: var(--lane-panel) minmax(0, 1fr); }
+.daw-workspace .speaker-track, .daw-workspace .processor-track { padding: 0; gap: 0; background: #e8eff4; }
+.daw-workspace .speaker-track-controls, .daw-workspace .processor-track__top { grid-column: 1; grid-row: 1; min-width: 0; background: #e8eff4; border-right: 1px solid #91a8ba; }
+.daw-workspace .speaker-track > .speaker-waveform-scroll, .daw-workspace .processor-track > .processor-waveform-scroll { grid-column: 2; grid-row: 1; min-height: 112px; }
+.daw-workspace .speaker-track.is-selected .speaker-track-controls { background: #cce4f5; box-shadow: inset 4px 0 #167dbd; }
+.daw-workspace .speaker-track.is-solo .speaker-track-controls, .daw-workspace .processor-track.is-solo .processor-track__top { border-top: 2px solid #c59928; }
+.daw-workspace .speaker-track.is-muted .speaker-track-controls, .daw-workspace .processor-track.is-muted .processor-track__top { background: #dbe0e4; }
+.daw-workspace .speaker-track.is-excluded .speaker-track-controls { border-bottom: 2px dashed #9d7131; }
+.daw-workspace .speaker-dsp-disclosure { margin: 0; }
+.daw-workspace .speaker-dsp-disclosure > summary { padding: .2rem; font-size: .7rem; cursor: pointer; }
+.daw-workspace .speaker-dsp-disclosure[open] > summary { display: none; }
+.daw-workspace .speaker-source > .audio-help { padding: .2rem .6rem; font-size: .75rem; background: #edf3f7; }
+.daw-workspace .speaker-source > .audio-help summary { padding: .25rem 0; }
+.daw-workspace > .speaker-regions, .daw-workspace > .speaker-render, .daw-workspace > .speaker-result, .daw-workspace > .processor-action-section, .daw-workspace > .processor-feedback, .daw-workspace > #processor-result { padding: .6rem .8rem; border-top: 1px solid #b1c2d0; }
+.daw-workspace > p { padding-inline: .8rem; font-size: .7rem; }
+.daw-workspace .speaker-render .action-primary, .daw-workspace .processor-actions .action-primary, .daw-workspace .speaker-toolbar .action-primary { background: #255c82; border: 1px solid #214e6e; color: #fff; min-height: 36px; }
+@media (max-width: 767px) {
+  #speaker-editor.daw-workspace, #announcement-processor-card.daw-workspace { --lane-panel: 132px; }
+  .daw-workspace .speaker-transport, .daw-workspace .processor-source-player { position: sticky; padding: .35rem; gap: .3rem; }
+  .daw-workspace .daw-playback button, .daw-workspace .processor-zoom button { min-height: 44px; min-width: 44px; padding: .2rem; }
+  .daw-workspace .daw-monitor-volume input { width: 44px; }
+  .daw-workspace .processor-zoom { flex-basis: 100%; justify-content: flex-start; }
+  .daw-workspace .processor-zoom input { flex: 1 1 40px; width: 40px; }
+  .daw-workspace .speaker-selection { grid-template-columns: minmax(0, 1fr); }
+  .daw-workspace .speaker-selection-context, .daw-workspace .speaker-selection__actions, .daw-workspace #speaker-editor-selection-scope, .daw-workspace .speaker-selection > details { grid-column: 1; }
+  .daw-workspace .speaker-selection__actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); }
+  .daw-workspace .speaker-selection button.edit-tool { min-height: 44px; min-width: 0; padding-inline: .2rem; }
+  .daw-workspace .speaker-selection > details > summary { text-align: start; min-height: 32px; }
+  .daw-workspace .speaker-selection__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .daw-workspace .speaker-track-controls, .daw-workspace .processor-track__top { padding: .35rem; }
+  .daw-workspace .speaker-track__identity h4, .daw-workspace .processor-track__name { font-size: .75rem; }
+  .daw-workspace .speaker-track__buttons, .daw-workspace .processor-track__actions { gap: .2rem; }
+  .daw-workspace .speaker-track__buttons button, .daw-workspace .processor-track__actions button { min-height: 44px; font-size: .7rem; }
+  .daw-workspace .speaker-track .speaker-dsp { grid-template-columns: 1fr; }
+  .daw-workspace .speaker-dsp-field { display: grid; grid-template-columns: 1fr; gap: .2rem; font-size: .7rem; }
+  .daw-workspace .speaker-dsp select { min-height: 44px; width: 100%; }
+  .daw-workspace .speaker-dsp-disclosure > summary, .daw-workspace .speaker-dsp-disclosure[open] > summary { display: list-item; min-height: 44px; padding-block: .6rem; }
+  .daw-workspace .speaker-track .speaker-waveform, .daw-workspace .speaker-track canvas, .daw-workspace .processor-track .processor-waveform { height: 100%; min-height: 112px; }
+}

@@ -1,4 +1,5 @@
 import { renderSourceTimeline } from "./audio-timeline.mjs";
+import { createAudioTransport } from "./audio-transport.mjs";
 import { createWaveformReader } from "./speaker-waveform.mjs";
 import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
@@ -20,6 +21,10 @@ const state = {
 
 const fingerprint = (value) => JSON.stringify(value);
 const editorBusy = () => Boolean(state.operation) || state.saveLocked || state.projectSaving;
+const sourceTransport = createAudioTransport({
+  audio: byId("source-audio"), resultAudio: byId("result-audio"), canPlay: () => state.ready && !editorBusy(), seek: seekSource,
+  reportError: message => { byId("status").textContent = message; }
+});
 const clock = (seconds) => {
   if (!Number.isFinite(seconds)) return "—";
   const total = Math.max(0, Math.floor(seconds));
@@ -345,7 +350,14 @@ function renderTracks() {
     const summary = element("p", "speaker-track__summary", processingLabel(setting));
     header.append(element("span", "speaker-track-selection"));
     const preview = state.ready ? waveform(track) : element("div", "speaker-source-pending", track.preparationError || (state.preparationError ? "Ожидает повторной подготовки." : "Подготовка формы сигнала…"));
-    const controls = element("div", "speaker-track-controls"); controls.append(header, dsp, summary);
+    const processing = element("details", "speaker-dsp-disclosure");
+    processing.open = track.controlsOpen ?? window.innerWidth >= 768;
+    const processingToggle = element("summary", "", "Обработка дорожки");
+    processingToggle.addEventListener("click", event => {
+      event.preventDefault(); track.controlsOpen = !processing.open; processing.open = track.controlsOpen;
+    });
+    processing.append(processingToggle, dsp);
+    const controls = element("div", "speaker-track-controls"); controls.append(header, processing, summary);
     item.append(controls, preview); list.append(item);
   });
   updateWaveWidths();
@@ -396,6 +408,7 @@ function updateRenderState() {
   const disabled = !state.ready || !state.session || !Number.isFinite(state.originalDuration) || allExcluded || editorBusy();
   byId("render").disabled = disabled;
   byId("source-audio").hidden = !state.ready;
+  sourceTransport.refresh();
   byId("render-reason").textContent = allExcluded ? "Все дорожки исключены. Верните хотя бы одну дорожку в микс." :
     state.saveLocked ? "Идёт сохранение в архив «Спикерская»." : state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
       "В результат войдут только дорожки, оставленные в финальном миксе.";
@@ -462,7 +475,7 @@ function seekSource(seconds) {
 function updatePlayheads() {
   const time = byId("source-audio").currentTime || 0;
   for (const playhead of byId("tracks").querySelectorAll(".speaker-playhead")) playhead.style.left = `${time * state.pixelsPerSecond}px`;
-  byId("source-time").textContent = `${clock(time)} / ${clock(state.originalDuration)} · исходная шкала`;
+  byId("source-time").textContent = `${clock(time)} / ${clock(state.originalDuration)}`;
   if (state.follow && !byId("source-audio").paused) {
     const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (first) { first.scrollLeft = Math.max(0, time * state.pixelsPerSecond - first.clientWidth / 2); syncScroll(first); }
   }
@@ -816,7 +829,14 @@ document.addEventListener("keydown", (event) => {
   }
   event.preventDefault(); event.shiftKey ? redo() : undo();
 });
-window.addEventListener("resize", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
+window.addEventListener("resize", () => {
+  if (!state.session) return;
+  for (const row of byId("tracks").querySelectorAll(".speaker-track")) {
+    const track = state.tracks.find(item => item.trackId === row.dataset.trackId);
+    row.querySelector(".speaker-dsp-disclosure").open = track.controlsOpen ?? window.innerWidth >= 768;
+  }
+  updateWaveWidths(); updateResultWidth();
+});
 window.addEventListener("pagehide", () => teardown());
 
 for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click", () => {

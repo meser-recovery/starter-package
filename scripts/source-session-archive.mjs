@@ -156,7 +156,8 @@ function activateMode(mode) {
   document.getElementById("announcement-processor-card").hidden = mode !== "announcement";
   byId("announcement-workspace").hidden = mode !== "announcement";
   document.getElementById("active-editor-mode").textContent = `Сейчас открыто: ${mode === "speaker" ? "Финальная обработка спикерской" : "Редактирование для анонс-мейкера"}`;
-  if (mode === "speaker") document.getElementById("processor-source-audio").pause();
+  const inactiveEditor = document.getElementById(mode === "speaker" ? "announcement-processor-card" : "speaker-editor");
+  for (const audio of inactiveEditor.querySelectorAll("audio")) audio.pause();
   renderAnnouncementWorkspace(); renderImportFiles();
 }
 

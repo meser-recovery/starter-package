@@ -1,5 +1,10 @@
 # S09A: selection toolbar — correction awaiting browser review
 
+This describes the first, partial patch only. The shared transport, responsive
+workspace, menu placement and playback-isolation follow-up are documented in
+[S09A-workspace-iteration.md](S09A-workspace-iteration.md). Use the cumulative
+workspace package rather than this first patch alone.
+
 Base: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2` (PR #36).
 Local branch: `codex/s09a-daw-selection-toolbar`.
 Date: 2026-09-10.

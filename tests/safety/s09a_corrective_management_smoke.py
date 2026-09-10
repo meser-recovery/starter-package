@@ -237,6 +237,13 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             assert row.get_by_role('button', name='Сведения о записи').evaluate('e=>e===document.activeElement')
             assert row.locator('.audio-actions').evaluate('e=>e.open')
             assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            if width >= 768:
+                popup = row.locator('.audio-actions__items')
+                page.wait_for_function("""() => [...document.querySelectorAll('.audio-actions[open] .audio-actions__items')]
+                    .every(e => typeof e.showPopover !== 'function' || e.matches(':popover-open'))""")
+                assert popup.evaluate("""e => { const r=e.getBoundingClientRect();
+                    const top=document.elementFromPoint(r.x+r.width/2,r.y+Math.min(20,r.height/2));
+                    return r.x>=0 && r.y>=0 && r.right<=innerWidth && r.bottom<=innerHeight && e.contains(top); }""")
             shot(f'library-menu-{width}', '#records')
             page.keyboard.press('Escape')
             assert summary.evaluate('e=>e===document.activeElement')

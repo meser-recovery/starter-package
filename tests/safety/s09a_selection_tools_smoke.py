@@ -9,6 +9,11 @@ def check_selection_tools(page, output=None):
         assert button.locator('svg[aria-hidden=true]').count() == 1
     rows = page.locator('.speaker-track')
     ids = rows.evaluate_all('rows => rows.map(row => row.dataset.trackId)')
+    assert page.locator('#speaker-editor-source-audio').is_hidden()
+    page.locator('#speaker-editor-source-audio-play').click()
+    page.wait_for_function("[...document.querySelectorAll('#speaker-editor audio[data-track-id]')].every(a => !a.paused)")
+    page.locator('#speaker-editor-source-audio-stop').click()
+    page.wait_for_function("[...document.querySelectorAll('#speaker-editor audio[data-track-id]')].every(a => a.paused && a.currentTime < .1)")
 
     def monitoring():
         return page.evaluate("""() => [...document.querySelectorAll('#speaker-editor audio[data-track-id]')]
@@ -20,6 +25,10 @@ def check_selection_tools(page, output=None):
     assert_audio(False, False)
     rows.nth(0).locator('[data-action=mute]').click()
     assert_audio(True, False)
+    page.locator('#speaker-editor .daw-monitor-volume input').fill('0.35')
+    page.wait_for_function("[...document.querySelectorAll('#speaker-editor audio[data-track-id]')].every(a => Math.abs(a.volume - .35) < .001)")
+    assert_audio(True, False)
+    page.locator('#speaker-editor .daw-monitor-volume input').fill('1')
     assert rows.nth(1).locator('[data-action=mute]').get_attribute('aria-pressed') == 'false'
     rows.nth(0).locator('[data-action=mute]').click()
     rows.nth(1).locator('[data-action=solo]').click()
@@ -66,6 +75,7 @@ def check_selection_tools(page, output=None):
     for width in (320, 390, 768, 1280):
         page.set_viewport_size({'width': width, 'height': 900})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
+        assert page.locator('.speaker-transport').evaluate("e => getComputedStyle(e).position") == 'sticky'
         page.locator('.speaker-selection').scroll_into_view_if_needed()
         boxes = tools.evaluate_all('buttons => buttons.map(b => {const r=b.getBoundingClientRect();return {x:r.x,y:r.y,right:r.right,bottom:r.bottom};})')
         for index, a in enumerate(boxes):

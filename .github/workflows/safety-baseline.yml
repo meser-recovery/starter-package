@@ -23,6 +23,8 @@ jobs:
           python-version: '3.x'
       - name: Check repository contract
         run: python3 tests/safety/check_site.py
+      - name: Check shared audio transport behavior
+        run: node --test tests/safety/audio_transport.test.mjs
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
       - name: Install Chromium
