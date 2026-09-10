@@ -1,3 +1,5 @@
+> Mac continuation and current source-bound results: [timeline validation](S09A-timeline-validation.md). The package-environment report below is retained as historical evidence.
+
 # S09A — timeline interaction iteration
 
 Base: `76925d3bc268d6eb6a7657d80d7c4ab29a475eaa` (draft PR #36).

@@ -1,3 +1,5 @@
+> Current timeline-controls continuation: [seven-requirement validation](S09A-timeline-validation.md), including waveform detail, loop, selective restoration, flags, DSP and Retina. Earlier audit rows and their source SHAs remain historical.
+
 # S09A corrective audit after PR #35
 
 This records implementation verification, not ACCEPT, a Closure Record, or S09A COMPLETE.

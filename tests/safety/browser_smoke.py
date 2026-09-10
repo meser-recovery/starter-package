@@ -3561,6 +3561,8 @@ def main() -> int:
         check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
         from s09a_playback_signal_smoke import check_playback_signal
         check_playback_signal(browser, base_url, args.screenshot_dir)
+        from s09a_timeline_smoke import check_timeline_controls
+        check_timeline_controls(browser, base_url, args.screenshot_dir)
         from s09a_corrective_management_smoke import check_s09a_corrective_management
         check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)

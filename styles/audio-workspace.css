@@ -169,6 +169,14 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
 .daw-workspace #speaker-editor-result-waveform canvas { position: absolute; top: 0; right: auto; }
 .daw-workspace .speaker-dsp-field input:focus-visible { outline: 3px solid #176aba; outline-offset: 2px; }
 .daw-workspace .speaker-dsp-field input:disabled { opacity: .5; cursor: default; }
+@media (min-width: 768px) {
+  .daw-workspace .speaker-track-controls { gap: 1px; padding-block: 4px; }
+  .daw-workspace .speaker-track .speaker-dsp { margin-top: 0; }
+  .daw-workspace .speaker-dsp-field:has(input[type="range"]) { grid-template-columns: 76px minmax(0, 1fr); row-gap: 0; }
+  .daw-workspace .speaker-dsp-field input[type="range"] { grid-column: 2; grid-row: 1; }
+  .daw-workspace .speaker-dsp-field:has(input[type="range"]) .speaker-dsp-value { grid-column: 1; grid-row: 2; }
+  .daw-workspace .speaker-compression-ticks { grid-column: 2; grid-row: 2; }
+}
 @media (pointer: coarse) {
   .daw-workspace .speaker-boundary { min-height: 36px; line-height: 36px; }
   .daw-workspace .speaker-dsp-field { min-height: 44px; }

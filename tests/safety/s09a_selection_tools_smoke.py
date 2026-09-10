@@ -72,7 +72,7 @@ def check_selection_tools(page, output=None):
     assert rows.nth(1).locator('.speaker-region-overlay--cut').count() == 1
     page.locator('#speaker-editor-undo').click()
 
-    check_waveform_interactions(page)
+    check_waveform_interactions(page, output)
 
     for width in (320, 390, 768, 1280):
         page.set_viewport_size({'width': width, 'height': 900})
@@ -92,12 +92,16 @@ def check_selection_tools(page, output=None):
     page.locator('.speaker-selection details > summary').click()
 
 
-def check_waveform_interactions(page):
+def check_waveform_interactions(page, output=None):
     """Real DOM/media regression for the seven requested timeline improvements."""
     rows = page.locator('.speaker-track')
     wave = rows.first.locator('.speaker-waveform')
     state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
     baseline = page.evaluate(state)
+    def shot(name):
+        if output:
+            page.evaluate('document.activeElement?.blur();scrollTo(0,0)')
+            page.screenshot(path=str(output/(name+'.png')),full_page=True)
     page.locator('#speaker-editor-zoom-fit').click()
     wave.scroll_into_view_if_needed()
     box = wave.bounding_box()
@@ -120,15 +124,17 @@ def check_waveform_interactions(page):
     select(.2, .4)
     page.evaluate("""() => {
         const a = document.getElementById('speaker-editor-source-audio');
-        window.loopReturns = 0; window.loopPrevious = a.currentTime;
-        a.addEventListener('seeked', () => {
-            if (a.currentTime < window.loopPrevious - .1) window.loopReturns++;
-            window.loopPrevious = a.currentTime;
-        });
-        a.addEventListener('timeupdate', () => { window.loopPrevious = a.currentTime; });
+        window.loopReturns = 0; let previous = 0;
+        const observe = () => {
+            if (a.currentTime < previous - .1) window.loopReturns++;
+            previous = a.currentTime;
+            if (window.loopReturns < 2) requestAnimationFrame(observe);
+        };
+        requestAnimationFrame(observe);
     }""")
     page.locator('#speaker-editor-source-audio-loop').click()
     page.wait_for_function('window.loopReturns >= 2', timeout=15000)
+    shot('timeline-loop-active')
     times = page.locator('#speaker-editor audio[data-track-id]').evaluate_all('aa => aa.map(a => a.currentTime)')
     assert max(times) - min(times) < .08
     page.locator('#speaker-editor-source-audio-loop').click()
@@ -141,12 +147,14 @@ def check_waveform_interactions(page):
     select(.55, .65)
     page.locator('#speaker-editor-add-cut').click()
     unrelated = page.evaluate(state)['globalCuts'][-1]
+    shot('timeline-cuts-and-silence')
     rows.first.locator(f'[data-region-id="{region_id}"]').click()
     page.locator('#speaker-editor-restore-silence').click()
     page.locator('#speaker-editor-restore-cut').click()
     current = page.evaluate(state)
     assert current['trackSilenceRegions'] == []
     assert current['globalCuts'] == [unrelated]
+    shot('timeline-selective-restore')
     rows.first.locator(f'[data-region-id="{unrelated["regionId"]}"]').focus()
     page.keyboard.press('Enter')
     page.locator('#speaker-editor-restore-cut').click()
@@ -164,6 +172,7 @@ def check_waveform_interactions(page):
         assert len(prior['globalCuts']) == (0 if kind == 'start' else 1), 'pointermove must not commit'
         page.mouse.up()
         assert len(page.evaluate(state)['globalCuts']) == (1 if kind == 'start' else 2)
+    shot('timeline-dragged-boundaries')
     rows.first.locator('.speaker-boundary--start').focus(); page.keyboard.press('Home')
     rows.first.locator('.speaker-boundary--end').focus(); page.keyboard.press('End')
     assert page.evaluate(state) == baseline
@@ -206,7 +215,7 @@ def check_announcement_selection(page):
     assert page.locator('.processor-selection-overlay').count() == 3
     loop = page.locator('#processor-source-audio-loop'); assert loop.is_enabled()
     loop.click()
-    page.wait_for_function("!document.getElementById('processor-source-audio').paused")
+    page.wait_for_function("!document.getElementById('processor-source-audio').paused && document.getElementById('processor-source-audio-loop').getAttribute('aria-pressed') === 'true'")
     assert loop.get_attribute('aria-pressed') == 'true'
     page.wait_for_timeout(900)
     time = page.locator('#processor-source-audio').evaluate('a=>a.currentTime')

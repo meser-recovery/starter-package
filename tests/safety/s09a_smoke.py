@@ -138,10 +138,11 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-selection-start').fill('0')
         page.locator('#speaker-editor-selection-end').fill('0')
         scroll.scroll_into_view_if_needed();box=scroll.bounding_box()
-        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+30))}'), 'Sticky transport covers the touch selection target'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+r.height*.7))}'), 'Sticky transport covers the touch selection target'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+20,r.y+r.height*.7).closest(".speaker-boundary")}'), 'Select the waveform body, below the draggable flags'
         touch=context.new_cdp_session(page)
-        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+20,'y':box['y']+30}]})
-        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+70,'y':box['y']+30}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+20,'y':box['y']+box['height']*.7}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+70,'y':box['y']+box['height']*.7}]})
         touch.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         assert float(page.locator('#speaker-editor-selection-end').input_value())>float(page.locator('#speaker-editor-selection-start').input_value())
         touch.detach()
