@@ -1,3 +1,4 @@
+import { renderSourceTimeline } from "./audio-timeline.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 
 // Stage 7 DSP contract: S08B adds provenance/publication only and does not alter these values.
@@ -377,6 +378,7 @@ function updateSourceScrollbar() {
   rail.setAttribute("aria-valuemin", "0");
   rail.setAttribute("aria-valuemax", String(Math.round(maxLeft * 1000) / 1000));
   rail.setAttribute("aria-valuenow", String(Math.round(sourceLeftVisibleTime * 1000) / 1000));
+  renderSourceTimeline("announcement-source-timeline", sourceTimelineDuration, sourcePixelsPerSecond, sourceLeftVisibleTime * sourcePixelsPerSecond);
   rail.setAttribute("aria-valuetext", `${clockDuration(sourceLeftVisibleTime)} из ${clockDuration(Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0)}`);
 }
 

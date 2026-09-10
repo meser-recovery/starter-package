@@ -71,7 +71,7 @@
             <p class="archive-eyebrow">Сейчас открыто: Финальная обработка спикерской</p>
             <h2 id="speaker-editor-heading">Проект обработки спикерской</h2>
             <p id="speaker-editor-identity"></p>
-            <p id="speaker-editor-status" class="archive-status" role="status"></p>
+            <p id="speaker-editor-status" class="archive-status" role="status"></p><button id="speaker-editor-source-retry" type="button" hidden>Повторить подготовку дорожек</button>
           </div>
           <div class="speaker-toolbar" role="group" aria-label="Проект обработки спикерской">
 
@@ -97,13 +97,13 @@
               <button id="speaker-editor-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
             </div>
             </div><div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
-            <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
+<div class="audio-timeline-row"><span>Исходная шкала</span><div id="speaker-source-timeline" class="audio-timeline" aria-hidden="true"></div></div><ol id="speaker-editor-tracks" class="speaker-tracks"></ol>            <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
 <p><strong>Solo.</strong> Слушать эту дорожку отдельно. На финальный результат не влияет.</p>
 <p><strong>Mute.</strong> Временно отключить эту дорожку при прослушивании. На финальный результат не влияет.</p>
 <p><strong>Исключить из микса.</strong> Дорожка останется в проекте, но не попадёт в создаваемую финальную версию.</p>
 <p><strong>Улучшение.</strong> Слегка очищает голос от очень низкого гула и лишних высоких частот. Монтаж и синхронизация не изменяются.</p>
 <p><strong>Выравнивание громкости.</strong> Автоматически приводит дорожку к более ровному уровню воспринимаемой громкости. Полезно, если один участник записан заметно тише или громче других.</p>
-<p><strong>Компрессия.</strong> Уменьшает разницу между тихими и громкими фрагментами речи.</p><p>Лёгкая — небольшое выравнивание; Средняя — более заметное; Сильная — плотная обработка неравномерной записи.</p></details><ol id="speaker-editor-tracks" class="speaker-tracks"></ol>
+<p><strong>Компрессия.</strong> Уменьшает разницу между тихими и громкими фрагментами речи.</p><p>Лёгкая — небольшое выравнивание; Средняя — более заметное; Сильная — плотная обработка неравномерной записи.</p></details>
           </section>
           <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
             <div>
@@ -187,7 +187,7 @@
               <div id="processor-source-scrollbar" class="processor-source-scrollbar" tabindex="0" role="scrollbar" aria-label="Навигация по исходным дорожкам" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
                 <div id="processor-source-scrollbar-thumb" class="processor-source-scrollbar__thumb" aria-hidden="true"></div>
               </div>
-            </div></div><ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul>
+            </div></div><div class="audio-timeline-row"><span>Исходная шкала</span><div id="announcement-source-timeline" class="audio-timeline" aria-hidden="true"></div></div><ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul>
 
 
           </div>

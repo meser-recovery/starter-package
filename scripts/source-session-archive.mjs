@@ -757,7 +757,7 @@ async function openLocalAnnouncement() {
   if (!getProcessorFiles().length) { setArchiveStatus("Выберите исходные дорожки в разделе Импорт."); return; }
   activateMode("announcement");
 }
-function workingFiles() { return state.editorMode === "speaker" && getSpeakerSaveState().ready ? getSpeakerSaveState().files : getProcessorFiles(); }
+function workingFiles() { return state.editorMode === "speaker" && getSpeakerSaveState().session ? getSpeakerSaveState().files : getProcessorFiles(); }
 function updateSourceSaveState() {
   document.getElementById("processor-save-incoming").disabled = !workingFiles().length || Boolean(state.activeManifest || state.localProject?.finalized);
 }
@@ -1259,6 +1259,7 @@ window.addEventListener("audio-processor-result", (event) => {
   updatePublishState();
 });
 window.addEventListener("speaker-editor-state", (event) => updateSpeakerSaveState(event.detail));
+window.addEventListener("speaker-editor-opened", () => activateMode("speaker"));
 speakerId("archive-save").addEventListener("click", openSpeakerSaveDialog);
 speakerId("save-form").addEventListener("submit", submitSpeakerSave);
 speakerId("save-cancel").addEventListener("click", cancelSpeakerSaveDialog);

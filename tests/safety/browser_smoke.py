@@ -1646,7 +1646,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 page.screenshot(path=str(screenshot_dir / f"s08b-archive-overview-{width}.png"), full_page=True)
             page.set_viewport_size({"width": 390, "height": 900})
         # A decoded duration mismatch fails closed after the common duration is known: no editable partial workspace,
-        # save request, render operation, or retained source URL survives.
+        # save request or render operation is allowed; source files remain available for retry.
         mismatch_wav = wav_payload(names[2], ((3.75, True),), frequency=550, sample_rate=8000)["buffer"]
         served_wavs[2] = mismatch_wav
         session["sourceTracks"][2]["sizeBytes"] = len(mismatch_wav)
@@ -1658,7 +1658,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-list").get_by_role("button", name="Открыть финальную обработку спикерской", exact=True).click()
         page.get_by_text("Длительность дорожек различается больше чем на 0,5 секунды.", exact=True).wait_for(timeout=30000)
         assert page.locator("#speaker-editor-save").is_disabled() and page.locator("#speaker-editor-render").is_disabled()
-        assert page.locator("#speaker-editor-add-cut").is_disabled() and page.locator("#speaker-editor-tracks").locator("li").count() == 0
+        assert page.locator("#speaker-editor-add-cut").is_disabled() and page.locator("#speaker-editor-tracks").locator("li").count() == 3
+        assert page.locator("#speaker-editor-source-retry").is_visible()
+        assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files.every(file => file instanceof File)")
         assert page.locator("#speaker-editor-cancel").is_hidden() and page.locator("#speaker-editor-result").is_hidden()
         assert page.evaluate("""async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate() === null""")
         assert len([call for call in gateway_calls if call[0] == "PUT" and call[1].endswith("/drafts/speaker")]) == speaker_puts_before
@@ -3541,6 +3543,8 @@ def main() -> int:
         check_s09a(browser, base_url, args.screenshot_dir)
         from s09a_acceptance_smoke import check_s09a_acceptance
         check_s09a_acceptance(browser, base_url, args.screenshot_dir)
+        from s09a_editor_corrective_smoke import check_s09a_editor_corrective
+        check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
         check_audio_processor(browser, base_url, args.screenshot_dir)

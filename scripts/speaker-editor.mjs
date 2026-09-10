@@ -1,3 +1,5 @@
+import { renderSourceTimeline } from "./audio-timeline.mjs";
+import { createWaveformReader } from "./speaker-waveform.mjs";
 import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 import {
@@ -12,7 +14,7 @@ const encoder = new TextEncoder();
 const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
-  operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
+  preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
@@ -36,7 +38,7 @@ function userMessage(error, fallback) {
 }
 
 function currentDirty() {
-  return Boolean(state.payload && fingerprint(state.payload) !== state.savedFingerprint);
+  return Boolean(state.ready && state.payload && fingerprint(state.payload) !== state.savedFingerprint);
 }
 
 export function speakerEditorHasUnsavedChanges() { return currentDirty(); }
@@ -270,8 +272,8 @@ function renderTracks() {
     heading.append(element("span", "speaker-track__number", `Дорожка ${index + 1}`), element("h4", "", track.file.name),
       element("span", "", `${durationText(track.duration)} · ${excluded.has(trackId) ? "Не в финальном миксе" : "в финальном миксе"}`));
     const monitor = element("div", "speaker-track__buttons");
-    const solo = makeButton("S · Solo", () => toggleMonitoring(trackId, "solo"), trackId); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
-    const mute = makeButton("M · Mute", () => toggleMonitoring(trackId, "mute"), trackId); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
+    const solo = makeButton("S · Solo", () => toggleMonitoring(trackId, "solo"), trackId, !state.ready); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
+    const mute = makeButton("M · Mute", () => toggleMonitoring(trackId, "mute"), trackId, !state.ready); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
     const editsDisabled = editorBusy() || !state.ready;
     const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
     const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
@@ -283,7 +285,9 @@ function renderTracks() {
       selectControl("Компрессия", setting.compression, [["off", "Выкл."], ["light", "Лёгкая"], ["medium", "Средняя"], ["strong", "Сильная"]], (value) => changeTrack(trackId, "compression", value)));
     const summary = element("p", "speaker-track__summary", processingLabel(setting));
     header.append(element("span", "speaker-track-selection"));
-    item.append(header, waveform(track), dsp, summary); list.append(item);
+    const preview = state.ready ? waveform(track) : element("div", "speaker-source-pending", track.preparationError || "Подготовка формы сигнала…");
+    const controls = element("div", "speaker-track-controls"); controls.append(header, dsp, summary);
+    item.append(controls, preview); list.append(item);
   });
   updateWaveWidths(); applyMonitoring(); updateSelectionDuration();
 }
@@ -324,7 +328,7 @@ function updateRenderState() {
       "В результат войдут только дорожки, оставленные в финальном миксе.";
   byId("save").disabled = !state.ready || !state.session || editorBusy();
   byId("close").disabled = state.saveLocked;
-  for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence"]) byId(id).disabled = !state.ready || editorBusy();
+  for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence", "set-start", "set-end"]) byId(id).disabled = !state.ready || editorBusy();
 }
 
 function render() {
@@ -333,7 +337,7 @@ function render() {
   else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
   updateHistoryControls(); updateRenderState();
   byId("status").dataset.dirty = String(currentDirty());
-  byId("status").textContent = currentDirty() ? "Есть несохранённые изменения" : "Все изменения сохранены";
+  byId("status").textContent = state.preparationError || (!state.ready ? "Подготовка исходников…" : currentDirty() ? "Есть несохранённые изменения" : "Все изменения сохранены");
   byId("identity").textContent = `${state.session.title} · ${state.tracks.length} дорожек · ${clock(state.originalDuration)}`;
   notifyState();
 }
@@ -354,7 +358,7 @@ function maximumScroll() {
 
 function updateScrollbar() {
   const rail = byId("source-scrollbar"); const thumb = rail.firstElementChild; const first = byId("tracks").querySelector(".speaker-waveform-scroll");
-  if (!first) return; const fraction = Math.min(1, first.clientWidth / first.scrollWidth); const width = Math.max(36, rail.clientWidth * fraction);
+  if (!first) return; renderSourceTimeline("speaker-source-timeline", state.originalDuration, state.pixelsPerSecond, first.scrollLeft); const fraction = Math.min(1, first.clientWidth / first.scrollWidth); const width = Math.max(36, rail.clientWidth * fraction);
   const max = maximumScroll(); const travel = Math.max(0, rail.clientWidth - width); thumb.style.width = `${width}px`; thumb.style.transform = `translateX(${max ? first.scrollLeft / max * travel : 0}px)`;
   rail.setAttribute("aria-valuemax", String(max)); rail.setAttribute("aria-valuenow", String(Math.round(first.scrollLeft)));
 }
@@ -430,52 +434,65 @@ function stopMonitoringSynchronization(pausePreviews = false) {
 
 function stopOtherPlayback() { stopMonitoringSynchronization(true); }
 
-async function metadataFor(url) {
-  const audio = document.createElement("audio"); audio.preload = "metadata"; audio.src = url;
+async function metadataFor(url, signal) {
+  const audio = document.createElement("audio"); audio.preload = "metadata";
   return new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error("Не удалось определить длительность исходной дорожки.")), 30000);
-    audio.addEventListener("loadedmetadata", () => { clearTimeout(timer); Number.isFinite(audio.duration) && audio.duration > 0 ? resolve(audio.duration) : reject(new Error("Не удалось определить длительность исходной дорожки.")); }, { once: true });
-    audio.addEventListener("error", () => { clearTimeout(timer); reject(new Error("Не удалось прочитать исходную дорожку.")); }, { once: true });
+    const cleanup = () => {
+      clearTimeout(timer); signal?.removeEventListener("abort", aborted);
+      audio.removeEventListener("loadedmetadata", loaded); audio.removeEventListener("error", failed);
+      audio.removeAttribute("src"); audio.load();
+    };
+    const finish = (error, duration) => { cleanup(); error ? reject(error) : resolve(duration); };
+    const loaded = () => Number.isFinite(audio.duration) && audio.duration > 0
+      ? finish(null, audio.duration) : finish(new Error("Не удалось определить длительность исходной дорожки."));
+    const failed = () => finish(new Error("Не удалось прочитать исходную дорожку в этом браузере."));
+    const aborted = () => finish(new DOMException("cancelled", "AbortError"));
+    const timer = setTimeout(() => finish(new Error("Не удалось определить длительность исходной дорожки.")), 30000);
+    audio.addEventListener("loadedmetadata", loaded); audio.addEventListener("error", failed);
+    signal?.addEventListener("abort", aborted, { once: true });
+    if (signal?.aborted) aborted(); else audio.src = url;
   });
 }
 
-async function waveformSamples(file) {
-  const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext; if (!AudioContextClass) return null;
-  const context = new AudioContextClass();
-  try {
-    const buffer = await context.decodeAudioData(await file.arrayBuffer()); const data = buffer.getChannelData(0); const result = new Float32Array(1400);
-    const block = Math.max(1, Math.floor(data.length / result.length));
-    for (let index = 0; index < result.length; index++) { let peak = 0; const end = Math.min(data.length, (index + 1) * block); for (let cursor = index * block; cursor < end; cursor++) peak = Math.max(peak, Math.abs(data[cursor])); result[index] = peak; }
-    return result;
-  } finally { await context.close(); }
-}
-
 async function prepareSources(epoch) {
-  byId("status").textContent = "Проверка длительности и подготовка форм сигнала…";
+  const controller = new AbortController(); state.preparation = controller;
+  const reader = createWaveformReader(controller.signal);
+  state.preparationError = ""; byId("source-retry").hidden = true;
   const tracks = [...state.tracks]; const session = state.session; const payload = state.payload; const draft = state.draft;
-  const current = () => state.sourceEpoch === epoch && state.session === session;
-  const durations = await Promise.all(tracks.map((track) => metadataFor(track.url)));
-  if (!current()) throw new DOMException("cancelled", "AbortError");
-  const originalDuration = Math.max(...durations);
-  if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды.");
-  const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
-  const samples = await Promise.all(tracks.map((track) => waveformSamples(track.file)));
-  if (!current()) throw new DOMException("cancelled", "AbortError");
-  if (samples.some((item) => !item)) throw new Error("Не удалось подготовить формы сигнала исходных дорожек.");
-  tracks.forEach((track, index) => { track.duration = durations[index]; track.samples = samples[index]; });
-  state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
-  state.savedFingerprint = draft ? fingerprint(normalized) : "";
-  setupPlayback(); state.ready = true; render();
-  byId("status").textContent = draft ? "Все изменения сохранены" : "Есть несохранённые изменения";
-}
-
-function failSourcePreparation() {
-  stopMonitoringSynchronization(true); clearCandidate();
-  const master = byId("source-audio"); master.pause(); master.removeAttribute("src"); master.load();
-  for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
-  byId("preview-audios").replaceChildren(); state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
-  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.ready = false;
-  render();
+  const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
+  let activeTrack;
+  try {
+    const durations = [];
+    for (const [index, track] of tracks.entries()) {
+      activeTrack = track; track.preparationError = "";
+      byId("status").textContent = `Подготовка дорожки ${index + 1} из ${tracks.length}: ${track.file.name}`;
+      const duration = await metadataFor(track.url, controller.signal);
+      if (!current()) throw new DOMException("cancelled", "AbortError");
+      track.duration = duration; durations.push(duration);
+      track.samples = await reader.read(track.file, duration);
+      if (!current()) throw new DOMException("cancelled", "AbortError");
+    }
+    activeTrack = null;
+    const originalDuration = Math.max(...durations);
+    if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды.");
+    const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
+    state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
+    state.savedFingerprint = draft ? fingerprint(normalized) : "";
+    setupPlayback(); state.ready = true; render();
+  } catch (error) {
+    if (!current()) throw new DOMException("cancelled", "AbortError");
+    const detail = userMessage(error, "Не удалось декодировать аудио для формы сигнала.");
+    if (activeTrack) activeTrack.preparationError = detail;
+    const message = activeTrack ? `Не удалось подготовить «${activeTrack.file.name}». ${detail}` : detail;
+    // Keep exact File references and the project so retry needs no re-selection.
+    state.preparationError = message; state.ready = false; render();
+    byId("source-retry").hidden = false;
+    byId("render-status").textContent = "Исходники остались в редакторе. Повторите подготовку или измените выбор файлов в разделе «Импорт».";
+    throw new Error(message, { cause: error });
+  } finally {
+    reader.dispose();
+    if (state.preparation === controller) state.preparation = null;
+  }
 }
 
 export async function saveSpeakerProject() {
@@ -620,11 +637,15 @@ function cancelRender() {
   byId("render-status").textContent = "Создание финальной версии отменено. Проект и исходники сохранены в памяти."; byId("cancel").hidden = true; byId("progress").hidden = true; render();
 }
 
-async function resultSamples(blob) { return waveformSamples(new File([blob], "result.mp3", { type: "audio/mpeg" })); }
+async function resultSamples(blob, duration, signal) {
+  const reader = createWaveformReader(signal);
+  try { return await reader.read(new File([blob], "result.mp3", { type: "audio/mpeg" }), duration); }
+  finally { reader.dispose(); }
+}
 
 async function presentCandidate(candidate, controller) {
   const epoch = state.presentationEpoch;
-  const samples = await resultSamples(candidate.blob); abortCheck(controller);
+  const samples = await resultSamples(candidate.blob, candidate.resultDurationSeconds, controller.signal); abortCheck(controller);
   if (epoch !== state.presentationEpoch) throw new DOMException("cancelled", "AbortError");
   state.candidate = candidate;
   state.candidateUrl = URL.createObjectURL(candidate.blob); byId("result-audio").src = state.candidateUrl;
@@ -648,7 +669,7 @@ function updateResultPlayhead() {
 }
 
 function teardown() {
-  state.sourceEpoch += 1;
+  state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
@@ -687,12 +708,12 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
   setSelection(0, ""); clearCandidate();
-  updateRenderState();
+  state.originalDuration = NaN; render();
+  window.dispatchEvent(new Event("speaker-editor-opened"));
   try { await prepareSources(epoch); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
   catch (error) {
     if (state.sourceEpoch !== epoch) return false;
-    const message = userMessage(error, "Не удалось подготовить Спикерскую."); failSourcePreparation();
-    byId("status").textContent = message; byId("render-status").textContent = "Сохранение и локальная сборка отключены до повторного открытия исправных исходников.";
+    byId("status").textContent = userMessage(error, "Не удалось подготовить Спикерскую. Исходники остались в редакторе.");
     return false;
   }
 }
@@ -729,3 +750,10 @@ for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click
 window.addEventListener("beforeunload", event => { if (currentDirty()) { event.preventDefault(); event.returnValue = ""; } });
 
 byId("project-cancel").addEventListener("click", () => state.projectController?.abort());
+
+byId("source-retry").addEventListener("click", async () => {
+  if (!state.session || state.preparation || state.ready) return;
+  byId("render-status").textContent = "";
+  try { await prepareSources(state.sourceEpoch); }
+  catch { /* prepareSources displays a named error and retains the inputs. */ }
+});
