@@ -3201,7 +3201,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         for width in (390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-            for selector in ("#processor-source-audio", "#processor-result-audio", "#processor-download"):
+            assert page.locator("#processor-source-audio").is_hidden()
+            for selector in ("#processor-source-audio-play", "#processor-source-audio-stop", "#announcement-processor-card .daw-monitor-volume", "#processor-result-audio", "#processor-download"):
                 box = page.locator(selector).bounding_box()
                 assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (selector, box)
             if screenshot_dir:
