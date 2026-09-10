@@ -16,10 +16,19 @@ preparation/menu safeguards were preserved; no reset, rebase or force push.
 
 ## Browser corrections and coverage
 
+- Linux run `34532670932` passed timeline/Retina/signal/preparation checks but
+  found an old result seek test expecting >0.2s at pixel 90 of a max-zoom image.
+  At the new 4096px resolution that point is correctly about 0.096s. The test
+  uses visible pixel 300, retains >0.2s and additionally checks the exact scaled
+  time within 0.02s; source/result isolation and keyboard checks remain.
+
+
+- At high zoom a previously queued Follow animation frame could still move the viewport after pause. The frame now exits when paused/ended and the pause event cancels it. The existing <2px stationary viewport regression is retained.
 - The new compression control increased desktop lane height to 225.81px. Its
   label/value now sit beside the slider/ticks, and desktop panel spacing is
   tighter. The original 210px Speaker and 150px Announcement limits, majority
   waveform width and real signal tolerances remain unchanged.
+- Remaining processor input tests now use the specified Alt-drag pan and Shift-arrow selection gestures. They retain pan-without-seek and normal Home/End/arrow seeking, and assert exact keyboard-selected bounds and loop enablement.
 - The old touch-selection coordinate now hit a draggable flag. The regression
   explicitly hits the waveform body below the flags and retains its selection
   assertion. Flag drag/cancel has separate actual pointer coverage.

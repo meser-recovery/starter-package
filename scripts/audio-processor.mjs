@@ -705,6 +705,8 @@ function updatePlayheads() {
 function animatePlayhead() {
   cancelAnimationFrame(playheadFrame);
   const frame = () => {
+    // A frame queued before pause must not move the zoomed viewport afterward.
+    if (sourceAudio.paused || sourceAudio.ended) return;
     if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
     updatePlayheads();
     if (!sourceAudio.paused && !sourceAudio.ended) playheadFrame = requestAnimationFrame(frame);
@@ -802,6 +804,7 @@ sourceAudio.addEventListener("play", () => {
   previewSyncTimer = window.setInterval(() => correctPreviewDrift(false), 500);
 });
 sourceAudio.addEventListener("pause", () => {
+  cancelAnimationFrame(playheadFrame);
   clearInterval(previewSyncTimer);
   previewSyncTimer = 0;
   for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) track.previewAudio?.pause();

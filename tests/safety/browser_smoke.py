@@ -2557,7 +2557,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.wait_for_timeout(50)
     page.wait_for_function("!document.getElementById('processor-source-navigation').hidden")
 
-    # Drag pans without seeking; a click seeks every preview on the common timeline.
+    # Alt-drag pans without seeking; plain drag selects, and click seeks.
     first_scroll = scrolls.nth(0)
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 1")
     page.wait_for_timeout(50)
@@ -2566,12 +2566,15 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.wait_for_function("Math.abs(document.querySelector('.processor-track .processor-waveform-scroll').scrollLeft - 120) < 2")
     page.wait_for_timeout(50)
     scroll_before_drag = first_scroll.evaluate("element => element.scrollLeft")
+    first_scroll.scroll_into_view_if_needed()
     scroll_box = first_scroll.bounding_box()
     assert scroll_box
     first_scroll.hover(position={"x": scroll_box["width"] * .7, "y": 50})
+    page.keyboard.down("Alt")
     page.mouse.down()
     page.mouse.move(scroll_box["x"] + scroll_box["width"] * .35, scroll_box["y"] + 50, steps=5)
     page.mouse.up()
+    page.keyboard.up("Alt")
     scroll_after_drag = first_scroll.evaluate("element => element.scrollLeft")
     assert abs(scroll_after_drag - scroll_before_drag) > 20, (
         scroll_before_drag, scroll_after_drag, scroll_box,
@@ -2594,8 +2597,13 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert page.locator("#processor-source-audio").evaluate("audio => audio.currentTime < .1")
     first_waveform.press("ArrowRight")
     assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 5) < .1")
+    first_waveform.press("Shift+ArrowRight")
+    assert "5.000–5.100" in page.locator("#processor-loop-selection-summary").inner_text()
+    assert page.locator("#processor-source-audio-loop").is_enabled()
     first_waveform.press("Shift+ArrowLeft")
-    assert page.locator("#processor-source-audio").evaluate("audio => audio.currentTime < .1")
+    assert "5.000–5.000" in page.locator("#processor-loop-selection-summary").inner_text()
+    assert page.locator("#processor-source-audio-loop").is_disabled()
+    assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 5) < .1")
     first_waveform.press("End")
     assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 8) < .1")
 
@@ -2657,6 +2665,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
 
     # Alt + waveform panning turns follow off; enabling it again recenters immediately.
+    first_scroll.scroll_into_view_if_needed()
     scroll_box = first_scroll.bounding_box()
     assert scroll_box
     first_scroll.hover(position={"x": scroll_box["width"] * .55, "y": 50})
@@ -3120,8 +3129,13 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.locator("#processor-result-waveform-control").evaluate("item => item.offsetWidth <= item.querySelector('img').naturalWidth")
         assert page.locator(".processor-track .processor-waveform").evaluate("item => item.offsetWidth") == source_width_before_result_zoom
         result_waveform = page.locator("#processor-result-waveform-control")
-        result_waveform.click(position={"x": 90, "y": 50})
+        # At the new 4096px native envelope, 90px is less than 0.2s.
+        # Keep a meaningful visible seek and check its exact scaled time too.
+        result_click_x = 300
+        result_waveform.click(position={"x": result_click_x, "y": 50})
         result_click_time = page.locator("#processor-result-audio").evaluate("audio => audio.currentTime")
+        expected_result_time = result_waveform.evaluate('(e,x)=>x/e.offsetWidth*document.getElementById("processor-result-audio").duration', result_click_x)
+        assert abs(result_click_time - expected_result_time) < .02, (result_click_time, expected_result_time)
         assert result_click_time > .2, page.evaluate("""() => ({time: document.getElementById('processor-result-audio').currentTime,
             duration: document.getElementById('processor-result-audio').duration,
             width: document.getElementById('processor-result-waveform-control').offsetWidth,
