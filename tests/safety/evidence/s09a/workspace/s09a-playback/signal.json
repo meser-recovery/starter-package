@@ -1,0 +1,315 @@
+[
+  {
+    "mode": "announcement",
+    "case": "both",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0.06477478340907142,
+        "hz": 328.125
+      },
+      {
+        "id": "2",
+        "rms": 0.06469720993198558,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "mute first",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0,
+        "hz": 5.859375
+      },
+      {
+        "id": "2",
+        "rms": 0.06469077683298603,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "mute second",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0.06477478738334379,
+        "hz": 328.125
+      },
+      {
+        "id": "2",
+        "rms": 0,
+        "hz": 5.859375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "solo first",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0.06470272474021856,
+        "hz": 328.125
+      },
+      {
+        "id": "2",
+        "rms": 0,
+        "hz": 5.859375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "multiple solo",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0.06475682484287108,
+        "hz": 328.125
+      },
+      {
+        "id": "2",
+        "rms": 0.06471367048507627,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "solo second",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0,
+        "hz": 5.859375
+      },
+      {
+        "id": "2",
+        "rms": 0.06473500007116874,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "monitor volume",
+    "output": [
+      {
+        "id": "1",
+        "rms": 0.022639241175337152,
+        "hz": 328.125
+      },
+      {
+        "id": "2",
+        "rms": 0.022642634937417375,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "reordered stable identities",
+    "output": [
+      {
+        "id": "2",
+        "rms": 0.06470709651597871,
+        "hz": 662.109375
+      },
+      {
+        "id": "1",
+        "rms": 0.06470901375580616,
+        "hz": 328.125
+      }
+    ]
+  },
+  {
+    "mode": "announcement",
+    "case": "mute after reorder",
+    "output": [
+      {
+        "id": "2",
+        "rms": 0.064715284304692,
+        "hz": 662.109375
+      },
+      {
+        "id": "1",
+        "rms": 0,
+        "hz": 5.859375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "both",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.06468359218462852,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.06469107979483676,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "mute first",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0,
+        "hz": 5.859375
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.06474964979115506,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "mute second",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.06475681924237452,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0,
+        "hz": 5.859375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "solo first",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.0647568212986304,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0,
+        "hz": 5.859375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "multiple solo",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.06468356501789899,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.06469104523871597,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "solo second",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0,
+        "hz": 5.859375
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.06470425528659295,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "monitor volume",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.022645947710465433,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.022641604114309127,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "reordered stable identities",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.06470270227962475,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.0646902892605727,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "mute after reorder",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0,
+        "hz": 5.859375
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.06473344298120268,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "excluded source remains audible",
+    "output": [
+      {
+        "id": "b43250a9-c6d1-439f-9e59-5cfe87e5bb8a",
+        "rms": 0.06468353247463768,
+        "hz": 328.125
+      },
+      {
+        "id": "8ab7a3bb-3cab-4ed1-87c4-9e093303094b",
+        "rms": 0.06469100740113139,
+        "hz": 662.109375
+      }
+    ]
+  },
+  {
+    "mode": "speaker",
+    "case": "render excludes 330 Hz; result pauses all sources",
+    "output": {
+      "id": null,
+      "rms": 0.06148425673240447,
+      "hz": 662.109375
+    }
+  }
+]
