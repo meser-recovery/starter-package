@@ -1,5 +1,7 @@
 # S09A — shared workspace iteration, pending browser acceptance
 
+Current PR #36 workspace follow-up: [local browser validation and preview](S09A-workspace-validation.md). Earlier reports below retain their original environment and source SHA.
+
 Source base: PR #36 HEAD `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`.
 Branch: `codex/s09a-daw-selection-toolbar`.
 The user supplied the full 43-section S09A plan again and rejected the first

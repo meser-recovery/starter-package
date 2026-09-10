@@ -9,7 +9,7 @@ remain subject to browser verification and user review. See
 [the new toolbar correction and its explicit validation limits](S09A-selection-toolbar-review.md).
 
 Current follow-up: [shared DAW workspace iteration](S09A-workspace-iteration.md).
-Historical browser/CI PASS results below do not cover this new implementation.
+The current [workspace validation](S09A-workspace-validation.md) and its source-bound evidence supersede historical browser/CI attribution. User Acceptance remains open.
 
 PR #36 review follow-up: the previous D PASS covered deletion **after ready**, not during preparation. See [the discovered gap, correction and new browser regression](S09A-PR36-review-fix.md).
 
@@ -30,7 +30,22 @@ PR #36 review follow-up: the previous D PASS covered deletion **after ready**, n
 - **M** — [archive_management_smoke.py](archive_management_smoke.py), also run through the existing root/subpath CORS regression with default Chromium security: metadata conflict, UTC date, lifecycle, playback integrity, version/series/source/purge, incomplete operations and malformed/stale data.
 - **G/S** — 80 gateway tests; site contract, changed JavaScript/Python syntax and whitespace checks. No gateway runtime/schema/fixture mutation in production.
 - **V** — actual source-bound screenshots in the new evidence index, including baseline desktop captures served from exact base `5a3e793` and corrected captures. Visual review is recorded separately from browser assertions.
-- **Diff** — scoped comparison against the base. `scripts/speaker-editor-core.mjs`, gateway runtime/schemas, vendor/codec files, workflows, Pages/infrastructure/configuration, audio/data and unrelated content are unchanged. `audio-processor.mjs` adds the DOM timeline import/render call and S/M button labels, and refreshes fit bounds/uses precise scrollbar geometry for the responsive source fit action; its DSP code is unchanged.
+- **Diff** — scoped comparison against the base. `scripts/speaker-editor-core.mjs`, gateway runtime/schemas, vendor/codec files, production workflow jobs, Pages/infrastructure/configuration, audio/data and unrelated content are unchanged. `audio-processor.mjs` adds the DOM timeline import/render call and S/M button labels, and refreshes fit bounds/uses precise scrollbar geometry for the responsive source fit action; its DSP code is unchanged.
+
+## Current workspace verification overlay
+
+The 43-section and 24-expectation mapping below is retained. The full suite
+re-executes B/C/D/R/E/P/M for the new workspace; current source SHA, captures and
+exact-head CI are linked above. New evidence extends these specific rows:
+
+| PLAN / §42 / contract | Current additional check |
+| --- | --- |
+| §§4,10–13,17,25; §42.6/11/21/22; A06/A17 | Shared source transport, all inactive audio paused, preserved separate result player, aligned lanes at four widths and short viewport; unchanged 210/150px desktop thresholds |
+| §§14–15,25; §42.9/10/13; A11/A12 | Native 330/660Hz signal/RMS for each Mute/Solo, multiple Solo, volume, reordered identity, Exclude versus final MP3; touch/keyboard DSP and readable heading contrast |
+| §§22–24; §42.12/22; A10/A17 | Exact selection scope, drag-time overlay, global cut/local silence, history and a touch hit target below expanded sticky transport |
+| §§27–38; §42.14–20/22; A13–A17 | Short-screen top-layer menus, resize into mobile flow, Escape/focus/outside click; all prior canonical management and preparation/revision cases rerun |
+| §§39–41; §42.24; A18 | No DSP/core/storage/auth/production changes. The only workflow delta adds local transport tests to local-safety; production jobs and permissions remain unchanged. AGENTS adds the requested permanent preview rule. |
+| §§42–43 | Automated implementation verification is recorded separately from pending user visual/listening Acceptance. |
 
 ## All 43 PLAN sections: requirement → implementation → correction → evidence → status
 

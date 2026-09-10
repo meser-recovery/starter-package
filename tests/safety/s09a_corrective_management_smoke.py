@@ -251,6 +251,26 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             if width==1280: assert row.bounding_box()['height'] < 150, row.bounding_box()
             shot(f'library-projects-{width}', '#projects')
             shot(f'library-results-{width}', '#results')
+        # A short viewport forces edge placement; resizing an open desktop
+        # popover must restore the mobile in-flow menu, then the top layer.
+        page.set_viewport_size({'width':1280,'height':450})
+        summary.evaluate("e=>e.scrollIntoView({block:'end'})")
+        summary.click()
+        popup = row.locator('.audio-actions__items')
+        for width in (1280,390,768):
+            page.set_viewport_size({'width':width,'height':450})
+            if width >= 768:
+                page.wait_for_function("""() => {const e=document.querySelector('.audio-actions[open] .audio-actions__items');
+                    if(!e || !e.matches(':popover-open')) return false;
+                    const r=e.getBoundingClientRect();return r.x>=0&&r.y>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}""")
+            else:
+                page.wait_for_function("!document.querySelector('.audio-actions[open] .audio-actions__items').hasAttribute('popover')")
+            if output: page.screenshot(path=str(output/f'library-menu-short-{width}.png'))
+        page.keyboard.press('Escape')
+        assert summary.evaluate('e=>e===document.activeElement')
+        summary.click();page.locator('h1').click()
+        assert not row.locator('.audio-actions').evaluate('e=>e.open')
+        page.set_viewport_size({'width':1280,'height':900})
         detail()
         page.locator('#detail').get_by_role('button', name='Удалить всю серию «Для анонс-мейкера»').click()
         page.locator('#delete-dialog').wait_for(state='visible'); fault['preview']=True; before=len(trace)

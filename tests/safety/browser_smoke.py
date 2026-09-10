@@ -1729,6 +1729,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         second = page.locator(".speaker-track").nth(1)
         second.get_by_role("button", name="Исключить из микса", exact=True).click()
         assert "Не в финальном миксе" in page.locator(".speaker-track").nth(1).inner_text()
+        if not page.locator(".speaker-dsp select").first.is_visible():
+            page.locator(".speaker-dsp-disclosure > summary").first.click()
         page.locator(".speaker-dsp select").nth(0).select_option("gentle")
         page.locator(".speaker-dsp select").nth(2).select_option("medium")
         if screenshot_dir:
@@ -1857,6 +1859,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         # Monitoring does not invalidate; a render-affecting DSP edit does.
         page.locator('.speaker-track button[data-action="solo"]').first.click()
         assert page.locator("#speaker-editor-result").is_visible()
+        if not page.locator(".speaker-dsp select").first.is_visible():
+            page.locator(".speaker-dsp-disclosure > summary").first.click()
         page.locator(".speaker-dsp select").nth(0).select_option("off")
         assert page.locator("#speaker-editor-result").is_hidden()
         page.locator("#speaker-editor-undo").click()
@@ -1870,6 +1874,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-390.png"))
         page.locator(".skip-link").evaluate("element => element.style.removeProperty('display')")
         # Exercise measured two-pass loudnorm in the real browser engine.
+        if not page.locator(".speaker-dsp select").first.is_visible():
+            page.locator(".speaker-dsp-disclosure > summary").first.click()
         page.locator(".speaker-dsp select").nth(0).select_option("off")
         page.locator(".speaker-dsp select").nth(1).select_option("on")
         page.locator(".speaker-dsp select").nth(2).select_option("off")
@@ -3548,6 +3554,8 @@ def main() -> int:
         check_s09a_acceptance(browser, base_url, args.screenshot_dir)
         from s09a_editor_corrective_smoke import check_s09a_editor_corrective
         check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
+        from s09a_playback_signal_smoke import check_playback_signal
+        check_playback_signal(browser, base_url, args.screenshot_dir)
         from s09a_corrective_management_smoke import check_s09a_corrective_management
         check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)

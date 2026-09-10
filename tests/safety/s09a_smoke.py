@@ -138,6 +138,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-selection-start').fill('0')
         page.locator('#speaker-editor-selection-end').fill('0')
         scroll.scroll_into_view_if_needed();box=scroll.bounding_box()
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+30))}'), 'Sticky transport covers the touch selection target'
         touch=context.new_cdp_session(page)
         touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+20,'y':box['y']+30}]})
         touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+70,'y':box['y']+30}]})

@@ -1,5 +1,7 @@
 # S09A: selection toolbar — correction awaiting browser review
 
+Current PR #36 workspace follow-up: [local browser validation and preview](S09A-workspace-validation.md). Earlier reports below retain their original environment and source SHA.
+
 This describes the first, partial patch only. The shared transport, responsive
 workspace, menu placement and playback-isolation follow-up are documented in
 [S09A-workspace-iteration.md](S09A-workspace-iteration.md). Use the cumulative
