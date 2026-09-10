@@ -44,6 +44,8 @@ absence of Chromium described the package environment, not this validation.
 - Existing mobile DSP tests now open the new disclosure through its summary
   before selecting a setting. No DSP/output assertion was removed.
 
+- Linux CI on `a5bf2b0` exposed a menu timing gap without screenshot-induced scrolling: after responsive reflow, a focused summary could remain offscreen and its queued scroll could close the disclosure before asynchronous positioning. Summary activation now positions synchronously and reveals the anchor; resizing keeps the open anchor visible. Scrolling an already open menu away still closes it. A browser regression explicitly opens an offscreen focused summary, checks visible top-layer bounds and first-action focus, then checks Escape focus return.
+
 ## Additional regressions
 
 [Native audio signal smoke](s09a_playback_signal_smoke.py) runs in the full

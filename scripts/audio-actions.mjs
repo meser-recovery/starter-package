@@ -5,6 +5,13 @@ export function contextActions(label, ...actions) {
   summary.setAttribute('aria-label', `Действия · ${label}`);
   const body = document.createElement('div'); body.className = 'audio-actions__items';
   body.append(...actions); menu.append(summary, body);
+  summary.addEventListener('click', event => {
+    // Position before the next Tab or a queued scroll event can observe an
+    // open disclosure whose popover has not yet reached the viewport.
+    event.preventDefault();
+    menu.open = !menu.open;
+    if (menu.open) placeActions(menu, true);
+  });
   menu.addEventListener('keydown', event => {
     if (event.key === 'Escape' && menu.open) { event.preventDefault(); event.stopPropagation(); menu.open = false; summary.focus(); }
   });
@@ -14,7 +21,7 @@ export function contextActions(label, ...actions) {
   menu.addEventListener('toggle', () => {
     if (menu.open) {
       for (const other of document.querySelectorAll('.audio-actions[open]')) if (other !== menu) other.open = false;
-      placeActions(menu);
+      placeActions(menu, true);
     } else if (body.hasAttribute('popover')) body.hidePopover();
   });
   return menu;
@@ -25,7 +32,7 @@ document.addEventListener('click', event => {
 
 // Desktop menus use the browser's top layer so sticky players/track controls
 // cannot cover them. Small screens retain the existing in-flow disclosure.
-function placeActions(menu) {
+function placeActions(menu, revealAnchor = false) {
   if (!menu.isConnected) return;
   const body = menu.querySelector('.audio-actions__items');
   if (typeof body.showPopover !== 'function') return;
@@ -37,7 +44,14 @@ function placeActions(menu) {
   }
   body.setAttribute('popover', 'manual');
   if (!body.matches(':popover-open')) body.showPopover();
-  const anchor = menu.querySelector('summary').getBoundingClientRect();
+  const summary = menu.querySelector('summary');
+  let anchor = summary.getBoundingClientRect();
+  // A focused summary can leave the viewport after responsive reflow. Opening
+  // its menu must reveal it; only scrolling an already open menu away closes it.
+  if (revealAnchor && (anchor.top < 8 || anchor.bottom > window.innerHeight - 8)) {
+    summary.scrollIntoView({ block: 'center', behavior: 'instant' });
+    anchor = summary.getBoundingClientRect();
+  }
   if (anchor.bottom < 0 || anchor.top > window.innerHeight) { menu.open = false; body.hidePopover(); return; }
   const gap = 8, width = Math.min(300, window.innerWidth - gap * 2);
   Object.assign(body.style, { position: 'fixed', inset: 'auto', margin: '0', width: `${width}px`, maxHeight: `${window.innerHeight - gap * 2}px`, overflow: 'auto' });
@@ -51,7 +65,7 @@ function placeActions(menu) {
   body.style.top = `${Math.max(gap, Math.min(window.innerHeight - Math.min(height, available) - gap, useAbove ? anchor.top - Math.min(height, available) - 4 : anchor.bottom + 4))}px`;
 }
 window.addEventListener('resize', () => {
-  for (const menu of document.querySelectorAll('.audio-actions[open]')) placeActions(menu);
+  for (const menu of document.querySelectorAll('.audio-actions[open]')) placeActions(menu, true);
 });
 window.addEventListener('scroll', event => {
   for (const menu of document.querySelectorAll('.audio-actions[open]')) {

@@ -174,3 +174,5 @@ The PASS entries for PLAN §§9, 19–21, 35 and A05/A08/A15 above describe the 
 ## Shared workspace Linux follow-up
 
 The first workspace CI at `0033ae7` (run `34524573749`) failed the unchanged <=150px Announcement lane limit: Linux font metrics wrapped a fifth action, producing 154.98px. Desktop action columns now reserve space for all five controls and a separate status row. The prior local PASS at `0033ae7` remains historical; the workspace evidence index and PR identify the refreshed source and exact submitted-head result. No geometry or audio assertion was weakened.
+
+Workspace follow-up: CI `34525654306` passed Linux geometry and native signal checks but exposed keyboard menu timing after resize without captures. Synchronous summary activation and anchor reveal fix that path; management smoke now explicitly covers an offscreen focused summary, top-layer bounds, first-action focus and Escape return. See the current workspace evidence and PR exact-head CI result.

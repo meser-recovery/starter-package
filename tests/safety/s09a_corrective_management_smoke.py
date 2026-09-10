@@ -251,6 +251,20 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             if width==1280: assert row.bounding_box()['height'] < 150, row.bounding_box()
             shot(f'library-projects-{width}', '#projects')
             shot(f'library-results-{width}', '#results')
+        # Opening a still-focused summary after it scrolls outside the viewport
+        # must reveal the anchor and preserve keyboard entry into the menu.
+        summary.focus()
+        summary.evaluate('e=>scrollBy(0,e.getBoundingClientRect().bottom+10)')
+        assert summary.bounding_box()['y'] < 0
+        page.keyboard.press('Enter');page.keyboard.press('Tab')
+        row.get_by_role('button', name='Сведения о записи').wait_for(state='visible')
+        assert row.get_by_role('button', name='Сведения о записи').evaluate('e=>e===document.activeElement')
+        page.wait_for_function("""() => {const e=document.querySelector('.audio-actions[open] .audio-actions__items');
+            if(!e?.matches(':popover-open')) return false;const r=e.getBoundingClientRect();
+            return r.top>=0&&r.bottom<=innerHeight;}""")
+        if output: page.screenshot(path=str(output/'library-menu-offscreen-focus.png'))
+        page.keyboard.press('Escape')
+        assert summary.evaluate('e=>e===document.activeElement')
         # A short viewport forces edge placement; resizing an open desktop
         # popover must restore the mobile in-flow menu, then the top layer.
         page.set_viewport_size({'width':1280,'height':450})
