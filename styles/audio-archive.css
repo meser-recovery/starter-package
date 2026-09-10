@@ -1,0 +1,37 @@
+.archive-management { max-width: 1180px; padding-block: 2rem 4rem; color: #20364a; }
+.archive-management *, dialog * { box-sizing: border-box; min-width: 0; }
+.archive-management h1 { margin: .2rem 0 .8rem; }
+.archive-management h2 { font-size: 1.5rem; }
+.archive-management h3 { font-size: 1.15rem; }
+.archive-management p, .archive-management a, .archive-management h3, dialog { overflow-wrap: anywhere; }
+.archive-heading, .toolbar, .archive-nav { display: flex; gap: .75rem; flex-wrap: wrap; align-items: center; }
+.archive-heading { justify-content: space-between; }
+.eyebrow, .muted { color: #526579; }
+.eyebrow { margin: 0; font-size: .9rem; }
+.archive-nav { margin: 1.5rem 0; padding-block: 1rem; border-block: 1px solid #cbd6df; }
+.archive-management section { margin-top: 2rem; scroll-margin-top: 1rem; }
+.counts, .cards, .filters { display: grid; gap: 1rem; grid-template-columns: repeat(auto-fit, minmax(min(100%, 245px), 1fr)); }
+.counts { grid-template-columns: repeat(auto-fit, minmax(min(100%, 175px), 1fr)); }
+.archive-card, .count, .filters, #detail-body, #player { border: 1px solid #cbd6df; background: #fff; border-radius: 12px; padding: 1.1rem; }
+.count { display: flex; flex-direction: column; text-align: left; gap: .5rem; }
+.count strong { font-size: 2rem; }
+.archive-management label, dialog label { display: flex; flex-direction: column; gap: .4rem; font-size: .95rem; }
+.archive-management input, .archive-management select, dialog input { width: 100%; padding: .65rem; border: 1px solid #72859a; border-radius: 6px; background: #fff; color: #20364a; font: inherit; }
+.archive-management button, dialog button { font: inherit; padding: .65rem .9rem; min-height: 44px; border: 1px solid #698099; border-radius: 6px; background: #f2f7fc; color: #173e61; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
+.archive-management button:disabled, dialog button:disabled { opacity: .6; cursor: default; }
+.archive-management :focus-visible, dialog :focus-visible { outline: 3px solid #17659f; outline-offset: 3px; }
+.filters .wide { grid-column: 1 / -1; }
+.filters .checkbox { flex-direction: row; align-items: center; }
+.checkbox input { width: 1.2rem; height: 1.2rem; flex-shrink: 0; }
+.archive-management .danger, dialog .danger { background: #fff4f1; border-color: #ad4633; color: #862b1b; }
+.archive-management details { margin-block: 1rem; }
+.archive-management summary { cursor: pointer; padding: .6rem 0; }
+.archive-management pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+#detail-body form { display: grid; gap: .8rem; max-width: 650px; }
+#detail-body section { border-top: 1px solid #cbd6df; padding-top: 1rem; }
+#player { margin-top: 1rem; display: grid; gap: .75rem; }
+#player[hidden], [hidden] { display: none !important; }
+#audio { width: 100%; max-width: 600px; }
+dialog { width: min(620px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 1px solid #698099; border-radius: 12px; padding: 1.3rem; color: #20364a; }
+dialog::backdrop { background: #102b46a6; }
+@media (max-width: 420px) { .archive-management { padding-inline: 12px; } .toolbar > * { flex: 1 1 130px; } .archive-card, #detail-body, .filters { padding: .85rem; } }

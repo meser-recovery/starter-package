@@ -1,4 +1,5 @@
-import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
+import { eligible, parseEditorIntent } from './audio-archive-core.mjs';
+import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
 import { clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
@@ -1065,6 +1066,42 @@ function cancelSpeakerResume() {
   renderSpeakerResumeStatus("Останавливаем продолжение и проверяем состояние на сервере…");
 }
 
+let editorIntentConsumed = false;
+async function consumeEditorIntent() {
+  if (editorIntentConsumed) return;
+  let intent;
+  try { intent = parseEditorIntent(location.search); }
+  catch (error) { editorIntentConsumed = true; setArchiveStatus(error.message); return; }
+  if (!intent) return;
+  if (!state.authenticated) {
+    setArchiveStatus("Для открытия записи по ссылке подключите архив. Обработка автоматически не запускается.");
+    return;
+  }
+  editorIntentConsumed = true;
+  const url = new URL(location.href);
+  url.searchParams.delete("session"); url.searchParams.delete("workflow");
+  history.replaceState(history.state, "", url);
+  if (state.publicationController || state.speakerSaveController || state.speakerResumeController || state.uploadController || getSpeakerSaveState().saving) {
+    setArchiveStatus("Сначала завершите текущую передачу, затем откройте ссылку из аудиоархива снова.");
+    return;
+  }
+  if (getProcessorFiles().length && !globalThis.confirm("Заменить текущие локальные исходники записью из аудиоархива? Несохранённый результат будет потерян.")) return;
+  const sequence = ++state.sessionSequence;
+  try {
+    const session = await gateway.getSession(intent.sessionId);
+    if (sequence !== state.sessionSequence || !state.authenticated) return;
+    if (!validateSessionManifest(session) || session.id !== intent.sessionId) throw new Error("Некорректные сведения о записи.");
+    if (!eligible(session)) {
+      setArchiveStatus("Новая обработка недоступна: нужны входящая запись и доступные исходники. Откройте аудиоархив для просмотра результатов.");
+      return;
+    }
+    if (intent.workflow === "speaker") await loadSpeakerSession(session);
+    else await loadSession(session);
+  } catch (error) {
+    if (sequence === state.sessionSequence) onGatewayError(error, "Запись по ссылке недоступна или удалена. Откройте аудиоархив.");
+  }
+}
+
 async function initialize() {
   setMode("archive");
   updateSessionStatus();
@@ -1080,6 +1117,7 @@ async function initialize() {
   updateSessionStatus();
   await refreshSessions();
   if (state.authenticated) await showIncomplete();
+  await consumeEditorIntent();
 }
 
 byId("mode-archive").addEventListener("click", () => setMode("archive"));
@@ -1137,7 +1175,8 @@ byId("login-form").addEventListener("submit", async (event) => {
     updateSessionStatus();
     const action = state.afterLogin;
     state.afterLogin = null;
-    if (action) action();
+    if (action) await action();
+    await consumeEditorIntent();
   } catch (error) {
     byId("login-status").textContent = userError(error, "Не удалось подключить архив. Проверьте пароль и повторите действие.");
   } finally {
