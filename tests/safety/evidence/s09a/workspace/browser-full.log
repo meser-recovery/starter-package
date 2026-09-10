@@ -1,7 +1,7 @@
 S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
-S09 CORS regression: http://127.0.0.1:52310
+S09 CORS regression: http://127.0.0.1:55636
 S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
-S09 CORS regression: http://127.0.0.1:52310/starter-package/
+S09 CORS regression: http://127.0.0.1:55636/starter-package/
 S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
 S09 CORS root/subpath regression passed (default Chromium web security).
 S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.

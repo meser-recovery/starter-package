@@ -1,7 +1,7 @@
 # PR #36 shared workspace evidence
 
 - Baseline/before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`.
-- Final implementation and after capture SHA: `1769bc3c69ebfd0e130dcbc31409f9694b4f9d17`.
+- Final implementation and after capture SHA: `6ee46682b4cac65a1e9c228b4e2b6c1009084bb0`.
 - This directory is added in a separate evidence-only commit. Its exact submitted
   HEAD and `local-safety` run/result are recorded in draft PR #36 without another
   commit changing that checked HEAD.
@@ -13,6 +13,8 @@
 Historical PR #36 logs and screenshots remain bound to their original SHAs.
 The first workspace evidence commit `911f38e` remains historical for source `0033ae7`. Linux CI run `34524573749` found a 154.98px Announcement lane; its desktop actions now use five explicit columns, retaining the 150px limit. The current captures and full local logs below were refreshed after that correction.
 
+CI run `34525654306` on evidence HEAD `a5bf2b0` passed the Linux geometry and signal checks, then exposed menu activation timing after resize without captures. The current source positions summary activation synchronously and reveals the anchor before Tab or queued scroll; its explicit offscreen-focus regression passes with and without captures. The current evidence also replaces an earlier static log that stopped at a trailing blank line in a gateway log; current static checks pass, and evidence log endings are normalized.
+
 Neither the supplied package's non-browser checks nor earlier CI is substituted
 for this implementation's browser run.
 
@@ -23,13 +25,14 @@ for this implementation's browser run.
 - [Gateway syntax](gateway-check.log) and [gateway tests](gateway-tests.log): 80/80 PASS.
 - [Complete post-commit browser smoke](browser-full.log): PASS, default Chromium
   security, root/subpath CORS and isolated local fixtures. Command:
-  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-workspace-final-v3`.
+  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-workspace-final-v4`.
 - [Native browser audio signal measurements](s09a-playback/signal.json) ([normalized capture rerun](signal-captures.log)): 20 cases
   measuring actual 330/660Hz media output after mute/volume. Both modes, each
   Mute/Solo, multiple Solo, reordered identities, monitoring volume, Exclude
   preserving source monitoring, rendered MP3 excluding the 330Hz source, and
   source/result isolation passed. This is signal analysis, not a claim of human
   listening through physical speakers.
+- [Management regression without captures](management-no-captures.log): PASS, including offscreen focused summary activation, first-action focus, visible popover bounds, Escape return, resizing and prior preparation/deletion regressions.
 - Preparation/version/series deletion, failure/retry, exact File/Blob/payload/
   epoch/latest canonical revision, 401/403/reconnect, delayed intents and actual
   local save/reopen/render remain in the full run.
@@ -41,6 +44,8 @@ are not counted as final PASS. The original 210px Speaker / 150px Announcement
 lane limits, waveform width requirement and audio tolerances were retained.
 
 ## Captures and visual review
+
+The manifest contains 156 original PNGs. The new [offscreen-focus menu capture](s09a-corrective-management/library-menu-offscreen-focus.png) shows the revealed row and fully visible menu with its first action focused.
 
 `before/` and `after-paired/` use the same two synthetic 3-second WAV sources,
 ready state and 320/390/768/1280 widths. Before pages are served from the exact

@@ -1,6 +1,6 @@
 # Original workspace captures
 
-Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69ebfd0e130dcbc31409f9694b4f9d17`.
+Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `6ee46682b4cac65a1e9c228b4e2b6c1009084bb0`.
 
 | Original PNG | Pixels | SHA-256 |
 | --- | --- | --- |
@@ -24,21 +24,21 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69e
 | [s09a/announcement-320.png](s09a/announcement-320.png) | 320 × 4765 | `aaf4930af3248867dd52d7e1c57ce645f3432ad73ccbe01be251d3c49408fd3c` |
 | [s09a/announcement-390.png](s09a/announcement-390.png) | 390 × 4480 | `96b676c7362e8cdf4d357846f86bf402583a9f10c3416a0ce8546adb5d30e9bb` |
 | [s09a/announcement-768.png](s09a/announcement-768.png) | 768 × 3151 | `d3f04695c0d8206c3b84e73ad8fa0e0f6d1496701462d005023c181811f85501` |
-| [s09a/archive-1280.png](s09a/archive-1280.png) | 1280 × 2660 | `d55361a3bc78aad34c6c342569487ef06fce280f6675d31f493b8acad5db1e52` |
-| [s09a/archive-320.png](s09a/archive-320.png) | 320 × 5277 | `af0bfed71624aa1029278e0dabacee19fa546720ce86ba4d75ff219786f2ad9c` |
-| [s09a/archive-390.png](s09a/archive-390.png) | 390 × 4265 | `bef8fd9b739b4f284158453d8b7b4a34f64dba2cc4858b028490534bbee30f80` |
-| [s09a/archive-768.png](s09a/archive-768.png) | 768 × 3006 | `414e686e13c4ad2fbcff8292d041a845d99dc047d7bba8b51fbe0998bb9ec116` |
+| [s09a/archive-1280.png](s09a/archive-1280.png) | 1280 × 2660 | `b9bd065b9bfbbe932848d5fc2c4013078bba2d50997fc9106c285a0e872a6c1c` |
+| [s09a/archive-320.png](s09a/archive-320.png) | 320 × 5277 | `26df385c76959b27f64f726d4e388a5178f5c53ef80b65006f8acee151472ce3` |
+| [s09a/archive-390.png](s09a/archive-390.png) | 390 × 4265 | `f956604610157218e648710f19f484790a73676a062f6ebe8eb4f9663c8843a7` |
+| [s09a/archive-768.png](s09a/archive-768.png) | 768 × 3006 | `a8a92f4ddbf84c8582bcd919a62ea4d57745d648ae7d100e3923cca6c7fa3bd8` |
 | [s09a/final-version-saved.png](s09a/final-version-saved.png) | 1280 × 3554 | `a0c17ae41997915922a0b89b57a3377a231ff8d4db1cebe43112d0b64c6b3b24` |
 | [s09a/import-1280.png](s09a/import-1280.png) | 1280 × 3054 | `dd557b27436fbafc084991ad879138bcfdfc6e2097f6cb7b9660ff04737fcc5e` |
-| [s09a/import-320.png](s09a/import-320.png) | 320 × 5389 | `1aab37abf29d21d6be4097d980156fb9f21c4296516159d7d1dffd3958a86b35` |
-| [s09a/import-390.png](s09a/import-390.png) | 390 × 4899 | `929513335ebf9546ce1d13fb8df59ff4358208f388fc53e681791504c0d309a1` |
-| [s09a/import-768.png](s09a/import-768.png) | 768 × 3435 | `69297372b91e441ff4e62dc245b6f551ed2db514a8477d108e8f03069f6c5fc6` |
+| [s09a/import-320.png](s09a/import-320.png) | 320 × 5389 | `8a7c2cd0d64d9571f4f073c4dd22e4284f24fe2cd724f3acaf679b9b5fde5085` |
+| [s09a/import-390.png](s09a/import-390.png) | 390 × 4899 | `1ed1377d87e9b685222d04a9be98775b19b2e97976401b19fd6d80f90c463edc` |
+| [s09a/import-768.png](s09a/import-768.png) | 768 × 3423 | `69fc484fcb635ee4f7775c419acc78acbec9b297e0f5c0daafcba08a08e88156` |
 | [s09a/part-download-reconnect-keeps-project-1280-viewport.png](s09a/part-download-reconnect-keeps-project-1280-viewport.png) | 1280 × 900 | `4b1a84638a00a9d8cdad4543cd4111bcbda0bf4ad06219cf3ef36e327413cf3c` |
 | [s09a/part-download-reconnect-keeps-project-320-viewport.png](s09a/part-download-reconnect-keeps-project-320-viewport.png) | 320 × 900 | `461e4ee45c23812d95dd2c733a17e8415f1142b4c93b21e14816ed40256f741b` |
 | [s09a/part-download-reconnect-keeps-project-390-viewport.png](s09a/part-download-reconnect-keeps-project-390-viewport.png) | 390 × 900 | `0a60f835ca845fee6acf356c8763bfeabbebf099fe557f2d5c2fadcd7f54420c` |
 | [s09a/part-download-reconnect-keeps-project-768-viewport.png](s09a/part-download-reconnect-keeps-project-768-viewport.png) | 768 × 900 | `cb9720297fe8a3590c6be1440bff9793d38b4a6ba4b7ed3e3a498872eef87ea8` |
-| [s09a/part-download-reconnect-keeps-project-viewport.png](s09a/part-download-reconnect-keeps-project-viewport.png) | 1280 × 900 | `4b1a84638a00a9d8cdad4543cd4111bcbda0bf4ad06219cf3ef36e327413cf3c` |
-| [s09a/part-download-reconnect-keeps-project.png](s09a/part-download-reconnect-keeps-project.png) | 1280 × 3368 | `32955f7e7f165db93413551e39bf4afdb2b4e0aea71fc03027de6bbb938abd7e` |
+| [s09a/part-download-reconnect-keeps-project-viewport.png](s09a/part-download-reconnect-keeps-project-viewport.png) | 1280 × 900 | `ac66e463bf27c8bf0094f57eeacc29257403828d2a7c0147f712e39baa04bd86` |
+| [s09a/part-download-reconnect-keeps-project.png](s09a/part-download-reconnect-keeps-project.png) | 1280 × 3368 | `b0b2c07a009e28b84465acd7e4f9c6f68d4c86c6b6bd160cdd482556730f57f7` |
 | [s09a/project-reopened-1280-viewport.png](s09a/project-reopened-1280-viewport.png) | 1280 × 900 | `ab621664d111714aafbb329d3060043aaff0680450a8b1d5ba168854e7d452df` |
 | [s09a/project-reopened-1280.png](s09a/project-reopened-1280.png) | 1280 × 2639 | `a8882874c17b914801d26a8db40aa9ccf69ce400adebd6552d6c69300b2215f0` |
 | [s09a/project-reopened-320-viewport.png](s09a/project-reopened-320-viewport.png) | 320 × 900 | `e86524b25989ce851a37895e1e9ce7fad1a0e4b8b8b93e8a3617f8b1abc3e2b8` |
@@ -76,8 +76,8 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69e
 | [s09a/unsaved-cancel-320-viewport.png](s09a/unsaved-cancel-320-viewport.png) | 320 × 900 | `6602eb4b4ede84554207b4a0c2b240c4239fec1b19e935af9ad8a535929fe7a4` |
 | [s09a/unsaved-cancel-390-viewport.png](s09a/unsaved-cancel-390-viewport.png) | 390 × 900 | `64d938d85373a6dc59e04e5c31ac99f57afb089698ca8927728a678a5ed9ce24` |
 | [s09a/unsaved-cancel-768-viewport.png](s09a/unsaved-cancel-768-viewport.png) | 768 × 900 | `19171c9a9daf8f63a8618ff88f57cae260fd9c17162f3b165d752590f1704876` |
-| [s09a/unsaved-cancel-viewport.png](s09a/unsaved-cancel-viewport.png) | 1280 × 900 | `94f4e18c8abfafaeb4eed1af66e14d355bbb808317bd03138928af2b5d7ff1ac` |
-| [s09a/unsaved-cancel.png](s09a/unsaved-cancel.png) | 1280 × 3556 | `d466af8f9b783b28dfe35b81807af6e395d9ad57006c2020dba78a1cb450238c` |
+| [s09a/unsaved-cancel-viewport.png](s09a/unsaved-cancel-viewport.png) | 1280 × 900 | `535dee12f92eee7b6949cf04a2a44fd4219f35f7584648b5ed731566f326052f` |
+| [s09a/unsaved-cancel.png](s09a/unsaved-cancel.png) | 1280 × 3556 | `dd08295d7a33452cdfbf170d3aa09e73c42ea192dbe9731f05b118ffae80ba68` |
 | [s09a-acceptance/announcement-draft-401-keeps-work.png](s09a-acceptance/announcement-draft-401-keeps-work.png) | 390 × 4689 | `5b51727993523e85599d917125ebad799ce177233b5f3b3ea7359286699324d2` |
 | [s09a-acceptance/announcement-draft-403-keeps-work.png](s09a-acceptance/announcement-draft-403-keeps-work.png) | 390 × 4689 | `5b51727993523e85599d917125ebad799ce177233b5f3b3ea7359286699324d2` |
 | [s09a-acceptance/announcement-part-401-keeps-work.png](s09a-acceptance/announcement-part-401-keeps-work.png) | 390 × 4689 | `5b51727993523e85599d917125ebad799ce177233b5f3b3ea7359286699324d2` |
@@ -87,21 +87,21 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69e
 | [s09a-acceptance/archive-project-401-reconnect.png](s09a-acceptance/archive-project-401-reconnect.png) | 390 × 1841 | `80580876deb89aef95c54abd3b86e140e1c5491809a5a8715101c730eef132b1` |
 | [s09a-acceptance/archive-project-403-reconnect.png](s09a-acceptance/archive-project-403-reconnect.png) | 390 × 1841 | `80580876deb89aef95c54abd3b86e140e1c5491809a5a8715101c730eef132b1` |
 | [s09a-acceptance/closed-work-rejects-delayed-source.png](s09a-acceptance/closed-work-rejects-delayed-source.png) | 390 × 5452 | `6c243524139bd75826b0399e404437bee0b60bf742926dfd3c3125e5499eaf02` |
-| [s09a-acceptance/delayed-source-new-edits-protected-viewport.png](s09a-acceptance/delayed-source-new-edits-protected-viewport.png) | 390 × 900 | `797f241fa5c4dc73eabcaf524550d8d536cbc0a18fec239cf6590c4b4a0daf2a` |
-| [s09a-acceptance/delayed-source-new-edits-protected.png](s09a-acceptance/delayed-source-new-edits-protected.png) | 390 × 7082 | `71f966d48121eb067210c50f4d0e1a33e3749b7f446365da7f09887e20134936` |
+| [s09a-acceptance/delayed-source-new-edits-protected-viewport.png](s09a-acceptance/delayed-source-new-edits-protected-viewport.png) | 390 × 900 | `2ab0d3bdf4d6637d88ba988816c1f4f0a7913c486776d4e98a35dc51c6001ce0` |
+| [s09a-acceptance/delayed-source-new-edits-protected.png](s09a-acceptance/delayed-source-new-edits-protected.png) | 390 × 7082 | `4992c5ee9914dad835aac97835d3f318cec0d7ede316600a30223e265f113238` |
 | [s09a-corrective/announcement-1280.png](s09a-corrective/announcement-1280.png) | 1120 × 718 | `e2f5d04a9157e436af4a63ea9940e6f57f5f812fb0b2964621b79a84084eea50` |
 | [s09a-corrective/announcement-320.png](s09a-corrective/announcement-320.png) | 304 × 1122 | `014e93b203558a335b47e1004db2adc115f1882896830771700359d2d3be7389` |
 | [s09a-corrective/announcement-390.png](s09a-corrective/announcement-390.png) | 374 × 1103 | `615f16e4849988539720173803c7098e4aad5bf4a040692690cedcaf3391d6ed` |
 | [s09a-corrective/announcement-768.png](s09a-corrective/announcement-768.png) | 736 × 718 | `a687908b4b98c31cef2c7177a843350627a05b37fc413a8596e6814d1bb16922` |
 | [s09a-corrective/preparation-error-1280.png](s09a-corrective/preparation-error-1280.png) | 1120 × 1162 | `5460a66dbb2ed20f0c5c9adb69d9741880684afba639e10be997e5a0c3bf42da` |
-| [s09a-corrective/preparation-error-320.png](s09a-corrective/preparation-error-320.png) | 304 × 2215 | `2e2bb5cffdf85741399b4876113735e128ec1f5252d53bd084a11c72bfbb0ad6` |
+| [s09a-corrective/preparation-error-320.png](s09a-corrective/preparation-error-320.png) | 304 × 1811 | `c9643d1be329682d2767998bcdff3121cae20a09514db8d3f5ca2d54c9ce4c75` |
 | [s09a-corrective/preparation-error-390.png](s09a-corrective/preparation-error-390.png) | 374 × 1728 | `495601676ab5242b9dad607ff812032a529da14d26afcbc13ce04488d95b44ba` |
 | [s09a-corrective/preparation-error-768.png](s09a-corrective/preparation-error-768.png) | 736 × 1162 | `53fdcce5f2bcfc513a14cd8c8b679ba693710c0c6b06c85c08fc92af5c371f20` |
 | [s09a-corrective/preparation-error.png](s09a-corrective/preparation-error.png) | 1120 × 1162 | `5fa97ec1e44fe62b54788460507c7f08ad5ffcfef40678a0cd4ee55184422bf1` |
 | [s09a-corrective/selection-dsp-focus.png](s09a-corrective/selection-dsp-focus.png) | 1120 × 1082 | `904b99ab2f821a828d79de2b4c05063a80b9500a5c5ac2dfde061d3fad31fff8` |
 | [s09a-corrective/selection-tools-1280.png](s09a-corrective/selection-tools-1280.png) | 1280 × 2340 | `9ca209f2b8207843652191ba3d40d80ca29c93b3d302b3af2fe0ffd10cd45533` |
-| [s09a-corrective/selection-tools-320.png](s09a-corrective/selection-tools-320.png) | 320 × 3491 | `ad7b7ba2b81ec8519f81558cf98092fc654363a60d3bb38fa7c11d52f05eef3a` |
-| [s09a-corrective/selection-tools-390.png](s09a-corrective/selection-tools-390.png) | 390 × 3183 | `ce7a9d7a42203beb76a47b755143b2b15686f398500dfd6afe1141f786a94d55` |
+| [s09a-corrective/selection-tools-320.png](s09a-corrective/selection-tools-320.png) | 320 × 3491 | `55887bd7acca8ab283407141bb9e9bf12c852832cd0357c270deb3e9d8a40ba1` |
+| [s09a-corrective/selection-tools-390.png](s09a-corrective/selection-tools-390.png) | 390 × 3183 | `b2f27b6c0d23d02f7b04dfb68da60e532d3f722e39d6930e5afda6e246c7e79f` |
 | [s09a-corrective/selection-tools-768.png](s09a-corrective/selection-tools-768.png) | 768 × 2417 | `4779fe63dcd2d7823dab37767cc888697d416944a7a87b99cae85c4201b7bed7` |
 | [s09a-corrective/speaker-1280.png](s09a-corrective/speaker-1280.png) | 1120 × 970 | `8f9dfbc84212757f3ddc1c5a6993daa37eb8dc0f5b280e42b0ad52b8d3beb4a2` |
 | [s09a-corrective/speaker-320.png](s09a-corrective/speaker-320.png) | 304 × 1574 | `48df4c6068d98666945e06dbfac6ac3d81989513e1d1d2647669ab86ae772945` |
@@ -111,9 +111,10 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69e
 | [s09a-corrective-management/library-menu-320.png](s09a-corrective-management/library-menu-320.png) | 264 × 1230 | `afacb43291585913f0adfea06f2f257d4f450c7b9cce491c9b50cbf3f65db421` |
 | [s09a-corrective-management/library-menu-390.png](s09a-corrective-management/library-menu-390.png) | 334 × 1069 | `8788514f723cca6b51e8fa626a88c9858cb3e7ada0d227b08f2694fda55db27f` |
 | [s09a-corrective-management/library-menu-768.png](s09a-corrective-management/library-menu-768.png) | 736 × 528 | `0e57c94ae29305ece00dceea6f3a59939c613000aceaf0f9c1f893a310af94f7` |
-| [s09a-corrective-management/library-menu-short-1280.png](s09a-corrective-management/library-menu-short-1280.png) | 1280 × 450 | `74ca00954ace3cb636bb4c430b491dfcfc836f467844f2ffe5e053820e9ad8e4` |
-| [s09a-corrective-management/library-menu-short-390.png](s09a-corrective-management/library-menu-short-390.png) | 390 × 450 | `d8b66fc0f59a09a05004be36957428ac138936e4d4b6d0d04e2fab981e12ddc3` |
-| [s09a-corrective-management/library-menu-short-768.png](s09a-corrective-management/library-menu-short-768.png) | 768 × 450 | `f291b9705824fb459d285bcbbaa8b9413d50de2d8035fbf5a350ae09f8ce711a` |
+| [s09a-corrective-management/library-menu-offscreen-focus.png](s09a-corrective-management/library-menu-offscreen-focus.png) | 1280 × 900 | `a534e6c8d4fda35367295e5716c141524c3f7b35132143b21b4e0882fc472cfa` |
+| [s09a-corrective-management/library-menu-short-1280.png](s09a-corrective-management/library-menu-short-1280.png) | 1280 × 450 | `87474bd71b40632a6d35cd2934354de0c330af37e7154ae3072247386b299f89` |
+| [s09a-corrective-management/library-menu-short-390.png](s09a-corrective-management/library-menu-short-390.png) | 390 × 450 | `a0b1fe4c6e3113b172eb3a5f7f70e24c5fc48171837b66cc02241b47861d8ee8` |
+| [s09a-corrective-management/library-menu-short-768.png](s09a-corrective-management/library-menu-short-768.png) | 768 × 450 | `f2e4c4a4f6b0999664eec3fdc7de5e4cc231266b93a7ed8140bfc2f60dbebce7` |
 | [s09a-corrective-management/library-projects-1280.png](s09a-corrective-management/library-projects-1280.png) | 1120 × 196 | `f7ecf599f99586b8ee7964c17be8779c6b55e34f18b40d4c540b17311dc4100a` |
 | [s09a-corrective-management/library-projects-320.png](s09a-corrective-management/library-projects-320.png) | 264 × 395 | `589b1ba5750ce68842433c810ac33c7ad5ddb6659b7052198614310ffc12de56` |
 | [s09a-corrective-management/library-projects-390.png](s09a-corrective-management/library-projects-390.png) | 334 × 314 | `5b7e42b4d57ad0d34097c079ba252681635a62d7515e14a58d576efc15af8431` |
@@ -153,9 +154,9 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69e
 | [s09a-playback/announcement-long-name-768.png](s09a-playback/announcement-long-name-768.png) | 768 × 2231 | `e43ce97af4cd70a15cb5af0fcf366a22f1989f755f580645fe9fe00e25755b89` |
 | [s09a-playback/announcement-short-screen.png](s09a-playback/announcement-short-screen.png) | 320 × 450 | `3bfd66ade28afef724f7b0752696a75473115ac4da20d9434b4c7327ff5194b1` |
 | [s09a-playback/speaker-long-name-1280.png](s09a-playback/speaker-long-name-1280.png) | 1280 × 2352 | `8aeec47cf0c1e9beaf44511e0b0d5022e6cbaefa6157a19a77dc0dcd8a4095a7` |
-| [s09a-playback/speaker-long-name-320.png](s09a-playback/speaker-long-name-320.png) | 320 × 3685 | `3ee5f1ef039646b8bc5705781490039958155f7cf65a5ea4fb3d55a48418bc1e` |
-| [s09a-playback/speaker-long-name-390.png](s09a-playback/speaker-long-name-390.png) | 390 × 3342 | `0fc06fcaffd18dcc1f80b8a8f7318078116580553f36c64a55e0303cb21b077f` |
+| [s09a-playback/speaker-long-name-320.png](s09a-playback/speaker-long-name-320.png) | 320 × 3685 | `45fa62048b98795a3df2183198d4d71c7f3c39df9fb92e7f29b0e27c5c5b662a` |
+| [s09a-playback/speaker-long-name-390.png](s09a-playback/speaker-long-name-390.png) | 390 × 3342 | `3bc662d140061fe71170579b0d16b8c6116d1726959506b47db01536f411fbaf` |
 | [s09a-playback/speaker-long-name-768.png](s09a-playback/speaker-long-name-768.png) | 768 × 2429 | `76faad118478599e9f915ee28c926f582a3965fc8e68a8315f17d2fee00e4bd4` |
-| [s09a-playback/speaker-long-name-dsp-320.png](s09a-playback/speaker-long-name-dsp-320.png) | 320 × 3887 | `b3d10f1d701fdbd8fdeb9ad86a81fed934c850182d24aaa32a64ab1b0b6150ce` |
+| [s09a-playback/speaker-long-name-dsp-320.png](s09a-playback/speaker-long-name-dsp-320.png) | 320 × 3887 | `6b339f705c6e9cd7e6097629731935ab821b71e6c08ed82344128bb51e852189` |
 | [s09a-playback/speaker-long-name-dsp-390.png](s09a-playback/speaker-long-name-dsp-390.png) | 390 × 3544 | `624da5d5bd0fb0e6d2f751ff48ffc708d4d5d01dd228fbfc03453e7089fb523d` |
 | [s09a-playback/speaker-short-screen.png](s09a-playback/speaker-short-screen.png) | 320 × 450 | `1459b097d09c37205ca70d804fca2a3fc777bea348d5c3891680ecbf83df1bcd` |

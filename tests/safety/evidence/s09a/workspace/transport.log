@@ -1,8 +1,8 @@
-✔ play/pause and stop preserve per-track mute; controls follow media events (3.698ms)
-✔ unready/locked sources cannot start playback or seek (1.05325ms)
-✔ source and result cannot play over each other; track mute remains unchanged (1.895959ms)
-✔ master listening volume does not alter any track mute flag (0.270708ms)
-✔ failed playback can retry; stale failures cannot overwrite a new source status (1.090583ms)
+✔ play/pause and stop preserve per-track mute; controls follow media events (3.492875ms)
+✔ unready/locked sources cannot start playback or seek (1.242917ms)
+✔ source and result cannot play over each other; track mute remains unchanged (1.718208ms)
+✔ master listening volume does not alter any track mute flag (0.179625ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (0.802958ms)
 ℹ tests 5
 ℹ suites 0
 ℹ pass 5
@@ -10,4 +10,4 @@
 ℹ cancelled 0
 ℹ skipped 0
 ℹ todo 0
-ℹ duration_ms 67.100208
+ℹ duration_ms 58.969375
