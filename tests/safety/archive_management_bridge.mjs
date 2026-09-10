@@ -60,7 +60,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     } else if (command.action === 'request') {
       if (!authenticated && command.path !== '/v1/session/login') result = { status: 401, body: JSON.stringify({ error: 'Подключите архив' }), type: 'application/json' };
       else {
-        const response = await h.gateway.fetchImpl(`https://gateway.test${command.path}`, { method: command.method, headers: command.headers, ...(command.body ? { body: command.body } : {}) });
+        const response = await h.gateway.fetchImpl(`https://gateway.test${command.path}`, { method: command.method, headers: command.headers, ...(command.bodyBase64 ? { body: Buffer.from(command.bodyBase64, "base64") } : command.body ? { body: command.body } : {}) });
         const bytes = Buffer.from(await response.arrayBuffer());
         if (response.headers.get('content-type')?.startsWith('application/json')) {
           const payload = JSON.parse(bytes.toString());

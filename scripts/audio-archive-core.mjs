@@ -1,9 +1,9 @@
 import { isUuid, validateSessionManifest } from './audio-archive-client.mjs';
 
-export const workflows = Object.freeze({ announcement: 'Анонс-мейкер', speaker: 'Спикерская' });
+export const workflows = Object.freeze({ announcement: 'Для анонс-мейкера', speaker: 'Финальные версии спикерских' });
 export const statuses = Object.freeze({ new: 'Новая', in_progress: 'В работе', result_ready: 'Результат готов' });
-export const lifecycleLabel = session => session.lifecycle.state === 'incoming' ? 'Входящие' : 'Архив исходников';
-export const sourceLabel = session => session.sourceState === 'available' ? 'Исходники доступны' : 'Исходники удалены / недоступны';
+export const lifecycleLabel = session => session.lifecycle.state === 'incoming' ? 'Готова к обработке' : 'Убрана из рабочего списка';
+export const sourceLabel = session => session.sourceState === 'available' ? 'Исходники доступны' : 'Исходные дорожки недоступны';
 export const eligible = session => session.lifecycle.state === 'incoming' && session.sourceState === 'available';
 const normalized = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
 const compareText = (a, b) => String(a).localeCompare(String(b), 'ru');
@@ -92,7 +92,7 @@ export function recoveryPolicy(operation) {
       operation.canFinalize !== (operation.totalParts === operation.uploadedParts)) return readOnly;
   if (operation.canFinalize) return { actions: [['resume', 'Завершить сохранение']], local: 'Все части переданы. Локальные файлы не нужны.' };
   if (operation.state === 'finalizing') return readOnly;
-  return { actions: [['discard', 'Удалить незавершённую операцию']], local: operation.kind === 'ingestion' ?
+  return { actions: [['discard', 'Удалить незавершённое сохранение']], local: operation.kind === 'ingestion' ?
     'Нужны исходные файлы и прежний контекст загрузки. Вернитесь в уже открытую вкладку редактора. Если контекст потерян, удалите незавершённую операцию и создайте новую запись в редакторе.' :
     'Нужен точно тот же локальный результат и прежний контекст сохранения. Вернитесь в уже открытую вкладку редактора и продолжите сохранение там. Повторная сборка не заменяет потерянный результат; если он утрачен, продолжение недоступно.' };
 }
@@ -104,19 +104,19 @@ export function parseEditorIntent(search) {
   return { sessionId: params.get('session'), workflow: params.get('workflow') };
 }
 export function editorUrl(session, workflow) {
-  if (!eligible(session) || !Object.hasOwn(workflows, workflow)) throw new Error('Для обработки нужны входящая запись и доступные исходники.');
+  if (!eligible(session) || !Object.hasOwn(workflows, workflow)) throw new Error('Для обработки нужны запись в рабочем списке и доступные исходники.');
   return `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=${workflow}`;
 }
 export function deletionImpact(preview, target) {
   const counts = { announcement: preview.announcementVersions, speaker: preview.speakerVersions };
-  const all = `Исходники: ${preview.sourceTracks}; версии «Анонс-мейкер»: ${counts.announcement}; версии «Спикерская»: ${counts.speaker}; черновики: ${preview.drafts}.`;
+  const all = `Исходники: ${preview.sourceTracks}; версии «Анонс-мейкер»: ${counts.announcement}; версии «Спикерская»: ${counts.speaker}; сохранённые настройки обработки: ${preview.drafts}.`;
   if (target.kind === 'purge') return { removed: `Запись целиком. ${all}`, retained: 'Только служебная отметка об удалении; запись и её данные восстановить нельзя.' };
-  if (target.kind === 'sources') return { removed: `Исходные дорожки: ${preview.sourceTracks}.`, retained: `Метаданные записи, черновики (${preview.drafts}), все сохранённые результаты: «Анонс-мейкер» ${counts.announcement}, «Спикерская» ${counts.speaker}.` };
+  if (target.kind === 'sources') return { removed: `Исходные дорожки будут удалены: ${preview.sourceTracks}. Продолжение обработки проекта после удаления исходников может стать невозможным.`, retained: `Сохранённые готовые версии останутся доступны. Метаданные записи, сохранённые настройки обработки (${preview.drafts}), все сохранённые результаты: «Анонс-мейкер» ${counts.announcement}, «Спикерская» ${counts.speaker}.` };
   const label = workflows[target.workflow];
   if (!label || !['output-version', 'output-series'].includes(target.kind)) throw new Error('Неизвестная цель удаления.');
   const removed = target.kind === 'output-version' ? 1 : counts[target.workflow];
   return { removed: target.kind === 'output-version' ? `«${label}», версия ${target.version}.` : `Все результаты «${label}»: ${removed}.`,
-    retained: `Исходники (${preview.sourceTracks}), черновики (${preview.drafts}), метаданные и результаты другого вида работы (${counts[target.workflow === 'speaker' ? 'announcement' : 'speaker']}); остальные версии «${label}»: ${counts[target.workflow] - removed}. Номера версий не переиспользуются.` };
+    retained: `Исходники (${preview.sourceTracks}), сохранённые настройки обработки (${preview.drafts}), метаданные и результаты другого вида работы (${counts[target.workflow === 'speaker' ? 'announcement' : 'speaker']}); остальные версии «${label}»: ${counts[target.workflow] - removed}. Номера версий не переиспользуются.` };
 }
 // Independent generations fence authentication, listing, detail and playback completions.
 export class RequestGeneration {

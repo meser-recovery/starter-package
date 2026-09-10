@@ -108,7 +108,7 @@ test('S09 real gateway metadata conflicts and lifecycle retain canonical bytes a
 test('S09 real gateway deletion previews, stale writes, non-cascade series/source deletion, exact purge and retained playback', async () => {
   const h = await managementFixture(); let session = h.primary;
   let preview = await h.gateway.dependencyPreview(session.id);
-  assert.match(deletionImpact(preview, { kind: 'output-series', workflow: 'announcement' }).retained, /черновики \(2\)/);
+  assert.match(deletionImpact(preview, { kind: 'output-series', workflow: 'announcement' }).retained, /сохранённые настройки обработки \(2\)/);
   assert.match(deletionImpact(preview, { kind: 'sources' }).retained, /все сохранённые результаты/);
   await h.gateway.setLifecycle(session.id, 'archive', session.revision);
   await assert.rejects(() => h.gateway.deleteOutputSeries(session.id, 'announcement', { expectedRevision: preview.revision, idempotencyKey: 's09-stale-delete-test', confirmation: '' }), e => e.status === 409);

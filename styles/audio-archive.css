@@ -35,3 +35,26 @@
 dialog { width: min(620px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 1px solid #698099; border-radius: 12px; padding: 1.3rem; color: #20364a; }
 dialog::backdrop { background: #102b46a6; }
 @media (max-width: 420px) { .archive-management { padding-inline: 12px; } .toolbar > * { flex: 1 1 130px; } .archive-card, #detail-body, .filters { padding: .85rem; } }
+/* S09A media library: compact rows and secondary maintenance. */
+.archive-management { max-width: 1240px; }
+.archive-management section { margin-top: 1.25rem; }
+.archive-nav { margin-block: .8rem; padding-block: .65rem; gap: 1.5rem; font-weight: 700; }
+.cards { grid-template-columns: minmax(0, 1fr); gap: .5rem; }
+.archive-card { padding: .75rem 1rem; }
+.archive-card h3, .archive-card p { margin-block: .25rem; }
+.archive-card > a { display: inline-block; margin: .35rem 1rem .2rem 0; }
+.filters { grid-template-columns: minmax(0, 1fr) 190px; padding: .8rem; }
+.filters .wide { grid-column: auto; }
+.filters details { grid-column: 1 / -1; margin: 0; }
+.filters details label { padding: .35rem; }
+.archive-management button { min-height: 34px; padding: .35rem .65rem; font-size: .9rem; }
+#maintenance { margin-top: 2rem; border-top: 1px solid #cbd6df; padding-top: .5rem; }
+#maintenance > summary { font-weight: 700; }
+.attention { padding: .5rem .75rem; border-left: 3px solid #aa7710; background: #fffae9; }
+#detail-body form { grid-template-columns: 1fr 1fr; max-width: 800px; }
+#detail-body form p { grid-column: 1 / -1; }
+@media (max-width: 767px) {
+  .filters, #detail-body form { grid-template-columns: minmax(0, 1fr); }
+  .archive-management button { min-height: 44px; }
+  .archive-nav { gap: .5rem 1rem; }
+}

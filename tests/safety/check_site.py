@@ -821,9 +821,9 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    expected_h2 = ["Исходники", "Архив результатов", "Анонс-мейкер", "Спикерская", "Обработка аудио", "Архив отредактированных аудио"]
+    expected_h2 = ["Импорт исходных записей", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Архив готовых записей", "Архив отредактированных аудио"]
     if parser.h2_texts[:6] != expected_h2:
-        errors.append("Audio-Editor.html: expected sources, result archives, separate Анонс-мейкер and Спикерская workspaces, processor, then legacy archive H2")
+        errors.append("Audio-Editor.html: expected S09A import, editing, exclusive workspaces, finished archives, then legacy archive")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -860,7 +860,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
     for element_id in ("processor-run", "processor-cancel"):
         if elements.get(element_id, {}).get("type") != "button":
             errors.append(f"Audio-Editor.html: {element_id} must not submit a form")
-    for element_id, label in (("processor-run", "Обработать"), ("processor-cancel", "Отменить"), ("processor-download", "Скачать обработанный MP3")):
+    for element_id, label in (("processor-run", "Обработать запись"), ("processor-cancel", "Отменить"), ("processor-download", "Скачать MP3")):
         if not re.search(rf'<[^>]+id="{element_id}"[^>]*>{re.escape(label)}</', source):
             errors.append(f"Audio-Editor.html: incorrect label for {element_id}")
     if "disabled" not in elements.get("processor-run", {}):
@@ -950,13 +950,13 @@ def check_audio_processor_contract(errors: list[str]) -> None:
     if re.search(r'^import\s+(?!\{\s*sha256Hex\s*\}\s+from\s+"\./audio-archive-client\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     page_source = page.read_text(encoding="utf-8")
-    processor_markup = page_source.split('<section class="archive-card processor-card"', 1)[-1].split('</section>', 1)[0]
-    if "Прослушать" in source or "processor-track-switcher" in source or "<details" in processor_markup:
+    processor_markup = re.split(r'<section[^>]+id="announcement-processor-card"[^>]*>', page_source, maxsplit=1)[-1].split('</section>', 1)[0]
+    if "Прослушать" in source or "processor-track-switcher" in source or re.search(r"<details[^>]*>\s*<(?:img|canvas)", processor_markup):
         errors.append("Processor retains the obsolete track switcher/detail waveform UI")
     for rejected in ("Объявление", "Опубликов", "опубликован", "публикация", "Announcement workspace", "Announcement draft", "Source Session"):
         if rejected in page_source:
             errors.append(f"Audio-Editor.html: rejected S08B product language remains: {rejected}")
-    for required_text in ("Анонс-мейкер", "Спикерская", "Сохранить в архив «Анонс-мейкер»", "Черновик обработки"):
+    for required_text in ("Анонс-мейкер", "Спикерская", "Сохранить в архив для анонс-мейкера", "Проект обработки спикерской"):
         if required_text not in page_source:
             errors.append(f"Audio-Editor.html: corrected S08B product language missing: {required_text}")
     forbidden = r"https?://|\bfetch\s*\(|XMLHttpRequest|WebSocket|sendBeacon|silenceremove|SharedArrayBuffer|core-mt|wavesurfer|peaks\.js|\b(?:atempo|loudnorm|dynaudnorm)\b|[\"']-(?:ar|ac|itsoffset)[\"']|\b(?:adelay|pan)="
@@ -1012,7 +1012,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "scripts/source-session-archive.mjs": (
             'setMode("archive")', "С устройства", "Анонс-мейкер", "Спикерская",
         ),
-        "Audio-Editor.html": ("Из архива", "С устройства", "Создать входящую запись", "Сохранить во входящие"),
+        "Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить исходные записи в аудиоархив", "Сохранить проект"),
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
             'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",

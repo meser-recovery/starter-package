@@ -412,7 +412,7 @@ export async function reconstructAnnouncementOutput(metadata, fetchImpl = fetch)
   for (const [index, part] of output.parts.entries()) {
     if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей результата.");
     const response = await fetchImpl(part.downloadUrl, { cache: "no-store" });
-    if (!response.ok) throw new Error("Не удалось загрузить часть результата.");
+    if (!response.ok) throw Object.assign(new Error("Не удалось загрузить часть результата."), { status: response.status });
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes) !== part.sha256) throw new Error("Проверка целостности части результата не пройдена.");
     chunks.push(bytes); totalBytes += bytes.byteLength; logicalHasher.update(bytes);
@@ -463,7 +463,7 @@ export async function reconstructSpeakerOutput(metadata, fetchImpl = fetch) {
   for (const [index, part] of output.parts.entries()) {
     if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей результата Спикерской.");
     const response = await fetchImpl(part.downloadUrl, { cache: "no-store" });
-    if (!response.ok) throw new Error("Не удалось загрузить часть результата Спикерской.");
+    if (!response.ok) throw Object.assign(new Error("Не удалось загрузить часть результата Спикерской."), { status: response.status });
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes) !== part.sha256) throw new Error("Проверка целостности части результата Спикерской не пройдена.");
     chunks.push(bytes); totalBytes += bytes.byteLength; logicalHasher.update(bytes);
@@ -516,7 +516,7 @@ export async function reconstructTrack(track, sessionId, fetchImpl = fetch) {
   for (const [index, part] of ordered.entries()) {
     if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей аудиофайла.");
     const response = await fetchImpl(part.downloadUrl, { cache: "no-store" });
-    if (!response.ok) throw new Error("Не удалось загрузить часть аудиофайла.");
+    if (!response.ok) throw Object.assign(new Error("Не удалось загрузить часть аудиофайла."), { status: response.status });
     const bytes = new Uint8Array(await response.arrayBuffer());
     if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes) !== part.sha256) {
       throw new Error("Проверка целостности части аудиофайла не пройдена.");
@@ -552,6 +552,7 @@ export class AudioArchiveGateway {
   }
 
   async request(path, options = {}) {
+    throwIfAborted(options.signal);
     if (!this.baseUrl) throw new Error("Шлюз аудиоархива ещё не настроен.");
     const headers = new Headers(options.headers || {});
     if (options.body && !(options.body instanceof Blob) && typeof options.body !== "string") {
@@ -562,7 +563,7 @@ export class AudioArchiveGateway {
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, { credentials: "include", ...options, headers });
     const contentType = response.headers.get("Content-Type") || "";
     if (response.status !== 204 && !contentType.toLowerCase().startsWith("application/json")) {
-      throw new Error("Шлюз вернул ответ в неожиданном формате.");
+      throw Object.assign(new Error("Шлюз вернул ответ в неожиданном формате."), { status: response.status });
     }
     const payload = response.status === 204 ? null : await response.json().catch(() => null);
     if (!response.ok) {
@@ -637,8 +638,8 @@ export class AudioArchiveGateway {
     });
   }
   loadDraft(id, workflow) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/drafts/${workflow}`); }
-  saveDraft(id, workflow, envelope) {
-    return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/drafts/${workflow}`, { method: "PUT", body: envelope });
+  saveDraft(id, workflow, envelope, signal) {
+    return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/drafts/${workflow}`, { method: "PUT", body: envelope, signal });
   }
   dependencyPreview(id) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/deletion-preview`); }
   setLifecycle(id, action, expectedRevision, idempotencyKey = crypto.randomUUID()) {
@@ -758,8 +759,9 @@ export class AudioArchiveGateway {
     });
   }
 
-  async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {} }) {
+  async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {}, onPlan = () => {} }) {
     const plan = await createIngestionPlan(files, this.acceptedPartSize, { idempotencyKey, signal });
+    onPlan(plan);
     const started = await this.request("/v1/source-sessions/ingestions", {
       method: "POST", signal,
       body: { schemaVersion: AUDIO_ARCHIVE_SCHEMA_VERSION, idempotencyKey, title, recordedAt, origin, supersedesSessionId, plan: serializeIngestionPlan(plan) }
