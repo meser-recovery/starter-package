@@ -55,6 +55,44 @@ Required before acceptance: run the full browser suite, inspect before/after
 screenshots, resolve any failures, and verify the reported M4A scenario. No merge
 or production activation is authorized by this implementation note.
 
-Publication: the attempted push was blocked by automatic approval review, which
-requires explicit authorization to publish this branch to GitHub. No PR was
-created and CI has not run for this corrective commit.
+## Recovery on 2026-09-10
+
+The user supplied `S09A-editor-corrective (1).patch` after workspace cleanup.
+It contains only the original `95d902f` change; the stable patch ID after
+application is `6f530202525ea9fe2ef515118d79068499e52aaf`, matching the attachment.
+The later local `52d5559` change is absent from this patch. Its additional
+selection/context actions, archive interaction changes and full requirements
+audit are not recovered here. This branch is therefore a partial recovery,
+not the complete corrective implementation or acceptance of all 43 sections.
+
+Fresh recovery checks: site contract PASS, changed JS/Python syntax PASS,
+gateway syntax PASS, gateway tests 80/80 PASS, and diff whitespace PASS.
+The native FFmpeg result above belongs to the earlier run and was not repeated
+during recovery. Browser and visual acceptance remain pending.
+
+The user explicitly authorized publishing this corrective branch, creating a
+draft PR and running CI, without merge or production changes. The draft PR
+must retain the incomplete-recovery and pending-acceptance limitations above.
+
+Publication remains blocked: HTTPS git push had no credentials, and the GitHub
+connection rejected tree creation with HTTP 403 `Resource not accessible by
+integration`. No remote branch or PR was created and CI was not started.
+The fresh official Chromium installation also timed out; no browser PASS is
+claimed for this recovery.
+
+To publish this recovered subset from an authenticated local checkout, first
+download `S09A-editor-recovered.patch` and run the following commands. Stop on
+any error; do not merge the PR. The fixed base intentionally matches PR #35.
+
+```sh
+git fetch origin
+git switch -c codex/s09a-editor-corrective-ux 5a3e793e6e33e1a15e27dd6408e733c87d9a939f
+git am "$HOME/Downloads/S09A-editor-recovered.patch"
+git push -u origin codex/s09a-editor-corrective-ux
+```
+
+Then create a draft PR targeting `main`, with this file as its description:
+
+```sh
+gh pr create --draft --base main --head codex/s09a-editor-corrective-ux --title 'S09A: recover Speaker preparation and compact lanes (partial)' --body-file tests/safety/S09A-corrective-ux.md
+```
