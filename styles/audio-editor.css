@@ -445,7 +445,7 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
 }
 /* Readable controls in continuous lanes; the waveform keeps most of the width. */
 @media (min-width: 768px) {
-  .speaker-track, .processor-track, .audio-timeline-row { grid-template-columns: 260px minmax(0, 1fr); }
+  .speaker-track, .processor-track, .audio-timeline-row { grid-template-columns: 280px minmax(0, 1fr); }
   .speaker-track .speaker-dsp { display: grid; grid-template-columns: 1fr; gap: 2px; }
   .speaker-dsp-field { display: grid; grid-template-columns: minmax(0, 1fr) 78px; align-items: center; gap: 4px; font-size: .75rem; line-height: 1.15; }
   .speaker-dsp select { min-height: 22px; font-size: .75rem; }
