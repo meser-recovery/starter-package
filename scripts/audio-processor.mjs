@@ -359,7 +359,9 @@ function maximumSourceLeftTime() {
 
 function sourceScrollbarGeometry() {
   const rail = byId("source-scrollbar");
-  const railWidth = Math.max(0, rail.clientWidth);
+  const railStyle = getComputedStyle(rail);
+  const railWidth = Math.max(0, rail.getBoundingClientRect().width -
+    parseFloat(railStyle.borderLeftWidth) - parseFloat(railStyle.borderRightWidth));
   const duration = Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0;
   const fraction = duration > 0 ? Math.min(1, Math.max(0, sourceViewportDuration / duration)) : 1;
   const thumbWidth = railWidth ? Math.min(railWidth, Math.max(36, railWidth * fraction)) : 0;
