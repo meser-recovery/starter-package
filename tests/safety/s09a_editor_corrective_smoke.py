@@ -106,6 +106,10 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         assert page.evaluate('correctiveNativeCalls') == 2
         assert page.locator('#speaker-source-timeline span').count() > 0
         assert page.locator('#announcement-processor-card').is_hidden()
+        # Explicit selection target and independent track monitoring, including
+        # the audio element's actual mute flag (not only button styling).
+        from s09a_selection_tools_smoke import check_selection_tools
+        check_selection_tools(page, output)
         # A short M4A now opens despite native decode failure. Test real editing,
         # so a placeholder waveform or a disabled successful-looking view fails.
         page.locator('.speaker-selection details > summary').click()

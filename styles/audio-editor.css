@@ -293,7 +293,7 @@
 .speaker-dsp-field { font-size: .75rem; }
 .speaker-track__summary { grid-column: 1; }
 .speaker-track button, .speaker-dsp select, .speaker-toolbar button, .processor-zoom button, .speaker-selection button { min-height: 32px; font-size: .85rem; padding: .25rem .45rem; }
-.speaker-track.is-muted .speaker-waveform, .processor-track.is-muted .processor-waveform { opacity: .45; }
+.speaker-track.is-muted .speaker-waveform, .processor-track.is-muted .processor-waveform { opacity: 1; }
 .speaker-track.is-solo { border-inline-start: 5px solid #257354; }
 .speaker-track.is-selected { outline: 2px solid #357bca; outline-offset: 1px; }
 .speaker-track.is-excluded { border-style: dashed; background: #f0ece5; }
@@ -385,7 +385,7 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
 .speaker-track__number, .processor-track__number { color: #385b75; }
 .speaker-track__buttons, .processor-track__actions { display: flex; flex-wrap: wrap; justify-content: flex-start; gap: .2rem; margin: .2rem 0 0; }
 .speaker-track button:not(.speaker-waveform), .processor-track__actions button, .speaker-toolbar button, .processor-zoom button, .speaker-selection button {
-  min-height: 26px; padding: .15rem .35rem; border: 1px solid #a4b6c5; border-radius: 3px; background: #fff; color: #233b50; font: 600 .75rem/1.25 var(--font-sans); box-shadow: none;
+  min-height: 32px; padding: .25rem .5rem; border: 1px solid #7892a6; border-radius: 4px; background: #dce7ef; color: #182e40; font: 600 .75rem/1.25 var(--font-sans); box-shadow: none;
 }
 .speaker-track button[aria-pressed="true"], .processor-track__actions button[aria-pressed="true"] { color: #fff; background: #315f83; }
 .speaker-track .speaker-dsp { grid-column: auto; gap: .25rem; margin-top: .2rem; }
@@ -400,7 +400,7 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
 .processor-track .processor-waveform img { position: absolute; inset: 0; }
 .speaker-track canvas { position: absolute; inset: 0; }
 .speaker-track.is-selected { outline: 0; box-shadow: inset 3px 0 #357bca; }
-.speaker-track.is-solo, .processor-track.is-solo { border-inline-start: 0; box-shadow: inset 3px 0 #257354; }
+.speaker-track.is-solo, .processor-track.is-solo { border-inline-start: 0; }
 .speaker-track.is-muted .speaker-track-controls, .processor-track.is-muted .processor-track__top { color: #62717c; background: #e1e6ea; }
 .speaker-source-pending { display: grid; place-content: center; min-height: 112px; padding: 1rem; color: #cedce8; background: #13293d; font-size: .85rem; overflow-wrap: anywhere; }
 #speaker-editor-source-retry { justify-self: start; min-height: 36px; font: inherit; }
@@ -447,11 +447,11 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
 @media (min-width: 768px) {
   .speaker-track, .processor-track, .audio-timeline-row { grid-template-columns: 280px minmax(0, 1fr); }
   .speaker-track .speaker-dsp { display: grid; grid-template-columns: 1fr; gap: 2px; }
-  .speaker-dsp-field { display: grid; grid-template-columns: minmax(0, 1fr) 78px; align-items: center; gap: 4px; font-size: .75rem; line-height: 1.15; }
+  .speaker-dsp-field { display: grid; grid-template-columns: minmax(0, 1fr) 108px; align-items: center; gap: 4px; font-size: .75rem; line-height: 1.15; }
   .speaker-dsp select { min-height: 22px; font-size: .75rem; }
   .speaker-track__buttons { margin-top: 0; }
   .speaker-track-controls { gap: 2px; padding-block: 5px; }
-  .speaker-track-selection { position: absolute; left: 190px; top: 4px; z-index: 2; padding: .2rem; color: #fff; background: #245c9a; }
+  .speaker-track-selection { position: static; justify-self: start; padding: .2rem .4rem; color: #fff; background: #245c9a; border-radius: 3px; }
   .speaker-track { position: relative; }
 }
 .speaker-track.is-muted .speaker-waveform canvas, .processor-track.is-muted .processor-waveform img { opacity: .4; }
@@ -474,3 +474,54 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
 }
 
 #speaker-editor button:disabled, #speaker-editor select:disabled { opacity: .5; cursor: not-allowed; }
+
+/* Selection tools belong to the source transport, directly above the lanes. */
+#speaker-editor, #announcement-processor-card { isolation: isolate; min-width: 0; }
+.speaker-transport { border-radius: 4px 4px 0 0; }
+.speaker-transport .speaker-selection {
+  flex: 1 1 100%; display: grid; grid-template-columns: minmax(0, 1fr);
+  gap: .4rem; margin: 0; padding: .65rem; min-width: 0;
+  color: #e6eef5; background: #20384b; border: 1px solid #405b70; border-radius: 5px;
+}
+.speaker-selection .speaker-selection-context { display: grid; gap: .25rem; min-width: 0; }
+.speaker-selection #speaker-selection-summary { color: #a7dcff; overflow-wrap: anywhere; font-variant-numeric: tabular-nums; }
+.speaker-selection #speaker-editor-selection-scope { font-size: .75rem; overflow-wrap: anywhere; }
+.speaker-selection .speaker-selection__actions { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .4rem; }
+.speaker-selection button.edit-tool {
+  display: flex; align-items: center; gap: .55rem; min-width: 0; min-height: 48px; padding: .45rem .6rem;
+  color: #edf6ff; background: #35566f; border: 1px solid #7295b0; text-align: left; font-size: .85rem;
+}
+.speaker-selection button.edit-tool--cut { background: #713e35; border-color: #c9937c; }
+.speaker-selection button.edit-tool--silence { background: #245e64; border-color: #78b4b5; }
+.speaker-selection button.edit-tool:hover:not(:disabled) { filter: brightness(1.2); }
+.speaker-selection .edit-tool svg { flex: 0 0 22px; width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.speaker-selection .edit-tool span { min-width: 0; }
+.speaker-selection .edit-tool small { display: block; margin-top: .2rem; font-size: .65rem; font-weight: 400; overflow-wrap: anywhere; }
+.speaker-selection > details { order: initial; min-width: 0; font-size: .75rem; }
+.speaker-selection > details[open] { padding-top: .25rem; border-top: 1px solid #607b8e; }
+.speaker-selection details p { font-size: .75rem; margin-top: .4rem; }
+.speaker-selection__fields input, .speaker-selection__fields select { min-width: 0; width: 100%; color: #182e40; background: #f0f5f9; }
+.speaker-selection .speaker-error { color: #ffd0c5; }
+.speaker-selection :focus-visible { outline: 3px solid #ffd479; outline-offset: 2px; }
+.speaker-track-controls, .processor-track__top { overflow-wrap: anywhere; }
+.speaker-track__buttons button { padding-inline: .3rem; font-size: .7rem; }
+.speaker-track__buttons :is([data-action="solo"], [data-action="mute"]), .processor-track__actions :is([data-track-action="solo"], [data-track-action="mute"]) { min-width: 32px; font-weight: 800; }
+.track-monitor-status { display: block; flex-basis: 100%; font-size: .7rem; line-height: 1.4; color: #426077; }
+.speaker-track.is-solo .track-monitor-status, .processor-track.is-solo .track-monitor-status { color: #765106; }
+.speaker-track.is-muted .track-monitor-status, .processor-track.is-muted .track-monitor-status { color: #923c37; }
+.speaker-track button[data-action="solo"][aria-pressed="true"], .processor-track button[data-track-action="solo"][aria-pressed="true"] { background: #f3c653; border-color: #8b680e; color: #342704; }
+.speaker-track button[data-action="mute"][aria-pressed="true"], .processor-track button[data-track-action="mute"][aria-pressed="true"] { background: #a43c3c; border-color: #8c2626; color: #fff; }
+.speaker-track.is-solo-suppressed .speaker-waveform canvas, .processor-track.is-solo-suppressed .processor-waveform img { opacity: .55; }
+.speaker-track.is-selected .speaker-track-controls { box-shadow: inset 4px 0 #258ad0; background: #e0effa; }
+.speaker-selection-overlay { z-index: 4; border-color: #a5ddff; background: #43b1fb44; }
+@media (max-width: 767px) {
+  .speaker-transport, .processor-source-player { position: static; }
+  .speaker-selection .speaker-selection__actions { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .speaker-selection button.edit-tool { min-height: 52px; padding: .35rem; gap: .35rem; }
+  .speaker-selection__fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .speaker-dsp-field { min-width: 0; }
+  .speaker-dsp-field select { width: 100%; min-width: 0; }
+}
+@media (max-height: 650px) {
+  .speaker-transport, .processor-source-player { position: static; }
+}

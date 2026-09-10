@@ -96,6 +96,26 @@
               <button id="speaker-editor-zoom-fit" type="button">Вписать</button>
               <button id="speaker-editor-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
             </div>
+            <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
+              <div class="speaker-selection-context">
+                <h3 id="speaker-selection-heading">Монтаж выделения</h3>
+                <p id="speaker-selection-summary" role="status">Выделите фрагмент на дорожке.</p>
+              </div>
+              <div class="speaker-selection__actions" role="group" aria-label="Инструменты монтажа выделения" aria-describedby="speaker-editor-selection-scope">
+                <button id="speaker-editor-set-start" class="edit-tool" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M5 4v16M19 6l-9 6 9 6M10 12h11"/></svg><span>Начало<small>Все дорожки · слева</small></span></button>
+                <button id="speaker-editor-set-end" class="edit-tool" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M19 4v16M5 6l9 6-9 6M14 12H3"/></svg><span>Конец<small>Все дорожки · справа</small></span></button>
+                <button id="speaker-editor-add-cut" class="edit-tool edit-tool--cut" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="m8 8 13 12M8 16 21 4"/></svg><span>Вырезать<small>На всех дорожках</small></span></button>
+                <button id="speaker-editor-add-silence" class="edit-tool edit-tool--silence" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h4l5-5v14l-5-5H3zM16 9l6 6m0-6-6 6"/></svg><span>Тишина<small>Выбранная дорожка</small></span></button>
+              </div>
+              <p id="speaker-editor-selection-scope">Протяните выделение по волне. Затем выберите инструмент.</p>
+              <details><summary>Точное редактирование</summary><div class="speaker-selection__fields">
+                <label>Начало, с<input id="speaker-editor-selection-start" type="number" min="0" step="0.000001" inputmode="decimal"></label>
+                <label>Конец, с<input id="speaker-editor-selection-end" type="number" min="0" step="0.000001" inputmode="decimal"></label>
+                <label>Длительность, с<output id="speaker-editor-selection-duration">0.000000</output></label>
+                <label>Выбранная дорожка<select id="speaker-editor-selection-track"></select></label>
+              </div><p>Координаты относятся к исходной записи. Глобальные вырезы не сдвигают следующие выделения.</p></details>
+              <p id="speaker-editor-selection-error" class="speaker-error" role="status"></p>
+            </section>
             </div><div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
 <div class="audio-timeline-row"><span>Исходная шкала</span><div id="speaker-source-timeline" class="audio-timeline" aria-hidden="true"></div></div><ol id="speaker-editor-tracks" class="speaker-tracks"></ol>            <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
 <p><strong>Solo.</strong> Слушать эту дорожку отдельно. На финальный результат не влияет.</p>
@@ -105,23 +125,7 @@
 <p><strong>Выравнивание громкости.</strong> Автоматически приводит дорожку к более ровному уровню воспринимаемой громкости. Полезно, если один участник записан заметно тише или громче других.</p>
 <p><strong>Компрессия.</strong> Уменьшает разницу между тихими и громкими фрагментами речи.</p><p>Лёгкая — небольшое выравнивание; Средняя — более заметное; Сильная — плотная обработка неравномерной записи.</p></details>
           </section>
-          <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
-            <div>
-              <h3 id="speaker-selection-heading">Выделение на исходной шкале</h3>
-              <p>Координаты всегда относятся к неизменяемой исходной записи. Глобальные вырезы не сдвигают следующие выделения.</p>
-            </div>
-            <details><summary>Точное редактирование</summary><div class="speaker-selection__fields">
-              <label>Начало, с<input id="speaker-editor-selection-start" type="number" min="0" step="0.000001" inputmode="decimal"></label>
-              <label>Конец, с<input id="speaker-editor-selection-end" type="number" min="0" step="0.000001" inputmode="decimal"></label>
-              <label>Длительность, с<output id="speaker-editor-selection-duration">0.000000</output></label>
-              <label>Дорожка для тишины<select id="speaker-editor-selection-track"></select></label>
-            </div>
-            </details><p id="speaker-selection-summary" role="status">Выделите фрагмент на дорожке.</p><div class="speaker-selection__actions">
-              <button id="speaker-editor-set-start" type="button">Установить начало записи</button><button id="speaker-editor-set-end" type="button">Установить конец записи</button><button id="speaker-editor-add-cut" type="button">Вырезать на всех дорожках</button>
-              <button id="speaker-editor-add-silence" type="button">Заменить тишиной на этой дорожке</button>
-            </div>
-            <p id="speaker-editor-selection-error" class="speaker-error" role="status"></p>
-          </section><details class="speaker-regions"><summary id="speaker-regions-heading">Правки · 0</summary>
+          <details class="speaker-regions"><summary id="speaker-regions-heading">Правки · 0</summary>
 
             <div id="speaker-editor-regions" class="speaker-region-list"></div>
           </details>

@@ -2,6 +2,12 @@
 
 This records implementation verification, not ACCEPT, a Closure Record, or S09A COMPLETE.
 
+**2026-09-10: UI acceptance reopened by the user.** The historical PASS entries below
+do not accept the current interface. Selection/tool placement, overlapping controls,
+and the distinction between per-track Mute and suppression by another track's Solo
+remain subject to browser verification and user review. See
+[the new toolbar correction and its explicit validation limits](S09A-selection-toolbar-review.md).
+
 PR #36 review follow-up: the previous D PASS covered deletion **after ready**, not during preparation. See [the discovered gap, correction and new browser regression](S09A-PR36-review-fix.md).
 
 - Base: `5a3e793e6e33e1a15e27dd6408e733c87d9a939f` (`origin/main` rechecked before work). The only open PR was unrelated #4; its branch/content was not changed.

@@ -94,6 +94,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
         page.locator('.speaker-selection details > summary').click()
         page.locator('#speaker-editor-selection-start').fill('0.05')
+        page.locator('#speaker-editor-selection-end').fill('0.2')
         page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-render').click()
         page.wait_for_function("!document.getElementById('speaker-editor-result').hidden", timeout=60000)

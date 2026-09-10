@@ -108,10 +108,18 @@ function updateSelectionDuration() {
   document.getElementById("speaker-selection-summary").textContent = valid
     ? `Дорожка ${index + 1} · ${name}: ${start.toFixed(3)} — ${end.toFixed(3)} · ${(end-start).toFixed(3)} с`
     : "Выделите фрагмент на форме сигнала.";
+  const target = `Дорожка ${index + 1} · ${name || "не выбрана"}`;
+  byId("selection-scope").textContent = valid
+    ? `Ножницы и границы записи: все дорожки. Тишина: ${target}.`
+    : "Протяните выделение по волне. Затем выберите инструмент.";
+  for (const [id, label] of [["set-start", "Начало записи от левой границы выделения — все дорожки"], ["set-end", "Конец записи по правой границе выделения — все дорожки"], ["add-cut", "Вырезать выделение на всех дорожках"], ["add-silence", `Заменить выделение тишиной: ${target}`]]) {
+    byId(id).title = valid ? `${label}: ${start.toFixed(3)}–${end.toFixed(3)} с` : `${label}. Сначала выделите фрагмент.`;
+    byId(id).setAttribute("aria-label", byId(id).title);
+  }
   for (const id of ["add-cut", "add-silence"]) byId(id).disabled = !state.ready || editorBusy() || !valid;
   for (const kind of ["start", "end"]) {
     const input = byId(`selection-${kind}`), value = Number(input.value);
-    byId(`set-${kind}`).disabled = !state.ready || editorBusy() || !input.value || !Number.isFinite(value) || value < 0 || value > state.originalDuration;
+    byId(`set-${kind}`).disabled = !state.ready || editorBusy() || !valid || !input.value || !Number.isFinite(value) || value < 0 || value > state.originalDuration;
   }
   for (const wave of workspace.querySelectorAll(".speaker-waveform[data-track-id]")) {
     wave.querySelector(".speaker-selection-overlay")?.remove();
@@ -178,8 +186,11 @@ function applyMonitoring() {
   for (const track of state.tracks) {
     if (track.audio) track.audio.muted = !monitorAudible(track);
     const row = workspace.querySelector(`.speaker-track[data-track-id="${track.trackId}"]`);
-    if (row) { row.classList.toggle("is-muted", !monitorAudible(track)); row.classList.toggle("is-solo", track.solo);
-      row.classList.toggle("is-excluded", state.payload.excludedTrackIds.includes(track.trackId)); }
+    if (row) { row.classList.toggle("is-muted", track.mute); row.classList.toggle("is-solo", track.solo);
+      row.classList.toggle("is-solo-suppressed", !track.mute && !monitorAudible(track));
+      row.classList.toggle("is-excluded", state.payload.excludedTrackIds.includes(track.trackId));
+      row.querySelector(".track-monitor-status").textContent = track.mute ? "Mute · эта дорожка выключена" : track.solo ? "Solo · эта дорожка звучит" : !monitorAudible(track) ? "Не слышна: Solo другой дорожки" : "Прослушивание · звучит";
+    }
     workspace.querySelector(`[data-track-id="${track.trackId}"][data-action="solo"]`)?.setAttribute("aria-pressed", String(track.solo));
     workspace.querySelector(`[data-track-id="${track.trackId}"][data-action="mute"]`)?.setAttribute("aria-pressed", String(track.mute));
   }
@@ -252,14 +263,29 @@ function waveform(track) {
   for (const [kind, time] of Object.entries(bounds)) { const marker = element("span", `speaker-boundary speaker-boundary--${kind}`, kind === "start" ? "Начало" : "Конец"); marker.style.left = `${time/state.originalDuration*100}%`; control.append(marker); }
   const playhead = element("span", "speaker-playhead"); playhead.setAttribute("aria-hidden", "true"); control.append(playhead);
   let pointerStart = null;
+  let pointerId = null, previousSelection = null;
   control.addEventListener("pointerdown", (event) => {
-    if (!state.ready || editorBusy() || event.button !== 0) return; pointerStart = pointerTime(event, scroll); control.setPointerCapture(event.pointerId);
+    if (!state.ready || editorBusy() || event.button !== 0 || pointerStart !== null) return;
+    previousSelection = ["selection-start", "selection-end"].map(id => byId(id).value === "" ? NaN : Number(byId(id).value));
+    previousSelection.push(byId("selection-track").value);
+    pointerId = event.pointerId; pointerStart = pointerTime(event, scroll); control.setPointerCapture(event.pointerId);
+    setSelection(pointerStart, pointerStart, track.trackId);
+  });
+  control.addEventListener("pointermove", (event) => {
+    if (pointerStart === null || event.pointerId !== pointerId || !state.ready || editorBusy()) return;
+    const end = pointerTime(event, scroll);
+    setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
   });
   control.addEventListener("pointerup", (event) => {
-    if (pointerStart === null || !state.ready || editorBusy()) return; const end = pointerTime(event, scroll); setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
-    pointerStart = null; control.releasePointerCapture(event.pointerId);
+    if (pointerStart === null || event.pointerId !== pointerId || !state.ready || editorBusy()) return; const end = pointerTime(event, scroll); setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
+    pointerStart = null; pointerId = null; previousSelection = null; control.releasePointerCapture(event.pointerId);
   });
-  control.addEventListener("pointercancel", () => { pointerStart = null; });
+  const cancelSelection = () => {
+    if (previousSelection) setSelection(...previousSelection);
+    pointerStart = null; pointerId = null; previousSelection = null;
+  };
+  control.addEventListener("pointercancel", cancelSelection);
+  control.addEventListener("lostpointercapture", cancelSelection);
   control.addEventListener("keydown", (event) => {
     if (!state.ready || editorBusy() || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault();
     if (event.shiftKey) { const start = Number(byId("selection-start").value) || 0; const end = Number(byId("selection-end").value) || start;
@@ -298,11 +324,20 @@ function renderTracks() {
     const monitor = element("div", "speaker-track__buttons");
     const solo = makeButton("S · Solo", () => toggleMonitoring(trackId, "solo"), trackId, !state.ready); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
     const mute = makeButton("M · Mute", () => toggleMonitoring(trackId, "mute"), trackId, !state.ready); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
+    for (const [button, action] of [[solo, "Solo"], [mute, "Mute"]]) {
+      button.title = `${action} · Дорожка ${index + 1} · ${track.file.name} · только прослушивание`;
+      button.setAttribute("aria-label", button.textContent);
+      button.setAttribute("aria-description", button.title);
+      button.textContent = action === "Solo" ? "S" : "M";
+    }
     const editsDisabled = editorBusy() || !state.ready;
     const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
     const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
     const down = makeButton("Вниз", () => moveTrack(trackId, 1), trackId, editsDisabled || index === state.payload.trackIds.length - 1);
-    monitor.append(solo, mute, include, up, down); header.append(heading, monitor);
+    for (const [button, icon] of [[up, "↑"], [down, "↓"]]) {
+      button.setAttribute("aria-label", button.textContent); button.title = `${button.textContent} · ${track.file.name}`; button.textContent = icon;
+    }
+    monitor.append(solo, mute, include, up, down); header.append(heading, monitor, element("span", "track-monitor-status"));
     const dsp = element("div", "speaker-dsp");
     dsp.append(selectControl("Улучшение", setting.enhancement, [["off", "Выкл."], ["gentle", "Мягкое"]], (value) => changeTrack(trackId, "enhancement", value)),
       selectControl("Выравнивание громкости", setting.leveling, [["off", "Выкл."], ["on", "Вкл."]], (value) => changeTrack(trackId, "leveling", value)),
@@ -438,7 +473,7 @@ function setupPlayback() {
   const masterTrack = state.tracks.reduce((best, track) => track.duration > best.duration ? track : best, state.tracks[0]);
   const master = byId("source-audio"); const hidden = byId("preview-audios"); hidden.replaceChildren();
   for (const track of state.tracks) {
-    const audio = track === masterTrack ? master : document.createElement("audio"); audio.src = track.url; audio.preload = "auto"; track.audio = audio;
+    const audio = track === masterTrack ? master : document.createElement("audio"); audio.src = track.url; audio.preload = "auto"; audio.dataset.trackId = track.trackId; track.audio = audio;
     if (audio !== master) hidden.append(audio);
   }
   master.onplay = () => { synchronizePlayback(); scheduleMonitoringSynchronization(); };

@@ -588,6 +588,12 @@ function renderTracks() {
     mute.setAttribute("aria-pressed", String(track.muted));
     mute.textContent = "M · Mute";
     mute.addEventListener("click", () => toggleMonitoring(track.id, "mute"));
+    for (const [button, action] of [[solo, "Solo"], [mute, "Mute"]]) {
+      button.title = `${action} · Дорожка ${index + 1} · ${track.file.name} · только прослушивание`;
+      button.setAttribute("aria-label", button.textContent);
+      button.setAttribute("aria-description", button.title);
+      button.textContent = action === "Solo" ? "S" : "M";
+    }
     const moveUp = document.createElement("button");
     moveUp.type = "button";
     moveUp.dataset.trackId = String(track.id);
@@ -612,6 +618,8 @@ function renderTracks() {
     remove.textContent = "Удалить";
     remove.addEventListener("click", () => removeTrack(track.id));
     actions.append(solo, mute, moveUp, moveDown, remove);
+    const monitorStatus = document.createElement("span"); monitorStatus.className = "track-monitor-status";
+    actions.append(monitorStatus);
     top.append(heading, actions);
     item.append(top, scroll);
     list.append(item);
@@ -663,7 +671,10 @@ function applyMonitoring() {
     const audible = hasSolo ? track.solo : !track.muted;
     if (track.previewAudio) track.previewAudio.muted = !audible;
     const row = byId("source").querySelector(`.processor-track[data-track-id="${track.id}"]`);
-    row?.classList.toggle("is-muted", !audible); row?.classList.toggle("is-solo", track.solo);
+    row?.classList.toggle("is-muted", track.muted); row?.classList.toggle("is-solo", track.solo);
+    row?.classList.toggle("is-solo-suppressed", !track.muted && !audible);
+    const status = row?.querySelector(".track-monitor-status");
+    if (status) status.textContent = track.muted ? "Mute · эта дорожка выключена" : track.solo ? "Solo · эта дорожка звучит" : !audible ? "Не слышна: Solo другой дорожки" : "Прослушивание · звучит";
     const solo = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="solo"]`);
     const mute = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="mute"]`);
     solo?.setAttribute("aria-pressed", String(track.solo));

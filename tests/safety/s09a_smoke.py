@@ -103,7 +103,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
         page.locator('.speaker-dsp select').nth(0).select_option('gentle')
         page.get_by_text('Точное редактирование',exact=True).click()
-        page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-set-start').click()
+        page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-selection-end').fill('2.8');page.locator('#speaker-editor-set-end').click()
         page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');page.locator('#speaker-editor-add-silence').click()
         edited=snapshot();
@@ -210,14 +210,14 @@ def check_s09a(browser, base_url, screenshot_dir=None):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'project-reopened-{width}')
         # Save-and-continue waits for the confirmed project; explicit discard and close cancellation are distinct.
         page.get_by_text('Точное редактирование',exact=True).click()
-        page.locator('#speaker-editor-selection-start').fill('.3');page.locator('#speaker-editor-set-start').click()
+        page.locator('#speaker-editor-selection-start').fill('.3');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#open-local-announcement').click();page.locator('#speaker-unsaved-save').click()
         page.wait_for_function("!document.getElementById('announcement-processor-card').hidden")
         assert page.locator('#speaker-editor').is_hidden()
         assert command('snapshot')['sessions'][-1] is not None
         page.goto(base_url+f'/Audio-Editor.html?session={source["id"]}&workflow=speaker')
         page.wait_for_function("document.getElementById('speaker-editor-status').textContent==='Все изменения сохранены'")
-        page.get_by_text('Точное редактирование',exact=True).click();page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-set-start').click()
+        page.get_by_text('Точное редактирование',exact=True).click();page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-cancel').click();assert page.locator('#speaker-editor').is_visible()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-discard').click();assert page.locator('#speaker-editor').is_hidden()
         page.goto(base_url+'/Audio-Archive.html');page.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
