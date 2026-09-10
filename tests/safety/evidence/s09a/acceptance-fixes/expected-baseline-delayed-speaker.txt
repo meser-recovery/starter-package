@@ -1,0 +1,26 @@
+Traceback (most recent call last):
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/s09a_acceptance_smoke.py", line 254, in <module>
+    args = parser.parse_args()
+        ^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/s09a_acceptance_smoke.py", line 138, in check_s09a_acceptance
+    release()
+    ^^^^^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/venv/lib/python3.12/site-packages/playwright/sync_api/_generated.py", line 20539, in wait_for
+    self._sync(
+  File "/Users/furman/Desktop/git/starter-kit/venv/lib/python3.12/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+    return task.result()
+           ^^^^^^^^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/venv/lib/python3.12/site-packages/playwright/_impl/_locator.py", line 748, in wait_for
+    await self._frame.wait_for_selector(
+  File "/Users/furman/Desktop/git/starter-kit/venv/lib/python3.12/site-packages/playwright/_impl/_frame.py", line 394, in wait_for_selector
+    await self._channel.send(
+  File "/Users/furman/Desktop/git/starter-kit/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py", line 76, in send
+    return await self._connection.wrap_api_call(
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/venv/lib/python3.12/site-packages/playwright/_impl/_connection.py", line 632, in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+playwright._impl._errors.TimeoutError: Locator.wait_for: Timeout 30000ms exceeded.
+Call log:
+  - waiting for locator("#speaker-unsaved-dialog") to be visible
+    63 × locator resolved to hidden <dialog id="speaker-unsaved-dialog" aria-labelledby="speaker-unsaved-heading">…</dialog>
+

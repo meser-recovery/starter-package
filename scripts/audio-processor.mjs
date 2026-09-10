@@ -203,6 +203,15 @@ function notifyProcessorResult() {
   window.dispatchEvent(new CustomEvent("audio-processor-result", { detail: { candidate: getProcessorResult() } }));
 }
 
+const idleWaiters = new Set();
+export async function bindProcessorSources(files, provenance, context) {
+  if (active) await new Promise(resolve => idleWaiters.add(resolve));
+  if (files.length !== selectedFiles.length || files.some((file, i) => file !== selectedFiles[i]) || provenance.length !== files.length) throw new Error("Состав выбранных дорожек изменился.");
+  tracks.forEach((track, index) => { track.provenance = structuredClone(provenance[index]); });
+  syncSelectedProvenance(); provenanceContext = structuredClone(context);
+  // An existing local result keeps its original provenance and remains downloadable.
+  notifyProcessorSelection();
+}
 export function getProcessorFiles() {
   return [...selectedFiles];
 }
@@ -286,6 +295,7 @@ function setBusy(busy) {
     if (control.id !== "source-session-publish-announcement") control.disabled = busy;
   }
   if (!busy) {
+    for (const resolve of idleWaiters) resolve(); idleWaiters.clear();
     updateSourceZoomRange();
     if (resultWaveformURL) updateResultZoomRange();
   }
@@ -648,6 +658,8 @@ function applyMonitoring() {
   for (const track of tracks) {
     const audible = hasSolo ? track.solo : !track.muted;
     if (track.previewAudio) track.previewAudio.muted = !audible;
+    const row = byId("source").querySelector(`.processor-track[data-track-id="${track.id}"]`);
+    row?.classList.toggle("is-muted", !audible); row?.classList.toggle("is-solo", track.solo);
     const solo = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="solo"]`);
     const mute = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="mute"]`);
     solo?.setAttribute("aria-pressed", String(track.solo));
@@ -1082,7 +1094,12 @@ function selectProcessorFiles(candidates, provenance = [], context = null) {
   if (!active) setBusy(false);
 }
 
-input.addEventListener("change", () => selectProcessorFiles(input.files));
+let selectionGuard = async () => true;
+export function setProcessorSelectionGuard(guard) { selectionGuard = guard; }
+input.addEventListener("change", async () => {
+  const files = [...input.files];
+  if (await selectionGuard()) selectProcessorFiles(files); else syncInputFiles();
+});
 
 function waitForMetadata(audio, operation) {
   let timer;
@@ -1238,7 +1255,7 @@ async function presentResult({ blob, mediaType, filename, originalDuration, inte
   byId("pause-label").textContent = multiple ? "Сокращено общих длинных пауз" : "Сокращено длинных пауз";
   download.href = resultURL;
   download.download = filename;
-  download.textContent = mode === "passthrough" ? "Скачать исходный файл без изменений" : "Скачать обработанный MP3";
+  download.textContent = mode === "passthrough" ? "Скачать исходный файл без изменений" : "Скачать MP3";
   resultCandidate = {
     blob, processorVersion: "s07-v1", sources: structuredClone(selectedProvenance),
     provenance: provenanceContext ? { ...structuredClone(provenanceContext), sources: structuredClone(selectedProvenance) } : null,

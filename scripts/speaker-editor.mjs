@@ -1,3 +1,4 @@
+import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 import {
   SpeakerHistory, buildLevelingAnalysisFilter, buildSpeakerCandidate, buildSpeakerFilterGraph,
@@ -11,12 +12,12 @@ const encoder = new TextEncoder();
 const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
-  operation: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
+  operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
-const editorBusy = () => Boolean(state.operation) || state.saveLocked;
+const editorBusy = () => Boolean(state.operation) || state.saveLocked || state.projectSaving;
 const clock = (seconds) => {
   if (!Number.isFinite(seconds)) return "—";
   const total = Math.max(0, Math.floor(seconds));
@@ -27,10 +28,11 @@ const durationText = (seconds) => `${new Intl.NumberFormat("ru-RU", { maximumFra
 const bytesText = (bytes) => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} КБ` : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 
 function userMessage(error, fallback) {
-  if (error?.name === "AbortError" || error?.message === "cancelled") return "Сборка отменена. Черновик и исходники сохранены в памяти.";
-  if (error?.status === 409) return "Черновик или запись изменились в другом окне. Закройте работу, откройте её снова и повторите изменения.";
-  if (error?.status === 413) return "Черновик превышает безопасный предел размера.";
-  return error instanceof Error && /^(Не удалось|Длительность|Верните|Черновик|Состав|Регион)/.test(error.message) ? error.message : fallback;
+  if (error?.name === "AbortError" || error?.message === "cancelled") return "Создание финальной версии отменено. Проект и исходники сохранены в памяти.";
+  if ([401, 403].includes(error?.status)) return RECONNECT_MESSAGE;
+  if (error?.status === 409) return "Проект или запись изменились в другом окне. Закройте работу, откройте её снова и повторите изменения.";
+  if (error?.status === 413) return "Проект превышает безопасный предел размера.";
+  return error instanceof Error && /^(Не удалось|Длительность|Верните|Проект|Состав|Регион)/.test(error.message) ? error.message : fallback;
 }
 
 function currentDirty() {
@@ -48,6 +50,9 @@ export function getSpeakerSaveState() {
     draft: state.draft ? structuredClone(state.draft) : null,
     payload: state.payload ? structuredClone(state.payload) : null,
     candidate: getSpeakerCandidate(),
+    sourceEpoch: state.sourceEpoch,
+    originalDuration: state.originalDuration,
+    files: state.session?.sourceTracks.map(t => state.filesById.get(t.trackId)) || [],
     ready: state.ready,
     saving: state.saveLocked
   };
@@ -85,6 +90,14 @@ function updateSelectionDuration() {
   const start = Number(byId("selection-start").value); const end = Number(byId("selection-end").value);
   byId("selection-duration").textContent = Number.isFinite(start) && Number.isFinite(end) && end > start ? (end - start).toFixed(6) : "0.000000";
   byId("selection-error").textContent = "";
+  document.getElementById("speaker-selection-summary").textContent = `${start.toFixed(3)} — ${end.toFixed(3)} · ${(Math.max(0, end-start)).toFixed(3)} с`;
+  for (const wave of workspace.querySelectorAll(".speaker-waveform[data-track-id]")) {
+    wave.querySelector(".speaker-selection-overlay")?.remove();
+    const selected = wave.dataset.trackId === byId("selection-track").value;
+    const row = wave.closest(".speaker-track"); row?.classList.toggle("is-selected", selected);
+    if (row) { const label = row.querySelector(".speaker-track-selection"); if (label) label.textContent = selected ? "Выбрана" : ""; }
+    if (selected && end > start) { const overlay = element("span", "speaker-region-overlay speaker-selection-overlay"); overlay.style.left = `${start/state.originalDuration*100}%`; overlay.style.width = `${(end-start)/state.originalDuration*100}%`; wave.append(overlay); }
+  }
 }
 
 function clearCandidate() {
@@ -107,7 +120,7 @@ function commitPayload(next, action) {
     if (fingerprint(normalized) === fingerprint(state.payload)) return;
     state.payload = state.history.commit(normalized);
     clearCandidate();
-    byId("status").textContent = `Изменение применено: ${action}. Черновик не сохранён.`;
+    byId("status").textContent = `Изменение применено: ${action}. Проект не сохранён.`;
     render();
   } catch (error) { byId("selection-error").textContent = userMessage(error, "Изменение не применено."); }
 }
@@ -142,6 +155,9 @@ function monitorAudible(track) {
 function applyMonitoring() {
   for (const track of state.tracks) {
     if (track.audio) track.audio.muted = !monitorAudible(track);
+    const row = workspace.querySelector(`.speaker-track[data-track-id="${track.trackId}"]`);
+    if (row) { row.classList.toggle("is-muted", !monitorAudible(track)); row.classList.toggle("is-solo", track.solo);
+      row.classList.toggle("is-excluded", state.payload.excludedTrackIds.includes(track.trackId)); }
     workspace.querySelector(`[data-track-id="${track.trackId}"][data-action="solo"]`)?.setAttribute("aria-pressed", String(track.solo));
     workspace.querySelector(`[data-track-id="${track.trackId}"][data-action="mute"]`)?.setAttribute("aria-pressed", String(track.mute));
   }
@@ -210,6 +226,8 @@ function waveform(track) {
     overlay.style.left = `${region.startSeconds / state.originalDuration * 100}%`; overlay.style.width = `${(region.endSeconds - region.startSeconds) / state.originalDuration * 100}%`;
     overlay.title = `Тишина ${region.startSeconds.toFixed(6)}–${region.endSeconds.toFixed(6)} с`; control.append(overlay);
   }
+  const bounds = recordingBoundaries(state.payload, state.originalDuration);
+  for (const [kind, time] of Object.entries(bounds)) { const marker = element("span", `speaker-boundary speaker-boundary--${kind}`, kind === "start" ? "Начало" : "Конец"); marker.style.left = `${time/state.originalDuration*100}%`; control.append(marker); }
   const playhead = element("span", "speaker-playhead"); playhead.setAttribute("aria-hidden", "true"); control.append(playhead);
   let pointerStart = null;
   control.addEventListener("pointerdown", (event) => {
@@ -219,9 +237,12 @@ function waveform(track) {
     if (pointerStart === null) return; const end = pointerTime(event, scroll); setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
     pointerStart = null; control.releasePointerCapture(event.pointerId);
   });
+  control.addEventListener("pointercancel", () => { pointerStart = null; });
   control.addEventListener("keydown", (event) => {
     if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault();
-    const current = byId("source-audio").currentTime || 0; const step = event.shiftKey ? 30 : 5;
+    if (event.shiftKey) { const start = Number(byId("selection-start").value) || 0; const end = Number(byId("selection-end").value) || start;
+      setSelection(start, Math.max(start, Math.min(state.originalDuration, end + (event.key === "ArrowLeft" ? -.1 : .1))), track.trackId); return; }
+    const current = byId("source-audio").currentTime || 0; const step = 5;
     seekSource(event.key === "Home" ? 0 : event.key === "End" ? state.originalDuration : current + (event.key === "ArrowLeft" ? -step : step));
   });
   scroll.addEventListener("scroll", () => syncScroll(scroll), { passive: true }); scroll.append(control); return scroll;
@@ -247,10 +268,10 @@ function renderTracks() {
     const item = element("li", `speaker-track${excluded.has(trackId) ? " is-excluded" : ""}`); item.dataset.trackId = trackId;
     const header = element("div", "speaker-track__header"); const heading = element("div", "speaker-track__identity");
     heading.append(element("span", "speaker-track__number", `Дорожка ${index + 1}`), element("h4", "", track.file.name),
-      element("span", "", `${durationText(track.duration)} · ${excluded.has(trackId) ? "исключена из финального микса" : "в финальном миксе"}`));
+      element("span", "", `${durationText(track.duration)} · ${excluded.has(trackId) ? "Не в финальном миксе" : "в финальном миксе"}`));
     const monitor = element("div", "speaker-track__buttons");
-    const solo = makeButton("Соло", () => toggleMonitoring(trackId, "solo"), trackId); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
-    const mute = makeButton("Заглушить", () => toggleMonitoring(trackId, "mute"), trackId); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
+    const solo = makeButton("S · Solo", () => toggleMonitoring(trackId, "solo"), trackId); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
+    const mute = makeButton("M · Mute", () => toggleMonitoring(trackId, "mute"), trackId); mute.dataset.action = "mute"; mute.setAttribute("aria-pressed", String(track.mute));
     const editsDisabled = editorBusy() || !state.ready;
     const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
     const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
@@ -258,18 +279,20 @@ function renderTracks() {
     monitor.append(solo, mute, include, up, down); header.append(heading, monitor);
     const dsp = element("div", "speaker-dsp");
     dsp.append(selectControl("Улучшение", setting.enhancement, [["off", "Выкл."], ["gentle", "Мягкое"]], (value) => changeTrack(trackId, "enhancement", value)),
-      selectControl("Выравнивание", setting.leveling, [["off", "Выкл."], ["on", "Вкл."]], (value) => changeTrack(trackId, "leveling", value)),
+      selectControl("Выравнивание громкости", setting.leveling, [["off", "Выкл."], ["on", "Вкл."]], (value) => changeTrack(trackId, "leveling", value)),
       selectControl("Компрессия", setting.compression, [["off", "Выкл."], ["light", "Лёгкая"], ["medium", "Средняя"], ["strong", "Сильная"]], (value) => changeTrack(trackId, "compression", value)));
     const summary = element("p", "speaker-track__summary", processingLabel(setting));
+    header.append(element("span", "speaker-track-selection"));
     item.append(header, waveform(track), dsp, summary); list.append(item);
   });
-  updateWaveWidths(); applyMonitoring();
+  updateWaveWidths(); applyMonitoring(); updateSelectionDuration();
 }
 
 function renderRegions() {
   const container = byId("regions"); container.replaceChildren();
   const regions = [...state.payload.globalCuts.map((region) => ({ ...region, kind: "cut" })),
     ...state.payload.trackSilenceRegions.map((region) => ({ ...region, kind: "silence" }))];
+  document.getElementById("speaker-regions-heading").textContent = `Правки · ${regions.length}`;
   if (!regions.length) { container.append(element("p", "", "Регионов пока нет.")); return; }
   for (const region of regions) {
     const row = element("article", `speaker-region-row speaker-region-row--${region.kind}`); row.dataset.regionId = region.regionId;
@@ -310,6 +333,8 @@ function render() {
   else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
   updateHistoryControls(); updateRenderState();
   byId("status").dataset.dirty = String(currentDirty());
+  byId("status").textContent = currentDirty() ? "Есть несохранённые изменения" : "Все изменения сохранены";
+  byId("identity").textContent = `${state.session.title} · ${state.tracks.length} дорожек · ${clock(state.originalDuration)}`;
   notifyState();
 }
 
@@ -439,9 +464,9 @@ async function prepareSources(epoch) {
   if (samples.some((item) => !item)) throw new Error("Не удалось подготовить формы сигнала исходных дорожек.");
   tracks.forEach((track, index) => { track.duration = durations[index]; track.samples = samples[index]; });
   state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
-  state.savedFingerprint = draft ? fingerprint(normalized) : fingerprint(defaultSpeakerPayload(normalized.trackIds));
+  state.savedFingerprint = draft ? fingerprint(normalized) : "";
   setupPlayback(); state.ready = true; render();
-  byId("status").textContent = draft ? `Черновик открыт, ревизия ${draft.draftRevision}.` : "Новый черновик готов. Все настройки выключены.";
+  byId("status").textContent = draft ? "Все изменения сохранены" : "Есть несохранённые изменения";
 }
 
 function failSourcePreparation() {
@@ -453,19 +478,66 @@ function failSourcePreparation() {
   render();
 }
 
-async function saveDraft() {
-  if (!state.ready || editorBusy() || !state.session || !state.saveDraft) return;
-  byId("status").textContent = "Сохранение черновика обработки…"; byId("save").disabled = true;
-  const before = fingerprint(state.payload);
+export async function saveSpeakerProject() {
+  if (!state.ready || editorBusy() || !state.session || !state.saveDraft) return false;
+  const epoch = state.sourceEpoch;
+  const submitted = structuredClone(state.payload);
+  state.projectSaving = true; state.projectController = new AbortController(); byId("project-cancel").hidden = false;
+  byId("status").textContent = "Сохранение проекта…"; updateRenderState();
   try {
-    const result = await state.saveDraft({ schemaVersion: 1, expectedDraftRevision: state.draft?.draftRevision || 0,
-      expectedSourceSessionRevision: state.session.revision, payloadSchema: SPEAKER_PAYLOAD_SCHEMA, payload: structuredClone(state.payload), idempotencyKey: crypto.randomUUID() });
-    if (fingerprint(state.payload) !== before) throw new Error("Черновик изменился во время сохранения; повторите сохранение.");
-    state.draft = result.draft; state.session = result.session; state.savedFingerprint = before;
-    state.candidate = rebindSpeakerCandidate(state.candidate, state.payload, result.session.revision, result.draft.draftRevision);
-    state.onSaved?.(result); byId("status").textContent = `Черновик сохранён, ревизия ${result.draft.draftRevision}.`;
-  } catch (error) { byId("status").textContent = userMessage(error, "Не удалось сохранить черновик. Изменения и исходники остались в памяти."); }
-  finally { updateRenderState(); notifyState(); }
+    const result = await state.saveDraft({ session: structuredClone(state.session), draft: state.draft,
+      payload: submitted, files: state.session.sourceTracks.map(t => state.filesById.get(t.trackId)), duration: state.originalDuration, signal: state.projectController.signal,
+      onProgress: ({ uploadedBytes, totalBytes }) => { if (epoch === state.sourceEpoch) byId("status").textContent = `Сохранение исходных дорожек: ${Math.round(uploadedBytes / totalBytes * 100)}%`; } });
+    if (epoch !== state.sourceEpoch || !result) return false;
+    if (result.mapping) {
+      const remap = id => result.mapping.get(id);
+      state.tracks.forEach(t => { t.trackId = remap(t.trackId); t.manifest = result.session.sourceTracks.find(s => s.trackId === t.trackId); });
+      state.filesById = new Map(state.tracks.map(t => [t.trackId, t.file]));
+      const remapPayload = payload => {
+        const next = structuredClone(payload); next.trackIds = next.trackIds.map(remap); next.excludedTrackIds = next.excludedTrackIds.map(remap);
+        for (const value of [...next.trackProcessing, ...next.trackSilenceRegions]) value.trackId = remap(value.trackId);
+        return normalizeSpeakerPayload(next, result.session.sourceTracks.map(t => t.trackId), state.originalDuration);
+      };
+      state.history.past = state.history.past.map(remapPayload); state.history.future = state.history.future.map(remapPayload);
+      state.payload = structuredClone(result.draft.payload); state.history.present = structuredClone(state.payload);
+      // Keep the local MP3 downloadable, but never relabel its source provenance.
+      if (state.candidate) byId("render-status").textContent = "Проект сохранён. Создайте финальную версию заново, чтобы сохранить её в аудиоархив.";
+    } else state.candidate = rebindSpeakerCandidate(state.candidate, submitted, result.session.revision, result.draft.draftRevision);
+    state.draft = result.draft; state.session = result.session;
+    state.savedFingerprint = fingerprint(result.draft.payload);
+    const select = byId("selection-track"); select.replaceChildren();
+    for (const t of state.tracks) { const option = element("option", "", t.file.name); option.value = t.trackId; select.append(option); }
+    state.onSaved?.(result); render();
+    return !currentDirty();
+  } catch (error) {
+    if (epoch === state.sourceEpoch) byId("status").textContent = userMessage(error, "Не удалось сохранить проект. Изменения и исходники остались в памяти.");
+    return false;
+  } finally {
+    if (epoch === state.sourceEpoch) { state.projectSaving = false; state.projectController = null; byId("project-cancel").hidden = true; updateRenderState(); notifyState(); }
+  }
+}
+
+function dialogChoice(id, choices) {
+  const dialog = document.getElementById(id), focus = document.activeElement;
+  return new Promise(resolve => {
+    let resolved = false;
+    const finish = value => { if (resolved) return; resolved = true; dialog.close();
+      for (const [button, handler] of handlers) button.removeEventListener("click", handler);
+      dialog.removeEventListener("cancel", cancel); if (focus?.isConnected) focus.focus(); resolve(value); };
+    const handlers = Object.entries(choices).map(([button, value]) => {
+      const node = document.getElementById(button), handler = () => finish(value); node.addEventListener("click", handler); return [node, handler];
+    });
+    const cancel = event => { event.preventDefault(); finish("cancel"); }; dialog.addEventListener("cancel", cancel); dialog.showModal();
+  });
+}
+export async function confirmLocalProjectSave() {
+  return await dialogChoice("speaker-local-save-dialog", { "speaker-local-save-confirm": "save", "speaker-local-save-cancel": "cancel" }) === "save";
+}
+export async function protectSpeakerTransition() {
+  if (editorBusy()) return false;
+  if (!currentDirty()) return true;
+  const choice = await dialogChoice("speaker-unsaved-dialog", { "speaker-unsaved-save": "save", "speaker-unsaved-discard": "discard", "speaker-unsaved-cancel": "cancel" });
+  return choice === "discard" || (choice === "save" && await saveSpeakerProject());
 }
 
 function operation() {
@@ -489,9 +561,10 @@ async function resultMetadata(blob) {
 
 async function renderSpeaker() {
   if (!state.ready || editorBusy() || byId("render").disabled) return;
+  const epoch = state.sourceEpoch;
   let snapshot;
   try {
-    snapshot = createSpeakerRenderSnapshot({ session: state.session, draftRevision: state.draft?.draftRevision || 0,
+    snapshot = state.session.kind === "local" ? { local: true, title: state.session.title, payload: structuredClone(state.payload), originalDurationSeconds: state.originalDuration, sources: state.payload.trackIds.map(id => ({ trackId: id, file: state.filesById.get(id) })) } : createSpeakerRenderSnapshot({ session: state.session, draftRevision: state.draft?.draftRevision || 0,
       payload: state.payload, originalDurationSeconds: state.originalDuration, tracks: state.tracks });
   } catch (error) {
     byId("render-status").textContent = userMessage(error, "Не удалось зафиксировать безопасное состояние для сборки."); return;
@@ -523,12 +596,18 @@ async function renderSpeaker() {
     abortCheck(controller); if (code !== 0) throw new Error("Не удалось создать MP3. Проверьте исходники и повторите.");
     const bytes = await engine.readFile(outputPath); if (!bytes.byteLength) throw new Error("Не удалось создать MP3.");
     const blob = new Blob([bytes], { type: "audio/mpeg" }); const actualDuration = await resultMetadata(blob); abortCheck(controller);
-    const candidate = await buildSpeakerCandidate({ blob, snapshot, measurements, resultDurationSeconds: actualDuration, sha256: sha256Hex }); abortCheck(controller);
+    if (Math.abs(actualDuration - resultDuration(snapshot.originalDurationSeconds, snapshot.payload.globalCuts)) > 1152 / 48000) throw new Error("Длительность результата не совпадает с монтажом.");
+    const candidate = snapshot.local ? { candidateType: "local-speaker", blob, payload: snapshot.payload,
+      presentationFilename: `${snapshot.title}-speaker.mp3`, originalDurationSeconds: snapshot.originalDurationSeconds,
+      resultDurationSeconds: actualDuration, globallyRemovedDurationSeconds: removedDuration(snapshot.payload.globalCuts), sizeBytes: blob.size } :
+      await buildSpeakerCandidate({ blob, snapshot, measurements, resultDurationSeconds: actualDuration, sha256: sha256Hex }); abortCheck(controller);
     await presentCandidate(candidate, controller); abortCheck(controller);
-    byId("progress").value = 100; byId("render-status").textContent = "Локальный MP3 готов. В архив ничего не передавалось.";
+    byId("progress").value = 100; byId("render-status").textContent = "Финальная версия готова. В архив ничего не передавалось.";
   } catch (error) {
-    clearCandidate(); byId("render-status").textContent = userMessage(error, "Не удалось собрать результат. Черновик и исходники остались в памяти.");
+    if (epoch !== state.sourceEpoch) return;
+    clearCandidate(); byId("render-status").textContent = userMessage(error, "Не удалось собрать результат. Проект и исходники остались в памяти.");
   } finally {
+    if (epoch !== state.sourceEpoch) return;
     if (logListener) state.engine?.off("log", logListener);
     if (state.engine?.loaded) for (const path of [...inputPaths, filterPath, outputPath]) { try { await state.engine.deleteFile(path); } catch { /* fixed temporary path may be absent */ } }
     if (state.operation === controller) state.operation = null;
@@ -538,7 +617,7 @@ async function renderSpeaker() {
 
 function cancelRender() {
   if (!state.operation) return; state.operation.abort(); state.engine?.terminate(); state.engine = null; clearCandidate();
-  byId("render-status").textContent = "Сборка отменена. Черновик и исходники сохранены в памяти."; byId("cancel").hidden = true; byId("progress").hidden = true; render();
+  byId("render-status").textContent = "Создание финальной версии отменено. Проект и исходники сохранены в памяти."; byId("cancel").hidden = true; byId("progress").hidden = true; render();
 }
 
 async function resultSamples(blob) { return waveformSamples(new File([blob], "result.mp3", { type: "audio/mpeg" })); }
@@ -570,42 +649,46 @@ function updateResultPlayhead() {
 
 function teardown() {
   state.sourceEpoch += 1;
-  cancelRender(); stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
+  cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
   state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
-  document.getElementById("announcement-processor-card").hidden = false;
+  document.getElementById("announcement-processor-card").hidden = true;
+  document.getElementById("active-editor-mode").textContent = "Выберите исходники и режим редактирования.";
   notifyState();
+  window.dispatchEvent(new Event("speaker-editor-closed"));
 }
 
-export function closeSpeakerEditor(force = false) {
+export async function closeSpeakerEditor(force = false, isCurrent = () => true) {
+  if (!isCurrent()) return false;
   if (!state.session) return true;
-  if (state.saveLocked) {
+  if (state.saveLocked || state.projectSaving) {
     byId("status").textContent = "Сохранение в архив ещё выполняется. Сначала отмените или завершите передачу.";
     return false;
   }
-  if (!force && currentDirty() && !globalThis.confirm("Закрыть работу и отбросить несохранённые изменения Спикерской?")) return false;
+  if (!force && !await protectSpeakerTransition()) return false;
+  if (!isCurrent()) return false;
   teardown(); return true;
 }
 
-export async function openSpeakerEditor({ session, files, draft = null, saveDraft: save, onSaved }) {
-  if (!closeSpeakerEditor(false)) return false;
-  if (session.lifecycle.state !== "incoming" || session.sourceState !== "available") throw new Error("Спикерская доступна только для входящей записи с целыми исходниками.");
-  if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый черновик имеет неподдерживаемую схему и не будет перезаписан.");
+export async function openSpeakerEditor({ session, files, draft = null, saveDraft: save, onSaved, isCurrent = () => true }) {
+  if (session.kind !== "local" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) throw new Error("Для обработки спикерской нужны доступные исходники. Верните запись для обработки.");
+  if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый проект имеет неподдерживаемую схему и не будет перезаписан.");
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
   if (files.length !== orderedManifest.length) throw new Error("Состав загруженных исходников не совпадает с записью.");
+  if (!await closeSpeakerEditor(false, isCurrent) || !isCurrent()) return false;
   const epoch = ++state.sourceEpoch;
   state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null }));
   state.payload = draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
   state.history = new SpeakerHistory(state.payload); state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;
   document.getElementById("announcement-processor-card").hidden = true;
-  workspace.hidden = false; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
+  workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
   setSelection(0, ""); clearCandidate();
   updateRenderState();
-  try { await prepareSources(epoch); workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
+  try { await prepareSources(epoch); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
   catch (error) {
     if (state.sourceEpoch !== epoch) return false;
     const message = userMessage(error, "Не удалось подготовить Спикерскую."); failSourcePreparation();
@@ -616,7 +699,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
 
 byId("selection-start").addEventListener("input", updateSelectionDuration); byId("selection-end").addEventListener("input", updateSelectionDuration);
 byId("add-cut").addEventListener("click", () => addRegion("cut")); byId("add-silence").addEventListener("click", () => addRegion("silence"));
-byId("undo").addEventListener("click", undo); byId("redo").addEventListener("click", redo); byId("save").addEventListener("click", saveDraft);
+byId("undo").addEventListener("click", undo); byId("redo").addEventListener("click", redo); byId("save").addEventListener("click", saveSpeakerProject);
 byId("close").addEventListener("click", () => closeSpeakerEditor(false)); byId("render").addEventListener("click", renderSpeaker); byId("cancel").addEventListener("click", cancelRender);
 byId("zoom").addEventListener("input", updateWaveWidths); byId("zoom-out").addEventListener("click", () => { byId("zoom").value = Math.max(1, Number(byId("zoom").value) - .5); updateWaveWidths(); });
 byId("zoom-in").addEventListener("click", () => { byId("zoom").value = Math.min(8, Number(byId("zoom").value) + .5); updateWaveWidths(); }); byId("zoom-fit").addEventListener("click", () => { byId("zoom").value = 1; updateWaveWidths(); });
@@ -638,3 +721,11 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
 window.addEventListener("pagehide", () => teardown());
+
+for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click", () => {
+  try { const value = Number(byId(`selection-${kind}`).value); commitPayload(setRecordingBoundary(state.payload, state.originalDuration, kind, value), "граница записи"); }
+  catch (error) { byId("selection-error").textContent = error.message; }
+});
+window.addEventListener("beforeunload", event => { if (currentDirty()) { event.preventDefault(); event.returnValue = ""; } });
+
+byId("project-cancel").addEventListener("click", () => state.projectController?.abort());

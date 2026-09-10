@@ -1,7 +1,9 @@
-import { eligible, parseEditorIntent } from './audio-archive-core.mjs';
+import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
+import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, ProjectSave } from "./audio-project.mjs";
+import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
-import { clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
-import { closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
+import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
+import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
 const byId = (id) => document.getElementById(`source-session-${id}`);
 const speakerId = (id) => document.getElementById(`speaker-editor-${id}`);
@@ -9,7 +11,8 @@ const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ ||
   document.querySelector('meta[name="audio-archive-gateway"]')?.content.trim().replace(/\/$/, "") || "";
 const gateway = new AudioArchiveGateway(baseUrl);
 const state = {
-  authenticated: false,
+  localContext: null, localProject: null, editorMode: null,
+  authenticated: false, authSequence: 0, retryAction: null, reconnectNeeded: false,
   sessions: [],
   allSessions: [],
   resultArchive: "announcement",
@@ -70,7 +73,7 @@ function workflowLabel(value) {
 
 function userError(error, fallback) {
   if (error?.name === "AbortError") return "Операция остановлена.";
-  if (error?.status === 401 || error?.status === 403) return "Подключение к архиву истекло или недостаточно прав. Подключите архив снова.";
+  if (error?.status === 401 || error?.status === 403) return "Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.";
   if (error?.status === 409) return "Данные записи изменились в другом окне. Обновите архив и повторите действие.";
   if (error?.status === 413) return "Объём данных превышает допустимый предел.";
   if (error?.status === 422) return "Проверка целостности данных не пройдена. Операция остановлена без изменений.";
@@ -84,15 +87,19 @@ function setArchiveStatus(message) {
 }
 
 function updateSessionStatus() {
-  byId("session-status").textContent = !baseUrl ? "Шлюз входящего архива ещё не настроен." :
+  byId("session-status").textContent = !baseUrl ? "Шлюз аудиоархива ещё не настроен." :
     state.authenticated ? "Общий защищённый сеанс архива активен." : "Для архива требуется общий служебный пароль.";
   byId("authenticate").hidden = state.authenticated;
-  byId("maintenance").hidden = !state.authenticated;
+  document.getElementById("archive-reconnect").hidden = !state.reconnectNeeded || (state.authenticated && !state.retryAction);
+  document.getElementById("archive-reconnect-message").textContent = state.authenticated ? "Подключение восстановлено. Повторите действие." : RECONNECT_MESSAGE;
+  document.getElementById("archive-reconnect-login").hidden = state.authenticated;
+  document.getElementById("archive-reconnect-retry").hidden = !state.authenticated || !state.retryAction;
+
 }
 
 function setMode(mode) {
-  if (mode === "device" && !closeSpeakerEditor(false)) return;
   state.mode = mode;
+  if (mode === "device" && !state.editorMode) { activateMode("announcement"); document.getElementById("import-zone").open = true; }
   const archive = mode === "archive";
   byId("archive-panel").hidden = !archive;
   byId("device-panel").hidden = archive;
@@ -101,7 +108,7 @@ function setMode(mode) {
   byId("mode-archive").setAttribute("aria-pressed", String(archive));
   byId("mode-device").setAttribute("aria-pressed", String(!archive));
   document.getElementById("processor-save-incoming").disabled = archive || !getProcessorFiles().length;
-  if (!archive) closeAnnouncementWorkspace();
+
   updatePublishState();
 }
 
@@ -134,25 +141,21 @@ function selectedTrackIds() {
 }
 
 function renderAnnouncementWorkspace() {
-  const session = state.activeManifest || state.activeSession;
-  byId("announcement-workspace").hidden = !session;
-  if (!session) return;
-  byId("announcement-identity").textContent = `${session.title} · ${formatDate(session.recordedAt)} · активная работа «Анонс-мейкер»`;
-  byId("announcement-technical").textContent = `Идентификатор записи: ${session.id}. Ревизия: ${session.revision}.`;
-  const list = byId("announcement-tracks");
-  list.replaceChildren();
-  for (const source of state.processorProvenance) {
-    const track = session.sourceTracks.find((item) => item.trackId === source.trackId);
-    const item = document.createElement("li");
-    item.textContent = track ? `${track.originalName} · ${formatBytes(track.sizeBytes)}` : "Дорожка недоступна";
-    list.append(item);
-  }
-  const archived = session.lifecycle.state === "archived";
-  byId("announcement-save").disabled = archived || session.sourceState !== "available" || !state.processorProvenance.length;
-  const revision = state.announcementDraft?.draftRevision || 0;
-  byId("announcement-status").textContent = archived ? "Архивированная запись доступна только для прослушивания и скачивания результатов. Сначала верните её во входящие." :
-    revision ? `Черновик обработки сохранён, ревизия ${revision}.` : "Черновик обработки ещё не сохранён.";
+  const session = state.activeManifest;
+  byId("announcement-workspace").hidden = state.editorMode !== "announcement";
+  byId("announcement-identity").textContent = session ? `${session.title} · ${formatDate(session.recordedAt)}` : "Дорожки на этом устройстве";
+  byId("announcement-status").textContent = "Исходники → Обработать запись → Прослушать → Сохранить / Скачать";
   updatePublishState();
+}
+function activateMode(mode) {
+  state.editorMode = mode;
+  document.getElementById("import-zone").open = false;
+  document.body.dataset.editing = mode;
+  document.getElementById("announcement-processor-card").hidden = mode !== "announcement";
+  byId("announcement-workspace").hidden = mode !== "announcement";
+  document.getElementById("active-editor-mode").textContent = `Сейчас открыто: ${mode === "speaker" ? "Финальная обработка спикерской" : "Редактирование для анонс-мейкера"}`;
+  if (mode === "speaker") document.getElementById("processor-source-audio").pause();
+  renderAnnouncementWorkspace(); renderImportFiles();
 }
 
 function updatePublishState() {
@@ -160,17 +163,15 @@ function updatePublishState() {
   const reason = byId("publish-reason");
   if (!button || !reason) return;
   const session = state.activeManifest;
-  const draftIds = state.announcementDraft?.payload?.trackIds || [];
-  const selected = selectedTrackIds();
   let message = "";
-  if (!session) message = "Сохранение доступно только для активной входящей записи из архива исходников.";
-  else if (session.lifecycle.state !== "incoming") message = "Верните запись во входящие перед сохранением нового результата.";
+  if (!session) message = "Сначала сохраните исходные записи в аудиоархив, затем обработайте запись заново.";
+  else if (session.lifecycle.state !== "incoming") message = "Верните запись для обработки перед сохранением нового результата.";
   else if (session.sourceState !== "available") message = "Исходники этой записи недоступны.";
   else if (!state.candidate) message = "Сначала создайте локальный результат обработки.";
   else if (!state.candidate.sources.length) message = "Локальный файл без связи с архивной записью сохранить в этот архив нельзя.";
   else if (state.candidate.provenance?.sessionId !== session.id) message = "Локальный результат относится к другой записи.";
-  else if (state.candidate.provenance?.sourceSessionRevision !== session.revision) message = "Запись или черновик изменились после обработки; обработайте дорожки заново.";
-  else if (!state.announcementDraft || JSON.stringify(draftIds) !== JSON.stringify(selected)) message = "Сохраните черновик обработки с текущим порядком дорожек.";
+  else if (state.candidate.provenance?.sourceSessionRevision !== session.revision) message = "Запись или проект изменились после обработки; обработайте дорожки заново.";
+
   button.disabled = Boolean(message) || Boolean(state.publicationController);
   reason.textContent = message || "Результат готов к сохранению в архив «Анонс-мейкер».";
 }
@@ -184,24 +185,24 @@ function button(label, action, className = "") {
   return element;
 }
 
-function onGatewayError(error, fallback) {
-  if (error?.status === 401) {
-    state.authenticated = false;
+function onGatewayError(error, fallback, retry = null) {
+  if ([401, 403].includes(error?.status)) {
+    state.authenticated = false; state.reconnectNeeded = true; state.retryAction = retry;
     updateSessionStatus();
-    setArchiveStatus("Сеанс архива истёк. Подключите архив снова.");
+    setArchiveStatus("Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.");
     return;
   }
   setArchiveStatus(userError(error, fallback));
 }
 
 async function refreshSessions() {
-  const sequence = ++state.refreshSequence;
+  const sequence = ++state.refreshSequence, auth = state.authSequence;
   if (!baseUrl) {
     state.sessions = [];
     state.allSessions = [];
     renderSessions();
     renderResultArchive();
-    setArchiveStatus("Шлюз входящего архива ещё не настроен. Локальная обработка доступна в режиме «С устройства».");
+    setArchiveStatus("Шлюз аудиоархива ещё не настроен. Локальная обработка доступна в режиме «С устройства».");
     return;
   }
   if (!state.authenticated) {
@@ -215,25 +216,21 @@ async function refreshSessions() {
   setArchiveStatus("Загрузка записей и сохранённых результатов…");
   try {
     const [incoming, archived] = await Promise.all([gateway.listSessions("incoming"), gateway.listSessions("archived")]);
-    if (sequence !== state.refreshSequence) return;
-    const byIdentity = new Map();
-    for (const session of [...(incoming.sessions || []), ...(archived.sessions || [])]) {
-      const known = byIdentity.get(session.id);
-      if (!known || session.revision > known.revision) byIdentity.set(session.id, session);
-    }
-    state.allSessions = [...byIdentity.values()];
-    const lifecycle = byId("lifecycle").value;
-    state.sessions = state.allSessions.filter((session) => session.lifecycle.state === lifecycle);
+    if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
+    state.allSessions = mergeSessions(incoming.sessions, archived.sessions);
+    state.sessions = state.allSessions;
     renderSessions();
     renderResultArchive();
-    setArchiveStatus(state.sessions.length ? "" : lifecycle === "incoming" ? "Входящих записей пока нет." : "Архив исходников пока пуст.");
+    await showIncomplete();
+    if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
+    setArchiveStatus(state.sessions.length ? "" : "Исходных записей пока нет.");
   } catch (error) {
-    if (sequence !== state.refreshSequence) return;
+    if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
     state.sessions = [];
     state.allSessions = [];
     renderSessions();
     renderResultArchive();
-    onGatewayError(error, "Не удалось загрузить входящий архив.");
+    onGatewayError(error, "Не удалось загрузить исходные записи.");
   }
 }
 
@@ -261,76 +258,101 @@ async function mutateSession(action) {
   }
 }
 
+function newerSpeakerSession(prepared) {
+  const active = getSpeakerSaveState().session;
+  return active?.id === prepared.id && active.revision > prepared.revision ? active : null;
+}
+
 async function loadSession(session) {
-  if (!closeSpeakerEditor(false)) return;
-  const sequence = ++state.sessionSequence;
-  state.candidate = null;
-  updatePublishState();
-  setArchiveStatus(session.lifecycle.state === "archived" ? "Открытие архивированной записи…" : "Загрузка и проверка исходных дорожек…");
+  if (state.publicationController || state.uploadController) return;
+  const sequence = ++state.sessionSequence, auth = state.authSequence;
+  const current = () => sequence === state.sessionSequence && auth === state.authSequence;
+  setArchiveStatus(session.lifecycle.state === "archived" ? "Открытие записи, убранной из рабочего списка…" : "Загрузка и проверка исходных дорожек…");
   try {
+    // Prepare in local variables. A failed/expired load must not clear the active editor or its Blob URLs.
     const complete = await gateway.getSession(session.id);
-    if (sequence !== state.sessionSequence) return;
+    if (!current()) return;
     const draft = (await gateway.loadDraft(session.id, "announcement")).draft;
-    if (sequence !== state.sessionSequence) return;
-    state.activeSession = session;
+    if (!current()) return;
+    if (draft && draft.payloadSchema !== "announcement/v1") throw new Error("Неподдерживаемые сохранённые настройки; они не будут перезаписаны.");
+    const order = draft?.payload?.trackIds || complete.sourceTracks.map((track) => track.trackId);
+    const tracksById = new Map(complete.sourceTracks.map((track) => [track.trackId, track]));
+    if (order.some((id) => !tracksById.has(id))) throw new Error("Проект обработки ссылается на отсутствующую дорожку.");
+    const selectedTracks = order.map((id) => tracksById.get(id));
+    const provenance = selectedTracks.map((track, index) => ({ trackId: track.trackId, blobId: track.blobId,
+      ordinal: index + 1, sizeBytes: track.sizeBytes, sha256: track.sha256, mediaType: track.mediaType }));
+    const available = complete.lifecycle.state === "incoming" && complete.sourceState === "available";
+    let files = [];
+    if (available) {
+      const allFiles = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
+      if (!current()) return;
+      const filesById = new Map(complete.sourceTracks.map((track, index) => [track.trackId, allFiles[index]]));
+      files = order.map((id) => filesById.get(id));
+    }
+    // Check the latest montage only when the replacement is ready, and fence the dialog/save completion too.
+    if (!current()) return;
+    if (!await closeSpeakerEditor(false, () => current() && !newerSpeakerSession(complete))) {
+      // Save-and-continue can advance this very source while the confirmation is open.
+      // Fetch its new lineage before replacing the current editor.
+      const newer = newerSpeakerSession(complete);
+      if (current() && newer) return loadSession(newer);
+      return;
+    }
+    if (!current()) return;
+    state.activeSession = complete;
     state.activeManifest = complete;
     state.announcementDraft = draft;
-    const order = state.announcementDraft?.payload?.trackIds || complete.sourceTracks.map((track) => track.trackId);
-    const tracksById = new Map(complete.sourceTracks.map((track) => [track.trackId, track]));
-    if (order.some((id) => !tracksById.has(id))) throw new Error("Черновик обработки ссылается на отсутствующую дорожку.");
-    const selectedTracks = order.map((id) => tracksById.get(id));
-    state.processorProvenance = selectedTracks.map((track, index) => ({ trackId: track.trackId, blobId: track.blobId,
-      ordinal: index + 1, sizeBytes: track.sizeBytes, sha256: track.sha256, mediaType: track.mediaType }));
-    renderAnnouncementWorkspace();
-    if (complete.lifecycle.state === "incoming" && complete.sourceState === "available") {
-      const allFiles = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
-      if (sequence !== state.sessionSequence) return;
-      const filesById = new Map(complete.sourceTracks.map((track, index) => [track.trackId, allFiles[index]]));
-      const files = order.map((id) => filesById.get(id));
+    state.processorProvenance = provenance;
+    state.candidate = null;
+    activateMode("announcement");
+    if (available) {
       state.loadingArchive = true;
-      loadProcessorFiles(files, state.processorProvenance, { sessionId: complete.id, sourceSessionRevision: complete.revision });
+      loadProcessorFiles(files, provenance, { sessionId: complete.id, sourceSessionRevision: complete.revision });
       state.loadingArchive = false;
       setArchiveStatus(`Загружено дорожек: ${files.length}. Целостность исходников проверена; запись не изменена.`);
       document.getElementById("processor-heading").scrollIntoView({ behavior: "smooth", block: "start" });
     } else {
+      state.loadingArchive = true;
       clearProcessorFiles();
+      state.loadingArchive = false;
       state.processorProvenance = [];
       state.candidate = null;
-      setArchiveStatus(complete.lifecycle.state === "archived" ? "Архивированная запись открыта без загрузки в обработчик." :
+      setArchiveStatus(complete.lifecycle.state === "archived" ? "Запись убрана из рабочего списка. Верните её для обработки." :
         "Исходники удалены; доступны сохранённые результаты и метаданные.");
       byId("announcement-workspace").scrollIntoView({ behavior: "smooth", block: "start" });
     }
   } catch (error) {
-    if (sequence !== state.sessionSequence) return;
+    if (!current()) return;
     state.loadingArchive = false;
-    onGatewayError(error, "Не удалось восстановить исходные дорожки.");
+    onGatewayError(error, "Не удалось восстановить исходные дорожки.", () => { if (sequence === state.sessionSequence) return loadSession(session); });
   }
 }
 
 async function loadSpeakerSession(session) {
+  if (state.publicationController || state.uploadController) return;
   if (session.lifecycle.state !== "incoming" || session.sourceState !== "available") {
-    setArchiveStatus("Спикерская доступна только для входящей записи с доступными исходниками. Сначала верните запись во входящие.");
+    setArchiveStatus("Спикерская доступна только для исходной записи с доступными исходниками. Сначала верните запись для обработки.");
     return;
   }
-  const sequence = ++state.sessionSequence;
+  const sequence = ++state.sessionSequence, auth = state.authSequence;
   setArchiveStatus("Загрузка и проверка исходников для «Спикерская»…");
   try {
     const complete = await gateway.getSession(session.id);
-    if (sequence !== state.sessionSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     const draft = (await gateway.loadDraft(session.id, "speaker")).draft;
-    if (sequence !== state.sessionSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     if (complete.lifecycle.state !== "incoming" || complete.sourceState !== "available") throw new Error("Запись больше не доступна для редактирования.");
     const files = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
-    if (sequence !== state.sessionSequence) return;
-    clearProcessorFiles();
-    closeAnnouncementWorkspace(false);
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    const project = new ProjectSave(gateway);
     const opened = await openSpeakerEditor({
       session: complete,
       files,
       draft,
-      saveDraft: (envelope) => gateway.saveDraft(complete.id, "speaker", envelope),
+      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && !newerSpeakerSession(complete),
+      saveDraft: ({ session, draft, payload, signal }) => withReconnect(() => project.save(session, draft, payload, signal)),
       onSaved: ({ session: updated }) => {
-        state.activeSession = updated;
+        state.activeSession = updated; state.activeManifest = updated;
         const index = state.sessions.findIndex((item) => item.id === updated.id);
         if (index >= 0) state.sessions[index] = updated;
         const allIndex = state.allSessions.findIndex((item) => item.id === updated.id);
@@ -338,24 +360,34 @@ async function loadSpeakerSession(session) {
         renderSessions();
       }
     });
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    const newer = newerSpeakerSession(complete);
+    if (!opened && newer) return loadSpeakerSession(newer);
+    if (opened) {
+      closeAnnouncementWorkspace(false);
+      state.activeManifest = complete;
+      activateMode("speaker");
+    }
     setArchiveStatus(opened ? `Открыта работа «Спикерская»: ${complete.title}. Исходники проверены и не изменены.` : "Не удалось подготовить исходники для «Спикерская».");
   } catch (error) {
-    if (sequence !== state.sessionSequence) return;
-    onGatewayError(error, "Не удалось открыть запись в «Спикерская».");
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    onGatewayError(error, "Не удалось открыть запись в «Спикерская».", () => { if (sequence === state.sessionSequence) return loadSpeakerSession(session); });
   }
 }
 
 function speakerSaveReason(snapshot = getSpeakerSaveState()) {
   const { session, draft, payload, candidate, saving } = snapshot;
-  if (!session) return "Откройте входящую запись в «Спикерская».";
-  if (session.lifecycle.state !== "incoming") return "Верните запись во входящие перед сохранением новой версии.";
+  if (!session) return "Откройте финальную обработку спикерской.";
+  if (session.kind === "local") return "Сохраните проект вместе с исходниками, затем создайте финальную версию заново.";
+  if (candidate?.candidateType === "local-speaker") return "Создайте финальную версию заново для сохранения в аудиоархив.";
+  if (session.lifecycle.state !== "incoming") return "Верните запись для обработки перед сохранением новой версии.";
   if (session.sourceState !== "available") return "Исходники этой записи недоступны.";
   if (saving) return "Идёт сохранение текущего локального результата.";
   if (!candidate) return "Сначала соберите и проверьте локальный MP3.";
-  if (!draft || draft.draftRevision < 1) return "Сохраните текущий черновик обработки перед сохранением результата.";
+  if (!draft || draft.draftRevision < 1) return "Сохраните текущий проект обработки перед сохранением результата.";
   if (candidate.sessionId !== session.id) return "Локальный результат относится к другой записи.";
-  if (candidate.sourceSessionRevision !== session.revision || candidate.draftRevision !== draft.draftRevision) return "Запись или черновик изменились после локальной сборки. Соберите результат заново.";
-  if (JSON.stringify(candidate.payload) !== JSON.stringify(payload) || JSON.stringify(draft.payload) !== JSON.stringify(payload)) return "Текущий черновик не совпадает с локальным результатом. Сохраните черновик и соберите MP3 заново.";
+  if (candidate.sourceSessionRevision !== session.revision || candidate.draftRevision !== draft.draftRevision) return "Запись или проект изменились после локальной сборки. Соберите результат заново.";
+  if (JSON.stringify(candidate.payload) !== JSON.stringify(payload) || JSON.stringify(draft.payload) !== JSON.stringify(payload)) return "Текущий проект не совпадает с локальным результатом. Сохраните проект и соберите MP3 заново.";
   if (candidate.mediaType !== "audio/mpeg" || !(candidate.blob instanceof Blob) || candidate.blob.size !== candidate.sizeBytes || !candidate.sizeBytes) return "Локальный MP3 повреждён. Соберите результат заново.";
   const sourcesMatch = candidate.sources.length === session.sourceTracks.length && candidate.sources.every((source) => {
     const track = session.sourceTracks.find((item) => item.trackId === source.trackId);
@@ -529,13 +561,13 @@ async function reconcileSpeakerSave(transactionId, sessionId) {
 }
 
 async function openArchivedOutput(session, output, workflow = "announcement", downloadOnly = false) {
-  const sequence = ++state.outputSequence;
+  const sequence = ++state.outputSequence, auth = state.authSequence;
   try {
     byId("results-status").textContent = "Загрузка и проверка сохранённого результата…";
     const metadata = workflow === "speaker" ? await gateway.getSpeakerOutput(session.id, output.outputId) : await gateway.getAnnouncementOutput(session.id, output.outputId);
     const file = workflow === "speaker" ? await reconstructSpeakerOutput(metadata, gateway.speakerPartFetch(metadata)) :
       await reconstructAnnouncementOutput(metadata, gateway.announcementPartFetch(metadata));
-    if (sequence !== state.outputSequence || state.resultArchive !== workflow) return;
+    if (sequence !== state.outputSequence || auth !== state.authSequence || state.resultArchive !== workflow) return;
     if (state.outputUrl) URL.revokeObjectURL(state.outputUrl);
     state.outputUrl = URL.createObjectURL(file);
     const link = byId("announcement-download");
@@ -545,10 +577,17 @@ async function openArchivedOutput(session, output, workflow = "announcement", do
     byId("announcement-playback-name").textContent = `${session.title} · Версия ${output.version} · ${file.name} · ${formatBytes(file.size)}`;
     byId("announcement-audio").src = state.outputUrl;
     byId("announcement-playback").hidden = false;
-    byId("results-status").textContent = "Целостность сохранённого результата проверена. Он готов к прослушиванию и скачиванию.";
+    byId("results-status").textContent = "Файл проверен и готов к воспроизведению.";
     if (downloadOnly) link.click();
   } catch (error) {
-    if (sequence === state.outputSequence) {
+    if (sequence === state.outputSequence && auth === state.authSequence) {
+      if ([401, 403].includes(error.status)) onGatewayError(error, RECONNECT_MESSAGE, async () => {
+        if (sequence !== state.outputSequence || state.resultArchive !== workflow) return;
+        const fresh = await gateway.getSession(session.id);
+        const target = fresh.workflows[workflow].outputs.find(item => item.outputId === output.outputId && item.sha256 === output.sha256 && item.version === output.version);
+        if (!target) throw Object.assign(new Error("Результат больше не доступен"), { status: 404 });
+        return openArchivedOutput(fresh, target, workflow, downloadOnly);
+      });
       clearOutputPlayback();
       byId("results-status").textContent = userError(error, "Не удалось проверить и открыть сохранённый результат.");
     }
@@ -576,11 +615,11 @@ function resultArchiveItem(session, workflowName, output) {
   heading.textContent = `${session.title} · Версия ${output.version}`;
   const metadata = document.createElement("p");
   metadata.className = "result-archive-item__metadata";
-  metadata.textContent = `${formatDate(output.createdAt)} · ${formatBytes(output.sizeBytes)} · ${session.sourceState === "deleted" ? "исходники удалены" : session.lifecycle.state === "archived" ? "исходники в архиве" : "исходники во входящих"}`;
+  metadata.textContent = `${formatDate(output.createdAt)} · ${formatBytes(output.sizeBytes)} · ${session.sourceState === "deleted" ? "исходники удалены" : session.lifecycle.state === "archived" ? "Убрана из рабочего списка" : "Готова к обработке"}`;
   details.append(heading, metadata);
   const actions = document.createElement("div");
   actions.className = "result-archive-item__actions";
-  actions.append(button("Слушать", () => openArchivedOutput(session, output, workflowName)));
+  actions.append(button("Прослушать", () => openArchivedOutput(session, output, workflowName)));
   actions.append(button("Скачать", () => openArchivedOutput(session, output, workflowName, true)));
   actions.append(button("Удалить версию", () => openDeleteDialog(session, { kind: "output-version", workflow: workflowName, version: output.version }), "source-session-danger"));
   item.append(details, actions);
@@ -625,12 +664,12 @@ function renderSessions() {
   byId("count").textContent = `Найдено: ${state.sessions.length}.`;
   for (const session of state.sessions) {
     const card = document.createElement("article");
-    card.className = "source-session-item";
+    card.className = "source-session-item"; card.dataset.sessionId = session.id;
     const heading = document.createElement("h3");
     heading.textContent = session.title;
     const metadata = document.createElement("p");
     metadata.className = "source-session-metadata";
-    metadata.textContent = `${formatDate(session.recordedAt)} · ${originText[session.origin.kind] || "Источник не указан"} · ${session.sourceTracks.length} дорожек · ${session.sourceState === "available" ? "исходники доступны" : "исходники удалены"}`;
+    metadata.textContent = `${session.lifecycle.state === "incoming" ? "Готова к обработке" : "Убрана из рабочего списка"} · ${formatDate(session.recordedAt)} · ${originText[session.origin.kind] || "Источник не указан"} · ${session.sourceTracks.length} дорожек · ${session.sourceState === "available" ? "исходники доступны" : "исходники удалены"}`;
     const body = document.createElement("div");
     body.className = "source-session-item__body";
     const summary = document.createElement("div");
@@ -641,21 +680,21 @@ function renderSessions() {
       const badge = document.createElement("span");
       const workflow = session.workflows?.[name];
       const validWorkflow = workflow?.workflow === name && Array.isArray(workflow.outputs);
-      badge.textContent = validWorkflow ? `${workflowLabel(name)}: ${statusText[workflow.status] || "состояние недоступно"} · результатов ${workflow.outputs.length}` : `${workflowLabel(name)}: данные недоступны`;
+      badge.textContent = validWorkflow ? `${workflowLabel(name)} · готовых версий: ${workflow.outputs.length}${name === "speaker" && workflow.currentDraft ? " · сохранён проект" : ""}` : `${workflowLabel(name)}: данные недоступны`;
       workflows.append(badge);
     }
     const actions = document.createElement("div");
     actions.className = "source-session-actions";
-    const open = button(session.lifecycle.state === "archived" ? "Открыть запись" : "Открыть в «Анонс-мейкер»", () => loadSession(session), "action-primary");
-    actions.append(open);
+    const open = button("Редактировать для анонс-мейкера", () => loadSession(session), "action-primary");
+    open.disabled = !eligible(session); actions.append(open);
     if (session.lifecycle.state === "incoming" && session.sourceState === "available") {
-      actions.append(button("Открыть в «Спикерская»", () => loadSpeakerSession(session), "speaker-open-action"));
+      actions.append(button("Открыть финальную обработку спикерской", () => loadSpeakerSession(session), "speaker-open-action"));
     }
-    if (session.lifecycle.state === "incoming") actions.append(button("Архивировать", () => {
-      if (session.id === speakerEditorSessionId() && !closeSpeakerEditor(false)) return;
+    if (session.lifecycle.state === "incoming") actions.append(button("Убрать из рабочего списка", async () => {
+      if (session.id === speakerEditorSessionId() && !await closeSpeakerEditor(false)) return;
       mutateSession(() => gateway.setLifecycle(session.id, "archive", session.revision));
     }));
-    else actions.append(button("Вернуть во входящие", () => mutateSession(() => gateway.setLifecycle(session.id, "restore", session.revision))));
+    else actions.append(button("Вернуть для обработки", () => mutateSession(() => gateway.setLifecycle(session.id, "restore", session.revision))));
     actions.append(button("Удаление…", () => openDeleteDialog(session), "source-session-danger"));
     summary.append(heading, metadata, workflows);
     body.append(summary, actions);
@@ -664,22 +703,85 @@ function renderSessions() {
   }
 }
 
-function ensureAuthenticated(action) {
-  if (state.authenticated) {
-    action();
-    return;
+async function ensureAuthenticated(action = async () => {}) {
+  if (state.authenticated) return action();
+  const connected = await new Promise(resolve => {
+    if (state.afterLogin) { resolve(false); return; }
+    state.afterLogin = resolve;
+    byId("login-status").textContent = baseUrl ? RECONNECT_MESSAGE : "Шлюз аудиоархива ещё не настроен.";
+    byId("password").value = "";
+    byId("login-dialog").showModal(); byId("password").focus();
+  });
+  if (!connected) throw new DOMException("cancelled", "AbortError");
+  return action();
+}
+async function withReconnect(action) {
+  await ensureAuthenticated();
+  try { return await action(); }
+  catch (error) {
+    if (![401, 403].includes(error.status)) throw error;
+    state.authenticated = false; updateSessionStatus();
+    await ensureAuthenticated();
+    return action(); // One retry only; the action revalidates revisions and its retained transaction.
   }
-  state.afterLogin = action;
-  byId("login-status").textContent = baseUrl ? "" : "Шлюз входящего архива ещё не настроен.";
-  byId("password").value = "";
-  byId("login-dialog").showModal();
-  byId("password").focus();
+}
+async function saveLocalProject({ session: context, files, draft, payload, duration, signal, onProgress }) {
+  const project = state.localProject;
+  if (context.kind !== "local") return withReconnect(() => project.save(context, draft, payload, signal));
+  if (!project.finalized && !await confirmLocalProjectSave()) return null;
+  return withReconnect(async () => {
+    const session = await project.sources(context, files, { signal, onProgress });
+    const bound = bindLocalPayload(context, payload, project.plan, session, duration);
+    const result = await project.save(session, null, bound.payload, signal);
+    return { ...result, mapping: bound.mapping };
+  });
+}
+async function openLocalSpeaker() {
+  if (state.publicationController || state.uploadController) return;
+  if (state.editorMode === "speaker" && getSpeakerSaveState().ready) return;
+  if (state.activeManifest) return loadSpeakerSession(state.activeManifest);
+  if (!getProcessorFiles().length) { setArchiveStatus("Выберите исходные дорожки в разделе Импорт."); return; }
+  const files = getProcessorFiles();
+  state.localContext ||= localSourceContext(files); state.localProject ||= new ProjectSave(gateway);
+  const opened = await openSpeakerEditor({ session: state.localContext, files, saveDraft: saveLocalProject, onSaved: ({ session }) => { state.activeManifest = session; updateSourceSaveState(); } });
+  if (opened) activateMode("speaker");
+}
+async function openLocalAnnouncement() {
+  if (state.publicationController || state.uploadController) return;
+  if (state.activeManifest) return loadSession(state.activeManifest);
+  ++state.sessionSequence;
+  if (!await protectSpeakerTransition()) return;
+  // Save-and-continue may just have made local sources canonical; load them before closing Speaker.
+  if (state.activeManifest) return loadSession(state.activeManifest);
+  if (!await closeSpeakerEditor(true)) return;
+  if (!getProcessorFiles().length) { setArchiveStatus("Выберите исходные дорожки в разделе Импорт."); return; }
+  activateMode("announcement");
+}
+function workingFiles() { return state.editorMode === "speaker" && getSpeakerSaveState().ready ? getSpeakerSaveState().files : getProcessorFiles(); }
+function updateSourceSaveState() {
+  document.getElementById("processor-save-incoming").disabled = !workingFiles().length || Boolean(state.activeManifest || state.localProject?.finalized);
+}
+function renderImportFiles() {
+  updateSourceSaveState();
+  const list = document.getElementById("import-files"); list.replaceChildren();
+  document.getElementById("import-summary").textContent = `Выбрано дорожек: ${workingFiles().length}`;
+  for (const [index, file] of workingFiles().entries()) {
+    const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${file.name.split('.').at(-1).toUpperCase()} · ${formatBytes(file.size)} `));
+    row.append(button("Удалить", async () => {
+      const files = workingFiles().filter((_, i) => i !== index);
+      if (!await closeSpeakerEditor(false)) return;
+      state.activeManifest = null; state.localContext = null; state.localProject = null;
+      if (files.length) loadProcessorFiles(files); else clearProcessorFiles();
+    })); list.append(row);
+  }
 }
 
 function openIngestDialog(files = []) {
+  if (state.localProject?.finalized || state.activeManifest) { updateSourceSaveState(); return; }
+  const sameFiles = state.pendingFiles.length === files.length && state.pendingFiles.every((file, i) => file === files[i]);
   state.pendingFiles = Array.from(files);
   state.pendingOrigin = state.pendingFiles.length ? "device" : "manual";
-  state.retryKey = crypto.randomUUID();
+  if (!sameFiles || !state.retryKey) state.retryKey = crypto.randomUUID();
   const local = state.pendingFiles.length > 0;
   byId("ingest-files-field").hidden = local;
   byId("ingest-files").required = !local;
@@ -716,18 +818,34 @@ async function submitIngestion(event) {
   byId("ingest-status").textContent = "Хеширование и подготовка частей…";
   try {
     const recordedValue = byId("ingest-recorded").value;
-    await gateway.ingestFiles({
+    const saved = await gateway.ingestFiles({
       files, title, recordedAt: recordedValue ? new Date(recordedValue).toISOString() : null,
       origin: state.pendingOrigin,
       idempotencyKey: state.retryKey, signal: state.uploadController.signal,
+      onPlan: plan => { state.ingestionPlan = plan; },
       onProgress: ({ uploadedBytes, totalBytes, uploadedParts, totalParts }) => {
         byId("ingest-progress").value = Math.round(uploadedBytes / totalBytes * 100);
         byId("ingest-status").textContent = `Загружено частей: ${uploadedParts} из ${totalParts}.`;
       }
     });
-    byId("ingest-status").textContent = "Входящая запись создана.";
+    const session = saved.session || saved;
+    const context = localSourceContext(files);
+    bindLocalPayload(context, defaultSpeakerPayload(context.sourceTracks.map(t => t.trackId)), state.ingestionPlan, session);
+    if (!validateSessionManifest(session)) throw new Error("Не удалось подтвердить исходники.");
+    if (state.pendingOrigin === "device") {
+      state.localProject ||= new ProjectSave(gateway); state.localProject.finalized = session; state.localProject.plan = state.ingestionPlan;
+      if (state.editorMode !== "speaker") {
+        state.activeManifest = session;
+        state.processorProvenance = state.ingestionPlan.tracks.map(t => ({ trackId: t.trackId, blobId: t.blobId, ordinal: t.ordinal, sizeBytes: t.sizeBytes, sha256: t.sha256, mediaType: t.mediaType }));
+        state.loadingArchive = true; await bindProcessorSources(files, state.processorProvenance, { sessionId: session.id, sourceSessionRevision: session.revision }); state.loadingArchive = false;
+        renderAnnouncementWorkspace();
+      }
+    }
+    updateSourceSaveState();
+    byId("ingest-status").textContent = "Исходные записи сохранены в аудиоархиве.";
     setTimeout(() => byId("ingest-dialog").close(), 400);
     await refreshSessions();
+    setArchiveStatus("Исходные записи сохранены в аудиоархиве.");
   } catch (error) {
     byId("ingest-status").textContent = error?.name === "AbortError" ?
       "Передача остановлена. Незавершённая операция сохранена для безопасного повтора." : `${userError(error, "Не удалось сохранить исходники.")} Локальные файлы сохранены; можно повторить.`;
@@ -738,28 +856,6 @@ async function submitIngestion(event) {
   }
 }
 
-async function saveAnnouncementDraft() {
-  if (!state.activeManifest || !state.processorProvenance.length) return;
-  byId("announcement-status").textContent = "Сохранение черновика обработки…";
-  try {
-    const result = await gateway.saveDraft(state.activeManifest.id, "announcement", {
-      schemaVersion: 1,
-      expectedDraftRevision: state.announcementDraft?.draftRevision || 0,
-      expectedSourceSessionRevision: state.activeManifest.revision,
-      payloadSchema: "announcement/v1",
-      payload: { trackIds: selectedTrackIds() },
-      idempotencyKey: crypto.randomUUID()
-    });
-    state.announcementDraft = result.draft;
-    state.activeManifest = result.session;
-    updateProcessorProvenanceContext({ sessionId: result.session.id, sourceSessionRevision: result.session.revision });
-    const index = state.sessions.findIndex((item) => item.id === result.session.id);
-    if (index >= 0) state.sessions[index] = result.session;
-    renderAnnouncementWorkspace();
-  } catch (error) {
-    byId("announcement-status").textContent = userError(error, "Не удалось сохранить черновик обработки. Обновите запись и повторите действие.");
-  }
-}
 
 function openPublicationDialog() {
   updatePublishState();
@@ -787,10 +883,9 @@ function openPublicationDialog() {
 
 async function submitPublication(event) {
   event.preventDefault();
-  if (!state.activeManifest || !state.announcementDraft || !state.candidate) return;
+  if (!state.activeManifest || !state.candidate) return;
   state.publicationKey ||= crypto.randomUUID();
   state.publicationController = new AbortController();
-  state.publicationTransactionId = null;
   byId("publication-submit").disabled = true;
   byId("publication-cancel").textContent = "Остановить";
   byId("publication-progress").hidden = false;
@@ -798,8 +893,29 @@ async function submitPublication(event) {
   byId("publication-status").textContent = "Подготовка проверяемых частей результата…";
   updatePublishState();
   const candidate = getProcessorResult();
+  const epoch = state.sessionSequence;
   let completed = false;
   try {
+    const session = state.activeManifest;
+    state.publicationBinding ||= { session: structuredClone(session), candidate, payload: { trackIds: selectedTrackIds() }, saver: new ProjectSave(gateway, "announcement"), saved: null };
+    const binding = state.publicationBinding;
+    if (binding.session.id !== session.id || candidate.blob !== binding.candidate.blob || JSON.stringify(binding.payload.trackIds) !== JSON.stringify(selectedTrackIds())) throw Object.assign(new Error("Результат изменился"), { status: 409 });
+    if (!binding.saved) {
+      const current = (await gateway.loadDraft(session.id, "announcement")).draft;
+      if (current && current.payloadSchema !== "announcement/v1") throw new Error("Неподдерживаемые сохранённые данные не будут перезаписаны.");
+      if (!binding.saver.attempt && current && JSON.stringify(current.payload) === JSON.stringify(binding.payload)) {
+        const fresh = await gateway.getSession(session.id);
+        if (fresh.revision !== binding.session.revision || candidate.provenance?.sourceSessionRevision !== fresh.revision) throw Object.assign(new Error("Запись изменилась"), { status: 409 });
+        binding.saved = { session: fresh, draft: current };
+      } else binding.saved = await binding.saver.save(binding.session, current, binding.payload);
+    }
+    const fresh = await gateway.getSession(session.id);
+    if (fresh.revision !== binding.saved.session.revision) {
+      const job = state.publicationTransactionId ? await gateway.publicationJob(state.publicationTransactionId) : null;
+      if (job?.state !== "finalized" || job.sessionId !== session.id) throw Object.assign(new Error("Запись изменилась"), { status: 409 });
+    }
+    if (epoch !== state.sessionSequence) return;
+    state.activeManifest = binding.saved.session; state.announcementDraft = binding.saved.draft;
     const result = await gateway.publishAnnouncement({
       sessionId: state.activeManifest.id,
       expectedRevision: state.activeManifest.revision,
@@ -823,11 +939,13 @@ async function submitPublication(event) {
     });
     byId("publication-progress").value = 100;
     byId("publication-status").textContent = `Версия ${result.output.version} сохранена в архиве «Анонс-мейкер».`;
+    state.publicationBinding = null;
+    state.announcementDraftKey = null;
     state.publicationKey = null;
     state.publicationTransactionId = null;
     state.activeManifest = await gateway.getSession(state.activeManifest.id);
     renderAnnouncementWorkspace();
-    byId("announcement-status").textContent = `Версия ${result.output.version} сохранена; черновик обработки не изменён.`;
+    byId("announcement-status").textContent = `Версия ${result.output.version} сохранена; проект обработки не изменён.`;
     await refreshSessions();
     completed = true;
     setTimeout(() => byId("publication-dialog").close(), 500);
@@ -862,7 +980,7 @@ async function openDeleteDialog(session, selection = null) {
   try {
     const preview = await gateway.dependencyPreview(session.id);
     state.deleteTarget = { session, selection, preview };
-    byId("delete-summary").textContent = `${session.title}: исходников ${preview.sourceTracks}; версий «Анонс-мейкер» ${preview.announcementVersions}; версий «Спикерская» ${preview.speakerVersions}; черновиков ${preview.drafts}; незавершённых сохранений ${preview.pendingAnnouncementPublications + (preview.pendingSpeakerSaves || 0)}. Другие уровни автоматически удалены не будут.`;
+    byId("delete-summary").textContent = `${session.title}: исходников ${preview.sourceTracks}; версий «Анонс-мейкер» ${preview.announcementVersions}; версий «Спикерская» ${preview.speakerVersions}; сохранённых настроек обработки ${preview.drafts}; незавершённых сохранений ${preview.pendingAnnouncementPublications + (preview.pendingSpeakerSaves || 0)}. Другие уровни автоматически удалены не будут.`;
     byId("delete-technical").textContent = `Точный идентификатор записи: ${session.id}`;
     byId("delete-confirmation").value = "";
     byId("delete-status").textContent = "";
@@ -935,38 +1053,27 @@ async function showIncomplete() {
       return;
     }
     container.replaceChildren();
+    for (const row of byId("list").querySelectorAll(".source-recovery-item")) row.remove();
+    let associated = 0;
     for (const transaction of result.transactions || []) {
-      const row = document.createElement("div");
-      row.className = "source-recovery-item";
-      if (transaction.kind === "ingestion") {
-        row.append(document.createTextNode(`Незавершённое сохранение исходников · передано частей ${transaction.uploadedParts} из ${transaction.totalParts}. `));
-        if (transaction.canFinalize) row.append(button("Завершить", () => recover(transaction.transactionId, "resume")));
-        else row.append(document.createTextNode("Для безопасного продолжения нужны исходные файлы и исходный ключ операции. Если окно загрузки уже закрыто, удалите незавершённую операцию и создайте новую."));
-        row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
-      } else if (transaction.kind === "publication") {
-        const label = transaction.workflow === "speaker" ? "Спикерская" : "Анонс-мейкер";
-        row.append(document.createTextNode(`Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${label}» · передано частей ${transaction.uploadedParts} из ${transaction.totalParts}. `));
-        if (transaction.state === "discarding") {
-          row.append(document.createTextNode("Удаление было прервано; его можно безопасно завершить. "));
-          row.append(button("Завершить удаление", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
-        } else if (transaction.canFinalize) row.append(button("Завершить сохранение", () => recover(transaction.transactionId, "resume")));
-        else if (transaction.workflow === "speaker") {
-          row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
-          row.append(document.createTextNode(" Требуется точно тот же локальный результат. "));
-        } else row.append(document.createTextNode("Для продолжения нужен локальный результат и исходный ключ сохранения. "));
-        if (transaction.state !== "discarding") row.append(button("Удалить незавершённое сохранение", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
-      } else {
-        row.append(document.createTextNode("Незнакомая незавершённая операция. Автоматическое продолжение отключено."));
-        row.append(button("Удалить незавершённое", () => recover(transaction.transactionId, "discard"), "source-session-danger"));
+      const target = [...byId("list").querySelectorAll(".source-session-item")].find(row => row.dataset.sessionId === transaction.sessionId);
+      if (!target) continue; // Unassociated operations and orphan diagnostics remain in Archive maintenance.
+      associated++;
+      const row = document.createElement("div"); row.className = "source-recovery-item";
+      const title = document.createElement("strong"); title.textContent = "Требуется внимание"; row.append(title);
+      const policy = recoveryPolicy(transaction);
+      row.append(document.createTextNode(transaction.kind === "pending_delete" ? " Удаление не завершено. " :
+        transaction.kind === "publication" ? ` Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${workflowLabel(transaction.workflow)}». ` : " Сохранение исходных записей не завершено. "));
+      row.append(document.createTextNode(policy.local));
+      if (transaction.kind === "publication" && transaction.workflow === "speaker" && !transaction.canFinalize &&
+          ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length) {
+        row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
       }
-      container.append(row);
+      for (const [action, label] of policy.actions) row.append(button(label, () => recover(transaction.transactionId, action), action === "discard" ? "source-session-danger" : ""));
+      target.append(row);
     }
-    for (const orphan of result.orphans || []) {
-      const row = document.createElement("p");
-      row.textContent = `Найдены данные для ручной проверки (${orphan.draft ? "черновик" : "сохранённый результат"}). Они не удалены автоматически.`;
-      container.append(row);
-    }
-    if (!container.childElementCount) container.textContent = "Незавершённых операций и данных для ручной проверки не найдено.";
+    if (!associated) container.textContent = "Незавершённых сохранений для этих записей не найдено.";
+
   } catch (error) {
     if (sequence !== state.incompleteSequence) return;
     if (state.speakerResumeController) {
@@ -980,6 +1087,8 @@ async function showIncomplete() {
 async function recover(transactionId, action) {
   if (action === "discard" && !globalThis.confirm("Удалить только это незавершённое сохранение? Зарезервированный номер версии останется использованным.")) return;
   try {
+    const latest = await gateway.listIncomplete(); const current = latest.transactions.find(t => t.transactionId === transactionId);
+    if (!current || !recoveryPolicy(current).actions.some(([allowed]) => allowed === action)) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
     await gateway.recoverIncomplete(transactionId, action);
     await showIncomplete();
     await refreshSessions();
@@ -1086,13 +1195,13 @@ async function consumeEditorIntent() {
     return;
   }
   if (getProcessorFiles().length && !globalThis.confirm("Заменить текущие локальные исходники записью из аудиоархива? Несохранённый результат будет потерян.")) return;
-  const sequence = ++state.sessionSequence;
+  const sequence = ++state.sessionSequence, auth = state.authSequence;
   try {
     const session = await gateway.getSession(intent.sessionId);
     if (sequence !== state.sessionSequence || !state.authenticated) return;
     if (!validateSessionManifest(session) || session.id !== intent.sessionId) throw new Error("Некорректные сведения о записи.");
     if (!eligible(session)) {
-      setArchiveStatus("Новая обработка недоступна: нужны входящая запись и доступные исходники. Откройте аудиоархив для просмотра результатов.");
+      setArchiveStatus("Новая обработка недоступна: верните запись для обработки; исходники должны быть доступны. Откройте аудиоархив для просмотра результатов.");
       return;
     }
     if (intent.workflow === "speaker") await loadSpeakerSession(session);
@@ -1116,7 +1225,7 @@ async function initialize() {
   }
   updateSessionStatus();
   await refreshSessions();
-  if (state.authenticated) await showIncomplete();
+
   await consumeEditorIntent();
 }
 
@@ -1125,21 +1234,27 @@ byId("mode-device").addEventListener("click", () => setMode("device"));
 byId("results-announcement").addEventListener("click", () => setResultArchive("announcement"));
 byId("results-speaker").addEventListener("click", () => setResultArchive("speaker"));
 byId("refresh").addEventListener("click", refreshSessions);
-byId("lifecycle").addEventListener("change", refreshSessions);
-byId("authenticate").addEventListener("click", () => ensureAuthenticated(refreshSessions));
-byId("create").addEventListener("click", () => ensureAuthenticated(() => openIngestDialog()));
-document.getElementById("processor-save-incoming").addEventListener("click", () => ensureAuthenticated(() => openIngestDialog(getProcessorFiles())));
+
+byId("authenticate").addEventListener("click", () => ensureAuthenticated(refreshSessions).catch(() => {}));
+
+document.getElementById("processor-save-incoming").addEventListener("click", () => ensureAuthenticated(() => openIngestDialog(workingFiles())).catch(() => {}));
 window.addEventListener("audio-processor-selection", (event) => {
-  if (!state.loadingArchive && event.detail.files.length && !event.detail.provenance.length) setMode("device");
+  if (!state.loadingArchive) ++state.sessionSequence;
+  if (!state.loadingArchive && state.editorMode !== "speaker" && event.detail.files.length && !event.detail.provenance.length) {
+    setMode("device"); state.activeManifest = null; state.processorProvenance = [];
+    state.localContext = localSourceContext(event.detail.files); state.localProject = new ProjectSave(gateway);
+  }
+  renderImportFiles();
   if (event.detail.provenance.length) {
     state.processorProvenance = event.detail.provenance;
     renderAnnouncementWorkspace();
   }
-  document.getElementById("processor-save-incoming").disabled = state.mode !== "device" || !event.detail.files.length;
+  updateSourceSaveState();
   updatePublishState();
 });
 window.addEventListener("audio-processor-result", (event) => {
   state.candidate = event.detail.candidate;
+  state.publicationBinding = null; state.publicationTransactionId = null;
   state.publicationKey = crypto.randomUUID();
   updatePublishState();
 });
@@ -1152,7 +1267,7 @@ speakerId("save-dialog").addEventListener("cancel", (event) => {
   event.preventDefault();
   cancelSpeakerSaveDialog();
 });
-byId("announcement-save").addEventListener("click", saveAnnouncementDraft);
+
 byId("announcement-close").addEventListener("click", () => closeAnnouncementWorkspace(true));
 byId("publish-announcement").addEventListener("click", openPublicationDialog);
 byId("publication-form").addEventListener("submit", submitPublication);
@@ -1165,25 +1280,30 @@ byId("publication-dialog").addEventListener("cancel", (event) => {
 
 byId("login-form").addEventListener("submit", async (event) => {
   event.preventDefault();
+  if (event.submitter.disabled) return;
+  const submit = event.submitter; submit.disabled = true;
+  const auth = ++state.authSequence;
   const password = byId("password").value;
   byId("login-status").textContent = "Проверка пароля…";
   try {
     await gateway.login(password);
+    if (auth !== state.authSequence) return;
     state.authenticated = true;
     byId("password").value = "";
     byId("login-dialog").close();
     updateSessionStatus();
     const action = state.afterLogin;
     state.afterLogin = null;
-    if (action) await action();
+    if (action) action(true);
     await consumeEditorIntent();
   } catch (error) {
     byId("login-status").textContent = userError(error, "Не удалось подключить архив. Проверьте пароль и повторите действие.");
   } finally {
+    submit.disabled = false;
     byId("password").value = "";
   }
 });
-byId("login-cancel").addEventListener("click", () => { state.afterLogin = null; byId("login-dialog").close(); });
+byId("login-cancel").addEventListener("click", () => { ++state.authSequence; state.afterLogin?.(false); state.afterLogin = null; byId("login-dialog").close(); });
 byId("ingest-files").addEventListener("change", () => {
   const files = Array.from(byId("ingest-files").files || []);
   byId("ingest-selection").textContent = files.length ? localSelectionText(files) : "";
@@ -1195,16 +1315,6 @@ byId("ingest-cancel").addEventListener("click", () => {
 });
 byId("delete-form").addEventListener("submit", submitDeletion);
 byId("delete-cancel").addEventListener("click", () => byId("delete-dialog").close());
-byId("incomplete").addEventListener("click", showIncomplete);
-byId("rebuild").addEventListener("click", async () => {
-  try {
-    const result = await gateway.rebuildCatalog();
-    byId("recovery-list").textContent = `Каталог пересобран: записей ${result.catalog.entries.length}. Данных для ручной проверки: ${result.orphans.length}.`;
-    await refreshSessions();
-  } catch (error) {
-    byId("recovery-list").textContent = userError(error, "Не удалось пересобрать каталог.");
-  }
-});
 window.addEventListener("pagehide", clearOutputPlayback);
 
 globalThis.meserAudioArchiveDrafts = Object.freeze({
@@ -1213,3 +1323,41 @@ globalThis.meserAudioArchiveDrafts = Object.freeze({
 });
 
 await initialize();
+
+document.getElementById("open-local-speaker").addEventListener("click", openLocalSpeaker);
+document.getElementById("open-local-announcement").addEventListener("click", openLocalAnnouncement);
+setProcessorSelectionGuard(async () => { if (state.publicationController || state.uploadController) return false; if (!await closeSpeakerEditor(false)) return false; ++state.sessionSequence; return true; });
+document.getElementById("import-replace").addEventListener("click", () => document.getElementById("processor-file").click());
+document.getElementById("import-add").addEventListener("click", () => document.getElementById("import-add-files").click());
+document.getElementById("import-add-files").addEventListener("change", async event => {
+  const files = [...workingFiles(), ...event.target.files];
+  if (await closeSpeakerEditor(false)) loadProcessorFiles(files);
+  event.target.value = "";
+});
+byId("login-dialog").addEventListener("cancel", () => { ++state.authSequence; state.afterLogin?.(false); state.afterLogin = null; });
+// Every archive response, including byte downloads, retains auth status. Login itself never recursively reconnects.
+const archiveFetch = gateway.fetchImpl;
+gateway.fetchImpl = async (url, options) => {
+  const auth = state.authSequence;
+  const response = await archiveFetch(url, options);
+  if (auth === state.authSequence && [401, 403].includes(response.status) && !String(url).endsWith("/session/login")) {
+    state.authenticated = false; state.reconnectNeeded = true; updateSessionStatus(); setArchiveStatus(RECONNECT_MESSAGE);
+  }
+  return response;
+};
+for (const dialog of [byId("ingest-dialog"), byId("publication-dialog"), speakerId("save-dialog")]) {
+  const reconnect = button("Подключиться снова", () => ensureAuthenticated().catch(() => {}));
+  dialog.append(reconnect);
+}
+
+speakerId("close").addEventListener("click", () => {
+  ++state.sessionSequence; state.retryAction = null; updateSessionStatus();
+});
+
+window.addEventListener("speaker-editor-closed", () => { if (state.editorMode === "speaker") { state.editorMode = null; delete document.body.dataset.editing; } });
+
+document.getElementById("archive-reconnect-login").addEventListener("click", () => ensureAuthenticated().catch(() => {}));
+document.getElementById("archive-reconnect-retry").addEventListener("click", async () => {
+  const action = state.retryAction; state.retryAction = null; updateSessionStatus();
+  try { await action?.(); } catch (error) { onGatewayError(error, "Данные изменились. Выберите запись и повторите действие."); }
+});
