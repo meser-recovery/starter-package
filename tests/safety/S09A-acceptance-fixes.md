@@ -41,6 +41,6 @@ venv/bin/python -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:800
 git diff --check
 ```
 
-The new scenarios are part of the existing full local-safety browser command, alongside the touch help, source/project/output, S07 FFmpeg, S09 management and real root/subpath CORS checks. Exact results and final CI URL/HEAD are recorded in evidence and the PR. Gateway tests remain 80/80; no runtime/schema/DSP-core/infrastructure/Pages/workflow/data/audio/dependency changes accompany these corrections.
+The new scenarios are part of the existing full local-safety browser command, alongside the touch help, source/project/output, S07 FFmpeg, S09 management and real root/subpath CORS checks. Exact results and final CI URL/HEAD are recorded in evidence and the PR. Gateway tests remain 80/80; no gateway-runtime/schema/DSP-core/infrastructure/Pages/workflow/data/audio/dependency changes accompany these corrections.
 
 Browser coverage remains Chromium with synthetic/in-memory fixtures. No physical device, other-browser, manual screen-reader or production archive E2E claim is made. This document records implementation corrections, not ACCEPT or stage closure.

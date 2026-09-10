@@ -1,0 +1,3 @@
+Acceptance P1: new edits/Blob protected; close/newer intent fence delayed Speaker loads.
+Acceptance P1: Announcement session/draft/part 401+403 preserve work through cancel/reconnect and explicit retry.
+Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.
