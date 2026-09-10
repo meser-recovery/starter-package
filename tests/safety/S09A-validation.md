@@ -5,7 +5,7 @@ This is implementation/PR evidence, not ACCEPT, stage closure or production E2E 
 - Contract: `S09A-Implementation-Contract-Audio-Editor-Archive-UX-Redesign.md`, SHA-256 `8c2ece54e97839a7e31b7978c8d0adea2a56dac5a9a9f67c0bf370e865b19002`.
 - Base: `240e9e5fc45661d815f4193597cc04451bb1bdf0`, current `origin/main` verified before implementation; no newer delta to reconcile. Unrelated open PR #4 was inspected and left untouched.
 - Branch: `codex/s09a-audio-editor-archive-ux-redesign`.
-- Implementation/screenshot SHA and the later evidence-only commit are distinguished in the [evidence index](evidence/s09a/README.md). PR CI is recorded on the submitted HEAD in the PR, not inferred from historical S09 runs.
+- Final implementation/screenshot SHA: `884ef5345cdcc3049e58eb9b97f771a00a815388`. The later evidence-only commit is distinguished in the [evidence index](evidence/s09a/README.md). PR CI is recorded on the submitted HEAD in the PR, not inferred from historical S09 runs.
 - The attached document's instructions to update Project Sources, create PLAN/ACCEPT chats or update MASTER are handoff instructions, outside the user's implementation-and-PR request. None were executed.
 
 ## Evidence references

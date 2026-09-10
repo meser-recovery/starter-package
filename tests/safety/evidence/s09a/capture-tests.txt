@@ -1,0 +1,2 @@
+S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.
+S09 browser: PASS; 320/390/768/1280; 223 local gateway requests; no outbound archive access.

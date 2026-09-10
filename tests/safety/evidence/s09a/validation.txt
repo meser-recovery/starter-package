@@ -1,0 +1,14 @@
+Source: 884ef5345cdcc3049e58eb9b97f771a00a815388
+Base: 240e9e5fc45661d815f4193597cc04451bb1bdf0
+python3 tests/safety/check_site.py: PASS
+npm --prefix gateway/audio-archive run check: PASS
+npm --prefix gateway/audio-archive test: PASS (80 tests, 0 failures)
+node --check on all 7 changed/new frontend mjs modules: PASS
+git diff --check: PASS
+venv/bin/python -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000: PASS
+Included S09 CORS root and /starter-package/ with default Chromium security: PASS
+Post-commit S09A capture/check_s09a + check_archive_management: PASS at source SHA above
+Unexpected outbound archive access: none; tests use synthetic fixtures/in-memory gateway
+Production E2E/deployment/merge: NOT RUN, outside authorization
+Manual screen reader / physical mobile / Safari / Firefox: NOT RUN
+Required local-safety: recorded for final submitted HEAD in the PR (not inferred here)
