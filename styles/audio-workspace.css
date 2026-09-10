@@ -172,7 +172,7 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
 @media (min-width: 768px) {
   .daw-workspace .speaker-track-controls { gap: 1px; padding-block: 4px; }
   .daw-workspace .speaker-track .speaker-dsp { margin-top: 0; }
-  .daw-workspace .speaker-dsp-field:has(input[type="range"]) { grid-template-columns: 76px minmax(0, 1fr); row-gap: 0; }
+  .daw-workspace .speaker-dsp-field:has(input[type="range"]) { grid-template-columns: max-content minmax(0, 1fr); row-gap: 0; }
   .daw-workspace .speaker-dsp-field input[type="range"] { grid-column: 2; grid-row: 1; }
   .daw-workspace .speaker-dsp-field:has(input[type="range"]) .speaker-dsp-value { grid-column: 1; grid-row: 2; }
   .daw-workspace .speaker-compression-ticks { grid-column: 2; grid-row: 2; }
