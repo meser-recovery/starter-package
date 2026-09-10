@@ -1,0 +1,160 @@
+git status --short --branch
+## codex/s09-archive-management-re-scope...origin/main
+ M Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html
+ M Audio-Editor.html
+ M scripts/source-session-archive.mjs
+ M styles/service-landing.css
+ M tests/safety/README.md
+ M tests/safety/browser_smoke.py
+ M tests/safety/check_site.py
+ M tests/safety/site-contract.json
+?? Audio-Archive.html
+?? gateway/audio-archive/test/archive-management-fixture.mjs
+?? gateway/audio-archive/test/archive-management.test.mjs
+?? gateway/audio-archive/test/fixtures/
+?? scripts/audio-archive-core.mjs
+?? scripts/audio-archive.mjs
+?? styles/audio-archive.css
+?? tests/safety/S09-validation.md
+?? tests/safety/__pycache__/
+?? tests/safety/archive_management_bridge.mjs
+?? tests/safety/archive_management_smoke.py
+
+exit=0
+git diff --check
+
+exit=0
+node --check scripts/audio-archive-core.mjs
+
+exit=0
+node --check scripts/audio-archive.mjs
+
+exit=0
+node --check scripts/source-session-archive.mjs
+
+exit=0
+node --check gateway/audio-archive/test/archive-management-fixture.mjs
+
+exit=0
+node --check gateway/audio-archive/test/archive-management.test.mjs
+
+exit=0
+node --check tests/safety/archive_management_bridge.mjs
+
+exit=0
+npm --prefix gateway/audio-archive run check
+
+> meser-audio-archive-gateway@1.0.0 check
+> node --check src/*.mjs && node --check test/*.mjs && node --check tools/*.mjs
+
+
+exit=0
+npm --prefix gateway/audio-archive test
+
+> meser-audio-archive-gateway@1.0.0 test
+> node --test --test-concurrency=1 test/*.test.mjs
+
+✔ S09 both lifecycle observations retain higher revision once and reject malformed manifests (1.258417ms)
+✔ S09 normalized title, filename and exact identity search; AND filters and inclusive UTC dates (19.575125ms)
+✔ S09 every session/result sort is stable, immutable, preserves missing-date placement and workflow ownership (0.628542ms)
+✔ S09 overview counts operations independently and never fabricates unavailable zeros (0.122084ms)
+✔ S09 recovery matrix denies malformed/unknown/discarding finalization and pending-delete discard (0.20325ms)
+✔ S09 validated navigation contains identity/workflow only and rejects duplicates and ineligible sessions (0.222792ms)
+✔ S09 request generations discard late results after a newer view/logout (0.086708ms)
+{"level":"error","message":"request_failed","requestId":"2750b380-bfa8-4a55-b857-88b9ec1c7554","method":"PATCH","path":"/v1/source-sessions/31b989b7-6be0-5538-87c8-c52c8ccdd671","status":409,"durationMs":0,"errorType":"Error"}
+✔ S09 real gateway metadata conflicts and lifecycle retain canonical bytes and other metadata (75.841709ms)
+{"level":"error","message":"request_failed","requestId":"11224ae7-d867-437b-9452-e269e0a5d1ca","method":"POST","path":"/v1/source-sessions/35d4823f-9d15-540b-9e62-9254bf395dfa/outputs/announcement/delete","status":409,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"54a36db8-a192-4cbc-9a0c-10dddc218db5","method":"POST","path":"/v1/source-sessions/35d4823f-9d15-540b-9e62-9254bf395dfa/purge","status":400,"durationMs":0,"errorType":"ValidationError"}
+{"level":"error","message":"request_failed","requestId":"6500821d-934b-4f6a-b685-94a11f99244b","method":"GET","path":"/v1/source-sessions/35d4823f-9d15-540b-9e62-9254bf395dfa","status":404,"durationMs":0,"errorType":"Error"}
+✔ S09 real gateway deletion previews, stale writes, non-cascade series/source deletion, exact purge and retained playback (106.55375ms)
+✔ S09 read-only discovery and verified playback trace; corrupted, missing, reordered and wrong-workflow parts fail closed (6.719458ms)
+✔ scrypt password verifier accepts only the original password (106.264083ms)
+✔ session cookie is signed, HttpOnly cross-site capable, expiring, and CSRF bound (9.867583ms)
+✔ login throttle is bounded and blocks repeated failures (0.321166ms)
+{"level":"error","message":"request_failed","requestId":"c6695eb7-aa30-4c6f-90e3-ef34fc71505c","method":"GET","path":"/v1/config","status":403,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"490464c8-e1a8-4747-beac-09712decd67a","method":"GET","path":"/v1/source-sessions","status":401,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"db2410b9-ccc6-4b64-b7d1-cfb6300e899f","method":"POST","path":"/v1/source-sessions/11111111-1111-4111-8111-111111111111/archive","status":403,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"f2fed349-2ccc-4775-bbf8-f32dfb875cc0","method":"GET","path":"/v1/source-sessions/%E0%A4%A","status":400,"durationMs":0,"errorType":"ValidationError"}
+{"level":"error","message":"request_failed","requestId":"8aa423be-e63f-4679-a60c-e1b983486606","method":"POST","path":"/v1/source-sessions/11111111-1111-4111-8111-111111111111/outputs/announcement/publications","status":403,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"915e98b5-8968-4dc2-9aa1-20cc66408d2c","method":"PUT","path":"/v1/announcement-publications/22222222-2222-4222-8222-222222222222/blobs/33333333-3333-4333-8333-333333333333/parts/1","status":413,"durationMs":0,"errorType":"ValidationError"}
+✔ gateway enforces exact origin, authentication, CORS, cookie and CSRF (106.763375ms)
+✔ incremental SHA-256 matches known vectors and block boundaries (4.399084ms)
+✔ chunk planner uses 16 MiB default, permits 64 MiB boundary, and rejects unsafe inputs (407.79475ms)
+✔ chunk planner keeps identifiers and hashes stable for one idempotency operation (1.125917ms)
+✔ chunk planner observes cancellation immediately after every part read (0.450917ms)
+✔ ordered parts reconstruct byte-identically and corruption fails closed (13.261042ms)
+✔ Announcement publication planning is deterministic and reconstructed output uses recipe presentation metadata (2.074334ms)
+✔ ingestion is idempotent, hidden until finalization, integrity checked, and recoverable (14.884708ms)
+✔ an idempotency key cannot be reused with changed immutable ingestion data (0.6875ms)
+✔ partial maintenance recovery requires original files and never finalizes early (0.648042ms)
+✔ workflow states are independent and stale session mutations conflict (1.5205ms)
+✔ shared draft reopens and stale draft or source revisions cannot overwrite it (2.159834ms)
+✔ archive and restore mutate metadata without touching release assets (1.525542ms)
+✔ deletion is explicit, non-cascading, resumable, and version numbers are not reused (2.54875ms)
+✔ retained S08A v1 output descriptors remain readable without rewrite (0.9285ms)
+✔ purge writes a tombstone, removes only its release/drafts, and catalog rebuild reports orphans (1.730334ms)
+✔ explicit incomplete ingestion discard is recoverable and does not become visible (0.308167ms)
+✔ malformed persisted transactions fail closed and are never offered for recovery (0.195333ms)
+✔ Announcement publication reserves once, finalizes atomically, and verifies stored bytes (6.404125ms)
+✔ Announcement publication replays the legacy S08B transaction identity (1.662208ms)
+✔ Announcement upload failures persist only bounded safe metadata and retry the same reserved job (3.934875ms)
+✔ Announcement finalize failures remain safely recoverable without reserving another version (3.56175ms)
+✔ cancelled publications block destruction until discard and reserved versions are burned (3.814583ms)
+✔ passthrough publication accepts only exact source bytes, hash, size, and media type (2.187791ms)
+✔ Archived Source Sessions deny new Announcement publication until explicit restore (1.838666ms)
+{"level":"error","message":"request_failed","requestId":"312f8b13-45b5-45b8-83bb-b1b2b99d1631","method":"POST","path":"/v1/maintenance/incomplete/d19976c3-26fd-5d52-a8c4-091ed1e717b9/resume","status":409,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"e84bbef7-9d51-42b3-b3b4-df6b613a225f","method":"POST","path":"/v1/source-sessions/ingestions","status":409,"durationMs":0,"errorType":"Error"}
+✔ real frontend client resumes one interrupted logical ingestion without duplicates (105.296042ms)
+✔ real frontend client cancels during hashing before contacting ingestion API (0.492833ms)
+✔ real frontend and gateway publish, retrieve, and verify one Announcement output (77.426459ms)
+✔ real frontend and gateway save, retrieve, and verify one Speaker output (76.9495ms)
+✔ configuration fixes GitHub scope and accepts one exact HTTPS Pages origin (0.886375ms)
+✔ configuration reads each secret file once, preserves PEM newlines, and strips only the final newline (0.408459ms)
+✔ configuration loads startup secrets from real files (1.49375ms)
+✔ configuration fails closed without disclosing unreadable or empty secret contents (0.239041ms)
+✔ GitHub App JWT is short-lived RS256 and installation request is machine-only (12.833667ms)
+✔ atomic JSON commit stays inside fixed repository and rejects arbitrary paths (1.483584ms)
+✔ canonical ingestion transaction paths use their structural UUID (0.950667ms)
+✔ S08B publication jobs and immutable recipe paths accept only structural UUIDs (0.534ms)
+✔ release asset upload uses opaque deterministic name and fixed upload host (0.305166ms)
+✔ real GitHub adapter canonicalizes draft upload URLs for a new frontend ingestion (100.78375ms)
+✔ frontend resumes a legacy draft transaction and reconstructs through the authenticated real GitHub adapter (78.282083ms)
+✔ legacy draft URL normalization is narrow and finalized transactions stay strict (1.37975ms)
+✔ real GitHub adapter still accepts deletion transaction paths (0.268917ms)
+✔ self-hosted Compose isolates gateway ports, networks, and file secrets (1.176625ms)
+✔ Caddy terminates one hostname behind loopback HAProxy and replaces forwarding headers (0.190292ms)
+✔ host HAProxy uses exact SNI passthrough and unconditional Xray default (0.136583ms)
+✔ runbook is gated, unresolved values fail closed, and provider remnants are absent (0.762875ms)
+✔ all frontend gateway hooks contain the exact production origin (0.467584ms)
+✔ regions use microseconds, stable union IDs, track identity, bounds, and original timeline mapping (1.698875ms)
+✔ speaker/v1 validation is exact while announcement/v1 and legacy draft reads stay compatible (9.37575ms)
+✔ Undo/Redo includes edit state, clears a Redo branch, and reset establishes a remote baseline (0.278625ms)
+✔ centralized filters use identical cuts, equal-duration silence, every DSP enum, mix and limiter (1.267084ms)
+✔ candidate hash, durations, invalidation, unchanged-save rebinding and frame tolerance are exact (1.818333ms)
+✔ Speaker recipe and save plan are strict, versioned, and require a non-zero canonical draft (15.802666ms)
+✔ Speaker save reserves independently, uploads exact parts, finalizes once, restores after source deletion, and deletes without reuse (10.6685ms)
+✔ Speaker cancelled jobs recover only when complete; discard removes attributable assets and burns the version (5.267208ms)
+✔ fully uploaded Speaker save finalizes after reload without local bytes and archived sessions deny new saves (6.044416ms)
+✔ Speaker finalize and discard are mutually exclusive when finalization commits first (4.89075ms)
+✔ Speaker finalize and discard are mutually exclusive when discard claims first (4.497625ms)
+✔ Speaker discard resumes safely after deletion is interrupted (4.832542ms)
+✔ Speaker series deletion removes only its recipes and assets while retaining draft, sources, and counter (7.963042ms)
+ℹ tests 73
+ℹ suites 0
+ℹ pass 73
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2100.176291
+
+exit=0
+python3 tests/safety/check_site.py
+Site contract check passed.
+
+exit=0
+
+Final post-implementation verification: all six individual node --check commands, git diff --check and python3 tests/safety/check_site.py: exit 0.
+Final npm --prefix gateway/audio-archive run check: exit 0.
+Final npm --prefix gateway/audio-archive test: exit 0; 73 tests / 73 passed / 0 failed / 0 skipped.
+Post-commit capture from c7a78a4bb956f8e5a95bdefcde95cf0e3658eb70: venv/bin/python -B (focused command in S09-validation.md), exit 0; S09 browser: PASS; 320/390/768/1280; 191 local gateway requests; no outbound archive access.
