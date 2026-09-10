@@ -194,7 +194,7 @@ function applyMonitoring() {
     if (row) { row.classList.toggle("is-muted", track.mute); row.classList.toggle("is-solo", track.solo);
       row.classList.toggle("is-solo-suppressed", !track.mute && !monitorAudible(track));
       row.classList.toggle("is-excluded", state.payload.excludedTrackIds.includes(track.trackId));
-      row.querySelector(".track-monitor-status").textContent = track.mute ? "Mute · эта дорожка выключена" : track.solo ? "Solo · эта дорожка звучит" : !monitorAudible(track) ? "Не слышна: Solo другой дорожки" : "Прослушивание · звучит";
+      row.querySelector(".track-monitor-status").textContent = !state.ready ? (state.preparationError ? "Прослушивание недоступно" : "Подготовка прослушивания") : track.mute ? "Mute · эта дорожка выключена" : track.solo ? "Solo · в прослушивании" : !monitorAudible(track) ? "Не слышна: Solo другой дорожки" : "В прослушивании";
     }
     workspace.querySelector(`[data-track-id="${track.trackId}"][data-action="solo"]`)?.setAttribute("aria-pressed", String(track.solo));
     workspace.querySelector(`[data-track-id="${track.trackId}"][data-action="mute"]`)?.setAttribute("aria-pressed", String(track.mute));

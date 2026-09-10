@@ -2411,7 +2411,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         for width in (390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), (label, width)
-            for selector in ("#processor-file-info", "#processor-selection-summary", "#processor-source-audio", "#processor-run"):
+            assert page.locator("#processor-source-audio").is_hidden()
+            for selector in ("#processor-file-info", "#processor-selection-summary", "#processor-source-audio-play", "#processor-source-audio-stop", "#announcement-processor-card .daw-monitor-volume", "#processor-run"):
                 box = page.locator(selector).bounding_box()
                 assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (label, width, selector, box)
                 assert not page.locator(selector).evaluate("el => el.scrollWidth > el.clientWidth + 1"), (label, width, selector)
@@ -2478,7 +2479,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     follow = page.locator("#processor-source-follow")
     shared_navigation = page.locator("#processor-source-navigation")
     shared_scrollbar = page.locator("#processor-source-scrollbar")
-    assert follow.inner_text() == "Следовать за воспроизведением"
+    assert follow.get_attribute("aria-label") == "Следовать за воспроизведением"
+    assert follow.locator('svg[aria-hidden="true"]').count() == 1
     assert follow.get_attribute("aria-pressed") == "false"
     assert page.locator("#processor-source-scrollbar").count() == 1
     shared_thumb = page.locator("#processor-source-scrollbar-thumb")

@@ -164,6 +164,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         assert page.locator('#speaker-editor-source-audio').is_hidden()
         assert page.locator('#speaker-source-timeline span').count()==0
         assert 'Все изменения сохранены' not in page.locator('#speaker-editor-status').inner_text()
+        assert page.locator('.speaker-track .track-monitor-status').all_text_contents() == ['Прослушивание недоступно'] * 2
         snapshot('preparation-error', '#speaker-editor')
         fault['wasm'] = False
         page.locator('#speaker-editor-source-retry').click(); ready(); retained()

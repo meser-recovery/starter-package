@@ -680,7 +680,7 @@ function applyMonitoring() {
     row?.classList.toggle("is-muted", track.muted); row?.classList.toggle("is-solo", track.solo);
     row?.classList.toggle("is-solo-suppressed", !track.muted && !audible);
     const status = row?.querySelector(".track-monitor-status");
-    if (status) status.textContent = track.muted ? "Mute · эта дорожка выключена" : track.solo ? "Solo · эта дорожка звучит" : !audible ? "Не слышна: Solo другой дорожки" : "Прослушивание · звучит";
+    if (status) status.textContent = track.muted ? "Mute · эта дорожка выключена" : track.solo ? "Solo · в прослушивании" : !audible ? "Не слышна: Solo другой дорожки" : "В прослушивании";
     const solo = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="solo"]`);
     const mute = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="mute"]`);
     solo?.setAttribute("aria-pressed", String(track.solo));

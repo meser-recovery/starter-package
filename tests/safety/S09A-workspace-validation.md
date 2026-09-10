@@ -38,6 +38,8 @@ absence of Chromium described the package environment, not this validation.
   now inherits the light header foreground; browser contrast must be >=4.5:1.
 - The retained Announcement identity/close block now has workspace spacing and
   a readable 44px close control.
+- Monitoring labels describe inclusion in listening, not a claim that paused audio is sounding. Failed preparation explicitly says listening is unavailable, with a browser regression.
+- Existing processor geometry tests now check the visible custom Play/Stop/volume controls and assert the native source clock is hidden. Follow retains its exact accessible name and an aria-hidden icon.
 - Existing mobile DSP tests now open the new disclosure through its summary
   before selecting a setting. No DSP/output assertion was removed.
 
