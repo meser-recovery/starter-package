@@ -157,6 +157,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         for selector in ('#processor-save-incoming', '#speaker-editor-save', '#speaker-editor-add-cut', '#speaker-editor-add-silence', '#speaker-editor-set-start', '#speaker-editor-set-end'):
             assert page.locator(selector).is_disabled()
         assert '—' in page.locator('#speaker-editor-source-time').inner_text()
+        assert page.locator('#speaker-editor-source-audio').is_hidden()
         assert page.locator('#speaker-source-timeline span').count()==0
         assert 'Все изменения сохранены' not in page.locator('#speaker-editor-status').inner_text()
         snapshot('preparation-error', '#speaker-editor')
@@ -220,6 +221,8 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform img').length===2", timeout=180000)
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900})
+            page.locator('#processor-source-zoom-fit').click()
+            assert page.locator('#processor-source-scrollbar-thumb').bounding_box()['width'] >= page.locator('#processor-source-scrollbar').bounding_box()['width'] - 2
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
             if width >= 768:
                 lanes=page.locator('.processor-track').evaluate_all("""rows=>rows.map(row=>{

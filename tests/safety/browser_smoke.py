@@ -2428,8 +2428,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
             assert card.locator(".processor-track__number").inner_text() == f"Дорожка {index + 1}"
             assert card.locator(".processor-track__name").inner_text() == file["name"]
             assert card.locator(".processor-track__meta").inner_text().startswith(expected_size_prefix)
-            assert card.get_by_role("button", name="Соло", exact=True).count() == 1
-            assert card.get_by_role("button", name="Заглушить", exact=True).count() == 1
+            assert card.get_by_role("button", name="S · Solo", exact=True).count() == 1
+            assert card.get_by_role("button", name="M · Mute", exact=True).count() == 1
             assert card.get_by_role("button", name=re.compile("Удалить дорожку")).count() == 1
             assert card.locator(".processor-waveform").count() == 1
             assert card.locator("details, summary").count() == 0
@@ -2458,7 +2458,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     select_tracks([track_a, track_b])
     assert page.locator(".processor-track .processor-waveform img").count() == 2
     assert page.locator("#processor-track-switcher, .processor-waveform-detail, #processor-file-info details").count() == 0
-    assert page.get_by_text("Соло и «Заглушить» влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
+    assert page.get_by_text("Solo и Mute влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
     assert page.locator("#processor-preview-audios .processor-preview-audio").count() == 1
     waveform_urls = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.src)")
     assert len(set(waveform_urls)) == 2 and all(source.startswith("blob:") for source in waveform_urls), waveform_urls
@@ -2707,26 +2707,26 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
 
     # Solo/Mute are monitoring-only, support multiple solos, and are mutually clearing per track.
     cards = page.locator(".processor-track")
-    cards.nth(0).get_by_role("button", name="Соло", exact=True).click()
+    cards.nth(0).get_by_role("button", name="S · Solo", exact=True).click()
     assert page.evaluate("""() => [document.getElementById('processor-source-audio').muted,
         document.querySelector('.processor-preview-audio').muted]""") == [False, True]
     if screenshot_dir:
         capture_state("monitoring-solo")
-    cards.nth(1).get_by_role("button", name="Соло", exact=True).click()
+    cards.nth(1).get_by_role("button", name="S · Solo", exact=True).click()
     assert page.evaluate("""() => [document.getElementById('processor-source-audio').muted,
         document.querySelector('.processor-preview-audio').muted]""") == [False, False]
-    cards.nth(1).get_by_role("button", name="Заглушить", exact=True).click()
-    assert cards.nth(1).get_by_role("button", name="Соло", exact=True).get_attribute("aria-pressed") == "false"
-    assert cards.nth(1).get_by_role("button", name="Заглушить", exact=True).get_attribute("aria-pressed") == "true"
+    cards.nth(1).get_by_role("button", name="M · Mute", exact=True).click()
+    assert cards.nth(1).get_by_role("button", name="S · Solo", exact=True).get_attribute("aria-pressed") == "false"
+    assert cards.nth(1).get_by_role("button", name="M · Mute", exact=True).get_attribute("aria-pressed") == "true"
     if screenshot_dir:
         capture_state("monitoring-solo-track-1-mute-track-2")
-    cards.nth(0).get_by_role("button", name="Соло", exact=True).click()
-    cards.nth(1).get_by_role("button", name="Заглушить", exact=True).click()
-    cards.nth(0).get_by_role("button", name="Заглушить", exact=True).click()
-    cards.nth(0).get_by_role("button", name="Соло", exact=True).click()
-    assert cards.nth(0).get_by_role("button", name="Заглушить", exact=True).get_attribute("aria-pressed") == "false"
-    cards.nth(0).get_by_role("button", name="Заглушить", exact=True).click()
-    assert cards.nth(0).get_by_role("button", name="Соло", exact=True).get_attribute("aria-pressed") == "false"
+    cards.nth(0).get_by_role("button", name="S · Solo", exact=True).click()
+    cards.nth(1).get_by_role("button", name="M · Mute", exact=True).click()
+    cards.nth(0).get_by_role("button", name="M · Mute", exact=True).click()
+    cards.nth(0).get_by_role("button", name="S · Solo", exact=True).click()
+    assert cards.nth(0).get_by_role("button", name="M · Mute", exact=True).get_attribute("aria-pressed") == "false"
+    cards.nth(0).get_by_role("button", name="M · Mute", exact=True).click()
+    assert cards.nth(0).get_by_role("button", name="S · Solo", exact=True).get_attribute("aria-pressed") == "false"
     assert page.locator("#processor-file").evaluate("input => input.files.length") == 2
 
     # Native hidden players follow master play/pause and periodically correct meaningful drift.
@@ -2764,7 +2764,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
 
     select_tracks([track_a, track_b])
     capture_state("mix-two-selected")
-    page.locator(".processor-track").nth(0).get_by_role("button", name="Соло", exact=True).click()
+    page.locator(".processor-track").nth(0).get_by_role("button", name="S · Solo", exact=True).click()
     messages_before_monitoring_run = len(page.evaluate("window.processorProbe.messages"))
     run_selected()
     assert_result(1, 5.35, 2)

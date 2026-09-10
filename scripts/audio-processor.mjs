@@ -577,14 +577,14 @@ function renderTracks() {
     solo.dataset.trackId = String(track.id);
     solo.dataset.trackAction = "solo";
     solo.setAttribute("aria-pressed", String(track.solo));
-    solo.textContent = "Соло";
+    solo.textContent = "S · Solo";
     solo.addEventListener("click", () => toggleMonitoring(track.id, "solo"));
     const mute = document.createElement("button");
     mute.type = "button";
     mute.dataset.trackId = String(track.id);
     mute.dataset.trackAction = "mute";
     mute.setAttribute("aria-pressed", String(track.muted));
-    mute.textContent = "Заглушить";
+    mute.textContent = "M · Mute";
     mute.addEventListener("click", () => toggleMonitoring(track.id, "mute"));
     const moveUp = document.createElement("button");
     moveUp.type = "button";
@@ -792,7 +792,10 @@ byId("source-zoom-range").addEventListener("input", (event) => {
 });
 byId("source-zoom-out").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond / 1.5));
 byId("source-zoom-in").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond * 1.5));
-byId("source-zoom-fit").addEventListener("click", () => setSourceZoom(sourceZoomMinimum, 0));
+byId("source-zoom-fit").addEventListener("click", () => {
+  sourceZoomBounds();
+  setSourceZoom(sourceZoomMinimum, 0);
+});
 byId("source-follow").addEventListener("click", () => setSourceFollow(!sourceFollowEnabled));
 
 const sourceScrollbar = byId("source-scrollbar");

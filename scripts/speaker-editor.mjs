@@ -301,7 +301,7 @@ function renderTracks() {
       selectControl("Компрессия", setting.compression, [["off", "Выкл."], ["light", "Лёгкая"], ["medium", "Средняя"], ["strong", "Сильная"]], (value) => changeTrack(trackId, "compression", value)));
     const summary = element("p", "speaker-track__summary", processingLabel(setting));
     header.append(element("span", "speaker-track-selection"));
-    const preview = state.ready ? waveform(track) : element("div", "speaker-source-pending", track.preparationError || "Подготовка формы сигнала…");
+    const preview = state.ready ? waveform(track) : element("div", "speaker-source-pending", track.preparationError || (state.preparationError ? "Ожидает повторной подготовки." : "Подготовка формы сигнала…"));
     const controls = element("div", "speaker-track-controls"); controls.append(header, dsp, summary);
     item.append(controls, preview); list.append(item);
   });
@@ -352,6 +352,7 @@ function updateRenderState() {
   const allExcluded = Boolean(state.payload && state.payload.excludedTrackIds.length === state.payload.trackIds.length);
   const disabled = !state.ready || !state.session || !Number.isFinite(state.originalDuration) || allExcluded || editorBusy();
   byId("render").disabled = disabled;
+  byId("source-audio").hidden = !state.ready;
   byId("render-reason").textContent = allExcluded ? "Все дорожки исключены. Верните хотя бы одну дорожку в микс." :
     state.saveLocked ? "Идёт сохранение в архив «Спикерская»." : state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
       "В результат войдут только дорожки, оставленные в финальном миксе.";

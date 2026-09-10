@@ -66,7 +66,9 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
 
     def shot(name, selector=None):
         if output:
-            if selector: page.locator(selector).screenshot(path=str(output/(name+'.png')))
+            if selector:
+                page.evaluate('scrollTo(0,0)')
+                page.screenshot(path=str(output/(name+'.png')), clip=page.locator(selector).bounding_box(), full_page=True)
             else: page.screenshot(path=str(output/(name+'.png')), full_page=True)
             if selector and 'dialog' in selector:
                 previous=page.viewport_size

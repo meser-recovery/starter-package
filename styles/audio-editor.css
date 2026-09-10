@@ -472,3 +472,5 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
   .audio-actions[open] { grid-column: 1 / -1; width: 100%; }
   .audio-actions__items { position: static; width: 100%; box-shadow: none; margin-top: .25rem; }
 }
+
+#speaker-editor button:disabled, #speaker-editor select:disabled { opacity: .5; cursor: not-allowed; }

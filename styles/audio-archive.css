@@ -95,3 +95,8 @@ dialog::backdrop { background: #102b46a6; }
   #player { position: static; grid-template-columns: minmax(0, 1fr); }
   #player > *, #audio { grid-column: 1; grid-row: auto; }
 }
+
+@media (max-width: 767px) {
+  .archive-management .source-row { grid-template-columns: minmax(0, 1fr); }
+  .source-row > .audio-actions { justify-self: end; }
+}

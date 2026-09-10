@@ -934,7 +934,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         "processor-waveform-input-${track.id}", "processor-waveform-${track.id}.png",
         "Не удалось построить форму сигнала.", "Подготовка формы сигнала…",
         "requestAnimationFrame", "ArrowLeft", "ArrowRight", 'event.key === "Home"', 'event.key === "End"',
-        "URL.revokeObjectURL(track.waveformURL)", "Соло", "Заглушить", "Удалить",
+        "URL.revokeObjectURL(track.waveformURL)", "S · Solo", "M · Mute", "Удалить",
         "processor-result-waveform.png", "resultWaveformURL", "processor-preview-audio",
         "let sourceLeftVisibleTime = 0;", "let sourceViewportDuration = 0;",
         "sourceFollowEnabled", "source-scrollbar-thumb", "updateSourceScrollbar",
