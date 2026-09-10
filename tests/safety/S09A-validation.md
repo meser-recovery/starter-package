@@ -123,3 +123,7 @@ Browser coverage is Chromium with desktop and CSS viewport/touch emulation. A ph
 Boundary markers use existing leading/trailing cuts. To preserve an interior cut's identity rather than merging it away, crossing an existing interior cut is rejected with guidance to edit that cut first in «Правки». Single-source Announcement passthrough keeps original WAV/M4A/MP3 bytes and labels the download truthfully; actual encoded results use «Скачать MP3». List-level duration is omitted where the canonical output summary has no duration field. These preserve current data/DSP semantics rather than adding fields or transcoding.
 
 No live production archive E2E, deployment, merge, branch deletion, VM change or production mutation was performed. No material schema/trust-boundary PLAN conflict was introduced. ACCEPT and any later authorized production validation remain outside this PR.
+
+## PR CI follow-up
+
+The first PR run on `bd4d9d1a002d587b017eb77cc4a4deff3403eb94`, [34466098987](https://github.com/meser-recovery/starter-package/actions/runs/34466098987), passed archive/CORS checks but failed the new immediate visibility assertion following a touch tap on the help disclosure. The test now waits for the required visible state after the same actual tap. No UI, touch action, assertion target, security rule or screenshot-source implementation changed. The failed run remains historical evidence, not a pass; the corrected submitted HEAD must obtain its own successful local-safety result.

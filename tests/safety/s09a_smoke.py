@@ -127,7 +127,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         assert page.locator('.speaker-track.is-solo').count()==1
         help_summary=page.get_by_text('Как работают Solo, Mute и обработка звука',exact=True)
         help_summary.scroll_into_view_if_needed();help_summary.tap()
-        assert page.get_by_text('Уменьшает разницу между тихими и громкими фрагментами речи.',exact=False).is_visible()
+        page.get_by_text('Уменьшает разницу между тихими и громкими фрагментами речи.',exact=False).wait_for(state='visible')
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'speaker-edits-help-{width}')
         page.locator('#speaker-editor-render').click();page.wait_for_function("!document.getElementById('speaker-editor-result').hidden",timeout=60000)

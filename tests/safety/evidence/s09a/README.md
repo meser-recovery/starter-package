@@ -87,3 +87,7 @@ Images were inspected for desktop hierarchy/density, mobile text/control fit, wa
 | [speaker-edits-help-768.png](speaker-edits-help-768.png) | 768 × 4442 | `8de5182e70429281af9056a2674ad17c711ba6d56dcac110573ab9c9fc9cb0d0` |
 | [unsaved-cancel-viewport.png](unsaved-cancel-viewport.png) | 1280 × 900 | `8f66314bb3d7a9584e8769c4c51a60128ca971d018cfb4a3f58e1157c33565e3` |
 | [unsaved-cancel.png](unsaved-cancel.png) | 1280 × 4490 | `41455ebdac2abfceadddd1ddea2454e7f676e203b4ac3d83c256befd535915e7` |
+
+## CI follow-up
+
+The first PR run (`bd4d9d1`, run [34466098987](https://github.com/meser-recovery/starter-package/actions/runs/34466098987)) failed an immediate visibility check after the help touch tap. A later test-only correction waits for that same visible state. The screenshot implementation SHA above is unchanged. See the PR for the corrected submitted HEAD and required local-safety result; the first failed run is not counted as successful validation.
