@@ -24,7 +24,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
     context = browser.new_context(viewport={'width': 1280, 'height': 900})
     context.add_init_script("sessionStorage.setItem('meser_service_access_v1','granted');window.__MESER_AUDIO_ARCHIVE_GATEWAY__='https://gateway.test';")
     blocked, errors, trace, held = [], [], [], []
-    fault = {'draft': None, 'list': False, 'hold': None, 'unauthorized': False, 'preview': False}
+    fault = {'draft': None, 'list': False, 'hold': None, 'unauthorized': False, 'preview': False, 'wasm': False}
     headers = {'Access-Control-Allow-Origin': f'{site.scheme}://{site.netloc}', 'Access-Control-Allow-Credentials': 'true',
                'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token, X-Part-SHA256, Idempotency-Key',
                'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, OPTIONS'}
@@ -35,7 +35,10 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
 
     def intercept(route):
         request = route.request; target = urlparse(request.url)
-        if target.netloc == site.netloc: route.continue_(); return
+        if target.netloc == site.netloc:
+            if fault['wasm'] and target.path.endswith('ffmpeg-core.wasm'): route.fulfill(status=503, body='Synthetic decoder unavailable')
+            else: route.continue_()
+            return
         if target.netloc != 'gateway.test': blocked.append(request.url); route.abort(); return
         if request.method == 'OPTIONS': route.fulfill(status=204, headers=headers); return
         path = target.path+('?' + target.query if target.query else '')
@@ -124,7 +127,91 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         while not held and time.monotonic()<end: page.wait_for_timeout(20)
         assert len(held)==1
 
+    def deletion_during_preparation(kind):
+        command('reset')
+        page.goto(base_url.rstrip('/')+'/Audio-Archive.html')
+        page.goto(base_url.rstrip('/')+'/Audio-Editor.html#review-preparation')
+        page.locator('#source-session-mode-archive').click()
+        row=page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]')
+        row.get_by_role('button', name='Открыть финальную обработку спикерской').click()
+        page.wait_for_function('window.reviewPreparationPending === true')
+        page.evaluate("""async () => {
+          const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
+          window.preparingWork={files:s.files,payload:JSON.stringify(s.payload),epoch:s.sourceEpoch,session:s.session};
+        }""")
+        assert page.locator('#speaker-editor-render').is_disabled()
+        before=len(trace)
+        if kind != 'series': output_delete()
+        else:
+            source_menu().get_by_role('button', name='Удалить всю серию «Спикерская»', exact=True).click()
+            page.locator('#source-session-delete-dialog').wait_for(state='visible')
+        page.locator('#source-session-delete-submit').click()
+        page.locator('#source-session-delete-dialog').wait_for(state='hidden')
+        canonical=command('snapshot')['primary']
+        assert canonical['revision'] > primary['revision']
+        assert canonical['sourceTracks'] == primary['sourceTracks']
+        assert len(canonical['workflows']['speaker']['outputs']) == (len(primary['workflows']['speaker']['outputs'])-1 if kind!='series' else 0)
+        assert page.evaluate("""async revision => {
+          const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
+          return reviewPreparationPending && !s.ready && s.session.revision===revision;
+        }""", canonical['revision'])
+        shot('preparation-'+kind+'-deleted', '#speaker-editor')
+        if kind == 'decoder-failure':
+            fault['wasm']=True; page.evaluate('window.reviewRejectDecode=true')
+        page.evaluate('window.releaseReviewPreparation()')
+        if kind == 'decoder-failure':
+            page.locator('#speaker-editor-source-retry').wait_for(state='visible')
+            assert page.locator('#speaker-editor-render').is_disabled()
+            assert primary['sourceTracks'][0]['originalName'] in page.locator('#speaker-editor-status').inner_text()
+            fault['wasm']=False
+            shot('preparation-delete-decoder-retry', '#speaker-editor')
+            page.locator('#speaker-editor-source-retry').click()
+        page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=15000)
+        retained=page.evaluate("""async () => {
+          const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState(), old=preparingWork;
+          return {ready:s.ready,epoch:s.sourceEpoch===old.epoch,payload:JSON.stringify(s.payload)===old.payload,
+            files:s.files.length===old.files.length && s.files.every((f,i)=>f===old.files[i]),session:s.session};
+        }""")
+        assert all(retained[key] for key in ('ready','epoch','payload','files')), retained
+        assert retained['session']==canonical, retained
+        # Metadata refresh cannot roll revision back or replace source/track identity.
+        assert page.evaluate("""async () => {
+          const editor=await import('./scripts/speaker-editor.mjs'), original=editor.getSpeakerSaveState();
+          const stale=structuredClone(original.session); stale.revision--;
+          editor.updateSpeakerSession(stale);
+          const changed=structuredClone(original.session); changed.revision++;
+          changed.sourceTracks[0].sha256='0'.repeat(64);
+          let rejected=false;
+          try { editor.updateSpeakerSession(changed); } catch(error) { rejected=error.status===409; }
+          const after=editor.getSpeakerSaveState();
+          return rejected && JSON.stringify(after.session)===JSON.stringify(original.session) && after.ready &&
+            after.sourceEpoch===original.sourceEpoch && after.files.every((f,i)=>f===original.files[i]);
+        }""")
+        writes=[(m,p) for m,p in trace[before:] if m not in ('GET','HEAD')]
+        assert len(writes)==1 and writes[0][0]=='POST' and writes[0][1].endswith('/delete'), writes
+        assert page.locator('#speaker-editor-source-retry').is_hidden()
+        shot('preparation-'+kind+'-ready', '#speaker-editor')
+        print(f'PR36 preparation/{kind}: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.', flush=True)
+
+    # Hold only the first real native decode completion, not gateway responses or editor state.
+    page.add_init_script("""(() => {
+      if (location.hash !== '#review-preparation') return;
+      const decode=AudioContext.prototype.decodeAudioData;
+      let hold=true;
+      AudioContext.prototype.decodeAudioData=async function(...args) {
+        const buffer=await decode.apply(this,args);
+        if (hold) {
+          hold=false; window.reviewPreparationPending=true;
+          await new Promise(resolve => { window.releaseReviewPreparation=() => { window.reviewPreparationPending=false; resolve(); }; });
+        }
+        if (window.reviewRejectDecode) { window.reviewRejectDecode=false; throw new Error('Synthetic native decode failure'); }
+        return buffer;
+      };
+    })();""")
+
     try:
+        for kind in ('version','series','decoder-failure'): deletion_during_preparation(kind)
+        command('reset')
         page.goto(base_url.rstrip('/')+'/Audio-Archive.html'); ready()
         detail()
         assert page.locator('#detail-body').get_by_role('link', name='Продолжить обработку').count() == 1

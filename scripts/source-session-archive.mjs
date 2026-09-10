@@ -357,11 +357,17 @@ async function loadSpeakerSession(session) {
     const files = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     const project = new ProjectSave(gateway);
+    // A revision refresh of this exact loaded batch is not a competing source intent.
+    const ownsSources = () => {
+      const work = getSpeakerSaveState();
+      return work.session?.id === complete.id && work.files.length === files.length &&
+        work.files.every((file, index) => file === files[index]);
+    };
     const opened = await openSpeakerEditor({
       session: complete,
       files,
       draft,
-      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && !newerSpeakerSession(complete),
+      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && (!newerSpeakerSession(complete) || ownsSources()),
       saveDraft: ({ session, draft, payload, signal }) => withReconnect(() => project.save(session, draft, payload, signal)),
       onSaved: ({ session: updated }) => {
         state.activeSession = updated; state.activeManifest = updated;
@@ -374,10 +380,10 @@ async function loadSpeakerSession(session) {
     });
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     const newer = newerSpeakerSession(complete);
-    if (!opened && newer) return loadSpeakerSession(newer);
+    if (!opened && newer && !ownsSources()) return loadSpeakerSession(newer);
     if (opened) {
       closeAnnouncementWorkspace(false);
-      state.activeManifest = complete;
+      state.activeManifest = getSpeakerSaveState().session;
       activateMode("speaker");
     }
     setArchiveStatus(opened ? `Открыта работа «Спикерская»: ${complete.title}. Исходники проверены и не изменены.` : "Не удалось подготовить исходники для «Спикерская».");

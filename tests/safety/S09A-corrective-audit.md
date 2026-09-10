@@ -2,6 +2,8 @@
 
 This records implementation verification, not ACCEPT, a Closure Record, or S09A COMPLETE.
 
+PR #36 review follow-up: the previous D PASS covered deletion **after ready**, not during preparation. See [the discovered gap, correction and new browser regression](S09A-PR36-review-fix.md).
+
 - Base: `5a3e793e6e33e1a15e27dd6408e733c87d9a939f` (`origin/main` rechecked before work). The only open PR was unrelated #4; its branch/content was not changed.
 - Branch: `codex/s09a-editor-corrective-ux`.
 - Corrective handoff SHA-256: `c95bfe10226fa3527d132f877e32b9b643dccaf09401968a44e995ff532386b4`.
@@ -140,3 +142,7 @@ No merge, branch deletion, production archive write, deployment, VM/infrastructu
 The post-commit screenshot run at `2ac3ef8` passed the corrective scenarios but failed the existing strict source-fit scrollbar assertion. Refreshing the fit bounds alone did not resolve it. A direct browser probe measured a 666.40625px rail with a 664px thumb at 768px: `clientWidth` rounded down fractional geometry. The shared scrollbar now measures its precise inner width; fit also refreshes bounds before choosing the value. The original full-width assertion remains unchanged and is additionally exercised by C in CI without screenshot mode. Neither failed run is counted as final validation.
 
 Submitted-head CI at evidence commit `bfcf034` (run `34501984178`) passed Archive/CORS and prior Acceptance regressions but found 227px Speaker lanes at 768px on Linux. The system font wrapped a track action onto a third row. The desktop control column now reserves 280px for the full labels; the waveform still takes more than half the lane. The <=210px assertion is retained. The earlier source-bound screenshots/local PASS remain attributable to `e0e4431`/`bfcf034`; final evidence is refreshed after this cross-platform layout correction.
+
+## PR #36 preparation/deletion coverage correction
+
+The PASS entries for PLAN §§9, 19–21, 35 and A05/A08/A15 above describe the original executed coverage. They did not establish safety for deletion during active preparation. Review on `773975e` identified that gap. D now holds actual native decode completion while deleting a version or series through the visible UI and real in-memory gateway, then checks exact File references/order/payload/source epoch and the latest canonical revision. It also covers decoder failure after the revision update, an explicit successful retry, stale revision rejection and changed-source identity rejection. Existing close/new-source and deletion-after-ready checks remain enabled. [Follow-up evidence](evidence/s09a/pr36-review/README.md) is bound to the new implementation SHA; the earlier PNGs and PASS logs retain their original attribution.

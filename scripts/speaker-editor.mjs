@@ -65,7 +65,15 @@ export function setSpeakerSaveLocked(locked) {
 }
 export function updateSpeakerSession(session) {
   if (state.session?.id !== session?.id) return;
-  state.session = structuredClone(session);
+  if (session.revision < state.session.revision) return;
+  // This API refreshes canonical metadata/results, never the prepared sources.
+  if (session.sourceState !== state.session.sourceState || fingerprint(session.sourceTracks) !== fingerprint(state.session.sourceTracks)) {
+    throw Object.assign(new Error("Состав исходников изменился. Откройте запись заново."), { status: 409 });
+  }
+  const updated = structuredClone(session);
+  // Keep the preparation's identity token, but retain the newest canonical revision.
+  for (const key of Object.keys(state.session)) if (!(key in updated)) delete state.session[key];
+  Object.assign(state.session, updated);
   render();
 }
 

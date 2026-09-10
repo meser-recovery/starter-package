@@ -1,5 +1,7 @@
 # Post-merge corrective evidence
 
+PR #36 P1 follow-up: [deletion during preparation — coverage gap and correction](../../S09A-PR36-review-fix.md).
+
 [Current corrective index](corrective/README.md) · [43-section audit](../../S09A-corrective-audit.md). Original captures and CI history below retain their original source SHAs.
 
 # S09A screenshot and validation index
