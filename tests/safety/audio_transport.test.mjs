@@ -14,19 +14,19 @@ class Element extends EventTarget {
   before(node) { this.ownerDocument.bar = node; }
   querySelector(tag) { return this.children.find(node => node.tag === tag) || this.children.map(node => node.querySelector(tag)).find(Boolean) || null; }
 }
-function fixture() {
+function fixture(selection = null) {
   const doc = { createElement(tag) { return new Element(tag, this); }, createElementNS(ns, tag) { return this.createElement(tag); } };
   const audio = doc.createElement('audio'); audio.id = 'source-audio'; audio.setAttribute('src', 'blob:one');
-  audio.paused = true; audio.ended = false; audio.volume = 1; audio.muted = true;
+  audio.currentTime = 0; audio.paused = true; audio.ended = false; audio.volume = 1; audio.muted = true;
   let plays = 0, enabled = true; const seeks = [], errors = [];
   audio.play = async () => { plays++; audio.paused = false; audio.dispatchEvent(new Event('play')); };
   audio.pause = () => { audio.paused = true; audio.dispatchEvent(new Event('pause')); };
   const resultAudio = doc.createElement('audio'); resultAudio.paused = true;
   resultAudio.pause = () => { resultAudio.paused = true; resultAudio.dispatchEvent(new Event('pause')); };
   resultAudio.play = () => { resultAudio.paused = false; resultAudio.dispatchEvent(new Event('play')); };
-  const transport = createAudioTransport({ audio, resultAudio, canPlay: () => enabled, seek: time => seeks.push(time), reportError: text => errors.push(text) });
+  const transport = createAudioTransport({ audio, resultAudio, canPlay: () => enabled, seek: time => { seeks.push(time); audio.currentTime = time; }, getSelection: selection ? () => selection : undefined, reportError: text => errors.push(text) });
   const [play, stop, volumeLabel] = doc.bar.children;
-  return { audio, resultAudio, transport, play, stop, volume: volumeLabel.querySelector('input'), seeks, errors, plays: () => plays, enable: value => { enabled = value; transport.refresh(); } };
+  return { audio, resultAudio, transport, play, stop, loop: doc.bar.children.find(node => node.id === "source-audio-loop"), setSelection: value => { selection = value; transport.refresh(); }, volume: volumeLabel.querySelector('input'), seeks, errors, plays: () => plays, enable: value => { enabled = value; transport.refresh(); } };
 }
 const click = async element => { element.dispatchEvent(new Event('click')); await new Promise(resolve => setImmediate(resolve)); };
 
@@ -64,4 +64,33 @@ test('failed playback can retry; stale failures cannot overwrite a new source st
   await click(f.play); assert.equal(f.errors.length, 1); assert.equal(f.audio.muted, true);
   f.audio.play = async () => { f.audio.paused = false; f.audio.dispatchEvent(new Event('play')); };
   await click(f.play); assert.equal(f.play.dataset.playing, 'true'); assert.equal(f.errors.length, 1);
+});
+
+test('loop starts at selection and wraps at its right edge without changing mute or volume', async () => {
+  const f = fixture({ startSeconds: 2, endSeconds: 3 });
+  await click(f.loop); assert.equal(f.audio.currentTime, 2); assert.equal(f.audio.paused, false);
+  assert.equal(f.loop.getAttribute('aria-pressed'), 'true');
+  f.audio.currentTime = 2.8; f.audio.dispatchEvent(new Event('timeupdate')); assert.deepEqual(f.seeks, [2]);
+  f.audio.currentTime = 3.01; f.audio.dispatchEvent(new Event('timeupdate')); assert.deepEqual(f.seeks, [2, 2]);
+  assert.equal(f.audio.muted, true); assert.equal(f.audio.volume, 1);
+  await click(f.loop); f.audio.currentTime = 3.1; f.audio.dispatchEvent(new Event('timeupdate'));
+  assert.deepEqual(f.seeks, [2, 2]); assert.equal(f.audio.paused, false);
+});
+test('stop pauses loop; clearing selection, locking and replacing media disable it', async () => {
+  const f = fixture({ startSeconds: 1, endSeconds: 2 });
+  await click(f.loop); await click(f.stop); assert.equal(f.audio.currentTime, 0);
+  f.audio.dispatchEvent(new Event('timeupdate')); assert.equal(f.audio.currentTime, 0);
+  await click(f.play); assert.equal(f.audio.currentTime, 1);
+  f.setSelection(null); assert.equal(f.loop.getAttribute('aria-pressed'), 'false'); assert(f.loop.disabled);
+  f.setSelection({ startSeconds: 2, endSeconds: 4 }); await click(f.loop);
+  f.enable(false); assert.equal(f.loop.getAttribute('aria-pressed'), 'false');
+  f.enable(true); await click(f.loop); f.audio.dispatchEvent(new Event('emptied'));
+  assert.equal(f.loop.getAttribute('aria-pressed'), 'false');
+});
+test('loop handles an end-of-file range and never restarts after result playback takes over', async () => {
+  const f = fixture({ startSeconds: 1, endSeconds: 2 }); await click(f.loop);
+  f.audio.currentTime = 2; f.audio.paused = true; f.audio.dispatchEvent(new Event('ended'));
+  await new Promise(resolve => setImmediate(resolve)); assert.equal(f.audio.currentTime, 1); assert.equal(f.audio.paused, false);
+  f.resultAudio.play(); f.audio.currentTime = 2; f.audio.dispatchEvent(new Event('timeupdate'));
+  assert.equal(f.audio.paused, true); assert.equal(f.resultAudio.paused, false);
 });

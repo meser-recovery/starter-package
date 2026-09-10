@@ -13,11 +13,10 @@ const MAX_DURATION_DIFFERENCE_SECONDS = 0.5;
 // Only multi-track mixing uses this clock; single-track processing stays unchanged.
 const MIX_SAMPLE_RATE = 48000;
 const WAVEFORM_HEIGHT = 100;
-// Source and result waveforms keep at most four generated samples per second;
-// the width floor preserves usable short-file rendering without unbounded images.
-const WAVEFORM_PIXELS_PER_SECOND = 4;
-const WAVEFORM_MIN_WIDTH = 640;
-const WAVEFORM_MAX_WIDTH = 16384;
+// Bounded high-resolution envelopes for detailed zoom, including Retina screens.
+const WAVEFORM_PIXELS_PER_SECOND = 64;
+const WAVEFORM_MIN_WIDTH = 4096;
+const WAVEFORM_MAX_WIDTH = 65536;
 const OUTPUT_PATH = "processor-output.mp3";
 const RESULT_WAVEFORM_PATH = "processor-result-waveform.png";
 const PROGRESS_PATH = "processor-analysis.txt";
@@ -165,6 +164,7 @@ let selectedProvenance = [];
 let provenanceContext = null;
 let resultCandidate = null;
 let tracks = [];
+let sourceSelection = null, sourceSelectionEpoch = 0;
 let nextTrackId = 1;
 let resultURL = null;
 let resultWaveformURL = null;
@@ -190,6 +190,7 @@ let resultZoomMinimum = 2;
 let resultZoomMaximum = 2;
 const sourceTransport = createAudioTransport({
   audio: sourceAudio, resultAudio, canPlay: () => !active && tracks.length > 0 && tracks.every(track => Number.isFinite(track.duration)),
+  getSelection: () => sourceSelection,
   seek: seekSources, reportError: message => { status.textContent = message; }
 });
 
@@ -465,29 +466,80 @@ function seekFromControl(event) {
   seekSources((scroll.scrollLeft + event.clientX - box.left) / sourcePixelsPerSecond);
 }
 
+function updateSourceSelection(range) {
+  sourceSelection = range;
+  for (const wave of byId("file-info").querySelectorAll(".processor-waveform")) {
+    wave.querySelector(".processor-selection-overlay")?.remove();
+    if (!range || !(sourceTimelineDuration > 0)) continue;
+    const overlay = document.createElement("span"); overlay.className = "processor-selection-overlay";
+    overlay.style.left = `${range.startSeconds / sourceTimelineDuration * 100}%`;
+    overlay.style.width = `${(range.endSeconds - range.startSeconds) / sourceTimelineDuration * 100}%`;
+    wave.append(overlay);
+  }
+  let summary = byId("loop-selection-summary");
+  if (!summary) { summary = document.createElement("span"); summary.id = "processor-loop-selection-summary"; sourceAudio.before(summary); }
+  summary.textContent = range ? `Выделение: ${range.startSeconds.toFixed(3)}–${range.endSeconds.toFixed(3)} с` : "Клик — позиция; протянуть — выделить для повтора; Alt + протянуть — прокрутка.";
+  sourceTransport.refresh();
+}
+
+function installSourceSelection(scroll) {
+  let drag = null;
+  const time = event => Math.max(0, Math.min(sourceTimelineDuration,
+    (scroll.scrollLeft + event.clientX - scroll.getBoundingClientRect().left) / sourcePixelsPerSecond));
+  scroll.addEventListener("pointerdown", event => {
+    if (drag || event.button !== 0 || event.altKey || active || !Number.isFinite(sourceTimelineDuration)) return;
+    drag = { id: event.pointerId, x: event.clientX, start: time(event), previous: sourceSelection, epoch: sourceSelectionEpoch };
+    scroll.setPointerCapture(event.pointerId);
+  });
+  scroll.addEventListener("pointermove", event => {
+    if (!drag || drag.id !== event.pointerId || drag.epoch !== sourceSelectionEpoch || active || Math.abs(event.clientX - drag.x) <= 4) return;
+    const end = time(event);
+    updateSourceSelection({ startSeconds: Math.min(drag.start, end), endSeconds: Math.max(drag.start, end) });
+  });
+  scroll.addEventListener("pointerup", event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const current = drag; drag = null; scroll.releasePointerCapture(event.pointerId);
+    if (current.epoch !== sourceSelectionEpoch) return;
+    if (active) { updateSourceSelection(current.previous); return; }
+    if (Math.abs(event.clientX - current.x) <= 4) { updateSourceSelection(null); seekSources(time(event)); }
+    else { const end = time(event); updateSourceSelection({ startSeconds: Math.min(current.start, end), endSeconds: Math.max(current.start, end) }); }
+    scroll.dataset.dragEnded = String(Date.now());
+  });
+  const cancel = () => { if (drag) { const previous = drag; drag = null; if (previous.epoch === sourceSelectionEpoch) updateSourceSelection(previous.previous); } };
+  scroll.addEventListener("pointercancel", cancel); scroll.addEventListener("lostpointercapture", cancel);
+}
+
 function navigateWaveform(event) {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
   const current = sourceAudio.currentTime || 0;
-  const step = event.shiftKey ? 30 : 5;
+  if (event.shiftKey) {
+    const start = sourceSelection?.startSeconds ?? current, end = sourceSelection?.endSeconds ?? current;
+    const next = event.key === "Home" ? start : event.key === "End" ? sourceTimelineDuration : end + (event.key === "ArrowLeft" ? -.1 : .1);
+    updateSourceSelection({ startSeconds: start, endSeconds: Math.max(start, Math.min(sourceTimelineDuration, next)) });
+    return;
+  }
+  updateSourceSelection(null);
+  const step = 5;
   const target = event.key === "Home" ? 0 : event.key === "End" ? sourceTimelineDuration :
     current + (event.key === "ArrowLeft" ? -step : step);
   seekSources(target);
 }
 
-function installPan(scroll, onManualPan) {
+function installPan(scroll, onManualPan, altOnly = false) {
   let startX = 0;
   let startScroll = 0;
-  let dragging = false;
+  let dragging = false, panPointer = null;
   scroll.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    if (panPointer !== null || event.button !== 0 || (altOnly && !event.altKey)) return;
+    panPointer = event.pointerId;
     startX = event.clientX;
     startScroll = scroll.scrollLeft;
     dragging = false;
     scroll.setPointerCapture(event.pointerId);
   });
   scroll.addEventListener("pointermove", (event) => {
-    if (!scroll.hasPointerCapture(event.pointerId)) return;
+    if (panPointer !== event.pointerId || !scroll.hasPointerCapture(event.pointerId)) return;
     if (Math.abs(event.clientX - startX) > 6 && !dragging) {
       dragging = true;
       onManualPan?.();
@@ -498,8 +550,8 @@ function installPan(scroll, onManualPan) {
     scroll.scrollLeft = startScroll - (event.clientX - startX);
   });
   const finish = (event) => {
-    if (!scroll.hasPointerCapture(event.pointerId)) return;
-    scroll.releasePointerCapture(event.pointerId);
+    if (panPointer !== event.pointerId || !scroll.hasPointerCapture(event.pointerId)) return;
+    panPointer = null; scroll.releasePointerCapture(event.pointerId);
     scroll.classList.remove("is-dragging");
     if (dragging) scroll.dataset.dragEnded = String(Date.now());
   };
@@ -577,7 +629,8 @@ function renderTracks() {
     scroll.addEventListener("wheel", (event) => {
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || event.shiftKey) disengageSourceFollow();
     }, { passive: true });
-    installPan(scroll, disengageSourceFollow);
+    installSourceSelection(scroll);
+    installPan(scroll, disengageSourceFollow, true);
     const actions = document.createElement("div");
     actions.className = "processor-track__actions";
     const solo = document.createElement("button");
@@ -636,6 +689,7 @@ function renderTracks() {
   applyMonitoring();
   if (sourceZoomInitialized) updateSourceNavigation();
   updatePlayheads();
+  updateSourceSelection(sourceSelection);
 }
 
 function updatePlayheads() {
@@ -765,7 +819,7 @@ function sourceZoomBounds() {
   const durations = tracks.map((track) => track.duration).filter((duration) => Number.isFinite(duration) && duration > 0);
   sourceTimelineDuration = durations.length ? Math.max(...durations) : NaN;
   const nativeRates = tracks.filter((track) => Number.isFinite(track.duration) && track.duration > 0)
-    .map((track) => track.waveformWidth / track.duration);
+    .map((track) => track.waveformWidth / track.duration / Math.max(1, Math.min(3, window.devicePixelRatio || 1)));
   sourceZoomMaximum = nativeRates.length ? Math.min(...nativeRates) : 2;
   sourceZoomMinimum = Number.isFinite(sourceTimelineDuration) && viewport ?
     Math.min(sourceZoomMaximum, viewport.clientWidth / sourceTimelineDuration) : sourceZoomMaximum;
@@ -889,6 +943,7 @@ function revokeTrackURLs(track) {
 }
 
 function clearTracks(resetInput = true) {
+  sourceSelection = null; sourceSelectionEpoch++;
   cancelAnimationFrame(playheadFrame);
   cancelAnimationFrame(sourceScrollReleaseFrame);
   sourceScrollLock = false;

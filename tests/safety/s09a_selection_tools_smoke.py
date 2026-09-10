@@ -3,7 +3,7 @@
 
 def check_selection_tools(page, output=None):
     tools = page.locator('.speaker-selection__actions button')
-    assert tools.count() == 4
+    assert tools.count() == 6
     for button in tools.all():
         assert button.is_disabled()
         assert button.locator('svg[aria-hidden=true]').count() == 1
@@ -58,7 +58,7 @@ def check_selection_tools(page, output=None):
     page.mouse.up()
     assert page.locator('#speaker-editor-selection-track').input_value() == ids[1]
     assert 'Дорожка 2' in page.locator('#speaker-editor-selection-scope').inner_text()
-    assert tools.locator('svg').count() == 4
+    assert tools.locator('svg').count() == 6
     page.locator('#speaker-editor-add-silence').click()
     payload = page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload")
     assert payload['trackSilenceRegions'][0]['trackId'] == ids[1]
@@ -71,6 +71,8 @@ def check_selection_tools(page, output=None):
     assert rows.nth(0).locator('.speaker-region-overlay--cut').count() == 1
     assert rows.nth(1).locator('.speaker-region-overlay--cut').count() == 1
     page.locator('#speaker-editor-undo').click()
+
+    check_waveform_interactions(page)
 
     for width in (320, 390, 768, 1280):
         page.set_viewport_size({'width': width, 'height': 900})
@@ -88,3 +90,138 @@ def check_selection_tools(page, output=None):
     page.locator('#speaker-editor-selection-start').fill('0')
     page.locator('#speaker-editor-selection-end').fill('')
     page.locator('.speaker-selection details > summary').click()
+
+
+def check_waveform_interactions(page):
+    """Real DOM/media regression for the seven requested timeline improvements."""
+    rows = page.locator('.speaker-track')
+    wave = rows.first.locator('.speaker-waveform')
+    state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
+    baseline = page.evaluate(state)
+    page.locator('#speaker-editor-zoom-fit').click()
+    wave.scroll_into_view_if_needed()
+    box = wave.bounding_box()
+    wave.click(position={'x': box['width'] * .6, 'y': box['height'] * .6})
+    times = page.locator('#speaker-editor audio[data-track-id]').evaluate_all('aa => aa.map(a => a.currentTime)')
+    assert min(times) > 0 and max(times) - min(times) < .06
+    before = times[0]
+    page.locator('#speaker-editor-source-audio-play').click()
+    page.wait_for_function('(t) => document.getElementById("speaker-editor-source-audio").currentTime > t', arg=before)
+    page.locator('#speaker-editor-source-audio-stop').click()
+
+    def select(left, right):
+        wave.scroll_into_view_if_needed()
+        b = wave.bounding_box()
+        page.mouse.move(b['x'] + b['width'] * left, b['y'] + b['height'] * .6)
+        page.mouse.down()
+        page.mouse.move(b['x'] + b['width'] * right, b['y'] + b['height'] * .6, steps=6)
+        page.mouse.up()
+
+    select(.2, .4)
+    page.evaluate("""() => {
+        const a = document.getElementById('speaker-editor-source-audio');
+        window.loopReturns = 0; window.loopPrevious = a.currentTime;
+        a.addEventListener('seeked', () => {
+            if (a.currentTime < window.loopPrevious - .1) window.loopReturns++;
+            window.loopPrevious = a.currentTime;
+        });
+        a.addEventListener('timeupdate', () => { window.loopPrevious = a.currentTime; });
+    }""")
+    page.locator('#speaker-editor-source-audio-loop').click()
+    page.wait_for_function('window.loopReturns >= 2', timeout=15000)
+    times = page.locator('#speaker-editor audio[data-track-id]').evaluate_all('aa => aa.map(a => a.currentTime)')
+    assert max(times) - min(times) < .08
+    page.locator('#speaker-editor-source-audio-loop').click()
+    page.locator('#speaker-editor-source-audio-stop').click()
+    # Two different operations on one exact range, plus an unrelated cut.
+    page.locator('#speaker-editor-add-cut').click()
+    page.locator('#speaker-editor-add-silence').click()
+    selected = page.evaluate(state)
+    region_id = selected['trackSilenceRegions'][0]['regionId']
+    select(.55, .65)
+    page.locator('#speaker-editor-add-cut').click()
+    unrelated = page.evaluate(state)['globalCuts'][-1]
+    rows.first.locator(f'[data-region-id="{region_id}"]').click()
+    page.locator('#speaker-editor-restore-silence').click()
+    page.locator('#speaker-editor-restore-cut').click()
+    current = page.evaluate(state)
+    assert current['trackSilenceRegions'] == []
+    assert current['globalCuts'] == [unrelated]
+    rows.first.locator(f'[data-region-id="{unrelated["regionId"]}"]').focus()
+    page.keyboard.press('Enter')
+    page.locator('#speaker-editor-restore-cut').click()
+    assert page.evaluate(state) == baseline
+
+    for kind, delta in [('start', .05), ('end', -.05)]:
+        flag = rows.first.locator(f'.speaker-boundary--{kind}')
+        flag.scroll_into_view_if_needed()
+        b = flag.bounding_box()
+        lane_width = wave.bounding_box()['width']
+        page.mouse.move(b['x'] + b['width'] / 2, b['y'] + b['height'] / 2)
+        page.mouse.down()
+        page.mouse.move(b['x'] + b['width'] / 2 + delta * lane_width, b['y'] + b['height'] / 2, steps=5)
+        prior = page.evaluate(state)
+        assert len(prior['globalCuts']) == (0 if kind == 'start' else 1), 'pointermove must not commit'
+        page.mouse.up()
+        assert len(page.evaluate(state)['globalCuts']) == (1 if kind == 'start' else 2)
+    rows.first.locator('.speaker-boundary--start').focus(); page.keyboard.press('Home')
+    rows.first.locator('.speaker-boundary--end').focus(); page.keyboard.press('End')
+    assert page.evaluate(state) == baseline
+    assert rows.first.locator('.speaker-boundary--end').evaluate('e => e === document.activeElement')
+
+    if not rows.first.get_by_role('switch', name='Улучшение', exact=True).is_visible():
+        rows.first.locator('.speaker-dsp-disclosure > summary').click()
+    rows.first.get_by_role('switch', name='Улучшение', exact=True).check()
+    rows.first.get_by_role('switch', name='Выравнивание громкости', exact=True).check()
+    slider = rows.first.get_by_role('slider', name='Компрессия', exact=True)
+    for index, preset in enumerate(('off', 'light', 'medium', 'strong')):
+        slider.fill(str(index)); slider.dispatch_event('change')
+        processing = page.evaluate(state)['trackProcessing']
+        assert processing[0]['compression'] == preset
+        assert processing[1] == baseline['trackProcessing'][1]
+    rows.first.get_by_role('switch', name='Улучшение', exact=True).uncheck()
+    rows.first.get_by_role('switch', name='Выравнивание громкости', exact=True).uncheck()
+    slider.fill('0'); slider.dispatch_event('change')
+    assert page.evaluate(state) == baseline
+    rail = page.locator('#speaker-editor-source-scrollbar')
+    assert rail.bounding_box()['y'] >= rows.last.bounding_box()['y'] + rows.last.bounding_box()['height']
+    # Backing pixels grow with DPR; zoom changes the time window, not bitmap scaling.
+    page.locator('#speaker-editor-zoom').fill('4'); page.locator('#speaker-editor-zoom').dispatch_event('input')
+    info = rows.first.locator('canvas').evaluate('c => ({bitmap:c.width,css:c.getBoundingClientRect().width,dpr:devicePixelRatio})')
+    assert abs(info['bitmap'] - info['css'] * min(3, max(1, info['dpr']))) <= 2
+    page.locator('#speaker-editor-zoom-fit').click()
+
+
+def check_announcement_selection(page):
+    page.wait_for_function("!document.getElementById('processor-run').disabled")
+    page.locator('#processor-source-zoom-fit').click()
+    lane = page.locator('.processor-track .processor-waveform').first
+    lane.scroll_into_view_if_needed(); box = lane.bounding_box()
+    lane.click(position={'x': box['width'] * .5, 'y': box['height'] * .5})
+    assert page.locator('#processor-source-audio').evaluate('a => a.currentTime') > 0
+    page.mouse.move(box['x'] + box['width'] * .2, box['y'] + box['height'] * .5)
+    page.mouse.down()
+    page.mouse.move(box['x'] + box['width'] * .4, box['y'] + box['height'] * .5, steps=6)
+    page.mouse.up()
+    assert page.locator('.processor-selection-overlay').count() == 3
+    loop = page.locator('#processor-source-audio-loop'); assert loop.is_enabled()
+    loop.click()
+    page.wait_for_function("!document.getElementById('processor-source-audio').paused")
+    assert loop.get_attribute('aria-pressed') == 'true'
+    page.wait_for_timeout(900)
+    time = page.locator('#processor-source-audio').evaluate('a=>a.currentTime')
+    assert .5 < time < 1.3
+    loop.click(); page.locator('#processor-source-audio-stop').click()
+    rail = page.locator('#processor-source-scrollbar')
+    rows = page.locator('.processor-track')
+    assert rail.bounding_box()['y'] >= rows.last.bounding_box()['y'] + rows.last.bounding_box()['height']
+    # Pointer cancellation restores the prior range without moving the playhead.
+    before = page.locator('#processor-loop-selection-summary').inner_text()
+    lane.scroll_into_view_if_needed(); box = lane.bounding_box()
+    page.mouse.move(box['x'] + box['width'] * .6, box['y'] + box['height'] * .5); page.mouse.down()
+    page.mouse.move(box['x'] + box['width'] * .8, box['y'] + box['height'] * .5)
+    page.locator('.processor-track .processor-waveform-scroll').first.dispatch_event('pointercancel', {'pointerId': 1})
+    page.mouse.up()
+    assert page.locator('#processor-loop-selection-summary').inner_text() == before
+    lane.click(position={'x': box['width'] * .1, 'y': box['height'] * .5})
+    assert loop.is_disabled()

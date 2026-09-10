@@ -1729,10 +1729,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         second = page.locator(".speaker-track").nth(1)
         second.get_by_role("button", name="Исключить из микса", exact=True).click()
         assert "Не в финальном миксе" in page.locator(".speaker-track").nth(1).inner_text()
-        if not page.locator(".speaker-dsp select").first.is_visible():
+        if not page.locator(".speaker-dsp input").first.is_visible():
             page.locator(".speaker-dsp-disclosure > summary").first.click()
-        page.locator(".speaker-dsp select").nth(0).select_option("gentle")
-        page.locator(".speaker-dsp select").nth(2).select_option("medium")
+        page.locator(".speaker-dsp input").nth(0).check()
+        page.locator(".speaker-dsp input").nth(2).fill("2"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         if screenshot_dir:
             page.evaluate("document.activeElement?.blur()")
             page.set_viewport_size({"width": 768, "height": 900})
@@ -1748,9 +1748,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor-redo").is_enabled()
         page.keyboard.press("Control+Shift+z")
         assert page.locator("#speaker-editor-redo").is_enabled()
-        page.locator(".speaker-dsp select").nth(2).select_option("strong")
+        page.locator(".speaker-dsp input").nth(2).fill("3"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         assert page.locator("#speaker-editor-redo").is_disabled()
-        page.locator(".speaker-dsp select").nth(2).select_option("medium")
+        page.locator(".speaker-dsp input").nth(2).fill("2"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         if screenshot_dir:
             page.evaluate("document.activeElement?.blur()")
             page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-undo-redo-390.png"))
@@ -1772,11 +1772,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#speaker-editor-render").click()
         page.locator("#speaker-editor-cancel").wait_for(state="visible")
         assert page.locator("#speaker-editor-add-cut").is_disabled()
-        assert page.locator(".speaker-dsp select").first.is_disabled()
+        assert page.locator(".speaker-dsp input").first.is_disabled()
         assert page.locator('.speaker-track button').filter(has_text="Исключить из микса").first.is_disabled()
         # Even a synthetic event cannot alter the captured render snapshot while the operation is active.
-        page.locator(".speaker-dsp select").first.evaluate("""select => {
-            select.value = 'off'; select.dispatchEvent(new Event('change', {bubbles: true}));
+        page.locator(".speaker-dsp input").first.evaluate("""select => {
+            select.checked = false; select.dispatchEvent(new Event('change', {bubbles: true}));
         }""")
         page.get_by_text("Финальная версия готова. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
         page.locator("#speaker-editor-result").wait_for(state="visible")
@@ -1859,9 +1859,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         # Monitoring does not invalidate; a render-affecting DSP edit does.
         page.locator('.speaker-track button[data-action="solo"]').first.click()
         assert page.locator("#speaker-editor-result").is_visible()
-        if not page.locator(".speaker-dsp select").first.is_visible():
+        if not page.locator(".speaker-dsp input").first.is_visible():
             page.locator(".speaker-dsp-disclosure > summary").first.click()
-        page.locator(".speaker-dsp select").nth(0).select_option("off")
+        page.locator(".speaker-dsp input").nth(0).uncheck()
         assert page.locator("#speaker-editor-result").is_hidden()
         page.locator("#speaker-editor-undo").click()
         page.locator("#speaker-editor-render").click()
@@ -1874,11 +1874,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-390.png"))
         page.locator(".skip-link").evaluate("element => element.style.removeProperty('display')")
         # Exercise measured two-pass loudnorm in the real browser engine.
-        if not page.locator(".speaker-dsp select").first.is_visible():
+        if not page.locator(".speaker-dsp input").first.is_visible():
             page.locator(".speaker-dsp-disclosure > summary").first.click()
-        page.locator(".speaker-dsp select").nth(0).select_option("off")
-        page.locator(".speaker-dsp select").nth(1).select_option("on")
-        page.locator(".speaker-dsp select").nth(2).select_option("off")
+        page.locator(".speaker-dsp input").nth(0).uncheck()
+        page.locator(".speaker-dsp input").nth(1).check()
+        page.locator(".speaker-dsp input").nth(2).fill("0"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         page.locator("#speaker-editor-save").click()
         page.wait_for_function("document.getElementById(\'speaker-editor-status\').textContent === \'Все изменения сохранены\'")
         assert mock["speaker_draft"]["draftRevision"] == 3
@@ -2363,7 +2363,7 @@ def check_processor_helpers(page) -> None:
     assert result["totalBoundary"] == "" and result["intersection"] == [[5, 7]] and result["tailIntersection"] == [[8, 10]], result
     assert result["tolerance"] == 10 and result["mismatch"] == "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.", result
     assert "gte(t,3.175000)*lt(t,5.825000)" in result["filter"], result
-    assert result["waveformWidths"] == [640, 14400, 16384], result
+    assert result["waveformWidths"] == [4096, 65536, 65536], result
 
 
 def processor_mix_audio_metrics(page, windows: dict[str, tuple[float, float]]) -> dict:
@@ -2656,13 +2656,15 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
                            arg=paused_left, timeout=5000)
     page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
 
-    # Intentional waveform panning turns follow off; enabling it again recenters immediately.
+    # Alt + waveform panning turns follow off; enabling it again recenters immediately.
     scroll_box = first_scroll.bounding_box()
     assert scroll_box
     first_scroll.hover(position={"x": scroll_box["width"] * .55, "y": 50})
+    page.keyboard.down("Alt")
     page.mouse.down()
     page.mouse.move(scroll_box["x"] + scroll_box["width"] * .25, scroll_box["y"] + 50, steps=5)
     page.mouse.up()
+    page.keyboard.up("Alt")
     assert follow.get_attribute("aria-pressed") == "false"
     follow.click()
     assert follow.get_attribute("aria-pressed") == "true"
@@ -2672,8 +2674,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert abs(recentered[0] - recentered[1]) < 8, recentered
 
     # Persistent custom thumb dragging and keyboard navigation are explicit manual intent.
-    thumb_box = shared_thumb.bounding_box()
     shared_scrollbar.scroll_into_view_if_needed()
+    thumb_box = shared_thumb.bounding_box()
     rail_box = shared_scrollbar.bounding_box()
     assert thumb_box and rail_box
     page.mouse.move(thumb_box["x"] + thumb_box["width"] / 2, thumb_box["y"] + thumb_box["height"] / 2)
@@ -3072,7 +3074,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
                 signature: Array.from(bytes.slice(0, 8))};
         }""")
         assert waveform_info["size"] > 0 and waveform_info["type"] == "image/png", waveform_info
-        assert waveform_info["width"] == 640 and waveform_info["height"] == 100, waveform_info
+        assert waveform_info["width"] == 4096 and waveform_info["height"] == 100, waveform_info
         assert waveform_info["signature"] == [137, 80, 78, 71, 13, 10, 26, 10], waveform_info
         assert page.locator(".processor-track .processor-waveform").count() == 1
         assert page.locator('.processor-track button[data-track-action="solo"]').get_attribute("aria-pressed") == "false"
@@ -3111,7 +3113,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             return {size: blob.size, type: blob.type, width: image.naturalWidth, height: image.naturalHeight};
         }""")
         assert result_waveform_info["size"] > 0 and result_waveform_info["type"] == "image/png", result_waveform_info
-        assert result_waveform_info["width"] == 640 and result_waveform_info["height"] == 100, result_waveform_info
+        assert result_waveform_info["width"] == 4096 and result_waveform_info["height"] == 100, result_waveform_info
         source_time_before_result = page.locator("#processor-source-audio").evaluate("audio => { audio.currentTime = 1; return audio.currentTime; }")
         source_width_before_result_zoom = page.locator(".processor-track .processor-waveform").evaluate("item => item.offsetWidth")
         page.locator("#processor-result-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")

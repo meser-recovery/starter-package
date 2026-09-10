@@ -101,7 +101,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         original=snapshot(); assert original['session'].get('id') is None
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Вверх',exact=True).click()
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
-        page.locator('.speaker-dsp select').nth(0).select_option('gentle')
+        page.locator('.speaker-dsp input').nth(0).check()
         page.get_by_text('Точное редактирование',exact=True).click()
         page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-selection-end').fill('2.8');page.locator('#speaker-editor-set-end').click()

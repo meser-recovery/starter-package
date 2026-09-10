@@ -1,6 +1,6 @@
 // One source transport for either editor. The media element remains the clock;
 // its muted flag belongs to a track and is never used as a master mute control.
-export function createAudioTransport({ audio, resultAudio, canPlay, seek, reportError }) {
+export function createAudioTransport({ audio, resultAudio, canPlay, seek, reportError, getSelection }) {
   const doc = audio.ownerDocument;
   const workspace = audio.closest('.speaker-editor, .processor-card');
   workspace?.classList.add('daw-workspace');
@@ -18,6 +18,8 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
   const play = button('Воспроизвести исходники', 'M8 5v14l11-7z', async () => {
     if (!canPlay()) return;
     if (!audio.paused) { audio.pause(); return; }
+    const range = loopRange();
+    if (loopEnabled && range && (audio.currentTime < range.startSeconds || audio.currentTime >= range.endSeconds)) seek(range.startSeconds);
     const source = audio.getAttribute('src');
     try { await audio.play(); } catch {
       if (canPlay() && audio.getAttribute('src') === source) reportError('Не удалось начать прослушивание. Нажмите воспроизведение ещё раз.');
@@ -42,8 +44,60 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
   volume.addEventListener('input', () => { audio.volume = Math.max(0, Math.min(1, Number(volume.value))); });
   volumeLabel.append(volumeIcon, text, volume); bar.append(volumeLabel);
   volumeLabel.title = volume.title;
+  let loopEnabled = false, loopFrame = null;
+  const loopRange = () => {
+    const range = getSelection?.();
+    return range && Number.isFinite(range.startSeconds) && Number.isFinite(range.endSeconds) &&
+      range.startSeconds >= 0 && range.endSeconds > range.startSeconds ? range : null;
+  };
+  const loop = getSelection ? button('Повторять выделение', 'M4 8h13l-3-3m3 3-3 3M20 16H7l3 3m-3-3 3-3M4 8v5m16 3v-5', async () => {
+    if (!canPlay() || !loopRange()) return;
+    loopEnabled = !loopEnabled;
+    if (loopEnabled) {
+      seek(loopRange().startSeconds);
+      const source = audio.getAttribute('src');
+      try { await audio.play(); } catch {
+        if (audio.getAttribute('src') === source && canPlay()) reportError('Не удалось начать повтор. Нажмите воспроизведение ещё раз.');
+      }
+    }
+    refresh();
+  }) : null;
+  if (loop) { loop.id = `${audio.id}-loop`; loop.className = 'daw-loop'; }
+  function checkLoop() {
+    const range = loopRange();
+    if (!loopEnabled || !range || !canPlay()) return;
+    if (audio.currentTime >= range.endSeconds || audio.currentTime < range.startSeconds) seek(range.startSeconds);
+  }
+  function stopLoopFrame() {
+    if (loopFrame !== null) globalThis.cancelAnimationFrame?.(loopFrame);
+    loopFrame = null;
+  }
+  function loopTick() {
+    loopFrame = null;
+    if (audio.paused) return;
+    checkLoop();
+    if (loopEnabled) loopFrame = globalThis.requestAnimationFrame?.(loopTick) ?? null;
+  }
+  audio.addEventListener('play', () => { stopLoopFrame(); loopTick(); });
+  audio.addEventListener('pause', stopLoopFrame);
+  audio.addEventListener('timeupdate', () => { if (!audio.paused) checkLoop(); });
+  audio.addEventListener('ended', () => {
+    if (!loopEnabled || !loopRange() || !canPlay()) return;
+    seek(loopRange().startSeconds);
+    const source = audio.getAttribute('src');
+    void audio.play().catch(() => { if (canPlay() && audio.getAttribute('src') === source) reportError('Повтор остановлен. Нажмите воспроизведение ещё раз.'); });
+  });
+  audio.addEventListener('emptied', () => { loopEnabled = false; stopLoopFrame(); refresh(); });
   audio.before(bar); audio.controls = false; audio.classList.add('daw-media-clock'); audio.setAttribute('aria-hidden', 'true');
   function refresh() {
+    const range = loopRange();
+    if (!range || !canPlay()) { loopEnabled = false; stopLoopFrame(); }
+    if (loop) {
+      loop.disabled = !canPlay() || !range;
+      loop.setAttribute('aria-pressed', String(loopEnabled));
+      loop.title = range ? `Повторять исходники: ${range.startSeconds.toFixed(3)}–${range.endSeconds.toFixed(3)} с` : 'Выделите фрагмент для повтора';
+      if (loopEnabled && !audio.paused && loopFrame === null) loopFrame = globalThis.requestAnimationFrame?.(loopTick) ?? null;
+    }
     play.disabled = !canPlay(); stop.disabled = !canPlay();
     const playing = !audio.paused && !audio.ended;
     const label = playing ? 'Приостановить исходники' : 'Воспроизвести исходники';

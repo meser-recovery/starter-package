@@ -929,7 +929,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         '"-filter_complex_script"', '"-map", "[mixed]"', "`processor-input-${index}`",
         "files.reduce((sum, file) => sum + file.size, 0)", "[...inputPaths, ...TEMP_PATHS]",
         "Выбрано дорожек:", "Дорожек сведено:", "Сокращено общих длинных пауз",
-        "const WAVEFORM_PIXELS_PER_SECOND = 4;", "const WAVEFORM_MAX_WIDTH = 16384;",
+        "const WAVEFORM_PIXELS_PER_SECOND = 64;", "const WAVEFORM_MAX_WIDTH = 65536;",
         "showwavespic=s=", "aformat=channel_layouts=mono", 'new Blob([image], { type: "image/png" })',
         "processor-waveform-input-${track.id}", "processor-waveform-${track.id}.png",
         "Не удалось построить форму сигнала.", "Подготовка формы сигнала…",

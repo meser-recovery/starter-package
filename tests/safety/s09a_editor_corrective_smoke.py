@@ -135,13 +135,13 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         assert page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').evaluate('e=>e===document.activeElement')
         page.locator('.speaker-regions > summary').click()
         control=page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True)
-        control.focus(); control.select_option('on')
+        control.focus(); control.check()
         assert page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True).evaluate('e=>e===document.activeElement')
         # A rerender caused by editing must keep the source viewport aligned.
         page.locator('#speaker-editor-zoom').fill('4'); page.locator('#speaker-editor-zoom').dispatch_event('input')
         page.locator('.speaker-waveform-scroll').first.evaluate('e=>e.scrollLeft=200')
         page.wait_for_timeout(50)
-        page.locator('.speaker-track').nth(1).get_by_label('Компрессия', exact=True).select_option('light')
+        page.locator('.speaker-track').nth(1).get_by_label('Компрессия', exact=True).fill('1'); page.locator('.speaker-track').nth(1).get_by_label('Компрессия', exact=True).dispatch_event('change')
         assert page.locator('.speaker-waveform-scroll').first.evaluate('e=>e.scrollLeft')==200
         assert page.locator('.speaker-waveform-scroll').nth(1).evaluate('e=>e.scrollLeft')==200
         snapshot('selection-dsp-focus', '#speaker-editor')
@@ -176,6 +176,8 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         assert page.locator('.speaker-track').count()==3
         page.locator('#open-local-announcement').click(); page.locator('#speaker-unsaved-discard').click()
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform img').length===3", timeout=180000)
+        from s09a_selection_tools_smoke import check_announcement_selection
+        check_announcement_selection(page)
         page.locator('#processor-run').click()
         page.wait_for_function("document.getElementById('processor-download').href.startsWith('blob:')", timeout=60000)
         with page.expect_download() as download: page.locator('#processor-download').click()

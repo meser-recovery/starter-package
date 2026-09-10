@@ -1,5 +1,7 @@
 // Preview analysis only. Does not alter source bytes or the render/DSP recipe.
-const WIDTH = 1400;
+// 256 KiB of retained peaks per track; roughly 57 ms per bin for a 62-minute
+// recording. The decoder's temporary image is released after extraction.
+const WIDTH = 65536;
 const HEIGHT = 100;
 
 export function createWaveformReader(signal) {
@@ -16,7 +18,7 @@ export function createWaveformReader(signal) {
       const buffer = await context.decodeAudioData(await file.arrayBuffer()); check();
       const data = buffer.getChannelData(0); const samples = new Float32Array(WIDTH);
       for (let x = 0; x < WIDTH; x++) {
-        for (let i = Math.floor(x * data.length / WIDTH); i < Math.floor((x + 1) * data.length / WIDTH); i++) {
+        for (let i = Math.floor(x * data.length / WIDTH); i < Math.min(data.length, Math.max(Math.floor(x * data.length / WIDTH) + 1, Math.floor((x + 1) * data.length / WIDTH))); i++) {
           samples[x] = Math.max(samples[x], Math.abs(data[i]));
         }
       }
@@ -24,7 +26,8 @@ export function createWaveformReader(signal) {
     } finally { await context.close(); }
   }
 
-  async function ffmpegSamples(file) {
+  async function ffmpegSamples(file, duration) {
+    const width = Number.isFinite(duration) ? Math.min(WIDTH, Math.max(1, Math.floor(duration * 4000))) : WIDTH;
     if (!engine) {
       const { FFmpeg } = await import("../vendor/ffmpeg/ffmpeg/index.js"); check();
       engine = new FFmpeg();
@@ -38,15 +41,15 @@ export function createWaveformReader(signal) {
       await currentEngine.writeFile(input, new Uint8Array(await file.arrayBuffer())); check();
       // A fixed-size image avoids retaining an hour of decoded PCM in Web Audio.
       const code = await currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", input,
-        "-filter_complex", `aformat=channel_layouts=mono,aresample=8000,showwavespic=s=${WIDTH}x${HEIGHT}:colors=white`,
+        "-filter_complex", `aformat=channel_layouts=mono,aresample=8000,showwavespic=s=${width}x${HEIGHT}:colors=white`,
         "-frames:v", "1", "-an", "-pix_fmt", "rgba", "-f", "rawvideo", output]);
       check();
       if (code !== 0) throw new Error("FFmpeg waveform decoding failed");
       const pixels = await currentEngine.readFile(output); check();
-      if (pixels.length !== WIDTH * HEIGHT * 4) throw new Error("Incomplete waveform image");
-      const samples = new Float32Array(WIDTH);
-      for (let x = 0; x < WIDTH; x++) for (let y = 0; y < HEIGHT; y++) {
-        if (pixels[(y * WIDTH + x) * 4] > 0) samples[x] = Math.max(samples[x], Math.abs(y - HEIGHT / 2) / (HEIGHT / 2));
+      if (pixels.length !== width * HEIGHT * 4) throw new Error("Incomplete waveform image");
+      const samples = new Float32Array(width);
+      for (let x = 0; x < width; x++) for (let y = 0; y < HEIGHT; y++) {
+        if (pixels[(y * width + x) * 4] > 0) samples[x] = Math.max(samples[x], Math.abs(y - HEIGHT / 2) / (HEIGHT / 2));
       }
       return samples;
     } finally {
@@ -64,7 +67,7 @@ export function createWaveformReader(signal) {
       if (Number.isFinite(duration) && duration <= 120) {
         try { return await nativeSamples(file); } catch { check(); }
       }
-      return ffmpegSamples(file);
+      return ffmpegSamples(file, duration);
     },
     dispose() { signal?.removeEventListener("abort", terminate); terminate(); }
   };
