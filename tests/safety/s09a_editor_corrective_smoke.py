@@ -10,11 +10,14 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
     context = browser.new_context(viewport={'width': 1280, 'height': 900})
     context.add_init_script("sessionStorage.setItem('meser_service_access_v1','granted');window.__MESER_AUDIO_ARCHIVE_GATEWAY__='https://gateway.test';")
     outbound = []
-    fault = {'wasm': False}
+    fault = {'wasm': False, 'hold_wasm': False}
+    held = []
 
     def intercept(route):
         target = urlparse(route.request.url)
         if target.netloc == site.netloc:
+            if fault['hold_wasm'] and target.path.endswith('ffmpeg-core.wasm'):
+                fault['hold_wasm'] = False; held.append(route); return
             if fault['wasm'] and target.path.endswith('ffmpeg-core.wasm'):
                 route.fulfill(status=503, body='Synthetic decoder unavailable')
             else:
@@ -36,7 +39,15 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
 
     def snapshot(name, selector):
         if output:
-            page.locator(selector).screenshot(path=str(output/(name+'.png')))
+            page.evaluate('scrollTo(0,0)')
+            page.screenshot(path=str(output/(name+'.png')), clip=page.locator(selector).bounding_box(), full_page=True)
+            if name == 'preparation-error':
+                previous=page.viewport_size
+                for width in (320,390,768,1280):
+                    page.set_viewport_size({'width':width,'height':900}); page.evaluate('scrollTo(0,0)')
+                    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+                    page.screenshot(path=str(output/(name+f'-{width}.png')), clip=page.locator(selector).bounding_box(), full_page=True)
+                page.set_viewport_size(previous)
 
     def ready():
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
@@ -77,8 +88,11 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
                 };
                 const short=await encode(3,'short.m4a');
                 const long=await encode(3747,'hour.m4a');
+                if(await engine.exec(['-i','tone.wav','-c:a','libmp3lame','-b:a','32k','short.mp3'])!==0) throw new Error('Synthetic MP3 encoding failed');
+                const mp3=new File([await engine.readFile('short.mp3')],'short.mp3',{type:'audio/mpeg'});
+                const sourceWav=new File([Uint8Array.from(atob(wav),c=>c.charCodeAt(0))],'short.wav',{type:'audio/wav'});
                 window.correctiveFixtures={short:[short,new File([short],'second.m4a',{type:short.type})],
-                    long:[long,new File([long],'second-hour.m4a',{type:long.type})]};
+                    long:[long,new File([long],'second-hour.m4a',{type:long.type})], formats:[mp3,short,sourceWav]};
             } finally {engine.terminate();}
             window.correctiveNativeCalls=0;
             // Model a browser that can play M4A but rejects Web Audio decoding.
@@ -94,13 +108,43 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         assert page.locator('#announcement-processor-card').is_hidden()
         # A short M4A now opens despite native decode failure. Test real editing,
         # so a placeholder waveform or a disabled successful-looking view fails.
-        page.locator('.speaker-selection details').evaluate('e=>e.open=true')
+        page.locator('.speaker-selection details > summary').click()
+        assert page.locator('#speaker-editor-add-cut').is_disabled()
+        assert page.locator('#speaker-editor-add-silence').is_disabled()
         page.locator('#speaker-editor-selection-start').fill('0.5')
         page.locator('#speaker-editor-selection-end').fill('1')
         page.locator('#speaker-editor-add-cut').click()
         assert page.locator('.speaker-region-overlay--cut').count() == 2
         page.locator('#speaker-editor-undo').click()
         assert page.locator('.speaker-region-overlay--cut').count() == 0
+        page.locator('#speaker-editor-selection-end').fill('99')
+        assert page.locator('#speaker-editor-add-cut').is_disabled()
+        page.locator('#speaker-editor-selection-end').fill('1')
+        page.locator('#speaker-editor-selection-track').select_option(index=1)
+        assert 'Дорожка 2 · second.m4a' in page.locator('#speaker-selection-summary').inner_text()
+        page.locator('#speaker-editor-add-silence').click()
+        assert page.locator('.speaker-region-overlay--silence').count()==1
+        assert page.locator('.speaker-track').nth(1).locator('.speaker-region-overlay--silence').count()==1
+        page.locator('.speaker-regions > summary').click()
+        page.locator('.speaker-region-row input').last.fill('1.1')
+        page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').click()
+        assert page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').evaluate('e=>e===document.activeElement')
+        page.locator('.speaker-regions > summary').click()
+        control=page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True)
+        control.focus(); control.select_option('on')
+        assert page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True).evaluate('e=>e===document.activeElement')
+        # A rerender caused by editing must keep the source viewport aligned.
+        page.locator('#speaker-editor-zoom').fill('4'); page.locator('#speaker-editor-zoom').dispatch_event('input')
+        page.locator('.speaker-waveform-scroll').first.evaluate('e=>e.scrollLeft=200')
+        page.wait_for_timeout(50)
+        page.locator('.speaker-track').nth(1).get_by_label('Компрессия', exact=True).select_option('light')
+        assert page.locator('.speaker-waveform-scroll').first.evaluate('e=>e.scrollLeft')==200
+        assert page.locator('.speaker-waveform-scroll').nth(1).evaluate('e=>e.scrollLeft')==200
+        snapshot('selection-dsp-focus', '#speaker-editor')
+        page.locator('#speaker-editor-render').click()
+        page.wait_for_function("!document.getElementById('speaker-editor-result').hidden", timeout=60000)
+        with page.expect_download() as download: page.locator('#speaker-editor-download').click()
+        assert download.value.failure() is None
 
         # A decode/load failure names the file and retains the actual File objects.
         fault['wasm'] = True
@@ -109,14 +153,54 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         assert 'short.m4a' in page.locator('#speaker-editor-status').inner_text()
         assert page.locator('.speaker-track').count() == 2
         assert page.locator('#speaker-editor-render').is_disabled()
-        retained(); snapshot('preparation-error', '#speaker-editor')
+        retained()
+        for selector in ('#processor-save-incoming', '#speaker-editor-save', '#speaker-editor-add-cut', '#speaker-editor-add-silence', '#speaker-editor-set-start', '#speaker-editor-set-end'):
+            assert page.locator(selector).is_disabled()
+        assert '—' in page.locator('#speaker-editor-source-time').inner_text()
+        assert page.locator('#speaker-source-timeline span').count()==0
+        assert 'Все изменения сохранены' not in page.locator('#speaker-editor-status').inner_text()
+        snapshot('preparation-error', '#speaker-editor')
         fault['wasm'] = False
         page.locator('#speaker-editor-source-retry').click(); ready(); retained()
         assert page.evaluate('document.body.dataset.editing') == 'speaker'
 
+        if page.locator('.speaker-selection details').evaluate('e=>e.open'): page.locator('.speaker-selection details > summary').click()
+        # All three local formats remain usable in both modes without an archive session.
+        open_files('formats'); ready(); retained()
+        assert page.locator('.speaker-track').count()==3
+        page.locator('#open-local-announcement').click(); page.locator('#speaker-unsaved-discard').click()
+        page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform img').length===3", timeout=180000)
+        page.locator('#processor-run').click()
+        page.wait_for_function("document.getElementById('processor-download').href.startsWith('blob:')", timeout=60000)
+        with page.expect_download() as download: page.locator('#processor-download').click()
+        assert download.value.failure() is None
+        # A delayed decoder load must not resurrect a closed editor.
+        fault['hold_wasm']=True
+        page.evaluate('''async () => {
+            const editor=await import('./scripts/speaker-editor.mjs'), {localSourceContext}=await import('./scripts/audio-project.mjs');
+            const files=correctiveFixtures.short;
+            void editor.openSpeakerEditor({session:localSourceContext(files),files});
+        }''')
+        for _ in range(500):
+            if held: break
+            page.wait_for_timeout(20)
+        assert held
+        page.locator('#speaker-editor-close').click(); page.locator('#speaker-unsaved-discard').click()
+        for route in held: route.continue_()
+        held.clear(); page.wait_for_timeout(200)
+        assert page.locator('#speaker-editor').is_hidden()
         calls = page.evaluate('correctiveNativeCalls')
         open_files('long'); ready(); retained()
         assert page.evaluate('correctiveNativeCalls') == calls, 'Hour-long audio entered full Web Audio decoding'
+        assert page.evaluate("async () => Math.abs((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().originalDuration-3747)<0.1")
+        page.locator('.speaker-selection details > summary').click()
+        page.locator('#speaker-editor-selection-start').fill('10'); page.locator('#speaker-editor-selection-end').fill('20')
+        page.locator('#speaker-editor-add-cut').click()
+        assert page.locator('.speaker-region-overlay--cut').count()==2
+        page.locator('#speaker-editor-undo').click()
+        assert page.locator('.speaker-region-overlay--cut').count()==0
+        page.locator('.speaker-selection details > summary').click()
+        page.locator('#speaker-editor-zoom-fit').click()
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width':width,'height':900})
             assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')

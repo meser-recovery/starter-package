@@ -83,8 +83,8 @@
 
           <section class="speaker-source" aria-labelledby="speaker-source-heading">
             <div class="speaker-transport"><div class="speaker-source__heading">
-              <div><h3 id="speaker-source-heading">Синхронизированные исходники</h3><p>Соло и «Заглушить» относятся только к прослушиванию. «Исключить из микса» влияет на результат.</p></div>
-              <p id="speaker-editor-source-time" class="processor-source-time">0:00 / 0:00 · исходная шкала</p>
+              <div><h3 id="speaker-source-heading">Синхронизированные исходники</h3><p>Solo и Mute относятся только к прослушиванию. «Исключить из микса» влияет на результат.</p></div>
+              <p id="speaker-editor-source-time" class="processor-source-time">0:00 / — · исходная шкала</p>
             </div>
             <audio id="speaker-editor-source-audio" aria-labelledby="speaker-source-heading" controls preload="metadata"></audio>
             <div id="speaker-editor-preview-audios" hidden></div>
@@ -242,11 +242,11 @@
           <div class="result-archive-navigation" role="group" aria-label="Раздел архива результатов">
             <button id="source-session-results-announcement" type="button" aria-pressed="true">
               <span>Для анонс-мейкера</span>
-              <span id="source-session-results-announcement-count" class="result-archive-count">0</span>
+              <span id="source-session-results-announcement-count" class="result-archive-count">—</span>
             </button>
             <button id="source-session-results-speaker" type="button" aria-pressed="false">
               <span>Финальные версии спикерских</span>
-              <span id="source-session-results-speaker-count" class="result-archive-count">0</span>
+              <span id="source-session-results-speaker-count" class="result-archive-count">—</span>
             </button>
           </div>
           <p id="source-session-results-status" class="archive-status" role="status">Загрузка сохранённых результатов…</p>
@@ -386,15 +386,8 @@
           <form id="source-session-delete-form" method="dialog">
             <h2 id="source-session-delete-title">Постоянное удаление</h2>
             <p id="source-session-delete-summary"></p>
-            <fieldset>
-              <legend>Удалить только выбранный уровень</legend>
-              <label><input type="radio" name="delete-level" value="announcement-series">Все версии «Анонс-мейкер»</label>
-              <label><input type="radio" name="delete-level" value="speaker-series">Все версии «Спикерская»</label>
-              <label><input type="radio" name="delete-level" value="sources">Исходники, сохранив результаты</label>
-              <label><input type="radio" name="delete-level" value="purge">Всю запись</label>
-            </fieldset>
-            <div class="processor-field">
-              <label for="source-session-delete-confirmation">Для исходников введите «Удалить исходники, сохранить результаты»; для полной очистки — точный идентификатор из технических сведений ниже</label>
+            <div id="source-session-delete-confirmation-field" class="processor-field" hidden>
+              <label id="source-session-delete-confirmation-label" for="source-session-delete-confirmation"></label>
               <input id="source-session-delete-confirmation" type="text" autocomplete="off">
             </div>
             <details class="technical-details"><summary>Технические сведения для полного удаления</summary><p id="source-session-delete-technical"></p></details>

@@ -1450,8 +1450,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             session["workflows"]["speaker"]["currentDraft"] = {"path": f"drafts/{session_id}/speaker.json", "revision": draft_revision}
             fulfill_json(route, {"draft": mock["speaker_draft"], "session": session})
         elif parsed.path == f"/v1/source-sessions/{session_id}/deletion-preview" and request.method == "GET":
-            fulfill_json(route, {"sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
-                "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0})
+            fulfill_json(route, {"sessionId": session_id, "revision": session["revision"], "sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
+                "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0, "pendingSpeakerSaves": 0})
         elif parsed.path in {f"/v1/source-sessions/{session_id}/blobs/{blob_id}/parts/1/content" for blob_id in blob_ids} and request.method == "GET":
             source_index = blob_ids.index(parsed.path.split("/blobs/")[1].split("/")[0])
             route.fulfill(status=200, content_type="application/octet-stream", headers={
@@ -1628,10 +1628,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         delete_button = page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Удалить версию", exact=True)
         delete_button.click()
         page.locator("#source-session-delete-dialog").wait_for(state="visible")
-        assert "Спикерская" in page.locator("#source-session-delete-summary").inner_text()
+        assert "Финальные версии спикерских" in page.locator("#source-session-delete-summary").inner_text()
         assert session_id not in page.locator("#source-session-delete-summary").inner_text()
         assert session_id in page.locator("#source-session-delete-technical").text_content()
-        assert "раздела «Спикерская»" in page.locator("#source-session-delete-status").inner_text()
+        assert "версия 1" in page.locator("#source-session-delete-summary").inner_text()
+        assert page.locator("#source-session-delete-dialog input[type=radio]").count() == 0
         assert page.locator("#source-session-delete-dialog").evaluate("dialog => dialog.contains(document.activeElement)")
         page.keyboard.press("Escape")
         page.locator("#source-session-delete-dialog").wait_for(state="hidden")
@@ -1656,7 +1657,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         speaker_puts_before = len([call for call in gateway_calls if call[0] == "PUT" and call[1].endswith("/drafts/speaker")])
         if page.locator("#import-zone").get_attribute("open") is None: page.locator("#import-zone > summary").click()
         page.locator("#source-session-list").get_by_role("button", name="Открыть финальную обработку спикерской", exact=True).click()
-        page.get_by_text("Длительность дорожек различается больше чем на 0,5 секунды.", exact=True).wait_for(timeout=30000)
+        page.get_by_text("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.", exact=True).wait_for(timeout=30000)
         assert page.locator("#speaker-editor-save").is_disabled() and page.locator("#speaker-editor-render").is_disabled()
         assert page.locator("#speaker-editor-add-cut").is_disabled() and page.locator("#speaker-editor-tracks").locator("li").count() == 3
         assert page.locator("#speaker-editor-source-retry").is_visible()
@@ -1672,6 +1673,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         session["sourceTracks"][2]["parts"][0]["sha256"] = digests[2]
         if page.locator("#import-zone").get_attribute("open") is None: page.locator("#import-zone > summary").click()
         page.locator("#source-session-list").get_by_role("button", name="Открыть финальную обработку спикерской", exact=True).click()
+        page.locator("#speaker-unsaved-discard").click()  # Explicitly replace the retained, unprepared source set.
+        page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
         page.locator("#speaker-editor .speaker-track").nth(2).wait_for(timeout=30000)
         assert page.locator("#speaker-editor").is_visible()
         assert page.locator("#source-session-announcement-workspace").is_hidden()
@@ -3545,6 +3548,8 @@ def main() -> int:
         check_s09a_acceptance(browser, base_url, args.screenshot_dir)
         from s09a_editor_corrective_smoke import check_s09a_editor_corrective
         check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
+        from s09a_corrective_management_smoke import check_s09a_corrective_management
+        check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
         check_audio_processor(browser, base_url, args.screenshot_dir)

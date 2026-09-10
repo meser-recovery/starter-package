@@ -26,7 +26,7 @@ const clock = (seconds) => {
   const hours = Math.floor(total / 3600); const minutes = Math.floor(total % 3600 / 60); const rest = String(total % 60).padStart(2, "0");
   return hours ? `${hours}:${String(minutes).padStart(2, "0")}:${rest}` : `${minutes}:${rest}`;
 };
-const durationText = (seconds) => `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(seconds)} с`;
+const durationText = (seconds) => !Number.isFinite(seconds) ? "Длительность ещё не определена" : `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(seconds)} с`;
 const bytesText = (bytes) => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} КБ` : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
 
 function userMessage(error, fallback) {
@@ -38,7 +38,7 @@ function userMessage(error, fallback) {
 }
 
 function currentDirty() {
-  return Boolean(state.ready && state.payload && fingerprint(state.payload) !== state.savedFingerprint);
+  return Boolean(state.payload && fingerprint(state.payload) !== state.savedFingerprint);
 }
 
 export function speakerEditorHasUnsavedChanges() { return currentDirty(); }
@@ -82,23 +82,35 @@ function setSelection(start, end, trackId = null) {
 
 function readSelection() {
   const start = Number(byId("selection-start").value); const end = Number(byId("selection-end").value);
-  if (!Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > state.originalDuration) {
+  if (!byId("selection-start").value || !byId("selection-end").value || !Number.isFinite(state.originalDuration) || !Number.isFinite(start) || !Number.isFinite(end) || start < 0 || end <= start || end > state.originalDuration) {
     throw new Error("Выделение должно иметь положительную длительность и находиться внутри исходной шкалы.");
   }
   return { startSeconds: microseconds(start), endSeconds: microseconds(end) };
 }
 
 function updateSelectionDuration() {
-  const start = Number(byId("selection-start").value); const end = Number(byId("selection-end").value);
-  byId("selection-duration").textContent = Number.isFinite(start) && Number.isFinite(end) && end > start ? (end - start).toFixed(6) : "0.000000";
+  const start = Number(byId("selection-start").value), end = Number(byId("selection-end").value);
+  let valid = false;
+  try { readSelection(); valid = true; } catch { /* Empty/out-of-range selection is not an editing target. */ }
+  byId("selection-duration").textContent = valid ? (end - start).toFixed(6) : "—";
   byId("selection-error").textContent = "";
-  document.getElementById("speaker-selection-summary").textContent = `${start.toFixed(3)} — ${end.toFixed(3)} · ${(Math.max(0, end-start)).toFixed(3)} с`;
+  const trackId = byId("selection-track").value;
+  const index = state.payload?.trackIds.indexOf(trackId) ?? -1;
+  const name = state.tracks.find(track => track.trackId === trackId)?.file.name;
+  document.getElementById("speaker-selection-summary").textContent = valid
+    ? `Дорожка ${index + 1} · ${name}: ${start.toFixed(3)} — ${end.toFixed(3)} · ${(end-start).toFixed(3)} с`
+    : "Выделите фрагмент на форме сигнала.";
+  for (const id of ["add-cut", "add-silence"]) byId(id).disabled = !state.ready || editorBusy() || !valid;
+  for (const kind of ["start", "end"]) {
+    const input = byId(`selection-${kind}`), value = Number(input.value);
+    byId(`set-${kind}`).disabled = !state.ready || editorBusy() || !input.value || !Number.isFinite(value) || value < 0 || value > state.originalDuration;
+  }
   for (const wave of workspace.querySelectorAll(".speaker-waveform[data-track-id]")) {
     wave.querySelector(".speaker-selection-overlay")?.remove();
-    const selected = wave.dataset.trackId === byId("selection-track").value;
+    const selected = wave.dataset.trackId === trackId;
     const row = wave.closest(".speaker-track"); row?.classList.toggle("is-selected", selected);
     if (row) { const label = row.querySelector(".speaker-track-selection"); if (label) label.textContent = selected ? "Выбрана" : ""; }
-    if (selected && end > start) { const overlay = element("span", "speaker-region-overlay speaker-selection-overlay"); overlay.style.left = `${start/state.originalDuration*100}%`; overlay.style.width = `${(end-start)/state.originalDuration*100}%`; wave.append(overlay); }
+    if (selected && valid) { const overlay = element("span", "speaker-region-overlay speaker-selection-overlay"); overlay.style.left = `${start/state.originalDuration*100}%`; overlay.style.width = `${(end-start)/state.originalDuration*100}%`; wave.append(overlay); }
   }
 }
 
@@ -138,8 +150,8 @@ function redo() {
 }
 
 function updateHistoryControls() {
-  byId("undo").disabled = !state.history?.canUndo || editorBusy();
-  byId("redo").disabled = !state.history?.canRedo || editorBusy();
+  byId("undo").disabled = !state.ready || !state.history?.canUndo || editorBusy();
+  byId("redo").disabled = !state.ready || !state.history?.canRedo || editorBusy();
 }
 
 function processingLabel(setting) {
@@ -216,7 +228,7 @@ function drawCanvas(canvas, track, timelineDuration = state.originalDuration) {
 function waveform(track) {
   const scroll = element("div", "speaker-waveform-scroll"); scroll.dataset.trackId = track.trackId;
   const control = element("button", "speaker-waveform"); control.type = "button"; control.dataset.trackId = track.trackId;
-  control.setAttribute("aria-label", `Форма сигнала ${track.file.name}. Стрелки перемещают позицию; выделение можно точно задать выше.`);
+  control.setAttribute("aria-label", `Форма сигнала ${track.file.name}. Стрелки перемещают позицию; Shift со стрелками изменяет конец выделения; точные границы доступны в разделе Точное редактирование.`);
   const canvas = document.createElement("canvas"); canvas.height = 100; drawCanvas(canvas, track); control.append(canvas);
   for (const cut of state.payload.globalCuts) {
     const overlay = element("span", "speaker-region-overlay speaker-region-overlay--cut");
@@ -233,17 +245,17 @@ function waveform(track) {
   const playhead = element("span", "speaker-playhead"); playhead.setAttribute("aria-hidden", "true"); control.append(playhead);
   let pointerStart = null;
   control.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return; pointerStart = pointerTime(event, scroll); control.setPointerCapture(event.pointerId);
+    if (!state.ready || editorBusy() || event.button !== 0) return; pointerStart = pointerTime(event, scroll); control.setPointerCapture(event.pointerId);
   });
   control.addEventListener("pointerup", (event) => {
-    if (pointerStart === null) return; const end = pointerTime(event, scroll); setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
+    if (pointerStart === null || !state.ready || editorBusy()) return; const end = pointerTime(event, scroll); setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
     pointerStart = null; control.releasePointerCapture(event.pointerId);
   });
   control.addEventListener("pointercancel", () => { pointerStart = null; });
   control.addEventListener("keydown", (event) => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault();
+    if (!state.ready || editorBusy() || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault();
     if (event.shiftKey) { const start = Number(byId("selection-start").value) || 0; const end = Number(byId("selection-end").value) || start;
-      setSelection(start, Math.max(start, Math.min(state.originalDuration, end + (event.key === "ArrowLeft" ? -.1 : .1))), track.trackId); return; }
+      setSelection(start, Math.max(start, Math.min(state.originalDuration, event.key === "Home" ? start : event.key === "End" ? state.originalDuration : end + (event.key === "ArrowLeft" ? -.1 : .1))), track.trackId); return; }
     const current = byId("source-audio").currentTime || 0; const step = 5;
     seekSource(event.key === "Home" ? 0 : event.key === "End" ? state.originalDuration : current + (event.key === "ArrowLeft" ? -step : step));
   });
@@ -256,14 +268,18 @@ function pointerTime(event, scroll) {
 }
 
 function selectControl(label, value, values, change) {
-  const wrapper = element("label", "speaker-dsp-field", label); const select = document.createElement("select");
+  const wrapper = element("label", "speaker-dsp-field", label); const select = document.createElement("select"); select.setAttribute("aria-label", label);
   for (const [key, text] of values) { const option = document.createElement("option"); option.value = key; option.textContent = text; select.append(option); }
   select.value = value; select.disabled = editorBusy() || !state.ready;
   select.addEventListener("change", () => change(select.value)); wrapper.append(select); return wrapper;
 }
 
 function renderTracks() {
-  const list = byId("tracks"); list.replaceChildren();
+  const list = byId("tracks");
+  const focused = list.contains(document.activeElement) ? document.activeElement : null;
+  const focusedRow = focused?.closest(".speaker-track"), focusIndex = focusedRow ? [...focusedRow.querySelectorAll("button, select")].indexOf(focused) : -1;
+  const scrollLeft = list.querySelector(".speaker-waveform-scroll")?.scrollLeft || 0;
+  list.replaceChildren();
   const excluded = new Set(state.payload.excludedTrackIds);
   state.payload.trackIds.forEach((trackId, index) => {
     const track = state.tracks.find((item) => item.trackId === trackId); const setting = state.payload.trackProcessing.find((item) => item.trackId === trackId);
@@ -289,15 +305,24 @@ function renderTracks() {
     const controls = element("div", "speaker-track-controls"); controls.append(header, dsp, summary);
     item.append(controls, preview); list.append(item);
   });
-  updateWaveWidths(); applyMonitoring(); updateSelectionDuration();
+  updateWaveWidths();
+  for (const scroll of list.querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = scrollLeft;
+  updateScrollbar(); applyMonitoring(); updateSelectionDuration();
+  if (focusedRow && focusIndex >= 0) {
+    const row = [...list.children].find(row => row.dataset.trackId === focusedRow.dataset.trackId);
+    row?.querySelectorAll("button, select")[focusIndex]?.focus({ preventScroll: true });
+  }
 }
 
 function renderRegions() {
-  const container = byId("regions"); container.replaceChildren();
+  const container = byId("regions");
+  const focused = container.contains(document.activeElement) ? document.activeElement : null;
+  const focusedRow = focused?.closest(".speaker-region-row"), focusIndex = focusedRow ? [...focusedRow.querySelectorAll("input, button")].indexOf(focused) : -1;
+  container.replaceChildren();
   const regions = [...state.payload.globalCuts.map((region) => ({ ...region, kind: "cut" })),
     ...state.payload.trackSilenceRegions.map((region) => ({ ...region, kind: "silence" }))];
   document.getElementById("speaker-regions-heading").textContent = `Правки · ${regions.length}`;
-  if (!regions.length) { container.append(element("p", "", "Регионов пока нет.")); return; }
+  if (!regions.length) { container.append(element("p", "", "Регионов пока нет.")); if (focusedRow) document.getElementById("speaker-regions-heading").focus(); return; }
   for (const region of regions) {
     const row = element("article", `speaker-region-row speaker-region-row--${region.kind}`); row.dataset.regionId = region.regionId;
     const title = element("h4", "", region.kind === "cut" ? "Глобальный вырез" : `Тишина · ${state.tracks.find((track) => track.trackId === region.trackId)?.file.name}`);
@@ -310,12 +335,16 @@ function renderRegions() {
       const target = collection.find((item) => item.regionId === region.regionId); target.startSeconds = Number(start.value); target.endSeconds = Number(end.value);
       commitPayload(next, "границы региона");
     }, null, editsDisabled);
-    const select = makeButton("Выбрать", () => { setSelection(region.startSeconds, region.endSeconds, region.trackId); row.scrollIntoView({ block: "nearest" }); });
+    const select = makeButton("Выбрать", () => { setSelection(region.startSeconds, region.endSeconds, region.trackId); row.scrollIntoView({ block: "nearest" }); }, null, editsDisabled);
     const remove = makeButton("Удалить", () => {
       const next = structuredClone(state.payload); const key = region.kind === "cut" ? "globalCuts" : "trackSilenceRegions";
       next[key] = next[key].filter((item) => item.regionId !== region.regionId); commitPayload(next, "удаление региона");
     }, null, editsDisabled);
     fields.append(start, end, apply, select, remove); row.append(title, fields); container.append(row);
+  }
+  if (focusedRow && focusIndex >= 0) {
+    const row = [...container.children].find(row => row.dataset.regionId === focusedRow.dataset.regionId);
+    (row?.querySelectorAll("input, button")[focusIndex] || document.getElementById("speaker-regions-heading")).focus({ preventScroll: true });
   }
 }
 
@@ -328,14 +357,16 @@ function updateRenderState() {
       "В результат войдут только дорожки, оставленные в финальном миксе.";
   byId("save").disabled = !state.ready || !state.session || editorBusy();
   byId("close").disabled = state.saveLocked;
-  for (const id of ["selection-start", "selection-end", "selection-track", "add-cut", "add-silence", "set-start", "set-end"]) byId(id).disabled = !state.ready || editorBusy();
+  for (const id of ["selection-start", "selection-end", "selection-track"]) byId(id).disabled = !state.ready || editorBusy();
+  updateSelectionDuration();
 }
 
 function render() {
   if (!state.session) return;
   if (state.payload) { renderTracks(); renderRegions(); }
   else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
-  updateHistoryControls(); updateRenderState();
+  updateHistoryControls(); updateRenderState(); updatePlayheads();
+  if (!state.ready) renderSourceTimeline("speaker-source-timeline", NaN, 0);
   byId("status").dataset.dirty = String(currentDirty());
   byId("status").textContent = state.preparationError || (!state.ready ? "Подготовка исходников…" : currentDirty() ? "Есть несохранённые изменения" : "Все изменения сохранены");
   byId("identity").textContent = `${state.session.title} · ${state.tracks.length} дорожек · ${clock(state.originalDuration)}`;
@@ -474,7 +505,7 @@ async function prepareSources(epoch) {
     }
     activeTrack = null;
     const originalDuration = Math.max(...durations);
-    if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды.");
+    if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.");
     const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
     state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
     state.savedFingerprint = draft ? fingerprint(normalized) : "";
@@ -702,7 +733,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null }));
   state.payload = draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
-  state.history = new SpeakerHistory(state.payload); state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;
+  state.history = new SpeakerHistory(state.payload); state.savedFingerprint = draft ? fingerprint(state.payload) : ""; state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;
   document.getElementById("announcement-processor-card").hidden = true;
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
@@ -718,6 +749,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   }
 }
 
+byId("selection-track").addEventListener("change", updateSelectionDuration);
 byId("selection-start").addEventListener("input", updateSelectionDuration); byId("selection-end").addEventListener("input", updateSelectionDuration);
 byId("add-cut").addEventListener("click", () => addRegion("cut")); byId("add-silence").addEventListener("click", () => addRegion("silence"));
 byId("undo").addEventListener("click", undo); byId("redo").addEventListener("click", redo); byId("save").addEventListener("click", saveSpeakerProject);

@@ -443,3 +443,32 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
   .audio-timeline { border-left: 0; }
   .speaker-transport audio, .processor-source-player audio { width: 100%; flex-basis: 100%; }
 }
+/* Readable controls in continuous lanes; the waveform keeps most of the width. */
+@media (min-width: 768px) {
+  .speaker-track, .processor-track, .audio-timeline-row { grid-template-columns: 260px minmax(0, 1fr); }
+  .speaker-track .speaker-dsp { display: grid; grid-template-columns: 1fr; gap: 2px; }
+  .speaker-dsp-field { display: grid; grid-template-columns: minmax(0, 1fr) 78px; align-items: center; gap: 4px; font-size: .75rem; line-height: 1.15; }
+  .speaker-dsp select { min-height: 22px; font-size: .75rem; }
+  .speaker-track__buttons { margin-top: 0; }
+  .speaker-track-controls { gap: 2px; padding-block: 5px; }
+  .speaker-track-selection { position: absolute; left: 190px; top: 4px; z-index: 2; padding: .2rem; color: #fff; background: #245c9a; }
+  .speaker-track { position: relative; }
+}
+.speaker-track.is-muted .speaker-waveform canvas, .processor-track.is-muted .processor-waveform img { opacity: .4; }
+.speaker-track.is-excluded .speaker-waveform { border-block: 2px dashed #b68437; }
+.speaker-track .speaker-waveform:focus-visible { outline-offset: -3px; }
+
+.audio-actions { position: relative; margin: 0; align-self: start; }
+.audio-actions > summary { cursor: pointer; list-style: none; border: 1px solid #8197ad; border-radius: 5px; padding: .4rem .65rem; color: #235271; background: #f3f7fa; font-size: .85rem; }
+.audio-actions > summary::after { content: ' ⋯'; }
+.audio-actions__items { display: grid; gap: .3rem; position: absolute; right: 0; top: 100%; z-index: 15; width: min(300px, 70vw); padding: .5rem; border: 1px solid #8197ad; border-radius: 6px; background: #fff; box-shadow: 0 4px 16px #142d4533; }
+.audio-actions__items > :is(button, a) { display: block; width: 100%; text-align: left; margin: 0; padding: .4rem; }
+.audio-actions__items details { margin: 0; }
+.audio-actions__items summary { padding: .4rem; }
+.audio-actions__items a { color: #235d88; }
+.audio-actions :focus-visible { outline: 3px solid #17659f; outline-offset: 2px; }
+@media (max-width: 767px) {
+  .audio-actions > summary, .audio-actions__items > :is(button, a) { min-height: 44px; }
+  .audio-actions[open] { grid-column: 1 / -1; width: 100%; }
+  .audio-actions__items { position: static; width: 100%; box-shadow: none; margin-top: .25rem; }
+}

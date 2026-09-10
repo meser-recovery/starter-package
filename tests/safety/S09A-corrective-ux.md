@@ -1,3 +1,5 @@
+Current execution supersedes the pending/blocked state in this historical recovery note: [corrective audit](S09A-corrective-audit.md) and [new evidence](evidence/s09a/corrective/README.md). The original recovery narrative below is retained as history.
+
 # S09A corrective editor work — pending browser acceptance
 
 Base: PR #35 squash `5a3e793e6e33e1a15e27dd6408e733c87d9a939f`.

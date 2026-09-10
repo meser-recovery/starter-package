@@ -1,3 +1,7 @@
+# Post-merge corrective evidence
+
+[Current corrective index](corrective/README.md) · [43-section audit](../../S09A-corrective-audit.md). Original captures and CI history below retain their original source SHAs.
+
 # S09A screenshot and validation index
 
 PR #35 Acceptance corrections have a [separate before/after evidence index](acceptance-fixes/README.md); the captures below retain their original source SHA.

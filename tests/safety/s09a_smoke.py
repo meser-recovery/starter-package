@@ -66,6 +66,13 @@ def check_s09a(browser, base_url, screenshot_dir=None):
                 page.screenshot(path=str(output/(name+'-viewport.png')))
             elif 'reconnect' in name or 'unsaved' in name:
                 page.screenshot(path=str(output/(name+'-viewport.png')))
+            if any(part in name for part in ('reconnect', 'unsaved', 'failed', '403')):
+                previous=page.viewport_size
+                for width in (320,390,768,1280):
+                    page.set_viewport_size({'width':width,'height':900})
+                    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+                    page.screenshot(path=str(output/(name+f'-{width}-viewport.png')))
+                page.set_viewport_size(previous)
     def snapshot():
         return page.evaluate("async()=>{const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();return {session:s.session,payload:s.payload,draft:s.draft,files:s.files.map(f=>[f.name,f.size]),epoch:s.sourceEpoch,candidate:s.candidate?.candidateType}}")
     def unchanged(before):
