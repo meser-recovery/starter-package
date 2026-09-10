@@ -21,3 +21,17 @@ S09's focused Node tests are `gateway/audio-archive/test/archive-management.test
 The requirement mapping and execution results are in [S09-validation.md](S09-validation.md).
 Selected screenshots and their exact source revision are indexed in
 [evidence/s09/README.md](evidence/s09/README.md).
+
+### S09 CORS root/subpath regression
+
+Run `venv/bin/python -B tests/safety/archive_management_cors_regression.py` (or the
+Python environment with the existing Playwright dependency). This starts a temporary
+loopback server on an allocated nonstandard port and runs the full S09 browser checks
+at both `/` and `/starter-package/`. Chromium retains its default web security.
+The test also asserts that subpath requests stay under the mount, and browser-visible
+OPTIONS/404/503 responses exercise the mock's shared CORS headers.
+
+The full `browser_smoke.py` suite includes this regression automatically. Gateway
+requests still use the in-memory bridge; external archive destinations are blocked.
+The delta-fix's before/after evidence is in [evidence/s09-cors-delta/README.md](evidence/s09-cors-delta/README.md).
+Historical S09 evidence and failed production run `34428935220` remain unchanged.

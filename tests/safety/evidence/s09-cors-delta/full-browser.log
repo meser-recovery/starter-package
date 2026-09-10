@@ -1,0 +1,22 @@
+S09 browser: PASS; 320/390/768/1280; 193 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:51658
+S09 browser: PASS; 320/390/768/1280; 193 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:51658/starter-package/
+S09 browser: PASS; 320/390/768/1280; 193 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
+Source Session mock gateway passed: archive list/status, byte reconstruction, local adapter, manual ingestion and 320/390/768/1280 layout.
+Real waveform passed: WAV -> 640x100 PNG (727 bytes); Blob rendered and waveform FS files deleted.
+Gateway-unavailable persistence fallback passed: local S07 source state remained intact.
+Real FFmpeg fixture passed: input=7.000000s output=4.347120s shortened=1; MP3=70679 bytes; short pause preserved.
+Waveform failure fallbacks passed: source and result preview failures retained native playback and a valid processed MP3.
+No-long-pause fixture passed: exact-byte passthrough result/download, no output encode; loaded engine reused; metadata cannot spoof detector output.
+Real boundary fixture passed: leading/trailing silence, output=1.700862s, shortened=2; cancel/retry passed.
+Shared source scrollbar/follow passed: fit visibility, bidirectional time sync, centered playback, pause/resume, zoom, boundary clamps and manual disengage.
+Synchronized preview passed: compact tracks, shared zoom/scroll/playheads, drag-vs-click seeking, native transport sync, drift correction and Solo/Mute precedence.
+Real two-track mix passed: 8s -> 5.349333s, common pauses=1, MP3=128kbps; A/B solo and overlapping speech retained, peak=0.902806, clipped fraction=0.000000.
+Real three-track intersection passed: 8s -> 6.346667s, common pauses=1; C protects 3-4s and all three simultaneous tones survive.
+Real no-common-silence mix passed: MP3 produced, exact mixed-without-cuts status, pause count=0, removed duration near zero.
+Duration safety passed: >0.5s rejected after independent analyses with no final encode; exactly 0.5s accepted, longest timeline preserved, missing tail counted as silence.
+Multi-track cancellation/retry, virtual-FS cleanup, URL revocation, filenames and 390/768/1280 responsive states passed.
+Unsupported-browser processor fallback passed; archive remains functional.
+Browser smoke suite passed.

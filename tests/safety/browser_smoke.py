@@ -19,6 +19,7 @@ from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Error, sync_playwright
 from archive_management_smoke import check_archive_management
+from archive_management_cors_regression import check_archive_management_cors
 
 
 def url(base: str, path: str) -> str:
@@ -3501,6 +3502,7 @@ def main() -> int:
         check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
         check_archive_management(browser, base_url, args.screenshot_dir)
+        check_archive_management_cors(browser)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
         check_audio_processor(browser, base_url, args.screenshot_dir)

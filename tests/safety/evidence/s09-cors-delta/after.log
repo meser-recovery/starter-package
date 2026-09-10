@@ -1,0 +1,5 @@
+S09 CORS regression: http://127.0.0.1:50711
+S09 browser: PASS; 320/390/768/1280; 193 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:50711/starter-package/
+S09 browser: PASS; 320/390/768/1280; 193 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
