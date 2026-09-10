@@ -116,6 +116,20 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         assert page.locator('.speaker-selection-overlay').count()==1
         page.locator('#speaker-editor-zoom-fit').click()
         page.set_viewport_size({'width':320,'height':900})
+        help_summary=page.get_by_text('Как работают Solo, Mute и обработка звука',exact=True)
+        page.evaluate("""() => {
+          window.__s09aTouchTrace = [];
+          for (const type of ['touchstart','touchend','pointerdown','pointerup','pointercancel','click'])
+            document.addEventListener(type, e => window.__s09aTouchTrace.push({type, target:e.target.tagName, id:e.target.id, x:e.clientX, y:e.clientY}), {capture:true, once:true});
+        }""")
+        help_summary.scroll_into_view_if_needed();help_summary.tap()
+        try:
+            page.get_by_text('Уменьшает разницу между тихими и громкими фрагментами речи.',exact=False).wait_for(state='visible')
+        except Exception:
+            print('S09A touch help failure:', page.evaluate('window.__s09aTouchTrace'), flush=True)
+            raise
+        page.locator('#speaker-editor-selection-start').fill('0')
+        page.locator('#speaker-editor-selection-end').fill('0')
         scroll.scroll_into_view_if_needed();box=scroll.bounding_box()
         touch=context.new_cdp_session(page)
         touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+20,'y':box['y']+30}]})
@@ -125,9 +139,6 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         touch.detach()
         page.locator('.speaker-track').first.get_by_role('button',name='S · Solo').click();unchanged(edited)
         assert page.locator('.speaker-track.is-solo').count()==1
-        help_summary=page.get_by_text('Как работают Solo, Mute и обработка звука',exact=True)
-        help_summary.scroll_into_view_if_needed();help_summary.tap()
-        page.get_by_text('Уменьшает разницу между тихими и громкими фрагментами речи.',exact=False).wait_for(state='visible')
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'speaker-edits-help-{width}')
         page.locator('#speaker-editor-render').click();page.wait_for_function("!document.getElementById('speaker-editor-result').hidden",timeout=60000)

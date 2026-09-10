@@ -91,3 +91,5 @@ Images were inspected for desktop hierarchy/density, mobile text/control fit, wa
 ## CI follow-up
 
 The first PR run (`bd4d9d1`, run [34466098987](https://github.com/meser-recovery/starter-package/actions/runs/34466098987)) failed an immediate visibility check after the help touch tap. A later test-only correction waits for that same visible state. The screenshot implementation SHA above is unchanged. See the PR for the corrected submitted HEAD and required local-safety result; the first failed run is not counted as successful validation.
+
+The second run [34467864208](https://github.com/meser-recovery/starter-package/actions/runs/34467864208) also failed the touch sequence. The subsequent test correction separates native help tapping from the raw CDP drag and clears the old selection before requiring a newly created touch selection. Both checks remain mandatory; screenshot implementation is unchanged.
