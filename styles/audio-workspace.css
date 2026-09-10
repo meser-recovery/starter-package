@@ -112,6 +112,11 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
   .daw-workspace .speaker-track__buttons button { min-width: 0; padding-inline: .15rem; }
   .daw-workspace .speaker-track-controls { position: relative; }
   .daw-workspace .speaker-track-selection { position: absolute; top: 5px; right: 8px; }
+  .daw-workspace .processor-track__actions {
+    display: grid; grid-template-columns: 32px 32px repeat(3, minmax(0, 1fr));
+  }
+  .daw-workspace .processor-track__actions button { min-width: 0; padding-inline: .15rem; }
+  .daw-workspace .processor-track__actions .track-monitor-status { grid-column: 1 / -1; }
 }
 .daw-workspace .speaker-render .action-primary, .daw-workspace .processor-actions .action-primary, .daw-workspace .speaker-toolbar .action-primary { background: #255c82; border: 1px solid #214e6e; color: #fff; min-height: 36px; }
 @media (max-width: 767px) {

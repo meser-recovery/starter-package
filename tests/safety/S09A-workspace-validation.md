@@ -34,6 +34,7 @@ absence of Chromium described the package environment, not this validation.
 - Announcement controls inherited a two-column grid inside the narrow panel,
   wrapping filenames one character per line. An explicit single-column panel
   restores compact lanes; the original <=150px requirement is unchanged.
+- Linux CI on `0033ae7` found 154.98px Announcement lanes because a platform font wrapped the last action. The five desktop actions now use explicit grid columns with their status below; the <=150px limit is unchanged.
 - Workspace headings inherited dark text on the new dark header. Heading color
   now inherits the light header foreground; browser contrast must be >=4.5:1.
 - The retained Announcement identity/close block now has workspace spacing and

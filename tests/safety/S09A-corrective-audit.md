@@ -170,3 +170,7 @@ Submitted-head CI at evidence commit `bfcf034` (run `34501984178`) passed Archiv
 ## PR #36 preparation/deletion coverage correction
 
 The PASS entries for PLAN §§9, 19–21, 35 and A05/A08/A15 above describe the original executed coverage. They did not establish safety for deletion during active preparation. Review on `773975e` identified that gap. D now holds actual native decode completion while deleting a version or series through the visible UI and real in-memory gateway, then checks exact File references/order/payload/source epoch and the latest canonical revision. It also covers decoder failure after the revision update, an explicit successful retry, stale revision rejection and changed-source identity rejection. Existing close/new-source and deletion-after-ready checks remain enabled. [Follow-up evidence](evidence/s09a/pr36-review/README.md) is bound to the new implementation SHA; the earlier PNGs and PASS logs retain their original attribution.
+
+## Shared workspace Linux follow-up
+
+The first workspace CI at `0033ae7` (run `34524573749`) failed the unchanged <=150px Announcement lane limit: Linux font metrics wrapped a fifth action, producing 154.98px. Desktop action columns now reserve space for all five controls and a separate status row. The prior local PASS at `0033ae7` remains historical; the workspace evidence index and PR identify the refreshed source and exact submitted-head result. No geometry or audio assertion was weakened.
