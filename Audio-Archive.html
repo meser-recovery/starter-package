@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#478ac9">
+  <meta name="audio-archive-gateway" content="https://meserproject.duckdns.org">
+  <title>Аудиоархив — Проект Мэсэр</title>
+  <link rel="icon" href="images/favicon.png?v=2" type="image/png">
+  <link rel="stylesheet" href="styles/foundation.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/audio-archive.css">
+  <script src="scripts/service-landing.js"></script>
+  <script type="module" src="scripts/audio-archive.mjs"></script>
+</head>
+<body class="site-page">
+  <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
+  <header class="site-header"><div class="container site-header__content">
+    <a class="site-header__title" href="./">Проект Мэсэр</a>
+    <a href="Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html">Для служащих</a>
+  </div></header>
+  <main id="main-content" class="container archive-management">
+    <div class="archive-heading"><div><p class="eyebrow">Записи и сохранённые результаты</p><h1>Аудиоархив</h1></div>
+      <a href="Audio-Editor.html" target="_blank" rel="noopener">Открыть редактор в новой вкладке</a></div>
+    <p>Управляйте исходниками и двумя независимыми видами работы. Обработка аудио остаётся в редакторе.</p>
+    <div class="toolbar"><button id="login" type="button">Подключить архив</button><button id="refresh" type="button" disabled>Обновить данные</button><button id="logout" type="button" hidden>Отключить архив</button></div>
+    <p id="status" role="status" aria-live="polite">Проверка подключения…</p>
+    <nav class="archive-nav" aria-label="Разделы аудиоархива"><a href="#overview">Обзор</a><a href="#records">Записи</a><a href="#results">Результаты</a><a href="#maintenance">Обслуживание и восстановление</a></nav>
+    <section id="overview" aria-labelledby="overview-title"><h2 id="overview-title">Обзор</h2><div id="counts" class="counts"></div><p class="muted">Два списка загружаются независимо; это не единый моментальный снимок. Даты отображаются и фильтруются в UTC.</p></section>
+    <section id="records" aria-labelledby="records-title"><h2 id="records-title" tabindex="-1">Записи</h2>
+      <form id="filters" class="filters" role="search">
+        <label class="wide">Название, исходный файл или точный ID записи<input name="search" type="search" placeholder="Поиск по записям"></label>
+        <label>Расположение<select name="lifecycle"><option value="">Все</option><option value="incoming">Входящие</option><option value="archived">Архив исходников</option></select></label>
+        <label>Исходники<select name="sources"><option value="">Все</option><option value="available">Доступны</option><option value="unavailable">Удалены / недоступны</option></select></label>
+        <label>Анонс-мейкер · состояние<select name="announcementState"><option value="">Любое</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="result_ready">Результат готов</option></select></label>
+        <label>Анонс-мейкер · результат<select name="announcementResult"><option value="">Любой</option><option value="yes">Есть</option><option value="no">Нет</option></select></label>
+        <label>Спикерская · состояние<select name="speakerState"><option value="">Любое</option><option value="new">Новая</option><option value="in_progress">В работе</option><option value="result_ready">Результат готов</option></select></label>
+        <label>Спикерская · результат<select name="speakerResult"><option value="">Любой</option><option value="yes">Есть</option><option value="no">Нет</option></select></label>
+        <label>Дата записи от (UTC)<input name="from" type="date"></label><label>Дата записи до (UTC)<input name="to" type="date"></label>
+        <label>Сортировка<select name="sort"><option value="newest">Дата: сначала новые</option><option value="oldest">Дата: сначала старые</option><option value="updated">Последнее обновление</option><option value="title">Название А→Я</option><option value="title-desc">Название Я→А</option></select></label>
+        <label class="checkbox"><input name="attention" type="checkbox">Только требующие внимания</label><button type="reset">Сбросить поиск и фильтры</button>
+      </form>
+      <p id="matching" role="status"></p><div id="session-list" class="cards"></div>
+    </section>
+    <section id="detail" aria-labelledby="detail-title" hidden><h2 id="detail-title" tabindex="-1">Сведения о записи</h2><div id="detail-body"></div></section>
+    <section id="results" aria-labelledby="results-title"><h2 id="results-title">Результаты</h2><p>Доступны также для архивированных записей и после удаления исходников.</p><div id="result-sections"></div>
+      <div id="player" hidden><h3 id="player-title"></h3><p id="player-meta"></p><audio id="audio" controls preload="none"></audio><a id="download">Скачать проверенный файл</a><button id="player-close" type="button">Закрыть проигрыватель</button></div><p id="playback-status" role="status"></p>
+    </section>
+    <section id="maintenance" aria-labelledby="maintenance-title"><h2 id="maintenance-title">Обслуживание и восстановление</h2><p>Продолжение с локальными файлами выполняется в прежней вкладке редактора. Не закрывайте её: повторное открытие не возвращает потерянный результат.</p><div id="operations" class="cards"></div><div id="observations"></div>
+      <h3>Каталог</h3><p>Каталог — производный список записей. Пересборка использует канонические манифесты; она не восстанавливает аудио и не выполняет миграцию или очистку.</p><button id="rebuild" type="button" disabled>Пересобрать каталог</button>
+    </section>
+  </main>
+  <dialog id="login-dialog" aria-labelledby="login-title"><form id="login-form"><h2 id="login-title">Подключить аудиоархив</h2><label>Общий служебный пароль<input id="password" type="password" autocomplete="current-password" required></label><p id="login-status" role="status"></p><div class="toolbar"><button type="submit">Подключить</button><button id="login-cancel" type="button">Отмена</button></div></form></dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-title"><form id="delete-form"><h2 id="delete-title">Подтвердите удаление</h2><p id="delete-name"></p><h3>Будет удалено</h3><p id="delete-removed"></p><h3>Останется сохранено</h3><p id="delete-retained"></p><p id="delete-pending"></p><label id="purge-label" hidden>Введите точный ID записи: <strong id="purge-id"></strong><input id="purge-confirmation" autocomplete="off" spellcheck="false"></label><p id="delete-status" role="status"></p><div class="toolbar"><button id="delete-submit" type="submit" class="danger">Подтвердить удаление</button><button id="delete-cancel" type="button">Отмена</button></div></form></dialog>
+</body>
+</html>

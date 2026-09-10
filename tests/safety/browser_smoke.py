@@ -18,6 +18,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Error, sync_playwright
+from archive_management_smoke import check_archive_management
 
 
 def url(base: str, path: str) -> str:
@@ -1055,9 +1056,10 @@ def check_service_landing(page, base_url: str, width: int) -> None:
         ("Календарь", "Calendar.html"),
         ("Материалы", "Google-Drive.html"),
         ("Редактирование аудио", "Audio-Editor.html"),
+        ("Аудиоархив", "Audio-Archive.html"),
     )
     if actions.count() != len(expected):
-        raise AssertionError(f"Service landing must have three actions at {width}px")
+        raise AssertionError(f"Service landing must have four actions at {width}px")
     boxes = []
     for index, (label, href) in enumerate(expected):
         action = actions.nth(index)
@@ -1072,8 +1074,10 @@ def check_service_landing(page, base_url: str, width: int) -> None:
         if not action.evaluate("element => document.activeElement === element"):
             raise AssertionError(f"Service landing action {index + 1} is not keyboard focusable at {width}px")
         boxes.append(box)
-    if width > 576 and any(abs(box["y"] - boxes[0]["y"]) > 1 for box in boxes[1:]):
+    if width > 1024 and any(abs(box["y"] - boxes[0]["y"]) > 1 for box in boxes[1:]):
         raise AssertionError(f"Service landing desktop actions are not balanced in one row at {width}px: {boxes}")
+    if 576 < width <= 1024 and not (abs(boxes[0]["y"] - boxes[1]["y"]) <= 1 and abs(boxes[2]["y"] - boxes[3]["y"]) <= 1 and boxes[2]["y"] > boxes[0]["y"]):
+        raise AssertionError(f"Service actions must form two readable rows at {width}px: {boxes}")
     if width <= 576 and any(boxes[index]["y"] <= boxes[index - 1]["y"] for index in range(1, len(boxes))):
         raise AssertionError(f"Service landing mobile actions are not stacked at {width}px: {boxes}")
     logout = page.get_by_role("button", name="Выйти", exact=True)
@@ -1382,6 +1386,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             if replacements != 1:
                 raise AssertionError("Audio archive gateway hook could not be isolated for the mock")
             route.fulfill(response=response, body=body)
+            return
+        if parsed.hostname == "meserproject.duckdns.org" or (parsed.hostname == "github.com" and parsed.path.startswith("/meser-recovery/audio-archive/")):
+            route.abort()
             return
         if parsed.netloc != "gateway.test":
             route.continue_()
@@ -3271,6 +3278,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         context.close()
 
     unsupported_context = browser.new_context()
+    unsupported_context.route("**/*", isolate_processor_gateway)
     unsupported_context.add_init_script("Object.defineProperty(window, 'WebAssembly', {value: undefined})")
     unsupported_page = unsupported_context.new_page()
     try:
@@ -3492,6 +3500,7 @@ def main() -> int:
         check_admin_hash_functions(page, base_url)
         check_admin_without_subtle_crypto(browser, base_url)
         check_service_access_journeys(page, base_url)
+        check_archive_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
         check_audio_processor(browser, base_url, args.screenshot_dir)

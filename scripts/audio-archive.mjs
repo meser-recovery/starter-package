@@ -1,0 +1,344 @@
+import { AudioArchiveGateway, validateSessionManifest, validateAnnouncementOutput, validateSpeakerOutput,
+  reconstructAnnouncementOutput, reconstructSpeakerOutput } from './audio-archive-client.mjs';
+import { workflows, statuses, lifecycleLabel, sourceLabel, eligible, dateLabel, bytesLabel, mergeSessions,
+  selectSessions, selectResults, overview, recoveryPolicy, editorUrl, deletionImpact, RequestGeneration } from './audio-archive-core.mjs';
+
+const $ = id => document.getElementById(id);
+const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || document.querySelector('meta[name="audio-archive-gateway"]')?.content || '');
+const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete'].map(key => [key, new RequestGeneration()]));
+const state = { authenticated: false, sessions: null, maintenance: null, detail: null, url: null, target: null, busy: false, resultSort: { announcement: 'newest', speaker: 'newest' } };
+function element(tag, text, className) {
+  const node = document.createElement(tag);
+  if (text !== undefined) node.textContent = text;
+  if (className) node.className = className;
+  return node;
+}
+function button(label, action, className) {
+  const node = element('button', label, className); node.type = 'button';
+  node.addEventListener('click', action); return node;
+}
+function message(error) {
+  if ([401, 403].includes(error.status)) return 'Сеанс архива недоступен. Подключите архив снова.';
+  if (error.status === 409) return 'Данные изменились или операция сейчас недоступна. Загрузите актуальное состояние и подтвердите действие заново.';
+  if (error.status === 404) return 'Запись или результат больше не доступны.';
+  return 'Не удалось получить подтверждение от архива. Проверьте состояние перед повторным действием.';
+}
+function report(error) {
+  if ([401, 403].includes(error.status)) clearSession();
+  $('status').textContent = message(error);
+}
+function clearPlayback() {
+  generations.play.next();
+  $('audio').pause(); $('audio').removeAttribute('src'); $('audio').load();
+  $('download').removeAttribute('href'); $('download').removeAttribute('download');
+  if (state.url) URL.revokeObjectURL(state.url);
+  state.url = null; $('player').hidden = true; $('playback-status').textContent = '';
+}
+function clearSession() {
+  for (const generation of Object.values(generations)) generation.next();
+  clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.target = null;
+  $('detail').hidden = true; $('detail-body').replaceChildren(); $('delete-dialog').close();
+  updateControls(); render();
+}
+function updateControls() {
+  $('login').hidden = state.authenticated;
+  $('logout').hidden = !state.authenticated;
+  $('refresh').disabled = !state.authenticated || state.busy;
+  $('rebuild').disabled = !state.authenticated || state.busy;
+}
+function technical(data) {
+  const details = element('details'); details.append(element('summary', 'Технические сведения'), element('pre', JSON.stringify(data, null, 2))); return details;
+}
+function renderOverview() {
+  const values = overview(state.sessions, state.maintenance);
+  $('counts').replaceChildren();
+  for (const [key, label] of Object.entries({ incoming: 'Входящие', archived: 'Архив исходников', announcement: 'Версии · Анонс-мейкер', speaker: 'Версии · Спикерская', attention: 'Незавершённые операции' })) {
+    const item = button('', () => {
+      if (['incoming', 'archived'].includes(key)) { $('filters').reset(); $('filters').elements.lifecycle.value = key; renderRecords(); location.hash = 'records'; }
+      else if (key === 'attention') { $('filters').reset(); $('filters').elements.attention.checked = true; renderRecords(); location.hash = 'maintenance'; }
+      else location.hash = `results-${key}`;
+    }, 'count');
+    item.append(element('strong', values[key] === null ? '—' : String(values[key])), element('span', label));
+    item.disabled = values[key] === null; $('counts').append(item);
+  }
+}
+function filters() {
+  const values = Object.fromEntries(new FormData($('filters'))); values.attention = $('filters').elements.attention.checked; return values;
+}
+function renderRecords() {
+  $('session-list').replaceChildren();
+  if (!state.sessions) { $('matching').textContent = 'Список записей не загружен.'; return; }
+  if (filters().attention && !state.maintenance) { $('matching').textContent = 'Сведения о незавершённых операциях не загружены. Фильтр внимания пока недоступен.'; return; }
+  let sessions;
+  try { sessions = selectSessions(state.sessions, filters(), state.maintenance?.transactions); }
+  catch (error) { $('matching').textContent = error.message; return; }
+  $('matching').textContent = !state.sessions.length ? 'Архив пока пуст.' : `Найдено: ${sessions.length}.` + (!sessions.length ? ' Нет записей с такими условиями.' : '');
+  for (const session of sessions) {
+    const card = element('article', undefined, 'archive-card');
+    card.append(element('h3', session.title), element('p', `Записано: ${dateLabel(session.recordedAt)}`), element('p', `${lifecycleLabel(session)} · ${sourceLabel(session)} · дорожек: ${session.sourceTracks.length}`));
+    for (const key of Object.keys(workflows)) card.append(element('p', `${workflows[key]}: ${statuses[session.workflows[key].status]} · версий: ${session.workflows[key].outputs.length}`));
+    card.append(element('p', `Обновлено: ${dateLabel(session.updatedAt)}`), element('p', !state.maintenance ? 'Сведения о внимании не загружены' :
+      state.maintenance.transactions.some(t => t.sessionId === session.id) ? 'Требует внимания' : 'Незавершённых операций не обнаружено'), button('Сведения о записи', () => openDetail(session.id)));
+    $('session-list').append(card);
+  }
+}
+function resultCard(session, output, workflow) {
+  const card = element('article', undefined, 'archive-card');
+  card.append(element('h3', `Версия ${output.version} · ${session.title}`), element('p', `Сохранено: ${dateLabel(output.createdAt)} · ${bytesLabel(output.sizeBytes)}`));
+  const actions = element('div', undefined, 'toolbar');
+  actions.append(button('Слушать / скачать', () => loadOutput(session, output, workflow)),
+    button('Удалить версию', () => openDeletion(session.id, { kind: 'output-version', workflow, version: output.version }), 'danger'));
+  card.append(actions); return card;
+}
+function renderResults() {
+  $('result-sections').replaceChildren();
+  for (const workflow of Object.keys(workflows)) {
+    const section = element('section'); section.id = `results-${workflow}`; section.append(element('h3', workflows[workflow]));
+    const label = element('label', `Сортировка · ${workflows[workflow]}`), select = element('select');
+    for (const [value, text] of Object.entries({ newest: 'Сначала новые', oldest: 'Сначала старые', version: 'Версия по возрастанию', 'version-desc': 'Версия по убыванию', title: 'Название записи' })) { const option = element('option', text); option.value = value; select.append(option); }
+    select.value = state.resultSort[workflow]; label.append(select); section.append(label);
+    const cards = element('div', undefined, 'cards');
+    const draw = () => {
+      cards.replaceChildren();
+      const results = state.sessions ? selectResults(state.sessions, workflow, state.resultSort[workflow]) : null;
+      if (!results?.length) cards.append(element('p', results ? 'Сохранённых результатов пока нет.' : 'Результаты не загружены.'));
+      for (const { session, output } of results || []) cards.append(resultCard(session, output, workflow));
+    };
+    select.addEventListener('change', () => { state.resultSort[workflow] = select.value; draw(); });
+    draw(); section.append(cards); $('result-sections').append(section);
+  }
+}
+function renderMaintenance() {
+  $('operations').replaceChildren(); $('observations').replaceChildren();
+  if (!state.maintenance) { $('operations').append(element('p', 'Сведения об операциях не загружены.')); return; }
+  if (!state.maintenance.transactions.length) $('operations').append(element('p', 'Незавершённых операций не обнаружено.'));
+  const phases = { uploading: 'Передача частей', staged: 'Части подготовлены', cancelled: 'Передача остановлена', finalizing: 'Завершение сохранения', discarding: 'Удаление незавершённого сохранения', pending_delete: 'Незавершённое удаление' };
+  for (const operation of state.maintenance.transactions) {
+    const policy = recoveryPolicy(operation), session = state.sessions?.find(s => s.id === operation.sessionId);
+    const card = element('article', undefined, 'archive-card');
+    card.append(element('h3', session?.title || 'Запись ещё не определена'), element('p', operation.kind === 'ingestion' ? 'Сохранение исходников' : operation.kind === 'pending_delete' ? 'Удаление данных' : operation.kind === 'publication' ? `Сохранение · ${workflows[operation.workflow] || 'Вид работы неизвестен'}` : 'Неизвестная операция'),
+      element('p', phases[operation.state] || 'Состояние не распознано'));
+    if (operation.reservedVersion) card.append(element('p', `Зарезервирована версия ${operation.reservedVersion}. Номер не переиспользуется.`));
+    card.append(element('p', Number.isSafeInteger(operation.totalParts) ? `Передано частей: ${operation.uploadedParts} из ${operation.totalParts}.` : 'Детальный прогресс не предоставлен.'), element('p', policy.local));
+    for (const [action, label] of policy.actions) card.append(button(label, () => recover(operation, action), action === 'discard' || operation.kind === 'pending_delete' ? 'danger' : ''));
+    card.append(technical(operation)); $('operations').append(card);
+  }
+  $('observations').append(element('h3', `Наблюдения для ручной проверки: ${state.maintenance.orphans.length}`), element('p', 'Эти наблюдения не считаются восстанавливаемыми операциями. Автоматическая очистка недоступна.'));
+  for (const observation of state.maintenance.orphans) $('observations').append(technical(observation));
+}
+function render() { renderOverview(); renderRecords(); renderResults(); renderMaintenance(); }
+async function refresh() {
+  if (!state.authenticated) return;
+  const sequence = generations.list.next(), auth = generations.auth.value;
+  clearPlayback(); $('status').textContent = 'Загрузка записей и незавершённых операций…';
+  state.sessions = null; state.maintenance = null; render();
+  const results = await Promise.allSettled([gateway.listSessions('incoming'), gateway.listSessions('archived'), gateway.listIncomplete()]);
+  if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
+  const authFailure = results.find(r => r.status === 'rejected' && [401, 403].includes(r.reason.status));
+  if (authFailure) { report(authFailure.reason); return; }
+  const errors = [];
+  try {
+    if (results.slice(0, 2).every(r => r.status === 'fulfilled')) state.sessions = mergeSessions(results[0].value.sessions, results[1].value.sessions);
+    else errors.push('Не удалось загрузить оба списка записей.');
+    if (results[2].status === 'fulfilled' && Array.isArray(results[2].value.transactions) && Array.isArray(results[2].value.orphans)) state.maintenance = results[2].value;
+    else errors.push('Не удалось загрузить незавершённые операции.');
+  } catch { errors.push('Данные записей повреждены.'); }
+  render(); $('status').textContent = errors.length ? errors.join(' ') + ' Обновите данные.' : 'Данные загружены. Просмотр не изменяет архив.';
+}
+async function openDetail(id) {
+  if (state.busy) return;
+  const sequence = generations.detail.next(), auth = generations.auth.value;
+  state.detail = null; $('detail').hidden = false; $('detail-body').replaceChildren(element('p', 'Загрузка актуальных сведений…'));
+  try {
+    const session = await gateway.getSession(id);
+    if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
+    if (!validateSessionManifest(session) || session.id !== id) throw new Error('Invalid session');
+    state.detail = session; renderDetail(); $('detail-title').focus();
+  } catch (error) { if (generations.detail.current(sequence) && generations.auth.current(auth)) { $('detail-body').replaceChildren(element('p', message(error))); report(error); } }
+}
+function renderDetail() {
+  const session = state.detail, container = $('detail-body'); container.replaceChildren();
+  container.append(element('h3', session.title), element('p', `${lifecycleLabel(session)} · ${sourceLabel(session)}`), element('p', `Записано: ${dateLabel(session.recordedAt)} · Обновлено: ${dateLabel(session.updatedAt)}`),
+    element('p', `Источник: ${{ manual: 'Создана вручную', device: 'С устройства', zoom_webhook: 'Zoom' }[session.origin.kind] || 'Не указан'}`));
+  const form = element('form'), titleLabel = element('label', 'Название записи'), title = element('input');
+  title.value = session.title; title.required = true; title.maxLength = 200; title.id = 'metadata-title'; titleLabel.append(title);
+  const dateInputLabel = element('label', 'Дата и время записи (UTC; пусто — дата не указана)'), date = element('input');
+  date.type = 'datetime-local'; date.step = '0.001'; date.id = 'metadata-date';
+  const initialDate = session.recordedAt ? new Date(session.recordedAt).toISOString().slice(0, -1) : ''; date.value = initialDate; const initialControlValue = date.value;
+  dateInputLabel.append(date); const save = element('button', 'Сохранить метаданные'); save.type = 'submit';
+  const feedback = element('p'); feedback.id = 'metadata-status'; feedback.setAttribute('role', 'status');
+  const reload = button('Загрузить актуальные сведения', () => openDetail(session.id));
+  form.append(titleLabel, dateInputLabel, save, feedback, reload);
+  form.addEventListener('submit', async event => {
+    event.preventDefault(); if (state.busy || save.disabled) return;
+    const patch = { title: title.value.trim(), recordedAt: date.value === initialControlValue ? session.recordedAt : date.value ? new Date(date.value + 'Z').toISOString() : null };
+    save.disabled = true;
+    await mutate(() => writeSession(session, () => gateway.updateSession(session.id, session.revision, patch, crypto.randomUUID())), async () => {
+      await openDetail(session.id);
+    }, error => { feedback.textContent = message(error) + ' Введённые значения сохранены в форме. Для нового действия загрузите актуальные сведения.'; });
+  });
+  container.append(form, element('h3', 'Исходные дорожки'));
+  for (const track of session.sourceTracks) container.append(element('p', `${track.ordinal}. ${track.originalName} · ${{ 'audio/mpeg': 'MP3', 'audio/wav': 'WAV', 'audio/mp4': 'M4A' }[track.mediaType] || track.mediaType} · ${bytesLabel(track.sizeBytes)}`));
+  if (!session.sourceTracks.length) container.append(element('p', 'Доступных исходных дорожек нет.'));
+  for (const [key, label] of Object.entries({ supersedesSessionId: 'Заменяет предыдущую запись', supersededBySessionId: 'Есть более новая связанная запись' })) {
+    if (session.relations[key]) container.append(button(label, () => openDetail(session.relations[key])));
+  }
+  container.append(element('p', 'Архивирование сохраняет исходники и результаты. Для новой обработки нужны входящая запись и доступные исходники.'));
+  const actions = element('div', undefined, 'toolbar');
+  actions.append(button(session.lifecycle.state === 'incoming' ? 'Архивировать' : 'Вернуть во входящие', () => mutate(() => writeSession(session, () => gateway.setLifecycle(session.id, session.lifecycle.state === 'incoming' ? 'archive' : 'restore', session.revision)), () => openDetail(session.id))),
+    button('Удалить исходники', () => openDeletion(session.id, { kind: 'sources' }), 'danger'), button('Удалить запись полностью', () => openDeletion(session.id, { kind: 'purge' }), 'danger'));
+  actions.children[1].disabled = session.sourceState !== 'available'; container.append(actions);
+  for (const workflow of Object.keys(workflows)) {
+    const data = session.workflows[workflow], block = element('section'); block.append(element('h3', workflows[workflow]), element('p', `Состояние: ${statuses[data.status]}. Черновик: ${data.currentDraft ? 'есть' : 'нет'}.`));
+    if (eligible(session)) { const link = element('a', `Открыть в «${workflows[workflow]}» (новая вкладка)`); link.href = editorUrl(session, workflow); link.target = '_blank'; link.rel = 'noopener'; block.append(link); }
+    else block.append(element('p', 'Новая обработка недоступна: нужны входящая запись и доступные исходники.'));
+    const versions = [...data.outputs].sort((a, b) => a.version - b.version);
+    for (const output of versions) block.append(resultCard(session, output, workflow));
+    if (!versions.length) block.append(element('p', 'Сохранённых версий нет.'));
+    block.append(element('p', data.deletedVersions.length ? `Удалённые версии: ${[...data.deletedVersions].sort((a, b) => a - b).join(', ')}. Номера не переиспользуются.` : 'В истории нет подтверждённых удалённых версий.'));
+    for (const transaction of state.maintenance?.transactions || []) if (transaction.sessionId === session.id && transaction.workflow === workflow && transaction.reservedVersion) block.append(element('p', `Незавершённое сохранение: зарезервирована версия ${transaction.reservedVersion}.`));
+    block.append(element('p', `Следующий номер версии: ${data.nextVersion}. Пропуск номера сам по себе не означает удаление.`));
+    const remove = button(`Удалить всю серию «${workflows[workflow]}»`, () => openDeletion(session.id, { kind: 'output-series', workflow }), 'danger'); remove.disabled = !versions.length; block.append(remove); container.append(block);
+  }
+  container.append(technical({ id: session.id, revision: session.revision, storage: session.storage, relations: session.relations, origin: session.origin }));
+}
+async function loadOutput(session, output, workflow) {
+  clearPlayback(); const sequence = generations.play.value, auth = generations.auth.value;
+  $('playback-status').textContent = 'Загрузка и проверка целостности результата…';
+  try {
+    const metadata = await (workflow === 'speaker' ? gateway.getSpeakerOutput(session.id, output.outputId) : gateway.getAnnouncementOutput(session.id, output.outputId));
+    if (!generations.play.current(sequence) || !generations.auth.current(auth)) return;
+    const validate = workflow === 'speaker' ? validateSpeakerOutput : validateAnnouncementOutput;
+    if (!validate(metadata.output, metadata.recipe, session.id) || metadata.output.outputId !== output.outputId || metadata.output.version !== output.version || metadata.output.blobId !== output.blobId ||
+        metadata.output.sha256 !== output.sha256 || metadata.output.sizeBytes !== output.sizeBytes || metadata.output.recipeSnapshotRef !== output.recipeSnapshotRef) throw new Error('Invalid output identity');
+    const file = await (workflow === 'speaker' ? reconstructSpeakerOutput(metadata, gateway.speakerPartFetch(metadata)) : reconstructAnnouncementOutput(metadata, gateway.announcementPartFetch(metadata)));
+    if (!generations.play.current(sequence) || !generations.auth.current(auth)) return;
+    state.url = URL.createObjectURL(file); $('audio').src = state.url; $('download').href = state.url; $('download').download = file.name;
+    $('player-title').textContent = `${workflows[workflow]} · ${session.title} · версия ${output.version}`;
+    $('player-meta').textContent = `${file.name} · ${file.type} · ${bytesLabel(file.size)}`;
+    $('player').hidden = false; $('playback-status').textContent = 'Все части и целый файл проверены. Можно слушать или скачать.'; $('player').scrollIntoView({ block: 'nearest' });
+  } catch (error) {
+    if (!generations.play.current(sequence) || !generations.auth.current(auth)) return;
+    clearPlayback(); $('playback-status').textContent = 'Не удалось загрузить и проверить результат. Воспроизведение и скачивание недоступны.';
+    if ([401, 403].includes(error.status)) report(error);
+  }
+}
+async function writeSession(session, action) {
+  const auth = generations.auth.value;
+  const [fresh, maintenance] = await Promise.all([gateway.getSession(session.id), gateway.listIncomplete()]);
+  if (!generations.auth.current(auth)) throw new Error('Session ended');
+  if (fresh.id !== session.id || fresh.revision !== session.revision || maintenance.transactions.some(t =>
+      t.sessionId === session.id && (t.kind === 'pending_delete' || ['finalizing', 'discarding'].includes(t.state)))) {
+    throw Object.assign(new Error('Session changed or maintenance is required'), { status: 409 });
+  }
+  return action();
+}
+// A failed write is never treated as success or retried automatically. Reconcile both manifests and maintenance first.
+async function mutate(action, success = () => {}, failure = null) {
+  if (state.busy || !state.authenticated) return;
+  state.busy = true; updateControls(); const auth = generations.auth.value;
+  clearPlayback();
+  try {
+    await action();
+    if (!generations.auth.current(auth)) return;
+    await refresh();
+    if (!generations.auth.current(auth)) return;
+    state.busy = false; await success();
+  } catch (error) {
+    if (!generations.auth.current(auth)) return;
+    await refresh();
+    if (!generations.auth.current(auth)) return;
+    if (state.detail) {
+      try { await gateway.getSession(state.detail.id); } catch { /* Listing/maintenance and explicit reload remain authoritative. */ }
+    }
+    if (!generations.auth.current(auth)) return;
+    if (failure) failure(error); else report(error);
+  } finally { state.busy = false; updateControls(); }
+}
+async function openDeletion(id, selection) {
+  if (state.busy || $('delete-dialog').open) return;
+  const sequence = generations.delete.next(), auth = generations.auth.value;
+  try {
+    const session = await gateway.getSession(id), preview = await gateway.dependencyPreview(id), maintenance = await gateway.listIncomplete();
+    if (!generations.delete.current(sequence) || !generations.auth.current(auth)) return;
+    if (!validateSessionManifest(session) || session.id !== id || preview.sessionId !== id || preview.revision !== session.revision) throw Object.assign(new Error('Stale preview'), { status: 409 });
+    if (selection.kind === 'output-version' && !session.workflows[selection.workflow].outputs.some(o => o.version === selection.version)) throw Object.assign(new Error('Missing version'), { status: 404 });
+    state.target = Object.freeze({ ...selection, session, preview, idempotencyKey: crypto.randomUUID() });
+    state.returnFocus = document.activeElement;
+    const impact = deletionImpact(preview, selection);
+    $('delete-name').textContent = session.title; $('delete-removed').textContent = impact.removed; $('delete-retained').textContent = impact.retained;
+    const pendingDeletion = maintenance.transactions.some(t => t.sessionId === id && t.kind === 'pending_delete');
+    const pending = preview.pendingAnnouncementPublications + preview.pendingSpeakerSaves;
+    $('delete-pending').textContent = pendingDeletion ? 'Удаление уже начато. Продолжите его в разделе восстановления; новая цель недоступна.' : pending ? `Незавершённых сохранений: ${pending}. Сначала завершите их или удалите в разделе восстановления.` : 'Подтверждение относится только к выбранной цели и текущей ревизии записи.';
+    $('purge-label').hidden = selection.kind !== 'purge'; $('purge-id').textContent = selection.kind === 'purge' ? id : '';
+    $('purge-confirmation').value = ''; $('delete-status').textContent = ''; $('delete-submit').disabled = Boolean(pending) || pendingDeletion; $('delete-dialog').showModal();
+  } catch (error) { if (generations.delete.current(sequence) && generations.auth.current(auth)) report(error); }
+}
+$('delete-form').addEventListener('submit', async event => {
+  event.preventDefault(); const target = state.target;
+  if (!target || state.busy || $('delete-submit').disabled) return;
+  if (target.kind === 'purge' && $('purge-confirmation').value !== target.session.id) { $('delete-status').textContent = 'Введите точный ID записи без изменений.'; return; }
+  const body = { expectedRevision: target.preview.revision, idempotencyKey: target.idempotencyKey,
+    confirmation: target.kind === 'purge' ? $('purge-confirmation').value : target.kind === 'sources' ? 'Удалить исходники, сохранить результаты' : '' };
+  $('delete-submit').disabled = true;
+  await mutate(() => writeSession(target.session, () => target.kind === 'purge' ? gateway.purgeSession(target.session.id, body) : target.kind === 'sources' ? gateway.deleteSources(target.session.id, body) :
+    target.kind === 'output-series' ? gateway.deleteOutputSeries(target.session.id, target.workflow, body) : gateway.deleteOutputVersion(target.session.id, target.workflow, target.version, body)),
+  async () => { $('delete-dialog').close(); state.target = null; if (target.kind === 'purge') { $('detail').hidden = true; state.detail = null; } else if (state.detail?.id === target.session.id) await openDetail(target.session.id); },
+  error => { $('delete-status').textContent = message(error) + ' Результат не подтверждён этим запросом. Состояние списков и операций повторно запрошено. Дождитесь успешного обновления, затем закройте окно и получите новый предварительный просмотр. При незавершённом удалении используйте раздел восстановления.'; state.target = null; });
+});
+async function recover(operation, action) {
+  if (state.busy) return;
+  if ((action === 'discard' || operation.kind === 'pending_delete') && !globalThis.confirm(action === 'discard' ? 'Удалить только эту незавершённую операцию? Зарезервированный номер версии останется использованным.' : 'Продолжить уже начатое необратимое удаление?')) return;
+  await mutate(async () => {
+    const auth = generations.auth.value;
+    const latest = await gateway.listIncomplete();
+    if (!generations.auth.current(auth)) throw new Error('Session ended');
+    const fresh = latest.transactions.find(t => t.transactionId === operation.transactionId);
+    if (!fresh || fresh.kind !== operation.kind || fresh.sessionId !== operation.sessionId || fresh.workflow !== operation.workflow ||
+        !recoveryPolicy(fresh).actions.some(([allowed]) => allowed === action)) throw Object.assign(new Error('Recovery changed'), { status: 409 });
+    return gateway.recoverIncomplete(fresh.transactionId, action);
+  }, async () => { if (state.detail) await openDetail(state.detail.id); });
+}
+$('filters').addEventListener('submit', event => event.preventDefault());
+$('filters').addEventListener('input', renderRecords);
+$('filters').addEventListener('reset', () => requestAnimationFrame(renderRecords));
+$('refresh').addEventListener('click', refresh);
+$('player-close').addEventListener('click', clearPlayback);
+$('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
+$('login').addEventListener('click', () => { $('login-status').textContent = ''; $('login-dialog').showModal(); });
+$('login-cancel').addEventListener('click', () => $('login-dialog').close());
+$('delete-cancel').addEventListener('click', () => { if (!state.busy) $('delete-dialog').close(); });
+$('delete-dialog').addEventListener('cancel', event => { if (state.busy) event.preventDefault(); });
+$('delete-dialog').addEventListener('close', () => {
+  state.target = null; generations.delete.next();
+  const focus = state.returnFocus?.isConnected ? state.returnFocus : $('records-title');
+  focus.focus(); state.returnFocus = null;
+});
+$('login-form').addEventListener('submit', async event => {
+  event.preventDefault(); const submit = event.submitter; if (submit.disabled) return; submit.disabled = true;
+  const sequence = generations.auth.next();
+  try {
+    await gateway.login($('password').value);
+    if (!generations.auth.current(sequence)) return;
+    state.authenticated = true; $('login-dialog').close(); updateControls(); await refresh();
+  } catch (error) { if (generations.auth.current(sequence)) $('login-status').textContent = message(error); }
+  finally { $('password').value = ''; submit.disabled = false; }
+});
+$('logout').addEventListener('click', async () => {
+  clearSession(); $('status').textContent = 'Отключение архива…';
+  const sequence = generations.auth.value; $('login').disabled = true;
+  try { await gateway.logout(); if (generations.auth.current(sequence)) $('status').textContent = 'Архив отключён.'; }
+  catch { if (generations.auth.current(sequence)) $('status').textContent = 'Локальные данные очищены, но сервер не подтвердил выход. Повторите отключение.'; $('logout').hidden = false; }
+  finally { gateway.csrfToken = null; $('login').disabled = false; }
+});
+window.addEventListener('pagehide', () => { clearSession(); });
+window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
+async function initialize() {
+  render(); const sequence = generations.auth.next();
+  try {
+    await gateway.sessionStatus();
+    if (!generations.auth.current(sequence)) return;
+    state.authenticated = true; updateControls(); await refresh();
+  } catch (error) { if (generations.auth.current(sequence)) report(error); }
+}
+await initialize();

@@ -668,12 +668,12 @@ def check_admin_access_contract(errors: list[str]) -> None:
         if len(scripts) != 1 or scripts[0].get("src") != "scripts/service-landing.js" or scripts[0].get("defer") is not None:
             errors.append(f"{landing_name}: expected one early blocking guard runtime")
         actions = [attrs for tag, attrs in parser.start_tags if tag == "a" and "service-action" in (attrs.get("class") or "").split()]
-        if [attrs.get("href") for attrs in actions] != ["Calendar.html", "Google-Drive.html", "Audio-Editor.html"]:
+        if [attrs.get("href") for attrs in actions] != ["Calendar.html", "Google-Drive.html", "Audio-Editor.html", "Audio-Archive.html"]:
             errors.append(f"{landing_name}: service actions changed or are out of order")
         if any(attrs.get("target") is not None for attrs in actions):
             errors.append(f"{landing_name}: service actions must use same-tab navigation")
         labels = re.findall(r'<a class="service-action"[^>]*>([^<]+)</a>', source)
-        if labels != ["Календарь", "Материалы", "Редактирование аудио"]:
+        if labels != ["Календарь", "Материалы", "Редактирование аудио", "Аудиоархив"]:
             errors.append(f"{landing_name}: service action labels changed")
         logout = [attrs for tag, attrs in parser.start_tags if tag == "button" and attrs.get("id") == "service-logout"]
         if len(logout) != 1 or ">Выйти</button>" not in source:
