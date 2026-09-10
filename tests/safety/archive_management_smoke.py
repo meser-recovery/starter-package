@@ -9,6 +9,10 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def check_archive_management(browser, base_url, screenshot_dir=None):
+    base_url = base_url.rstrip('/')  # Retain the site mount when building page URLs.
+    parsed_site = urlparse(base_url)
+    site_origin = f'{parsed_site.scheme}://{parsed_site.netloc}'
+    site_authority = parsed_site.netloc
     bridge = subprocess.Popen(['node', str(ROOT / 'tests/safety/archive_management_bridge.mjs')], cwd=ROOT,
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     snapshot = json.loads(bridge.stdout.readline())
@@ -24,20 +28,19 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     context.add_init_script("sessionStorage.setItem('meser_service_access_v1', 'granted'); window.__MESER_AUDIO_ARCHIVE_GATEWAY__ = 'https://gateway.test';")
     errors, trace, blocked, held = [], [], [], []
     fault = {'list': False, 'hold': None, 'corrupt': False, 'ambiguous': False}
-    origin = urlparse(base_url).netloc
 
     def fulfill(route, result):
         data = base64.b64decode(result['body']) if result.get('base64') else result['body']
         if fault['corrupt'] and route.request.url.endswith('/content'):
             data = bytes(len(data))
         route.fulfill(status=result['status'], content_type=result.get('type') or 'application/json', body=data,
-                      headers={'Access-Control-Allow-Origin': base_url.rstrip('/'), 'Access-Control-Allow-Credentials': 'true',
+                      headers={'Access-Control-Allow-Origin': site_origin, 'Access-Control-Allow-Credentials': 'true',
                                'Access-Control-Allow-Headers': 'Content-Type, X-CSRF-Token', 'Access-Control-Allow-Methods': 'GET, POST, PATCH, PUT, OPTIONS'})
 
     def route_request(route):
         request = route.request
         parsed = urlparse(request.url)
-        if parsed.netloc == origin:
+        if parsed.netloc == site_authority:
             route.continue_()
             return
         if parsed.netloc != 'gateway.test':
@@ -104,6 +107,24 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
 
     try:
         load()
+        # Browser-visible statuses prove that credentialed success, OPTIONS and
+        # error responses all pass CORS through the mock's shared fulfill path.
+        probe = page.evaluate("""async () => {
+            const options = await fetch('https://gateway.test/v1/session', {
+                method: 'OPTIONS', credentials: 'include', headers: {'X-CSRF-Token': 'cors-probe'}
+            });
+            const missing = await fetch('https://gateway.test/v1/cors-probe-not-found', {credentials: 'include'});
+            return [options.status, missing.status];
+        }""")
+        assert probe == [204, 404], probe
+        fault['list'] = True
+        try:
+            unavailable = page.evaluate("""async () => (await fetch(
+                'https://gateway.test/v1/source-sessions?lifecycle=incoming', {credentials: 'include'}
+            )).status""")
+            assert unavailable == 503, unavailable
+        finally:
+            fault['list'] = False
         assert page.locator('#session-list .archive-card').count() == 3
         assert page.locator('#counts strong').all_text_contents() == ['2', '1', '3', '1', '0']
         assert not any('ffmpeg' in url.lower() or 'audio-processor' in url for url in page.evaluate('performance.getEntriesByType("resource").map(r => r.name)'))
