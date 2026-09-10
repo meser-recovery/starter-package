@@ -3,9 +3,9 @@
 This is implementation verification for a draft PR, not Acceptance or stage closure.
 
 - Base/before: `5a3e793e6e33e1a15e27dd6408e733c87d9a939f`.
-- Implementation/after: `e0e4431eff0620944f8deddb3522d807faed19ea`.
+- Implementation/after: `8e32faa6810283c8917b6764f0c75e235f2dc393`.
 - Branch: `codex/s09a-editor-corrective-ux`.
-- This directory is added by the separate evidence-only commit following the implementation SHA. Its exact commit ID, submitted HEAD and CI run are recorded in the draft PR so recording CI does not change the checked HEAD.
+- This directory is refreshed by the separate evidence-only commit following the implementation SHA. Its exact commit ID, submitted HEAD and CI run are recorded in the draft PR so recording CI does not change the checked HEAD.
 - [43-section PLAN audit, all 24 §42 expectations and A01–A18](../../../S09A-corrective-audit.md).
 - [Every original PNG, dimensions and SHA-256](MANIFEST.md). `after/s09/` contains newly captured S09 regression states from the corrective implementation, not relabeled historical S09 evidence.
 
@@ -19,10 +19,14 @@ All commands below passed on the implementation SHA. Screenshots were captured d
 | Changed frontend/Python syntax; whitespace | `node --check` on all 7 changed modules; `ast.parse` on all 6 changed Python files; `git diff --check origin/main` — [log](logs/static.log) |
 | Gateway contract | `npm --prefix gateway/audio-archive run check` — [log](logs/gateway-check.log) |
 | Gateway behavior | `npm --prefix gateway/audio-archive test` — **80/80** — [log](logs/gateway-tests.log) |
-| Complete browser suite with screenshots | `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-corrective-final-v2` — [full log](logs/browser-full.log) |
+| Complete browser suite with screenshots | `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-corrective-final-v3` — [full log](logs/browser-full.log) |
 | Exact base desktop comparison | B browser scenarios served from git-archived base scripts/styles/Editor/Archive, unchanged assets from the repository, loopback port 8002 — [baseline log](logs/baseline-browser.log) |
 
 The full browser run includes the actual bundled FFmpeg/WASM C scenarios: native decode rejection/fallback; named decoder-load failure and retry with the same File objects; all MP3/M4A/WAV local inputs and valid local rendered downloads; close during pending decoder load; two synthetic M4A tracks of 3747 seconds with no full native PCM decode; montage, focus, fit geometry and layout. It also executes D deletion/library corrections, prior PR #35 Acceptance regressions, source/processor checks, and root/subpath CORS regression under default Chromium security. The source duration tolerance and existing geometry thresholds are unchanged.
+
+The prior evidence commit `bfcf034` records actual local success/screenshots at `e0e4431`, but its first CI run [34501984178](https://github.com/meser-recovery/starter-package/actions/runs/34501984178) failed the unchanged 210px lane limit on Linux. The system font wrapped one more action row. Commit `8e32faa` reserves 280px for desktop controls while preserving waveform majority; this index now records newly captured images and complete local validation after that correction. Prior evidence remains in Git history with its original SHA.
+
+Implementation-head Linux [local-safety run 34502610277](https://github.com/meser-recovery/starter-package/actions/runs/34502610277) passed on `8e32faa6810283c8917b6764f0c75e235f2dc393`. The separate final evidence HEAD is checked again by the PR-triggered workflow, with its exact run/result recorded in the PR.
 
 The earlier `2ac3ef8` screenshot run and subsequent preflight failed strict source-fit geometry. Those are debugging history, not final PASS evidence; the audit explains the measured fractional-width cause and fix.
 
@@ -55,10 +59,10 @@ Desktop comparisons use the same B fixtures and viewport width. The before and a
 | Speaker states/help | [Before](before/speaker-edits-help-1280-viewport.png) | [After](after/s09a/speaker-edits-help-1280-viewport.png) |
 | Archive | [Before](before/archive-1280.png) | [After](after/s09a/archive-1280.png) |
 
-Visual findings resolved during this task: overly tall lanes at 768px, missing Announcement S/M letters, empty native player showing zero duration during preparation failure, weak disabled presentation, cramped closed source rows on mobile, and an offscreen skip-link capture artifact. Final review shows continuous desktop lanes, controls directly left of dominant waveforms, shared source ruler/compact transport, distinct selected/Solo/Mute/Excluded indicators, readable DSP labels and accessible mobile dialogs/menus. Playback and retained work are verified by browser assertions rather than inferred from still images.
+Visual findings resolved during this task: overly tall lanes at 768px (including the Linux system-font case), missing Announcement S/M letters, empty native player showing zero duration during preparation failure, weak disabled presentation, cramped closed source rows on mobile, and an offscreen skip-link capture artifact. Final review shows continuous desktop lanes, controls directly left of dominant waveforms, shared source ruler/compact transport, distinct selected/Solo/Mute/Excluded indicators, readable DSP labels and accessible mobile dialogs/menus. Playback and retained work are verified by browser assertions rather than inferred from still images.
 
 ## Limits and scope
 
 The user's real Zoom M4A files (about 14.3 and 22 MB) were not provided or tested. Synthetic tracks are each 1:02:27 and about 12.44 MB; they verify the implemented path, not the unidentified cause on the user's exact bytes/device. Coverage uses Chromium with mobile viewport/touch emulation, not physical devices, Safari/Firefox or a manual screen reader.
 
-Recovered implementation `d393aa4` plus recovery note `21fc901` preserve only the supplied patch; lost `52d5559` was not recovered. Further implementation is newly written in `2ac3ef8`, `9cee9fe` and `e0e4431`. DSP/core, codec/vendor, gateway/schema, source/recipe identity, transactions/integrity, workflows, Pages and infrastructure are unchanged. No merge, deployment, branch deletion, production mutations, Closure Record or COMPLETE declaration.
+Recovered implementation `d393aa4` plus recovery note `21fc901` preserve only the supplied patch; lost `52d5559` was not recovered. Further implementation is newly written in `2ac3ef8`, `9cee9fe`, `e0e4431` and `8e32faa`. DSP/core, codec/vendor, gateway/schema, source/recipe identity, transactions/integrity, workflows, Pages and infrastructure are unchanged. No merge, deployment, branch deletion, production mutations, Closure Record or COMPLETE declaration.
