@@ -1,7 +1,7 @@
-HEAD: 0033ae7dd592d4d69ab32d1f5b91a17c1223d8b9
+HEAD: 1769bc3c69ebfd0e130dcbc31409f9694b4f9d17
 Preview: http://127.0.0.1:55153/Audio-Editor.html
 200 Audio-Editor.html 4da55ad7675ce430550014bcee54e3d513a0c60867f17e6ab3d7e6c09a29cd74
 200 scripts/audio-transport.mjs 8cbd203f680479993fc01e5b8ac791216afc51f32830c7586442b29af055560b
 200 scripts/speaker-editor.mjs 7519a74de8999e0cdab7aa1fde0de511c4b287dc0e058f5bcfed12595d35fdc1
-200 styles/audio-workspace.css 629687b49e8ef4acf4bf0f65ac98fe3c2f8bfd4146bc04438ef699eafbd58bbb
+200 styles/audio-workspace.css 19f72b306caea1c2b397fd5161b23e07614f3c4c91264eee1e3c90d0e858bc05
 Live preview serves exact checkout bytes; no user tab reloaded.

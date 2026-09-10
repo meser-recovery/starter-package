@@ -2,3 +2,8 @@
 > meser-audio-archive-gateway@1.0.0 check
 > node --check src/*.mjs && node --check test/*.mjs && node --check tools/*.mjs
 
+npm notice
+npm notice New minor version of npm available! 11.5.1 -> 11.19.1
+npm notice Changelog: https://github.com/npm/cli/releases/tag/v11.19.1
+npm notice To update run: npm install -g npm@11.19.1
+npm notice

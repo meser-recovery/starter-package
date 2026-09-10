@@ -1,13 +1,13 @@
 # Original workspace captures
 
-Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `0033ae7dd592d4d69ab32d1f5b91a17c1223d8b9`.
+Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `1769bc3c69ebfd0e130dcbc31409f9694b4f9d17`.
 
 | Original PNG | Pixels | SHA-256 |
 | --- | --- | --- |
-| [after-paired/announcement-1280.png](after-paired/announcement-1280.png) | 1280 × 2088 | `70a44704ea208b102eb6f137c5dc4dfdf6f22217c6202723952e680ed314b93b` |
+| [after-paired/announcement-1280.png](after-paired/announcement-1280.png) | 1280 × 2088 | `7806c86dea857ce853c60bbe04e743c3176c2eeff6788a249c8f6238027f8116` |
 | [after-paired/announcement-320.png](after-paired/announcement-320.png) | 320 × 3058 | `c9333d5d11f332b32e478bd9d353222fff011971e3d780c6ccc176d2bba1e083` |
 | [after-paired/announcement-390.png](after-paired/announcement-390.png) | 390 × 2824 | `d9d074a44fbcabc5ef0ecb6e0d606e08d2e5b4310ea4ed8f3a316ed0d64721c8` |
-| [after-paired/announcement-768.png](after-paired/announcement-768.png) | 768 × 2164 | `d72c24cdf1b57c921567cc29d3449d5c6bb295bbee83f4768fe729319e41d668` |
+| [after-paired/announcement-768.png](after-paired/announcement-768.png) | 768 × 2164 | `2d14ebb2c134022b619390fd810c71d29283ec2b0c5256c5d506ccf34bb51988` |
 | [after-paired/speaker-1280.png](after-paired/speaker-1280.png) | 1280 × 2340 | `713ba2ee8d386643200cc473a5d34759c96633f972ad0af8ffb724f861d2597a` |
 | [after-paired/speaker-320.png](after-paired/speaker-320.png) | 320 × 3491 | `2a1b2a1434dd04ef9c4e6284c2a6efdd4dcf858d131e71ee5858591c3d8d42f3` |
 | [after-paired/speaker-390.png](after-paired/speaker-390.png) | 390 × 3167 | `7d24dc62e980a2e77fdcb98ed63fca9298af5b5a6bd7b901b14fff596fb60278` |
@@ -20,25 +20,25 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `0033ae7dd59
 | [before/speaker-320.png](before/speaker-320.png) | 320 × 4269 | `77ec3b2ebe36944112c47e90528c7636b45addade39b7fa779518af9fad4f451` |
 | [before/speaker-390.png](before/speaker-390.png) | 390 × 3918 | `36430fe3d419b862b5f0af5f438177a02caa6fdc35214115ad1aa93a8c9737e3` |
 | [before/speaker-768.png](before/speaker-768.png) | 768 × 2730 | `b2648eb0a0a0d3c1a9ff2cd6bbcaf73884bb5861a71c474de59d4250debb9917` |
-| [s09a/announcement-1280.png](s09a/announcement-1280.png) | 1280 × 2895 | `3d2e56a31217909f90cb5c09fdb73c1f190f195648970c466575a3baecaf285b` |
+| [s09a/announcement-1280.png](s09a/announcement-1280.png) | 1280 × 2895 | `d042edd7b6bf1366104f8b48e3401a24dda0461788d5474a214f895f200f5bb0` |
 | [s09a/announcement-320.png](s09a/announcement-320.png) | 320 × 4765 | `aaf4930af3248867dd52d7e1c57ce645f3432ad73ccbe01be251d3c49408fd3c` |
 | [s09a/announcement-390.png](s09a/announcement-390.png) | 390 × 4480 | `96b676c7362e8cdf4d357846f86bf402583a9f10c3416a0ce8546adb5d30e9bb` |
-| [s09a/announcement-768.png](s09a/announcement-768.png) | 768 × 3151 | `2122532813379196f2c4add089aceb9d639f73e073c2a254b050e0c408b48952` |
-| [s09a/archive-1280.png](s09a/archive-1280.png) | 1280 × 2660 | `b9bd065b9bfbbe932848d5fc2c4013078bba2d50997fc9106c285a0e872a6c1c` |
-| [s09a/archive-320.png](s09a/archive-320.png) | 320 × 5277 | `26df385c76959b27f64f726d4e388a5178f5c53ef80b65006f8acee151472ce3` |
-| [s09a/archive-390.png](s09a/archive-390.png) | 390 × 4265 | `f956604610157218e648710f19f484790a73676a062f6ebe8eb4f9663c8843a7` |
-| [s09a/archive-768.png](s09a/archive-768.png) | 768 × 3006 | `a8a92f4ddbf84c8582bcd919a62ea4d57745d648ae7d100e3923cca6c7fa3bd8` |
+| [s09a/announcement-768.png](s09a/announcement-768.png) | 768 × 3151 | `d3f04695c0d8206c3b84e73ad8fa0e0f6d1496701462d005023c181811f85501` |
+| [s09a/archive-1280.png](s09a/archive-1280.png) | 1280 × 2660 | `d55361a3bc78aad34c6c342569487ef06fce280f6675d31f493b8acad5db1e52` |
+| [s09a/archive-320.png](s09a/archive-320.png) | 320 × 5277 | `af0bfed71624aa1029278e0dabacee19fa546720ce86ba4d75ff219786f2ad9c` |
+| [s09a/archive-390.png](s09a/archive-390.png) | 390 × 4265 | `bef8fd9b739b4f284158453d8b7b4a34f64dba2cc4858b028490534bbee30f80` |
+| [s09a/archive-768.png](s09a/archive-768.png) | 768 × 3006 | `414e686e13c4ad2fbcff8292d041a845d99dc047d7bba8b51fbe0998bb9ec116` |
 | [s09a/final-version-saved.png](s09a/final-version-saved.png) | 1280 × 3554 | `a0c17ae41997915922a0b89b57a3377a231ff8d4db1cebe43112d0b64c6b3b24` |
-| [s09a/import-1280.png](s09a/import-1280.png) | 1280 × 3054 | `17a9ee3ccafd4cccbd7e63b01c609dde4170085a7567ef4635dd7d9378a490e0` |
+| [s09a/import-1280.png](s09a/import-1280.png) | 1280 × 3054 | `dd557b27436fbafc084991ad879138bcfdfc6e2097f6cb7b9660ff04737fcc5e` |
 | [s09a/import-320.png](s09a/import-320.png) | 320 × 5389 | `1aab37abf29d21d6be4097d980156fb9f21c4296516159d7d1dffd3958a86b35` |
-| [s09a/import-390.png](s09a/import-390.png) | 390 × 4899 | `aaac0808f42343aaaac014e2d3f73e7404ddcbf52d1af7124f16526ad5877ac2` |
-| [s09a/import-768.png](s09a/import-768.png) | 768 × 3423 | `e0ff369080cf4967e45d8901e7feafe3def2e8edc47584b7be2e9e5cde59a858` |
+| [s09a/import-390.png](s09a/import-390.png) | 390 × 4899 | `929513335ebf9546ce1d13fb8df59ff4358208f388fc53e681791504c0d309a1` |
+| [s09a/import-768.png](s09a/import-768.png) | 768 × 3435 | `69297372b91e441ff4e62dc245b6f551ed2db514a8477d108e8f03069f6c5fc6` |
 | [s09a/part-download-reconnect-keeps-project-1280-viewport.png](s09a/part-download-reconnect-keeps-project-1280-viewport.png) | 1280 × 900 | `4b1a84638a00a9d8cdad4543cd4111bcbda0bf4ad06219cf3ef36e327413cf3c` |
 | [s09a/part-download-reconnect-keeps-project-320-viewport.png](s09a/part-download-reconnect-keeps-project-320-viewport.png) | 320 × 900 | `461e4ee45c23812d95dd2c733a17e8415f1142b4c93b21e14816ed40256f741b` |
 | [s09a/part-download-reconnect-keeps-project-390-viewport.png](s09a/part-download-reconnect-keeps-project-390-viewport.png) | 390 × 900 | `0a60f835ca845fee6acf356c8763bfeabbebf099fe557f2d5c2fadcd7f54420c` |
 | [s09a/part-download-reconnect-keeps-project-768-viewport.png](s09a/part-download-reconnect-keeps-project-768-viewport.png) | 768 × 900 | `cb9720297fe8a3590c6be1440bff9793d38b4a6ba4b7ed3e3a498872eef87ea8` |
-| [s09a/part-download-reconnect-keeps-project-viewport.png](s09a/part-download-reconnect-keeps-project-viewport.png) | 1280 × 900 | `ac66e463bf27c8bf0094f57eeacc29257403828d2a7c0147f712e39baa04bd86` |
-| [s09a/part-download-reconnect-keeps-project.png](s09a/part-download-reconnect-keeps-project.png) | 1280 × 3368 | `b0b2c07a009e28b84465acd7e4f9c6f68d4c86c6b6bd160cdd482556730f57f7` |
+| [s09a/part-download-reconnect-keeps-project-viewport.png](s09a/part-download-reconnect-keeps-project-viewport.png) | 1280 × 900 | `4b1a84638a00a9d8cdad4543cd4111bcbda0bf4ad06219cf3ef36e327413cf3c` |
+| [s09a/part-download-reconnect-keeps-project.png](s09a/part-download-reconnect-keeps-project.png) | 1280 × 3368 | `32955f7e7f165db93413551e39bf4afdb2b4e0aea71fc03027de6bbb938abd7e` |
 | [s09a/project-reopened-1280-viewport.png](s09a/project-reopened-1280-viewport.png) | 1280 × 900 | `ab621664d111714aafbb329d3060043aaff0680450a8b1d5ba168854e7d452df` |
 | [s09a/project-reopened-1280.png](s09a/project-reopened-1280.png) | 1280 × 2639 | `a8882874c17b914801d26a8db40aa9ccf69ce400adebd6552d6c69300b2215f0` |
 | [s09a/project-reopened-320-viewport.png](s09a/project-reopened-320-viewport.png) | 320 × 900 | `e86524b25989ce851a37895e1e9ce7fad1a0e4b8b8b93e8a3617f8b1abc3e2b8` |
@@ -70,18 +70,18 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `0033ae7dd59
 | [s09a/speaker-edits-help-320.png](s09a/speaker-edits-help-320.png) | 320 × 5014 | `50baa0eb0487e999a20f99f3c513dbaffef4c22575201aceda248cb3b914e901` |
 | [s09a/speaker-edits-help-390-viewport.png](s09a/speaker-edits-help-390-viewport.png) | 390 × 900 | `d66351d60ba34addd239e0c4eef3016404183dd7b5e78eeb585053c3d80b7e15` |
 | [s09a/speaker-edits-help-390.png](s09a/speaker-edits-help-390.png) | 390 × 4671 | `a3e5948bdaabb6214810b526a2c84a2ce6bc5d2f9fb7c9cb05462d2e881ab471` |
-| [s09a/speaker-edits-help-768-viewport.png](s09a/speaker-edits-help-768-viewport.png) | 768 × 900 | `3b9abd8ed81b4a8e94b50814a34ff28b1e26c82f87c921b0e0c96c35e099d2e5` |
-| [s09a/speaker-edits-help-768.png](s09a/speaker-edits-help-768.png) | 768 × 3150 | `9e976bf5bd6db52b6b1485bfb1fcf9687390771e6c13633c9008061d78322106` |
+| [s09a/speaker-edits-help-768-viewport.png](s09a/speaker-edits-help-768-viewport.png) | 768 × 900 | `4a93e30a8a1ef4eb93e466faa34d89749c511371d4c450f7f0a171f919fbedd1` |
+| [s09a/speaker-edits-help-768.png](s09a/speaker-edits-help-768.png) | 768 × 3260 | `9d76292d1869f38536e72d2b33bfa3f863f17a3e43c8978d637e0c3831c8efbf` |
 | [s09a/unsaved-cancel-1280-viewport.png](s09a/unsaved-cancel-1280-viewport.png) | 1280 × 900 | `94f4e18c8abfafaeb4eed1af66e14d355bbb808317bd03138928af2b5d7ff1ac` |
 | [s09a/unsaved-cancel-320-viewport.png](s09a/unsaved-cancel-320-viewport.png) | 320 × 900 | `6602eb4b4ede84554207b4a0c2b240c4239fec1b19e935af9ad8a535929fe7a4` |
 | [s09a/unsaved-cancel-390-viewport.png](s09a/unsaved-cancel-390-viewport.png) | 390 × 900 | `64d938d85373a6dc59e04e5c31ac99f57afb089698ca8927728a678a5ed9ce24` |
 | [s09a/unsaved-cancel-768-viewport.png](s09a/unsaved-cancel-768-viewport.png) | 768 × 900 | `19171c9a9daf8f63a8618ff88f57cae260fd9c17162f3b165d752590f1704876` |
-| [s09a/unsaved-cancel-viewport.png](s09a/unsaved-cancel-viewport.png) | 1280 × 900 | `535dee12f92eee7b6949cf04a2a44fd4219f35f7584648b5ed731566f326052f` |
-| [s09a/unsaved-cancel.png](s09a/unsaved-cancel.png) | 1280 × 3556 | `dd08295d7a33452cdfbf170d3aa09e73c42ea192dbe9731f05b118ffae80ba68` |
+| [s09a/unsaved-cancel-viewport.png](s09a/unsaved-cancel-viewport.png) | 1280 × 900 | `94f4e18c8abfafaeb4eed1af66e14d355bbb808317bd03138928af2b5d7ff1ac` |
+| [s09a/unsaved-cancel.png](s09a/unsaved-cancel.png) | 1280 × 3556 | `d466af8f9b783b28dfe35b81807af6e395d9ad57006c2020dba78a1cb450238c` |
 | [s09a-acceptance/announcement-draft-401-keeps-work.png](s09a-acceptance/announcement-draft-401-keeps-work.png) | 390 × 4689 | `5b51727993523e85599d917125ebad799ce177233b5f3b3ea7359286699324d2` |
-| [s09a-acceptance/announcement-draft-403-keeps-work.png](s09a-acceptance/announcement-draft-403-keeps-work.png) | 390 × 4689 | `9720d0dfd7d9228bbfaac05a540b708142372e00bae5068985241baec959354d` |
+| [s09a-acceptance/announcement-draft-403-keeps-work.png](s09a-acceptance/announcement-draft-403-keeps-work.png) | 390 × 4689 | `5b51727993523e85599d917125ebad799ce177233b5f3b3ea7359286699324d2` |
 | [s09a-acceptance/announcement-part-401-keeps-work.png](s09a-acceptance/announcement-part-401-keeps-work.png) | 390 × 4689 | `5b51727993523e85599d917125ebad799ce177233b5f3b3ea7359286699324d2` |
-| [s09a-acceptance/announcement-part-403-keeps-work.png](s09a-acceptance/announcement-part-403-keeps-work.png) | 390 × 4860 | `d2a2ed53a11ea40014e7085bc63aeddc60154ac138c0811a3882e3b45a2d50e8` |
+| [s09a-acceptance/announcement-part-403-keeps-work.png](s09a-acceptance/announcement-part-403-keeps-work.png) | 390 × 4860 | `e24b421569f0c008ac682495b0120258f96bc9408f0957bf8961cc63c0cf685d` |
 | [s09a-acceptance/announcement-session-401-keeps-work.png](s09a-acceptance/announcement-session-401-keeps-work.png) | 390 × 3888 | `65ef1f53a7251758eb00ee7ca814add3c9ae1e2c9d441e63afa36ee4405f7099` |
 | [s09a-acceptance/announcement-session-403-keeps-work.png](s09a-acceptance/announcement-session-403-keeps-work.png) | 390 × 3888 | `65ef1f53a7251758eb00ee7ca814add3c9ae1e2c9d441e63afa36ee4405f7099` |
 | [s09a-acceptance/archive-project-401-reconnect.png](s09a-acceptance/archive-project-401-reconnect.png) | 390 × 1841 | `80580876deb89aef95c54abd3b86e140e1c5491809a5a8715101c730eef132b1` |
@@ -89,19 +89,19 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `0033ae7dd59
 | [s09a-acceptance/closed-work-rejects-delayed-source.png](s09a-acceptance/closed-work-rejects-delayed-source.png) | 390 × 5452 | `6c243524139bd75826b0399e404437bee0b60bf742926dfd3c3125e5499eaf02` |
 | [s09a-acceptance/delayed-source-new-edits-protected-viewport.png](s09a-acceptance/delayed-source-new-edits-protected-viewport.png) | 390 × 900 | `797f241fa5c4dc73eabcaf524550d8d536cbc0a18fec239cf6590c4b4a0daf2a` |
 | [s09a-acceptance/delayed-source-new-edits-protected.png](s09a-acceptance/delayed-source-new-edits-protected.png) | 390 × 7082 | `71f966d48121eb067210c50f4d0e1a33e3749b7f446365da7f09887e20134936` |
-| [s09a-corrective/announcement-1280.png](s09a-corrective/announcement-1280.png) | 1120 × 718 | `61dada850f80a32ed7e0798b7f190f4fb6f74b1768d3cb5a5529336ff80d1ab4` |
+| [s09a-corrective/announcement-1280.png](s09a-corrective/announcement-1280.png) | 1120 × 718 | `e2f5d04a9157e436af4a63ea9940e6f57f5f812fb0b2964621b79a84084eea50` |
 | [s09a-corrective/announcement-320.png](s09a-corrective/announcement-320.png) | 304 × 1122 | `014e93b203558a335b47e1004db2adc115f1882896830771700359d2d3be7389` |
 | [s09a-corrective/announcement-390.png](s09a-corrective/announcement-390.png) | 374 × 1103 | `615f16e4849988539720173803c7098e4aad5bf4a040692690cedcaf3391d6ed` |
-| [s09a-corrective/announcement-768.png](s09a-corrective/announcement-768.png) | 736 × 718 | `775baa22c35783a798bf8a735cef881dfbcfdd01ea7cdf583fff24098f56dc7f` |
+| [s09a-corrective/announcement-768.png](s09a-corrective/announcement-768.png) | 736 × 718 | `a687908b4b98c31cef2c7177a843350627a05b37fc413a8596e6814d1bb16922` |
 | [s09a-corrective/preparation-error-1280.png](s09a-corrective/preparation-error-1280.png) | 1120 × 1162 | `5460a66dbb2ed20f0c5c9adb69d9741880684afba639e10be997e5a0c3bf42da` |
 | [s09a-corrective/preparation-error-320.png](s09a-corrective/preparation-error-320.png) | 304 × 2215 | `2e2bb5cffdf85741399b4876113735e128ec1f5252d53bd084a11c72bfbb0ad6` |
 | [s09a-corrective/preparation-error-390.png](s09a-corrective/preparation-error-390.png) | 374 × 1728 | `495601676ab5242b9dad607ff812032a529da14d26afcbc13ce04488d95b44ba` |
-| [s09a-corrective/preparation-error-768.png](s09a-corrective/preparation-error-768.png) | 736 × 1052 | `167647a86e40864f9bdedc701131e7e0eb873b6a8452be93d9c128ddf33e5496` |
+| [s09a-corrective/preparation-error-768.png](s09a-corrective/preparation-error-768.png) | 736 × 1162 | `53fdcce5f2bcfc513a14cd8c8b679ba693710c0c6b06c85c08fc92af5c371f20` |
 | [s09a-corrective/preparation-error.png](s09a-corrective/preparation-error.png) | 1120 × 1162 | `5fa97ec1e44fe62b54788460507c7f08ad5ffcfef40678a0cd4ee55184422bf1` |
 | [s09a-corrective/selection-dsp-focus.png](s09a-corrective/selection-dsp-focus.png) | 1120 × 1082 | `904b99ab2f821a828d79de2b4c05063a80b9500a5c5ac2dfde061d3fad31fff8` |
 | [s09a-corrective/selection-tools-1280.png](s09a-corrective/selection-tools-1280.png) | 1280 × 2340 | `9ca209f2b8207843652191ba3d40d80ca29c93b3d302b3af2fe0ffd10cd45533` |
-| [s09a-corrective/selection-tools-320.png](s09a-corrective/selection-tools-320.png) | 320 × 3491 | `55887bd7acca8ab283407141bb9e9bf12c852832cd0357c270deb3e9d8a40ba1` |
-| [s09a-corrective/selection-tools-390.png](s09a-corrective/selection-tools-390.png) | 390 × 3183 | `b2f27b6c0d23d02f7b04dfb68da60e532d3f722e39d6930e5afda6e246c7e79f` |
+| [s09a-corrective/selection-tools-320.png](s09a-corrective/selection-tools-320.png) | 320 × 3491 | `ad7b7ba2b81ec8519f81558cf98092fc654363a60d3bb38fa7c11d52f05eef3a` |
+| [s09a-corrective/selection-tools-390.png](s09a-corrective/selection-tools-390.png) | 390 × 3183 | `ce7a9d7a42203beb76a47b755143b2b15686f398500dfd6afe1141f786a94d55` |
 | [s09a-corrective/selection-tools-768.png](s09a-corrective/selection-tools-768.png) | 768 × 2417 | `4779fe63dcd2d7823dab37767cc888697d416944a7a87b99cae85c4201b7bed7` |
 | [s09a-corrective/speaker-1280.png](s09a-corrective/speaker-1280.png) | 1120 × 970 | `8f9dfbc84212757f3ddc1c5a6993daa37eb8dc0f5b280e42b0ad52b8d3beb4a2` |
 | [s09a-corrective/speaker-320.png](s09a-corrective/speaker-320.png) | 304 × 1574 | `48df4c6068d98666945e06dbfac6ac3d81989513e1d1d2647669ab86ae772945` |
@@ -147,14 +147,14 @@ Before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`. All other PNGs: `0033ae7dd59
 | [s09a-corrective-management/version-target-390.png](s09a-corrective-management/version-target-390.png) | 366 × 580 | `72430a59019edbccf617e913a2c152631a83ed454e7fd1461bf9d4847faa0813` |
 | [s09a-corrective-management/version-target-768.png](s09a-corrective-management/version-target-768.png) | 672 × 400 | `4fbc7cadba3bd20edf15f959a891d7f65024fe5d9f01f801dcbd6ae6625f0225` |
 | [s09a-corrective-management/version-target.png](s09a-corrective-management/version-target.png) | 366 × 578 | `9b4cd7fd3a4059f6ded6b87ee13a30e8d0df7342fa12e29fea3ad06d9ae7d9d5` |
-| [s09a-playback/announcement-long-name-1280.png](s09a-playback/announcement-long-name-1280.png) | 1280 × 2154 | `1a74aff82ef1ded37920ee39df51e20e05476ada14c1d4e66cb9c1108536c352` |
+| [s09a-playback/announcement-long-name-1280.png](s09a-playback/announcement-long-name-1280.png) | 1280 × 2154 | `f612bcf8bae4349a42cddea33618b8d828414ebb52a5c4d962b8274277728c59` |
 | [s09a-playback/announcement-long-name-320.png](s09a-playback/announcement-long-name-320.png) | 320 × 3214 | `f58cd269de1d712141d2021790aad72b9b477d5660b3eb9f386e209ff8d3dcc7` |
 | [s09a-playback/announcement-long-name-390.png](s09a-playback/announcement-long-name-390.png) | 390 × 2980 | `9848e25c7e8d37695e231894bcd323872982267c6575a14d5d5f6a2de429d637` |
-| [s09a-playback/announcement-long-name-768.png](s09a-playback/announcement-long-name-768.png) | 768 × 2231 | `e40282570f7b170f55c378f245570763794ae6a77b31bf05e256c2e54fdc4559` |
+| [s09a-playback/announcement-long-name-768.png](s09a-playback/announcement-long-name-768.png) | 768 × 2231 | `e43ce97af4cd70a15cb5af0fcf366a22f1989f755f580645fe9fe00e25755b89` |
 | [s09a-playback/announcement-short-screen.png](s09a-playback/announcement-short-screen.png) | 320 × 450 | `3bfd66ade28afef724f7b0752696a75473115ac4da20d9434b4c7327ff5194b1` |
 | [s09a-playback/speaker-long-name-1280.png](s09a-playback/speaker-long-name-1280.png) | 1280 × 2352 | `8aeec47cf0c1e9beaf44511e0b0d5022e6cbaefa6157a19a77dc0dcd8a4095a7` |
 | [s09a-playback/speaker-long-name-320.png](s09a-playback/speaker-long-name-320.png) | 320 × 3685 | `3ee5f1ef039646b8bc5705781490039958155f7cf65a5ea4fb3d55a48418bc1e` |
-| [s09a-playback/speaker-long-name-390.png](s09a-playback/speaker-long-name-390.png) | 390 × 3342 | `8143803fca13a882eb7cd3ad5298c292048a7499a2e0085d11a6d8e607f707da` |
+| [s09a-playback/speaker-long-name-390.png](s09a-playback/speaker-long-name-390.png) | 390 × 3342 | `0fc06fcaffd18dcc1f80b8a8f7318078116580553f36c64a55e0303cb21b077f` |
 | [s09a-playback/speaker-long-name-768.png](s09a-playback/speaker-long-name-768.png) | 768 × 2429 | `76faad118478599e9f915ee28c926f582a3965fc8e68a8315f17d2fee00e4bd4` |
 | [s09a-playback/speaker-long-name-dsp-320.png](s09a-playback/speaker-long-name-dsp-320.png) | 320 × 3887 | `b3d10f1d701fdbd8fdeb9ad86a81fed934c850182d24aaa32a64ab1b0b6150ce` |
 | [s09a-playback/speaker-long-name-dsp-390.png](s09a-playback/speaker-long-name-dsp-390.png) | 390 × 3544 | `624da5d5bd0fb0e6d2f751ff48ffc708d4d5d01dd228fbfc03453e7089fb523d` |

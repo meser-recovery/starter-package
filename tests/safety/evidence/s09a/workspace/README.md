@@ -1,7 +1,7 @@
 # PR #36 shared workspace evidence
 
 - Baseline/before: `756e3cd11b2307467ba1935c7ff87e4d1f55e5c2`.
-- Final implementation and after capture SHA: `0033ae7dd592d4d69ab32d1f5b91a17c1223d8b9`.
+- Final implementation and after capture SHA: `1769bc3c69ebfd0e130dcbc31409f9694b4f9d17`.
 - This directory is added in a separate evidence-only commit. Its exact submitted
   HEAD and `local-safety` run/result are recorded in draft PR #36 without another
   commit changing that checked HEAD.
@@ -11,6 +11,8 @@
 · [Original PNG dimensions and SHA-256](MANIFEST.md).
 
 Historical PR #36 logs and screenshots remain bound to their original SHAs.
+The first workspace evidence commit `911f38e` remains historical for source `0033ae7`. Linux CI run `34524573749` found a 154.98px Announcement lane; its desktop actions now use five explicit columns, retaining the 150px limit. The current captures and full local logs below were refreshed after that correction.
+
 Neither the supplied package's non-browser checks nor earlier CI is substituted
 for this implementation's browser run.
 
@@ -21,7 +23,7 @@ for this implementation's browser run.
 - [Gateway syntax](gateway-check.log) and [gateway tests](gateway-tests.log): 80/80 PASS.
 - [Complete post-commit browser smoke](browser-full.log): PASS, default Chromium
   security, root/subpath CORS and isolated local fixtures. Command:
-  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-workspace-final-v2`.
+  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-workspace-final-v3`.
 - [Native browser audio signal measurements](s09a-playback/signal.json) ([normalized capture rerun](signal-captures.log)): 20 cases
   measuring actual 330/660Hz media output after mute/volume. Both modes, each
   Mute/Solo, multiple Solo, reordered identities, monitoring volume, Exclude
