@@ -14,6 +14,8 @@ import sys
 import time
 import traceback
 import wave
+from s09a_edit_modes_smoke import apply_selection
+
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -1715,12 +1717,12 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#speaker-regions-heading").click()
         page.locator("#speaker-editor-selection-start").fill("0.5")
         page.locator("#speaker-editor-selection-end").fill("1")
-        page.locator("#speaker-editor-add-cut").click()
+        apply_selection(page, 'cut')
         assert page.locator(".speaker-region-overlay--cut").count() == 3
         assert page.locator("#speaker-editor-undo").is_enabled() and page.locator("#speaker-editor-redo").is_disabled()
         page.locator("#speaker-editor-selection-start").fill("1.5")
         page.locator("#speaker-editor-selection-end").fill("2")
-        page.locator("#speaker-editor-add-silence").click()
+        apply_selection(page, 'silence')
         assert page.locator(".speaker-region-overlay--silence").count() == 1
         assert page.locator(".speaker-region-row--cut").count() == 1 and page.locator(".speaker-region-row--silence").count() == 1
         if screenshot_dir:

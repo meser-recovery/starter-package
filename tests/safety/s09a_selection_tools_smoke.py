@@ -1,11 +1,13 @@
 """Runs within the existing synthetic two-track speaker browser fixture."""
 
+from s09a_edit_modes_smoke import apply_selection
+
 
 def check_selection_tools(page, output=None):
     tools = page.locator('.speaker-selection__actions button')
     assert tools.count() == 6
     for button in tools.all():
-        assert button.is_disabled()
+        assert button.is_enabled() if button.get_attribute('id') in ('speaker-editor-add-cut','speaker-editor-add-silence') else button.is_disabled()
         assert button.locator('svg[aria-hidden=true]').count() == 1
     rows = page.locator('.speaker-track')
     ids = rows.evaluate_all('rows => rows.map(row => row.dataset.trackId)')
@@ -57,14 +59,14 @@ def check_selection_tools(page, output=None):
     assert rows.nth(0).locator('.speaker-selection-overlay').count() == 0
     page.mouse.up()
     assert page.locator('#speaker-editor-selection-track').input_value() == ids[1]
-    assert 'Дорожка 2' in page.locator('#speaker-editor-selection-scope').inner_text()
+    assert 'Дорожка 2' in page.locator('#speaker-selection-summary').inner_text()
     assert tools.locator('svg').count() == 6
-    page.locator('#speaker-editor-add-silence').click()
+    apply_selection(page, 'silence')
     payload = page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload")
     assert payload['trackSilenceRegions'][0]['trackId'] == ids[1]
     assert payload['globalCuts'] == []
     page.locator('#speaker-editor-undo').click()
-    page.locator('#speaker-editor-add-cut').click()
+    apply_selection(page, 'cut')
     payload = page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload")
     assert len(payload['globalCuts']) == 1
     assert payload['trackSilenceRegions'] == []
@@ -72,6 +74,8 @@ def check_selection_tools(page, output=None):
     assert rows.nth(1).locator('.speaker-region-overlay--cut').count() == 1
     page.locator('#speaker-editor-undo').click()
 
+    from s09a_edit_modes_smoke import check_edit_modes
+    check_edit_modes(page, output)
     check_waveform_interactions(page, output)
 
     for width in (320, 390, 768, 1280):
@@ -140,12 +144,12 @@ def check_waveform_interactions(page, output=None):
     page.locator('#speaker-editor-source-audio-loop').click()
     page.locator('#speaker-editor-source-audio-stop').click()
     # Two different operations on one exact range, plus an unrelated cut.
-    page.locator('#speaker-editor-add-cut').click()
-    page.locator('#speaker-editor-add-silence').click()
+    apply_selection(page, 'cut')
+    apply_selection(page, 'silence')
     selected = page.evaluate(state)
     region_id = selected['trackSilenceRegions'][0]['regionId']
     select(.55, .65)
-    page.locator('#speaker-editor-add-cut').click()
+    apply_selection(page, 'cut')
     unrelated = page.evaluate(state)['globalCuts'][-1]
     shot('timeline-cuts-and-silence')
     rows.first.locator(f'[data-region-id="{region_id}"]').click()

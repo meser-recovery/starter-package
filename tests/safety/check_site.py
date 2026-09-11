@@ -947,7 +947,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if "navigation.hidden = displayWidth" in source or "navigation.hidden ? 0" in source:
         errors.append("Processor source scrollbar must remain visible while tracks are selected")
-    if re.search(r'^import\s+(?!\{\s*(?:sha256Hex|renderSourceTimeline|createAudioTransport)\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline|audio-transport)\.mjs";)', source, re.M):
+    if re.search(r'^import\s+(?!\{\s*(?:sha256Hex|renderSourceTimeline|createAudioTransport|createWaveformDetail)\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline|audio-transport|audio-waveform-detail)\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     page_source = page.read_text(encoding="utf-8")
     processor_markup = re.split(r'<section[^>]+id="announcement-processor-card"[^>]*>', page_source, maxsplit=1)[-1].split('</section>', 1)[0]

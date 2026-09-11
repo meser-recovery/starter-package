@@ -1,5 +1,6 @@
 import { renderSourceTimeline } from "./audio-timeline.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
+import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { drawWaveformViewport } from "./audio-waveform-view.mjs";
 import { createWaveformReader } from "./speaker-waveform.mjs";
 import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
@@ -13,11 +14,12 @@ import {
 const byId = (id) => document.getElementById(`speaker-editor-${id}`);
 const workspace = document.getElementById("speaker-editor");
 const encoder = new TextEncoder();
+const sourceDetail = createWaveformDetail();
 const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
-  pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
+  editTool: null, selectionScope: "track", cancelSelection: null, pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
@@ -88,7 +90,8 @@ function notifyState() {
   window.dispatchEvent(new CustomEvent("speaker-editor-state", { detail: getSpeakerSaveState() }));
 }
 
-function setSelection(start, end, trackId = null) {
+function setSelection(start, end, trackId = null, scope = state.editTool === "cut" ? "all" : "track") {
+  state.selectionScope = scope;
   byId("selection-start").value = Number.isFinite(start) ? String(microseconds(start)) : "";
   byId("selection-end").value = Number.isFinite(end) ? String(microseconds(end)) : "";
   if (trackId) byId("selection-track").value = trackId;
@@ -113,17 +116,23 @@ function updateSelectionDuration() {
   const index = state.payload?.trackIds.indexOf(trackId) ?? -1;
   const name = state.tracks.find(track => track.trackId === trackId)?.file.name;
   document.getElementById("speaker-selection-summary").textContent = valid
-    ? `Дорожка ${index + 1} · ${name}: ${start.toFixed(3)} — ${end.toFixed(3)} · ${(end-start).toFixed(3)} с`
+    ? `${state.selectionScope === "all" ? "Все дорожки" : `Дорожка ${index + 1} · ${name}`}: ${start.toFixed(3)} — ${end.toFixed(3)} · ${(end-start).toFixed(3)} с`
     : "Выделите фрагмент на форме сигнала.";
   const target = `Дорожка ${index + 1} · ${name || "не выбрана"}`;
-  byId("selection-scope").textContent = valid
-    ? `Ножницы и границы записи: все дорожки. Тишина: ${target}.`
-    : "Клик — позиция; протянуть — выделение. Нажмите отмеченный сегмент, чтобы снять вырез или тишину.";
+  byId("selection-scope").textContent = state.editTool
+    ? `${state.editTool === "cut" ? "Вырезать — все дорожки" : "Тишина — только дорожка под указателем"}. Протяните интервал и отпустите. Enter — применить выделение; Esc — отменить режим.`
+    : "Клик — позиция; протянуть — выделение. Для монтажа сначала выберите «Вырезать» или «Тишина».";
   for (const [id, label] of [["set-start", "Начало записи от левой границы выделения — все дорожки"], ["set-end", "Конец записи по правой границе выделения — все дорожки"], ["add-cut", "Вырезать выделение на всех дорожках"], ["add-silence", `Заменить выделение тишиной: ${target}`]]) {
     byId(id).title = valid ? `${label}: ${start.toFixed(3)}–${end.toFixed(3)} с` : `${label}. Сначала выделите фрагмент.`;
     byId(id).setAttribute("aria-label", byId(id).title);
   }
-  for (const id of ["add-cut", "add-silence"]) byId(id).disabled = !state.ready || editorBusy() || !valid;
+  for (const [id, tool] of [["add-cut", "cut"], ["add-silence", "silence"]]) {
+    byId(id).disabled = !state.ready || editorBusy();
+    byId(id).setAttribute("aria-pressed", String(state.editTool === tool));
+    byId(id).title = tool === "cut" ? "Режим вырезания: протяните интервал на всех дорожках" : "Режим тишины: протяните интервал на одной дорожке";
+    byId(id).setAttribute("aria-label", byId(id).title);
+  }
+  workspace.dataset.editTool = state.editTool || "select";
   for (const kind of ["start", "end"]) {
     const input = byId(`selection-${kind}`), value = Number(input.value);
     byId(`set-${kind}`).disabled = !state.ready || editorBusy() || !valid || !input.value || !Number.isFinite(value) || value < 0 || value > state.originalDuration;
@@ -133,9 +142,9 @@ function updateSelectionDuration() {
   for (const wave of workspace.querySelectorAll(".speaker-waveform[data-track-id]")) {
     wave.querySelector(".speaker-selection-overlay")?.remove();
     const selected = wave.dataset.trackId === trackId;
-    const row = wave.closest(".speaker-track"); row?.classList.toggle("is-selected", selected);
-    if (row) { const label = row.querySelector(".speaker-track-selection"); if (label) label.textContent = selected ? "Выбрана" : ""; }
-    if (selected && valid) { const overlay = element("span", "speaker-region-overlay speaker-selection-overlay"); overlay.style.left = `${start/state.originalDuration*100}%`; overlay.style.width = `${(end-start)/state.originalDuration*100}%`; wave.append(overlay); }
+    const row = wave.closest(".speaker-track"); row?.classList.toggle("is-selected", selected || state.selectionScope === "all");
+    if (row) { const label = row.querySelector(".speaker-track-selection"); if (label) label.textContent = selected || state.selectionScope === "all" ? "Выбрана" : ""; }
+    if ((selected || state.selectionScope === "all") && valid) { const overlay = element("span", "speaker-region-overlay speaker-selection-overlay"); overlay.dataset.scope = state.selectionScope; overlay.style.left = `${start/state.originalDuration*100}%`; overlay.style.width = `${(end-start)/state.originalDuration*100}%`; wave.append(overlay); }
   }
 }
 
@@ -245,6 +254,8 @@ function drawCanvas(canvas, track, timelineDuration = state.originalDuration) {
   const pps = scroll?.id === "speaker-editor-result-waveform-scroll" ? state.resultPixelsPerSecond : state.pixelsPerSecond;
   drawWaveformViewport(canvas, track.samples, track.duration, pps || width / timelineDuration,
     scroll?.scrollLeft || 0, width, canvas.parentElement?.clientHeight || 112);
+  if (track.file && scroll) sourceDetail.draw(canvas, track.file, track.duration, pps, scroll.scrollLeft, width,
+    canvas.parentElement?.clientHeight || 112, (track.samples?.length || 0) / track.duration);
   canvas.dataset.timelineDuration = String(timelineDuration);
   canvas.dataset.usedWidth = String(track.duration * (pps || width / timelineDuration));
 }
@@ -287,7 +298,7 @@ function markEditableRegion(overlay, region, trackId) {
   overlay.addEventListener("keydown", event => {
     if (!["Enter", " "].includes(event.key) || !state.ready || editorBusy()) return;
     event.preventDefault(); event.stopPropagation();
-    setSelection(region.startSeconds, region.endSeconds, trackId);
+    setSelection(region.startSeconds, region.endSeconds, trackId, state.payload.globalCuts.includes(region) ? "all" : "track");
   });
 }
 
@@ -361,7 +372,8 @@ function waveform(track) {
   control.addEventListener("pointerdown", (event) => {
     if (!state.ready || editorBusy() || event.button !== 0 || pointerStart !== null) return;
     previousSelection = ["selection-start", "selection-end"].map(id => byId(id).value === "" ? NaN : Number(byId(id).value));
-    previousSelection.push(byId("selection-track").value);
+    previousSelection.push(byId("selection-track").value, state.selectionScope);
+    state.cancelSelection = cancelSelection;
     pointerEpoch = state.sourceEpoch; pointerX = event.clientX; clickedRegion = event.target.closest("[data-region-id]")?.dataset.regionId;
     pointerId = event.pointerId; pointerStart = pointerTime(event, scroll); control.setPointerCapture(event.pointerId);
     setSelection(pointerStart, pointerStart, track.trackId);
@@ -376,18 +388,25 @@ function waveform(track) {
     const end = pointerTime(event, scroll);
     if (Math.abs(event.clientX - pointerX) <= 4) {
       const region = [...state.payload.globalCuts, ...state.payload.trackSilenceRegions].find(r => r.regionId === clickedRegion);
-      if (region) setSelection(region.startSeconds, region.endSeconds, track.trackId);
+      if (region) setSelection(region.startSeconds, region.endSeconds, track.trackId, state.payload.globalCuts.includes(region) ? "all" : "track");
       else { setSelection(end, end, track.trackId); seekSource(end); }
     } else setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
-    pointerStart = null; pointerId = null; previousSelection = null; control.releasePointerCapture(event.pointerId);
+    const apply = Math.abs(event.clientX - pointerX) > 4 && state.editTool;
+    pointerStart = null; pointerId = null; previousSelection = null; state.cancelSelection = null; control.releasePointerCapture(event.pointerId);
+    if (apply) addRegion(apply);
   });
   const cancelSelection = () => {
     if (previousSelection && pointerEpoch === state.sourceEpoch) setSelection(...previousSelection);
-    pointerStart = null; pointerId = null; previousSelection = null;
+    const captured = pointerId;
+    pointerStart = null; pointerId = null; previousSelection = null; state.cancelSelection = null;
+    if (captured !== null && control.hasPointerCapture(captured)) control.releasePointerCapture(captured);
   };
   control.addEventListener("pointercancel", cancelSelection);
   control.addEventListener("lostpointercapture", cancelSelection);
   control.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" && event.target === control && state.editTool) {
+      event.preventDefault(); addRegion(state.editTool); return;
+    }
     if (!state.ready || editorBusy() || !["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault();
     if (event.shiftKey) { const start = Number(byId("selection-start").value) || 0; const end = Number(byId("selection-end").value) || start;
       setSelection(start, Math.max(start, Math.min(state.originalDuration, event.key === "Home" ? start : event.key === "End" ? state.originalDuration : end + (event.key === "ArrowLeft" ? -.1 : .1))), track.trackId); return; }
@@ -572,11 +591,22 @@ function syncScroll(origin) {
   redrawSourceWaves(); updateScrollbar(); requestAnimationFrame(() => { state.scrollLock = false; });
 }
 
-function updateWaveWidths() {
-  const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first || !state.originalDuration) return;
-  const base = first.clientWidth / state.originalDuration; state.pixelsPerSecond = Math.max(.01, base * Number(byId("zoom").value));
+function updateWaveWidths(anchor = false) {
+  const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first?.clientWidth || !Number.isFinite(state.originalDuration) || state.originalDuration <= 0) return;
+  const base = first.clientWidth / state.originalDuration;
+  const center = (first.scrollLeft + first.clientWidth / 2) / state.pixelsPerSecond;
+  const playhead = byId("source-audio").currentTime || 0;
+  const selected = Number(byId("selection-start").value);
+  const anchorTime = byId("selection-start").value ? selected : playhead > 0 ? playhead : center;
+  byId("zoom").max = String(Math.max(8, Math.ceil(1000 / base)));
+  state.pixelsPerSecond = Math.max(.01, base * Number(byId("zoom").value));
+  byId("zoom").setAttribute("aria-valuetext", `${state.pixelsPerSecond.toFixed(1)} пикселей в секунду`);
   const width = Math.max(first.clientWidth, Math.ceil(state.originalDuration * state.pixelsPerSecond));
   for (const control of byId("tracks").querySelectorAll(".speaker-waveform")) control.style.width = `${width}px`;
+  if (anchor) {
+    first.scrollLeft = Math.max(0, anchorTime * state.pixelsPerSecond - first.clientWidth / 2);
+    for (const scroll of byId("tracks").querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = first.scrollLeft;
+  }
   redrawSourceWaves(); updatePlayheads(); updateScrollbar();
 }
 
@@ -874,6 +904,8 @@ function updateResultPlayhead() {
 }
 
 function teardown() {
+  sourceDetail.clear();
+  state.cancelSelection?.(); state.editTool = null; state.selectionScope = "track";
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
@@ -923,13 +955,28 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   }
 }
 
-byId("selection-track").addEventListener("change", updateSelectionDuration);
+byId("selection-track").addEventListener("change", () => { state.selectionScope = state.editTool === "cut" ? "all" : "track"; updateSelectionDuration(); });
 byId("selection-start").addEventListener("input", updateSelectionDuration); byId("selection-end").addEventListener("input", updateSelectionDuration);
-byId("add-cut").addEventListener("click", () => addRegion("cut")); byId("add-silence").addEventListener("click", () => addRegion("silence"));
+function selectEditTool(tool) {
+  state.cancelSelection?.();
+  state.editTool = state.editTool === tool ? null : tool;
+  state.selectionScope = state.editTool === "cut" ? "all" : "track";
+  updateSelectionDuration();
+}
+byId("add-cut").addEventListener("click", () => selectEditTool("cut")); byId("add-silence").addEventListener("click", () => selectEditTool("silence"));
+document.addEventListener("keydown", event => {
+  if (!state.session || workspace.hidden) return;
+  if (event.key === "Escape") {
+    state.cancelSelection?.(); state.editTool = null; updateSelectionDuration();
+  }
+  if (event.key === "Enter" && [byId("selection-start"), byId("selection-end")].includes(event.target) && state.editTool) {
+    event.preventDefault(); addRegion(state.editTool);
+  }
+});
 byId("undo").addEventListener("click", undo); byId("redo").addEventListener("click", redo); byId("save").addEventListener("click", saveSpeakerProject);
 byId("close").addEventListener("click", () => closeSpeakerEditor(false)); byId("render").addEventListener("click", renderSpeaker); byId("cancel").addEventListener("click", cancelRender);
-byId("zoom").addEventListener("input", updateWaveWidths); byId("zoom-out").addEventListener("click", () => { byId("zoom").value = Math.max(1, Number(byId("zoom").value) - .5); updateWaveWidths(); });
-byId("zoom-in").addEventListener("click", () => { byId("zoom").value = Math.min(8, Number(byId("zoom").value) + .5); updateWaveWidths(); }); byId("zoom-fit").addEventListener("click", () => { byId("zoom").value = 1; updateWaveWidths(); });
+byId("zoom").addEventListener("input", () => updateWaveWidths(true)); byId("zoom-out").addEventListener("click", () => { byId("zoom").value = Math.max(1, Number(byId("zoom").value) / 2); updateWaveWidths(true); });
+byId("zoom-in").addEventListener("click", () => { byId("zoom").value = Math.min(Number(byId("zoom").max), Number(byId("zoom").value) * 2); updateWaveWidths(true); }); byId("zoom-fit").addEventListener("click", () => { byId("zoom").value = 1; updateWaveWidths(); });
 byId("follow").addEventListener("click", () => { state.follow = !state.follow; byId("follow").setAttribute("aria-pressed", String(state.follow)); });
 byId("source-audio").addEventListener("pause", stopOtherPlayback);
 byId("source-audio").addEventListener("ended", stopOtherPlayback);

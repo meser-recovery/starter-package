@@ -1,6 +1,8 @@
+import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { renderSourceTimeline } from "./audio-timeline.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
+const sourceDetail = createWaveformDetail();
 
 // Stage 7 DSP contract: S08B adds provenance/publication only and does not alter these values.
 const MIN_SILENCE_SECONDS = 2.0;
@@ -357,7 +359,7 @@ function sourceDisplayWidth(track) {
 
 function sourceImageDisplayWidth(track) {
   if (!sourceZoomInitialized || !Number.isFinite(track.duration) || track.duration <= 0) return track.waveformWidth;
-  return Math.max(1, Math.min(track.waveformWidth, Math.ceil(track.duration * sourcePixelsPerSecond)));
+  return Math.max(1, Math.ceil(track.duration * sourcePixelsPerSecond));
 }
 
 function maximumSourceLeftTime() {
@@ -406,6 +408,7 @@ function setSourceLeftVisibleTime(value) {
     if (Math.abs(scroll.scrollLeft - target) > .5) scroll.scrollLeft = target;
   }
   updateSourceScrollbar();
+  redrawSourceDetails();
   releaseSourceScrollLock();
 }
 
@@ -560,10 +563,24 @@ function installPan(scroll, onManualPan, altOnly = false) {
 }
 
 function syncSourceScroll(event) {
-  if (sourceScrollLock || sourcePixelsPerSecond <= 0) return;
+  if (sourcePixelsPerSecond <= 0) return;
   const origin = event.currentTarget;
+  // Ignore only our synchronized position, not a new user scroll arriving in
+  // the two animation frames following zoom. That viewport needs new detail.
+  if (sourceScrollLock && Math.abs(origin.scrollLeft - sourceLeftVisibleTime * sourcePixelsPerSecond) <= .5) return;
   disengageSourceFollow();
   setSourceLeftVisibleTime(origin.scrollLeft / sourcePixelsPerSecond);
+}
+
+function redrawSourceDetails() {
+  for (const track of tracks) {
+    const wave = byId("file-info").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
+    const scroll = wave?.parentElement, canvas = wave?.querySelector("canvas");
+    if (!canvas || !scroll || !track.waveformURL) continue;
+    canvas.hidden = true;
+    sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
+      scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.waveformWidth / track.duration);
+  }
 }
 
 function waveformControl(track) {
@@ -591,6 +608,8 @@ function waveformControl(track) {
       track.waveformFailed ? "Не удалось построить форму сигнала." : "Форма сигнала ещё не построена.";
     control.append(message);
   }
+  const detailCanvas = document.createElement("canvas"); detailCanvas.hidden = true;
+  detailCanvas.className = "processor-waveform-detail"; control.append(detailCanvas);
   const playhead = document.createElement("span");
   playhead.className = "processor-waveform-playhead";
   playhead.setAttribute("aria-hidden", "true");
@@ -821,17 +840,15 @@ function sourceZoomBounds() {
   const viewport = byId("file-info").querySelector(".processor-waveform-scroll");
   const durations = tracks.map((track) => track.duration).filter((duration) => Number.isFinite(duration) && duration > 0);
   sourceTimelineDuration = durations.length ? Math.max(...durations) : NaN;
-  const nativeRates = tracks.filter((track) => Number.isFinite(track.duration) && track.duration > 0)
-    .map((track) => track.waveformWidth / track.duration / Math.max(1, Math.min(3, window.devicePixelRatio || 1)));
-  sourceZoomMaximum = nativeRates.length ? Math.min(...nativeRates) : 2;
+  sourceZoomMaximum = durations.length ? 1000 : 2;
   sourceZoomMinimum = Number.isFinite(sourceTimelineDuration) && viewport ?
-    Math.min(sourceZoomMaximum, viewport.clientWidth / sourceTimelineDuration) : sourceZoomMaximum;
+    Math.max(.01, Math.min(sourceZoomMaximum, viewport.clientWidth / sourceTimelineDuration)) : sourceZoomMaximum;
 }
 
 function updateSourceZoomRange() {
   const range = byId("source-zoom-range");
-  const span = sourceZoomMaximum - sourceZoomMinimum;
-  range.value = String(span > 0 ? Math.round((sourcePixelsPerSecond - sourceZoomMinimum) / span * 100) : 0);
+  const span = Math.log(sourceZoomMaximum / sourceZoomMinimum);
+  range.value = String(span > 0 ? Math.round(Math.log(sourcePixelsPerSecond / sourceZoomMinimum) / span * 100) : 0);
   byId("source-zoom-out").disabled = Boolean(active) || sourcePixelsPerSecond <= sourceZoomMinimum + .001;
   byId("source-zoom-in").disabled = Boolean(active) || sourcePixelsPerSecond >= sourceZoomMaximum - .001;
 }
@@ -864,7 +881,7 @@ function initializeSourceZoom() {
 
 byId("source-zoom-range").addEventListener("input", (event) => {
   const ratio = Number(event.currentTarget.value) / 100;
-  setSourceZoom(sourceZoomMinimum + (sourceZoomMaximum - sourceZoomMinimum) * ratio);
+  setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio);
 });
 byId("source-zoom-out").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond / 1.5));
 byId("source-zoom-in").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond * 1.5));
@@ -939,6 +956,7 @@ function syncInputFiles() {
 }
 
 function revokeTrackURLs(track) {
+  sourceDetail.clear();
   if (track.sourceURL) URL.revokeObjectURL(track.sourceURL);
   if (track.waveformURL) URL.revokeObjectURL(track.waveformURL);
   track.sourceURL = null;

@@ -1,5 +1,7 @@
 """Local M4A preparation and compact editor regression; synthetic audio only."""
 import base64
+from s09a_edit_modes_smoke import apply_selection
+
 from pathlib import Path
 from urllib.parse import urlparse
 from s09a_smoke import fixture
@@ -113,20 +115,20 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         # A short M4A now opens despite native decode failure. Test real editing,
         # so a placeholder waveform or a disabled successful-looking view fails.
         page.locator('.speaker-selection details > summary').click()
-        assert page.locator('#speaker-editor-add-cut').is_disabled()
-        assert page.locator('#speaker-editor-add-silence').is_disabled()
+        assert page.locator('#speaker-editor-add-cut').is_enabled()
+        assert page.locator('#speaker-editor-add-silence').is_enabled()
         page.locator('#speaker-editor-selection-start').fill('0.5')
         page.locator('#speaker-editor-selection-end').fill('1')
-        page.locator('#speaker-editor-add-cut').click()
+        apply_selection(page, 'cut')
         assert page.locator('.speaker-region-overlay--cut').count() == 2
         page.locator('#speaker-editor-undo').click()
         assert page.locator('.speaker-region-overlay--cut').count() == 0
         page.locator('#speaker-editor-selection-end').fill('99')
-        assert page.locator('#speaker-editor-add-cut').is_disabled()
+        assert page.locator('#speaker-editor-add-cut').is_enabled()
         page.locator('#speaker-editor-selection-end').fill('1')
         page.locator('#speaker-editor-selection-track').select_option(index=1)
         assert 'Дорожка 2 · second.m4a' in page.locator('#speaker-selection-summary').inner_text()
-        page.locator('#speaker-editor-add-silence').click()
+        apply_selection(page, 'silence')
         assert page.locator('.speaker-region-overlay--silence').count()==1
         assert page.locator('.speaker-track').nth(1).locator('.speaker-region-overlay--silence').count()==1
         page.locator('.speaker-regions > summary').click()
@@ -214,9 +216,11 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         open_files('long'); ready(); retained()
         assert page.evaluate('correctiveNativeCalls') == calls, 'Hour-long audio entered full Web Audio decoding'
         assert page.evaluate("async () => Math.abs((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().originalDuration-3747)<0.1")
+        from s09a_edit_modes_smoke import check_word_detail
+        check_word_detail(page, 'speaker', output)
         page.locator('.speaker-selection details > summary').click()
         page.locator('#speaker-editor-selection-start').fill('10'); page.locator('#speaker-editor-selection-end').fill('20')
-        page.locator('#speaker-editor-add-cut').click()
+        apply_selection(page, 'cut')
         assert page.locator('.speaker-region-overlay--cut').count()==2
         page.locator('#speaker-editor-undo').click()
         assert page.locator('.speaker-region-overlay--cut').count()==0
@@ -239,6 +243,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
         page.locator('#open-local-announcement').click()
         page.locator('#speaker-unsaved-discard').click()
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform img').length===2", timeout=180000)
+        check_word_detail(page, 'announcement', output)
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900})
             page.locator('#processor-source-zoom-fit').click()

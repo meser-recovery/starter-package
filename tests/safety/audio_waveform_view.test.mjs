@@ -24,3 +24,12 @@ test('panning and zoom use source time; shorter tracks do not stretch to longest
   assert.deepEqual(c.fills[1], [0, 4, 1, 92]);
   assert.equal(c.fills.length, 21); // only two seconds remain in this track
 });
+
+test('detail window keeps absolute source time after seek, including a short final window', () => {
+  const c = canvas();
+  drawWaveformViewport(c, new Float32Array([0, 1, .5, 0]), .4, 1000, 80050, 500, 100, 2, 80);
+  // starts 50ms into the decoded 80.0–80.4s window, peak starts at 80.1s
+  assert.equal(c.fills[1][3], 1);
+  assert.equal(c.fills[102][3], 184);
+  assert.equal(c.fills.length, 701); // final 150ms beyond track end is blank
+});

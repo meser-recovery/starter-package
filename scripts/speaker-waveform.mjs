@@ -26,7 +26,7 @@ export function createWaveformReader(signal) {
     } finally { await context.close(); }
   }
 
-  async function ffmpegSamples(file, duration) {
+  async function ffmpegSamples(file, duration, start = null) {
     const width = Number.isFinite(duration) ? Math.min(WIDTH, Math.max(1, Math.floor(duration * 4000))) : WIDTH;
     if (!engine) {
       const { FFmpeg } = await import("../vendor/ffmpeg/ffmpeg/index.js"); check();
@@ -40,7 +40,7 @@ export function createWaveformReader(signal) {
     try {
       await currentEngine.writeFile(input, new Uint8Array(await file.arrayBuffer())); check();
       // A fixed-size image avoids retaining an hour of decoded PCM in Web Audio.
-      const code = await currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", input,
+      const code = await currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", ...(start === null ? [] : ["-ss", String(start), "-t", String(duration)]), "-i", input,
         "-filter_complex", `aformat=channel_layouts=mono,aresample=8000,showwavespic=s=${width}x${HEIGHT}:colors=white`,
         "-frames:v", "1", "-an", "-pix_fmt", "rgba", "-f", "rawvideo", output]);
       check();
@@ -68,6 +68,11 @@ export function createWaveformReader(signal) {
         try { return await nativeSamples(file); } catch { check(); }
       }
       return ffmpegSamples(file, duration);
+    },
+    async readWindow(file, start, duration) {
+      check();
+      if (!Number.isFinite(start) || start < 0 || !(duration > 0) || duration > 32) throw new Error("Invalid waveform window");
+      return ffmpegSamples(file, duration, start);
     },
     dispose() { signal?.removeEventListener("abort", terminate); terminate(); }
   };

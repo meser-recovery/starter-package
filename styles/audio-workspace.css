@@ -181,3 +181,12 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
   .daw-workspace .speaker-boundary { min-height: 36px; line-height: 36px; }
   .daw-workspace .speaker-dsp-field { min-height: 44px; }
 }
+
+/* Armed tools keep their scope visible before committing a gesture. */
+.daw-workspace .speaker-selection button.edit-tool[aria-pressed="true"] { background: #176aba; color: white; box-shadow: inset 0 0 0 2px #082e50; }
+.daw-workspace[data-edit-tool="cut"] .speaker-waveform,
+.daw-workspace[data-edit-tool="silence"] .speaker-waveform { cursor: crosshair; }
+.daw-workspace[data-edit-tool="cut"] .speaker-selection-overlay { background: #cf633f55; border-color: #d85424; }
+.daw-workspace[data-edit-tool="silence"] .speaker-selection-overlay { background: #268d8955; border-color: #167d78; }
+
+.daw-workspace .processor-waveform-detail { position: absolute; top: 0; pointer-events: none; max-width: none; }

@@ -6,6 +6,8 @@ import math
 import struct
 import subprocess
 import wave
+from s09a_edit_modes_smoke import apply_selection
+
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -105,7 +107,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.get_by_text('Точное редактирование',exact=True).click()
         page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-selection-end').fill('2.8');page.locator('#speaker-editor-set-end').click()
-        page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');page.locator('#speaker-editor-add-silence').click()
+        page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');apply_selection(page, 'silence')
         edited=snapshot();
         page.locator('#source-session-results-speaker').click();page.locator('#source-session-results-announcement').click()
         assert page.locator('#speaker-editor').is_visible();unchanged(edited)
