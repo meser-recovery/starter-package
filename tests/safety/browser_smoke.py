@@ -2622,9 +2622,15 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         const playhead = scroll.querySelector('.processor-waveform-playhead');
         return Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 4")
+    # The old centered position can satisfy geometry before native seeking
+    # starts. Require the requested clock and rendered position as well.
     page.wait_for_function("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
+        const audio = document.getElementById('processor-source-audio');
         const playhead = scroll.querySelector('.processor-waveform-playhead');
-        return Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
+        const pps = scroll.querySelector('.processor-waveform').offsetWidth / 8;
+        return !audio.seeking && Math.abs(audio.currentTime - 4) < .01 &&
+            Math.abs(parseFloat(playhead.style.left) - 4 * pps) < 2 &&
+            Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
     followed_middle = page.evaluate("""() => {
         const scrolls = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
         const shared = document.getElementById('processor-source-scrollbar');

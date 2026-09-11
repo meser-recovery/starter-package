@@ -64,6 +64,10 @@ Worker IDs, and requires the same processing Worker for the no-pause fixture,
 its exact termination on cancel, and exactly one live replacement on retry.
 Initial lazy loading and all virtual-FS, result-byte and audio checks remain.
 This removes the debounce race without allowing processor leaks/recreation.
+A subsequent CI run caught the paused-seek assertion accepting the previously
+centered playhead before native seeking began. Its wait now also requires the
+requested 4s clock, completed seek and corresponding rendered source position;
+the 8px centering/2px synchronization limits are unchanged.
 
 Site contract, JS/Python syntax, strict HTML nesting, all 15 transport/waveform/
 detail units, gateway syntax and 80 gateway tests are required alongside the
