@@ -119,8 +119,18 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         wave_control=page.locator('.speaker-track .speaker-waveform').first
         scroll=page.locator('.speaker-track .speaker-waveform-scroll').first
         scroll.evaluate('e=>e.scrollLeft=e.clientWidth')
-        box=scroll.bounding_box();page.mouse.move(box['x']+20,box['y']+40);page.mouse.down();page.mouse.move(box['x']+70,box['y']+40);page.mouse.up()
-        assert float(page.locator('#speaker-editor-selection-end').input_value())>float(page.locator('#speaker-editor-selection-start').input_value())
+        # The sticky toolbar grows with meters. Target the visible waveform,
+        # not the toolbar covering its old document position.
+        scroll.evaluate("e=>e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})")
+        box=scroll.bounding_box(); y=box['y']+box['height']*.7
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+r.height*.7))}'), 'Sticky toolbar covers the mouse selection target'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+20,r.y+r.height*.7).closest(".speaker-region-handle,.speaker-boundary")}')
+        expected=scroll.evaluate('(e)=>{const pps=e.clientWidth/3*4;return [(e.scrollLeft+20)/pps,(e.scrollLeft+70)/pps]}')
+        page.mouse.move(box['x']+20,y);page.mouse.down();page.mouse.move(box['x']+70,y);page.mouse.up()
+        actual=[float(page.locator('#speaker-editor-selection-'+edge).input_value()) for edge in ('start','end')]
+        assert all(abs(a-b)<.000002 for a,b in zip(actual,expected)), (actual,expected)
+        assert page.locator('#speaker-editor-selection-start').is_visible()
+        unchanged(edited)
         wave_control.focus();page.keyboard.press('Shift+ArrowRight')
         assert page.locator('.speaker-selection-overlay').count()==1
         page.locator('#speaker-editor-zoom-fit').click()
