@@ -24,7 +24,7 @@
   background:var(--studio-accent); border-color:var(--studio-accent); color:var(--studio-bg); box-shadow:none;
 }
 .audio-studio input:focus-visible,.audio-studio button:focus-visible,.audio-studio a:focus-visible { outline:2px solid var(--studio-accent); outline-offset:2px; }
-.audio-studio :is(.archive-card,.workflow-card,.source-import,.archive-section,.archive-session,.archive-version,.archive-project,.processor-result,.speaker-result,.speaker-render,.archive-detail,.archive-list-item) {
+.audio-studio :is(.archive-card,.workflow-card,.source-import,.archive-section,.archive-session,.archive-version,.archive-project,.processor-preview,.speaker-result,.speaker-render,.archive-detail,.archive-list-item) {
   background:var(--studio-bg); color:var(--studio-text); border-color:var(--studio-line); border-radius:10px; box-shadow:none;
 }
 .audio-studio :is(.archive-eyebrow,.eyebrow,.archive-meta,.audio-help,.technical-details,.speaker-not-saved) { color:var(--studio-muted); }
@@ -105,9 +105,9 @@
 .audio-studio .daw-workspace .speaker-region-overlay--silence { background:#3a8c7d33;border-color:var(--studio-wave-alt); }
 .audio-studio .daw-workspace .speaker-region-handle::after { background:var(--studio-text); }
 .audio-studio .daw-workspace :is(.speaker-region-overlay.is-region-selected,.speaker-selection-overlay) { box-shadow:inset 0 0 0 1px var(--studio-accent); }
-.audio-studio .daw-workspace :is(.speaker-render,.speaker-result,.speaker-regions,.processor-result,.speaker-region-row,.processor-statistics>div) { background:var(--studio-bg);color:var(--studio-text);border-color:var(--studio-line); }
-.audio-studio .daw-workspace :is(.speaker-result,.processor-result) { padding:18px; }
-.audio-studio .daw-workspace :is(.speaker-result,.processor-result) audio { width:100%; }
+.audio-studio .daw-workspace :is(.speaker-render,.speaker-result,.speaker-regions,.processor-preview,.speaker-region-row,.processor-statistics>div) { background:var(--studio-bg);color:var(--studio-text);border-color:var(--studio-line); }
+.audio-studio .daw-workspace :is(.speaker-result,.processor-preview) { padding:18px; }
+.audio-studio .daw-workspace :is(.speaker-result,.processor-preview) audio { width:100%; }
 .audio-studio .daw-workspace .speaker-region-row input { background:var(--studio-panel); }
 .audio-studio dialog { background:var(--studio-bg);color:var(--studio-text);border:1px solid var(--studio-line);border-radius:12px; }
 .audio-studio .archive-management :is(article,section) { border-color:var(--studio-line); }

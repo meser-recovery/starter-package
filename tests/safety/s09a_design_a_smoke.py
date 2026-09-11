@@ -91,6 +91,37 @@ def check_design_a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor').evaluate('e=>window.scrollTo(0,e.getBoundingClientRect().top+scrollY-12)')
         if output: page.screenshot(path=str(output/'preview-a.png'))
         stop.click()
+        # The Announcement result uses .processor-preview, not .processor-result.
+        # Exercise a real rendered result so dark-theme text cannot disappear
+        # against the old light preview background unnoticed.
+        page.locator('#open-local-announcement').click()
+        if page.locator('#speaker-unsaved-discard').is_visible():
+            page.locator('#speaker-unsaved-discard').click()
+        page.locator('#processor-run').click()
+        page.wait_for_function('!document.getElementById("processor-result").hidden',timeout=60000)
+        for scheme in ('light','dark'):
+            page.emulate_media(color_scheme=scheme)
+            for width in (320,390,768,1440):
+                page.set_viewport_size({'width':width,'height':1000})
+                assert page.evaluate('document.documentElement.scrollWidth<=innerWidth'),(scheme,width)
+                assert page.locator('#announcement-processor-card .studio-transport-main').evaluate('e=>e.scrollWidth<=e.clientWidth')
+                contrast=page.locator('#processor-result').evaluate('''e=>{
+                    const luminance=color=>{
+                        const rgb=color.match(/[\\d.]+/g).slice(0,3).map(Number).map(v=>{
+                            v/=255;return v<=.04045?v/12.92:((v+.055)/1.055)**2.4;
+                        });return rgb[0]*.2126+rgb[1]*.7152+rgb[2]*.0722;
+                    };
+                    const bg=luminance(getComputedStyle(e).backgroundColor);
+                    return [...e.querySelectorAll('h3,#processor-result-time,#processor-mixed-count,#source-session-publish-reason')].map(node=>{
+                        const fg=luminance(getComputedStyle(node).color);
+                        return (Math.max(bg,fg)+.05)/(Math.min(bg,fg)+.05);
+                    });
+                }''')
+                assert len(contrast)==4 and min(contrast)>=4.5,(scheme,width,contrast)
+                if output:
+                    page.evaluate('document.activeElement?.blur();scrollTo(0,0)')
+                    page.screenshot(path=str(output/f'announcement-result-{scheme}-{width}.png'),full_page=True)
         assert not errors,errors
         print('Design A: PASS; DSP viewport/DOM/audio identity, real per-track silence/restoration, global cut skip, bounds stop, light/dark responsive.')
+        print('Design A result: PASS; real Announcement render, readable light/dark result text and transport at 320/390/768/1440.')
     finally: context.close()
