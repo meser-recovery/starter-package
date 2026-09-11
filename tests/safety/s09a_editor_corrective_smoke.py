@@ -105,7 +105,8 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         }""", wav)
         open_files('short'); ready(); retained()
         assert page.locator('.speaker-track').count() == 2
-        assert page.evaluate('correctiveNativeCalls') == 2
+        page.wait_for_function("!document.getElementById('processor-file').disabled", timeout=180000)
+        assert page.evaluate('correctiveNativeCalls') == 4  # two sources through the shared reader in each editor
         assert page.locator('#speaker-source-timeline span').count() > 0
         assert page.locator('#announcement-processor-card').is_hidden()
         # Explicit selection target and independent track monitoring, including
@@ -177,7 +178,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         open_files('formats'); ready(); retained()
         assert page.locator('.speaker-track').count()==3
         page.locator('#open-local-announcement').click(); page.locator('#speaker-unsaved-discard').click()
-        page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform img').length===3", timeout=180000)
+        page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform canvas:not([hidden])').length===3", timeout=180000)
         from s09a_selection_tools_smoke import check_announcement_selection
         check_announcement_selection(page)
         page.locator('#processor-run').click()
@@ -244,7 +245,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         page.set_viewport_size({'width':1280,'height':900})
         page.locator('#open-local-announcement').click()
         page.locator('#speaker-unsaved-discard').click()
-        page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform img').length===2", timeout=180000)
+        page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform canvas:not([hidden])').length===2", timeout=180000)
         check_word_detail(page, 'announcement', output)
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900})

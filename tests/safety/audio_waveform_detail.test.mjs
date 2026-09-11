@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createWaveformDetail } from '../../scripts/audio-waveform-detail.mjs';
 const wait = () => new Promise(resolve => setTimeout(resolve, 220));
-const canvas = () => ({ style: {}, dataset: {}, isConnected: true, getContext: () => ({ fillRect() {} }) });
+const canvas = () => ({ style: {}, dataset: {}, isConnected: true, getContext: () => ({ fillRect() {}, beginPath() {}, moveTo() {}, lineTo() {}, closePath() {}, fill() {} }) });
 test('detail decoding uses a bounded source window and reuses it across panning', async () => {
   const calls = [], file = {}, c = canvas();
   const detail = createWaveformDetail({ makeReader: () => ({
@@ -11,7 +11,7 @@ test('detail decoding uses a bounded source window and reuses it across panning'
   detail.draw(c, file, 3747, 1000, 80000, 800, 100, 17);
   await wait();
   assert.deepEqual(calls, [[file, 80, 32]]);
-  assert.equal(c.dataset.waveDetail, 'ready'); assert.equal(c.width, 800);
+  assert.equal(c.dataset.waveDetail, 'ready'); assert.ok(c.width >= 800 && c.width <= 1440);
   detail.draw(c, file, 3747, 1000, 81000, 800, 100, 17);
   await wait(); assert.equal(calls.length, 1);
   detail.clear();

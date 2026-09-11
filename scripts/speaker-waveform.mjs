@@ -5,10 +5,10 @@ const WIDTH = 65536;
 const HEIGHT = 100;
 import { waveformImageSpec } from './audio-waveform-image.mjs';
 
-export function createWaveformReader(signal) {
-  let engine;
+export function createWaveformReader(signal, sharedEngine = null) {
+  let engine = sharedEngine;
   const check = () => { if (signal?.aborted) throw new DOMException("cancelled", "AbortError"); };
-  const terminate = () => { engine?.terminate(); engine = null; };
+  const terminate = () => { if (!sharedEngine) engine?.terminate(); engine = null; };
   signal?.addEventListener("abort", terminate, { once: true });
 
   async function nativeSamples(file) {

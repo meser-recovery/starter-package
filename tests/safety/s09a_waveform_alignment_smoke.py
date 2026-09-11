@@ -85,7 +85,7 @@ def check_waveform_alignment(browser, base_url, screenshot_dir=None):
                 pps=scroll.evaluate('e=>e.firstElementChild.getBoundingClientRect().width/41.3')
                 # Avoid the rounded control width as the time clock.
                 if mode=='speaker':
-                    pps=page.locator('#speaker-editor-zoom').evaluate('e=>Number(e.value)*document.querySelector(".speaker-waveform-scroll").clientWidth/41.3')
+                    pps=page.locator('#speaker-editor-zoom').evaluate('e=>parseFloat(e.getAttribute("aria-valuetext"))')
                 else:
                     pps=page.locator('#processor-source-zoom-range').get_attribute('aria-valuetext')
                     pps=float(pps.split()[0].replace(',','.')) if pps else scroll.evaluate('e=>e.firstElementChild.getBoundingClientRect().width/41.3')
@@ -94,13 +94,12 @@ def check_waveform_alignment(browser, base_url, screenshot_dir=None):
                 else: page.wait_for_function('(c)=>c.dataset.waveDetail==="overview"',arg=canvas.element_handle())
                 # Ready detail is retained during scroll. Wait for the scroll
                 # event's paint, not a previous viewport's already-ready flag.
-                page.wait_for_function('(c)=>c.hidden||Math.abs(parseFloat(c.style.left)-c.parentElement.parentElement.scrollLeft)<1',arg=canvas.element_handle())
+                page.wait_for_function('(c)=>!c.hidden && parseFloat(c.style.left)<=c.parentElement.parentElement.scrollLeft && parseFloat(c.style.left)+parseFloat(c.style.width)>=c.parentElement.parentElement.scrollLeft+c.parentElement.parentElement.clientWidth',arg=canvas.element_handle())
                 pixels=track.evaluate('''(row,{pps,mode})=>{
-                    const c=row.querySelector('canvas'), image=row.querySelector('img');
-                    const detail=c.dataset.waveDetail==='ready', useCanvas=mode==='speaker'||detail;
+                    const c=row.querySelector('canvas');
+                    const detail=c.dataset.waveDetail==='ready';
                     let source=c,left=parseFloat(c.style.left)||0,pixelRate=pps*devicePixelRatio,color;
-                    if(!useCanvas){source=document.createElement('canvas');source.width=image.naturalWidth;source.height=image.naturalHeight;source.getContext('2d').drawImage(image,0,0);left=0;pixelRate=source.width/(image.getBoundingClientRect().width/pps);color='#74b2e6';}
-                    else{const s=getComputedStyle(c);color=s.getPropertyValue('--track-wave').trim()||s.getPropertyValue('--studio-wave').trim()||'#74b2e6';}
+                    const style=getComputedStyle(c);color=style.getPropertyValue('--track-wave').trim()||style.getPropertyValue('--studio-wave').trim()||'#74b2e6';
                     const probe=document.createElement('canvas'),ctx=probe.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,1,1);const rgb=ctx.getImageData(0,0,1,1).data;
                     const data=source.getContext('2d').getImageData(0,0,source.width,source.height).data;
                     let first=null,peak=0;

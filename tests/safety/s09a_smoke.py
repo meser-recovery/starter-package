@@ -125,7 +125,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         box=scroll.bounding_box(); y=box['y']+box['height']*.7
         assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+r.height*.7))}'), 'Sticky toolbar covers the mouse selection target'
         assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+20,r.y+r.height*.7).closest(".speaker-region-handle,.speaker-boundary")}')
-        expected=scroll.evaluate('(e)=>{const pps=e.clientWidth/3*4;return [(e.scrollLeft+20)/pps,(e.scrollLeft+70)/pps]}')
+        expected=scroll.evaluate('(e)=>{const pps=Math.min(1000,e.clientWidth/3*4);return [(e.scrollLeft+20)/pps,(e.scrollLeft+70)/pps]}')
         page.mouse.move(box['x']+20,y);page.mouse.down();page.mouse.move(box['x']+70,y);page.mouse.up()
         actual=[float(page.locator('#speaker-editor-selection-'+edge).input_value()) for edge in ('start','end')]
         assert all(abs(a-b)<.000002 for a,b in zip(actual,expected)), (actual,expected)

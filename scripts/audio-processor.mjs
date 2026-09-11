@@ -1,5 +1,6 @@
 import { createWaveformDetail } from "./audio-waveform-detail.mjs";
-import { waveformImageSpec } from "./audio-waveform-image.mjs";
+import { createWaveformReader } from "./speaker-waveform.mjs";
+import { drawWaveformViewport } from "./audio-waveform-view.mjs";
 import { renderSourceTimeline } from "./audio-timeline.mjs";
 import { createAudioMeters } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
@@ -22,10 +23,9 @@ const WAVEFORM_PIXELS_PER_SECOND = 64;
 const WAVEFORM_MIN_WIDTH = 4096;
 const WAVEFORM_MAX_WIDTH = 65536;
 const OUTPUT_PATH = "processor-output.mp3";
-const RESULT_WAVEFORM_PATH = "processor-result-waveform.png";
 const PROGRESS_PATH = "processor-analysis.txt";
 const FILTER_PATH = "processor-filter.txt";
-const TEMP_PATHS = [OUTPUT_PATH, RESULT_WAVEFORM_PATH, PROGRESS_PATH, FILTER_PATH];
+const TEMP_PATHS = [OUTPUT_PATH, PROGRESS_PATH, FILTER_PATH];
 const UNSUPPORTED = "Обработка аудио не поддерживается в этом браузере.";
 const CANCELLED = "Обработка отменена.";
 const DURATION_MISMATCH = "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.";
@@ -171,7 +171,8 @@ let tracks = [];
 let sourceSelection = null, sourceSelectionEpoch = 0;
 let nextTrackId = 1;
 let resultURL = null;
-let resultWaveformURL = null;
+let resultWaveformSamples = null;
+let resultWaveformFile = null;
 let engine = null;
 let active = null;
 let playheadFrame = 0;
@@ -189,7 +190,6 @@ let sourceZoomInitialized = false;
 let resultPixelsPerSecond = 2;
 let resultDuration = NaN;
 let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
-let resultWaveformDuration = 0;
 let resultZoomMinimum = 2;
 let resultZoomMaximum = 2;
 const sourceTransport = createAudioTransport({
@@ -276,9 +276,8 @@ function clearResult() {
   cancelAnimationFrame(resultPlayheadFrame);
   clearAudio(resultAudio);
   if (resultURL) URL.revokeObjectURL(resultURL);
-  if (resultWaveformURL) URL.revokeObjectURL(resultWaveformURL);
   resultURL = null;
-  resultWaveformURL = null;
+  resultWaveformSamples = null; resultWaveformFile = null;
   resultDuration = NaN;
   resultWaveformWidth = WAVEFORM_MIN_WIDTH;
   const resultControl = byId("result-waveform-control");
@@ -313,7 +312,7 @@ function setBusy(busy) {
   if (!busy) {
     for (const resolve of idleWaiters) resolve(); idleWaiters.clear();
     updateSourceZoomRange();
-    if (resultWaveformURL) updateResultZoomRange();
+    if (resultWaveformSamples) updateResultZoomRange();
   }
   sourceTransport.refresh();
 }
@@ -362,11 +361,6 @@ function updateSelectionSummary() {
 function sourceDisplayWidth(track) {
   if (!sourceZoomInitialized || !Number.isFinite(sourceTimelineDuration) || sourceTimelineDuration <= 0) return track.waveformWidth;
   return Math.max(1, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond));
-}
-
-function sourceImageDisplayWidth(track) {
-  if (!sourceZoomInitialized || !Number.isFinite(track.duration) || track.duration <= 0) return track.waveformWidth;
-  return Math.max(1, (track.waveformDuration || track.duration) * sourcePixelsPerSecond);
 }
 
 function maximumSourceLeftTime() {
@@ -575,9 +569,13 @@ function redrawSourceDetails() {
   for (const track of tracks) {
     const wave = byId("file-info").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
     const scroll = wave?.parentElement, canvas = wave?.querySelector("canvas");
-    if (!canvas || !scroll || !track.waveformURL) continue;
-    canvas.hidden = !sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
-      scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.waveformWidth / (track.waveformDuration || track.duration));
+    if (!canvas || !scroll || !track.samples) continue;
+    canvas.hidden = false;
+    if (!sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
+      scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.samples.sampleRate)) {
+      drawWaveformViewport(canvas, track.samples, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
+        scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT);
+    }
   }
 }
 
@@ -591,15 +589,7 @@ function waveformControl(track) {
   control.setAttribute("aria-label", `Форма сигнала дорожки ${track.ordinal}: ${track.file.name}`);
   control.setAttribute("aria-describedby", "processor-source-time");
   control.addEventListener("keydown", navigateWaveform);
-  if (track.waveformURL) {
-    const image = document.createElement("img");
-    image.src = track.waveformURL;
-    image.alt = "";
-    image.width = track.waveformWidth;
-    image.height = WAVEFORM_HEIGHT;
-    image.style.width = `${sourceImageDisplayWidth(track)}px`;
-    control.append(image);
-  } else {
+  if (!track.samples) {
     const message = document.createElement("span");
     message.className = "processor-waveform-status";
     message.textContent = track.loading ? "Подготовка формы сигнала…" :
@@ -864,8 +854,6 @@ function setSourceZoom(value, anchorTime) {
     const control = byId("source").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
     if (control) {
       control.style.width = `${sourceDisplayWidth(track)}px`;
-      const image = control.querySelector("img");
-      if (image) image.style.width = `${sourceImageDisplayWidth(track)}px`;
     }
   }
   updateSourceNavigation();
@@ -881,6 +869,7 @@ function initializeSourceZoom() {
 }
 
 byId("source-zoom-range").addEventListener("input", (event) => {
+  sourceZoomBounds();
   const ratio = Number(event.currentTarget.value) / 100;
   setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio);
 });
@@ -959,9 +948,8 @@ function syncInputFiles() {
 function revokeTrackURLs(track) {
   sourceDetail.clear();
   if (track.sourceURL) URL.revokeObjectURL(track.sourceURL);
-  if (track.waveformURL) URL.revokeObjectURL(track.waveformURL);
   track.sourceURL = null;
-  track.waveformURL = null;
+  track.samples = null;
 }
 
 function clearTracks(resetInput = true) {
@@ -1101,8 +1089,6 @@ function readTrackDuration(track, operation) {
 }
 
 async function buildWaveform(track, currentEngine, operation) {
-  const inputPath = `processor-waveform-input-${track.id}`;
-  const outputPath = `processor-waveform-${track.id}.png`;
   track.loading = true;
   track.waveformFailed = false;
   renderTracks();
@@ -1110,28 +1096,15 @@ async function buildWaveform(track, currentEngine, operation) {
     try { track.duration = await readTrackDuration(track, operation); } catch { /* Native playback may still be usable. */ }
     track.waveformWidth = waveformWidth(track.duration);
     renderTracks();
-    const bytes = new Uint8Array(await operation.wait(track.file.arrayBuffer()));
-    await operation.wait(currentEngine.writeFile(inputPath, bytes));
-    const spec = waveformImageSpec(track.duration, track.waveformWidth, Math.round(WAVEFORM_HEIGHT * .92), '#74b2e6');
-    track.waveformDuration = spec.duration;
-    const filter = `[0:a:0]${spec.filter},pad=${track.waveformWidth}:${WAVEFORM_HEIGHT}:0:(oh-ih)/2[v]`;
-    const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", inputPath,
-      "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", outputPath]));
-    if (code !== 0) throw new Error("waveform");
-    const image = await operation.wait(currentEngine.readFile(outputPath));
-    if (!image.byteLength) throw new Error("waveform");
-    if (track.waveformURL) URL.revokeObjectURL(track.waveformURL);
-    track.waveformURL = URL.createObjectURL(new Blob([image], { type: "image/png" }));
+    const reader = createWaveformReader(undefined, currentEngine);
+    try { track.samples = await operation.wait(reader.read(track.file, track.duration)); }
+    finally { reader.dispose(); }
+    track.waveformWidth = track.samples.length;
   } catch (failure) {
     if (active !== operation) throw failure;
     track.waveformFailed = true;
   } finally {
     track.loading = false;
-    if (currentEngine?.loaded && engine === currentEngine) {
-      for (const path of [inputPath, outputPath]) {
-        try { await operation.wait(currentEngine.deleteFile(path)); } catch { /* Absent or terminated. */ }
-      }
-    }
     if (tracks.includes(track)) renderTracks();
   }
 }
@@ -1148,7 +1121,7 @@ async function generateWaveforms(candidates = tracks) {
     if (active === operation) status.textContent = selectionStatus();
   } catch {
     if (active === operation) {
-      for (const track of candidates.filter((item) => !item.waveformURL)) {
+      for (const track of candidates.filter((item) => !item.samples)) {
         track.loading = false;
         track.waveformFailed = true;
       }
@@ -1179,7 +1152,7 @@ function selectProcessorFiles(candidates, provenance = [], context = null) {
   status.textContent = error || "Выберите файлы и нажмите «Обработать».";
   if (files.length && !error && supported) {
     tracks = files.map((file, index) => ({
-      id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), waveformURL: null,
+      id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), samples: null,
       waveformWidth: WAVEFORM_MIN_WIDTH, waveformFailed: false, loading: false, duration: NaN, ordinal: 0,
       solo: false, muted: false, previewAudio: null, provenance: provenance[index] ? structuredClone(provenance[index]) : null
     }));
@@ -1242,18 +1215,23 @@ function updateResultZoomRange() {
 }
 
 function setResultZoom(value, anchorTime) {
-  if (!resultWaveformURL) return;
+  if (!resultWaveformSamples) return;
   const viewport = byId("result-waveform-scroll");
   resultZoomBounds();
   const centerTime = Number.isFinite(anchorTime) ? anchorTime :
     (viewport.scrollLeft + viewport.clientWidth / 2) / resultPixelsPerSecond;
   resultPixelsPerSecond = Math.max(resultZoomMinimum, Math.min(resultZoomMaximum, value));
   byId("result-waveform-control").style.width = `${resultDisplayWidth()}px`;
-  const image = byId("result-waveform-control").querySelector('img');
-  if (image) image.style.width = `${resultWaveformDuration * resultPixelsPerSecond}px`;
   viewport.scrollLeft = Math.max(0, centerTime * resultPixelsPerSecond - viewport.clientWidth / 2);
   updateResultZoomRange();
   updateResultPlayhead();
+  redrawResultWave();
+}
+
+function redrawResultWave() {
+  const scroll = byId("result-waveform-scroll"), canvas = byId("result-waveform-control").querySelector("canvas");
+  if (canvas && resultWaveformSamples) drawWaveformViewport(canvas, resultWaveformSamples, resultDuration,
+    resultPixelsPerSecond, scroll.scrollLeft, scroll.clientWidth, scroll.clientHeight || WAVEFORM_HEIGHT);
 }
 
 function updateResultPlayhead() {
@@ -1282,6 +1260,7 @@ function seekResult(seconds) {
 const resultScroll = byId("result-waveform-scroll");
 const resultControl = byId("result-waveform-control");
 installPan(resultScroll);
+resultScroll.addEventListener("scroll", redrawResultWave);
 resultScroll.addEventListener("click", (event) => {
   if (Date.now() - Number(resultScroll.dataset.dragEnded || 0) < 150) return;
   const box = resultScroll.getBoundingClientRect();
@@ -1309,20 +1288,11 @@ async function buildResultWaveform(currentEngine, operation, duration) {
   try {
     resultDuration = duration;
     resultWaveformWidth = waveformWidth(duration);
-    const spec = waveformImageSpec(duration, resultWaveformWidth, Math.round(WAVEFORM_HEIGHT * .92), '#74b2e6');
-    resultWaveformDuration = spec.duration;
-    const filter = `[0:a:0]${spec.filter},pad=${resultWaveformWidth}:${WAVEFORM_HEIGHT}:0:(oh-ih)/2[v]`;
-    const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", OUTPUT_PATH,
-      "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", RESULT_WAVEFORM_PATH]));
-    if (code !== 0) throw new Error("waveform");
-    const image = await operation.wait(currentEngine.readFile(RESULT_WAVEFORM_PATH));
-    if (!image.byteLength) throw new Error("waveform");
-    resultWaveformURL = URL.createObjectURL(new Blob([image], { type: "image/png" }));
-    const element = document.createElement("img");
-    element.src = resultWaveformURL;
-    element.alt = "";
-    element.width = resultWaveformWidth;
-    element.height = WAVEFORM_HEIGHT;
+    const reader = createWaveformReader(undefined, currentEngine);
+    try { resultWaveformSamples = await operation.wait(reader.read(resultWaveformFile, duration)); }
+    finally { reader.dispose(); }
+    const element = document.createElement("canvas");
+    element.className = "processor-waveform-detail";
     const playhead = document.createElement("span");
     playhead.className = "processor-waveform-playhead";
     playhead.setAttribute("aria-hidden", "true");
@@ -1336,15 +1306,12 @@ async function buildResultWaveform(currentEngine, operation, duration) {
     resultScroll.hidden = true;
     waveformStatus.textContent = "Не удалось построить форму сигнала.";
     waveformStatus.hidden = false;
-  } finally {
-    if (currentEngine?.loaded && engine === currentEngine) {
-      try { await operation.wait(currentEngine.deleteFile(RESULT_WAVEFORM_PATH)); } catch { /* Absent or terminated. */ }
-    }
   }
 }
 
 async function presentResult({ blob, mediaType, filename, originalDuration, intervals, ranges, multiple, mode }, currentEngine, operation) {
   resultURL = URL.createObjectURL(blob);
+  resultWaveformFile = new File([blob], "result.mp3", { type: "audio/mpeg" });
   resultAudio.src = resultURL;
   const processedDuration = await waitForMetadata(resultAudio, operation);
   result.hidden = false;
@@ -1489,7 +1456,7 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted && tracks.length) {
     for (const track of tracks) {
       track.sourceURL = URL.createObjectURL(track.file);
-      track.waveformURL = null;
+      track.samples = null;
       track.waveformFailed = false;
       track.previewAudio = null;
     }
@@ -1500,11 +1467,11 @@ window.addEventListener("pageshow", (event) => {
 });
 window.addEventListener("resize", () => {
   if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
-  if (resultWaveformURL) setResultZoom(resultPixelsPerSecond);
+  if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond);
 });
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
-  if (resultWaveformURL) setResultZoom(resultPixelsPerSecond);
+  if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond);
 });
 status.textContent = supported ? "Выберите файлы и нажмите «Обработать»." : UNSUPPORTED;
 setBusy(false);

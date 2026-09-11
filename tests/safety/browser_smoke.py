@@ -1823,7 +1823,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert candidate["excluded"]["tone"] < candidate["included"]["tone"] * .02, candidate
         assert candidate["included"]["tone"] > 1e-5 and candidate["firstLater"]["tone"] > 1e-5, candidate
         result_canvas = page.locator("#speaker-editor-result-waveform canvas")
-        assert result_canvas.get_attribute("data-used-width") == str(result_canvas.evaluate("canvas => canvas.width"))
+        # The bitmap includes bounded offscreen guard tiles; source duration
+        # maps to the CSS timeline, not to those extra physical pixels.
+        assert result_canvas.evaluate("""c => Math.abs(Number(c.dataset.usedWidth) - c.parentElement.getBoundingClientRect().width) < 1 &&
+            Math.abs(c.width - c.getBoundingClientRect().width * devicePixelRatio) < 2 &&
+            c.width <= (c.parentElement.parentElement.clientWidth + 640) * devicePixelRatio""")
         assert abs(float(result_canvas.get_attribute("data-timeline-duration")) - candidate["duration"]) < .08
         # An unchanged canonical save only rebinds revisions and retains the exact local bytes/result.
         page.locator("#speaker-editor-save").click()
@@ -2312,7 +2316,7 @@ def wait_waveforms(page, count: int, failures: int = 0) -> None:
         return
     page.wait_for_function(
         """values => document.querySelectorAll('.processor-track').length === values.count &&
-            document.querySelectorAll('.processor-track .processor-waveform img').length === values.count - values.failures &&
+            document.querySelectorAll('.processor-track .processor-waveform canvas:not([hidden])').length === values.count - values.failures &&
             document.querySelectorAll('.processor-track .processor-waveform-status').length === values.failures""",
         arg={"count": count, "failures": failures}, timeout=30000,
     )
@@ -2460,22 +2464,18 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         assert page.locator("#processor-pause-label").inner_text() == "Сокращено общих длинных пауз"
         assert page.locator("#processor-mixed-count").inner_text() == f"Дорожек сведено: {tracks}"
         assert page.locator("#processor-result-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
-        assert page.locator("#processor-result-waveform-control img").count() == 1
+        assert page.locator("#processor-result-waveform-control canvas").count() == 1
 
     select_tracks([track_a])
     capture_state("mix-one-selected")
     select_tracks([track_a, track_b])
-    assert page.locator(".processor-track .processor-waveform img").count() == 2
+    assert page.locator(".processor-track .processor-waveform canvas:not([hidden])").count() == 2
     assert page.locator("#processor-track-switcher, .processor-waveform-detail:not(canvas), #processor-file-info details").count() == 0
     assert page.get_by_text("Solo и Mute влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
     assert page.locator("#processor-preview-audios .processor-preview-audio").count() == 1
     assert page.locator(".processor-track canvas.processor-waveform-detail").count() == 2
-    waveform_urls = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.src)")
-    assert len(set(waveform_urls)) == 2 and all(source.startswith("blob:") for source in waveform_urls), waveform_urls
-    waveform_blobs = page.evaluate("""async urls => Promise.all(urls.map(async source => {
-        const blob = await (await fetch(source)).blob(); return {size: blob.size, type: blob.type};
-    }))""", waveform_urls)
-    assert all(item["size"] > 0 and item["type"] == "image/png" for item in waveform_blobs), waveform_blobs
+    waveforms = page.locator(".processor-track .processor-waveform canvas:not([hidden])")
+    assert waveforms.evaluate_all("cs => cs.every(c => c.width > 0 && c.height > 0 && c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0))")
     page.set_viewport_size({"width": 390, "height": 900})
     scrolls = page.locator(".processor-track .processor-waveform-scroll")
     assert scrolls.count() == 2
@@ -2487,7 +2487,6 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert follow.get_attribute("aria-pressed") == "false"
     assert page.locator("#processor-source-scrollbar").count() == 1
     shared_thumb = page.locator("#processor-source-scrollbar-thumb")
-    native_widths = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.naturalWidth)")
     page.locator("#processor-source-zoom-fit").click()
     assert shared_navigation.is_visible()
     assert shared_scrollbar.get_attribute("role") == "scrollbar"
@@ -2502,7 +2501,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert shared_thumb.bounding_box()["width"] < shared_scrollbar.bounding_box()["width"] - 2
     after_widths = page.locator(".processor-track .processor-waveform").evaluate_all("items => items.map(item => item.offsetWidth)")
     assert after_widths[0] > before_widths[0] and abs(after_widths[0] - after_widths[1]) <= 1, (before_widths, after_widths)
-    assert all(width <= native + 1 for width, native in zip(after_widths, native_widths)), (after_widths, native_widths)
+    assert waveforms.evaluate_all("cs => cs.every(c => c.width <= (c.parentElement.parentElement.clientWidth + 640)*devicePixelRatio)")
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
     assert scrolls.nth(0).evaluate("element => element.scrollWidth > element.clientWidth")
     page.wait_for_timeout(50)
@@ -2770,14 +2769,14 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert page.locator(".processor-preview-audio").evaluate("audio => audio.paused")
     print("Synchronized preview passed: compact tracks, shared zoom/scroll/playheads, drag-vs-click seeking, native transport sync, drift correction and Solo/Mute precedence.")
 
-    # Removing a track revokes both of its URLs and leaves a real single-track processor.
+    # Removing a track revokes its media URL; waveform peaks have no Blob URL.
     revoked_before = set(page.evaluate("window.processorProbe.revoked"))
     page.locator(".processor-track").nth(1).get_by_role("button", name=re.compile("Удалить дорожку")).click()
     assert page.locator(".processor-track").count() == 1
     assert page.locator("#processor-selection-summary").inner_text().startswith("Выбрано дорожек: 1 ·")
     assert page.locator("#processor-file").evaluate("input => input.files.length") == 1
     newly_revoked = set(page.evaluate("window.processorProbe.revoked")) - revoked_before
-    assert len(newly_revoked) == 2, newly_revoked
+    assert len(newly_revoked) == 1, newly_revoked
     if screenshot_dir:
         capture_state("track-removed")
     run_selected()
@@ -2944,9 +2943,9 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert probe["files"] == {}, probe["files"]
     live_urls = set(probe["urls"]) - set(probe["revoked"])
     visible_urls = set(page.evaluate("""() => Array.from(document.querySelectorAll(
-        '#processor-source-audio, #processor-result-audio, .processor-preview-audio, .processor-track .processor-waveform img, #processor-result-waveform-control img'))
+        '#processor-source-audio, #processor-result-audio, .processor-preview-audio'))
         .map(element => element.src)"""))
-    assert visible_urls.issubset(live_urls) and len(live_urls) == 6, live_urls
+    assert visible_urls.issubset(live_urls) and len(live_urls) == 3, live_urls
     select_tracks([])
     assert page.locator("#processor-run").is_disabled()
     probe = page.evaluate("window.processorProbe")
@@ -3098,28 +3097,18 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
 
         page.locator("#processor-file").set_input_files(primary)
         wait_waveforms(page, 1)
-        waveform = page.locator(".processor-track .processor-waveform img")
-        waveform_info = waveform.evaluate("""async image => {
-            await image.decode();
-            const blob = await (await fetch(image.src)).blob();
-            const bytes = new Uint8Array(await blob.arrayBuffer());
-            return {size: blob.size, type: blob.type, width: image.naturalWidth, height: image.naturalHeight,
-                signature: Array.from(bytes.slice(0, 8))};
-        }""")
-        assert waveform_info["size"] > 0 and waveform_info["type"] == "image/png", waveform_info
-        assert waveform_info["width"] == 4096 and waveform_info["height"] == 100, waveform_info
-        assert waveform_info["signature"] == [137, 80, 78, 71, 13, 10, 26, 10], waveform_info
+        waveform = page.locator(".processor-track .processor-waveform canvas:not([hidden])")
+        waveform_info = waveform.evaluate("""c => ({width:c.width,height:c.height,
+            css:c.getBoundingClientRect().width,dpr:devicePixelRatio,
+            painted:c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)})""")
+        assert waveform_info['painted'] and abs(waveform_info['width']-waveform_info['css']*waveform_info['dpr'])<=2, waveform_info
         assert page.locator(".processor-track .processor-waveform").count() == 1
         assert page.locator('.processor-track button[data-track-action="solo"]').get_attribute("aria-pressed") == "false"
         assert page.locator('.processor-track button[data-track-action="mute"]').get_attribute("aria-pressed") == "false"
         assert page.evaluate("window.processorProbe.workers") == 2
         waveform_messages = page.evaluate("window.processorProbe.messages")
-        assert any(message["type"] == "EXEC" and any("showwavespic=" in arg for arg in message["args"]) for message in waveform_messages), waveform_messages
-        waveform_deletes = [message["path"] for message in waveform_messages if message["type"] == "DELETE_FILE"]
-        assert any(path.startswith("processor-waveform-input-") for path in waveform_deletes), waveform_deletes
-        assert any(path.startswith("processor-waveform-") and path.endswith(".png") for path in waveform_deletes), waveform_deletes
         assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
-        print(f"Real waveform passed: WAV -> {waveform_info['width']}x{waveform_info['height']} PNG ({waveform_info['size']} bytes); Blob rendered and waveform FS files deleted.")
+        print("Real source waveform passed: shared native peak reader, Retina canvas and empty waveform FS.")
 
         page.locator("#processor-save-incoming").click()
         assert page.locator("#source-session-login-dialog").is_visible()
@@ -3141,17 +3130,14 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert abs(source_duration - 7) < .05 and abs(output_duration - 4.35) < .12 and count == 1
         assert abs(float(page.locator("#processor-removed-duration").get_attribute("data-value")) - 2.65) < .12
         assert page.locator("#processor-result-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
-        assert page.locator("#processor-result-waveform-control img").count() == 1
-        result_waveform_info = page.locator("#processor-result-waveform-control img").evaluate("""async image => {
-            await image.decode(); const blob = await (await fetch(image.src)).blob();
-            return {size: blob.size, type: blob.type, width: image.naturalWidth, height: image.naturalHeight};
-        }""")
-        assert result_waveform_info["size"] > 0 and result_waveform_info["type"] == "image/png", result_waveform_info
-        assert result_waveform_info["width"] == 4096 and result_waveform_info["height"] == 100, result_waveform_info
+        assert page.locator("#processor-result-waveform-control canvas").count() == 1
+        result_waveform_info = page.locator("#processor-result-waveform-control canvas").evaluate("""c => ({width:c.width,height:c.height,
+            painted:c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)})""")
+        assert result_waveform_info['width']>0 and result_waveform_info['height']>0 and result_waveform_info['painted'], result_waveform_info
         source_time_before_result = page.locator("#processor-source-audio").evaluate("audio => { audio.currentTime = 1; return audio.currentTime; }")
         source_width_before_result_zoom = page.locator(".processor-track .processor-waveform").evaluate("item => item.offsetWidth")
         page.locator("#processor-result-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-        assert page.locator("#processor-result-waveform-control").evaluate("item => item.offsetWidth <= item.querySelector('img').naturalWidth")
+        assert page.locator("#processor-result-waveform-control").evaluate("item => item.querySelector('canvas').width <= (item.parentElement.clientWidth+640)*devicePixelRatio")
         assert page.locator(".processor-track .processor-waveform").evaluate("item => item.offsetWidth") == source_width_before_result_zoom
         result_waveform = page.locator("#processor-result-waveform-control")
         # At the new 4096px native envelope, 90px is less than 0.2s.
@@ -3190,9 +3176,9 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-source-follow").click()
         page.locator("#processor-source-zoom-range").evaluate(
             "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-        # Force actual detail decoding, so engine-reuse checks cannot pass
-        # only because its debounced worker has not started on a fast runner.
-        page.wait_for_function("document.querySelector('.processor-waveform-detail').dataset.waveDetail === 'ready'", timeout=60000)
+        # The shared 65536-bin overview already exceeds the pixel rate of this
+        # seven-second file. Zoom must retain it without spawning a detail worker.
+        page.wait_for_function("document.querySelector('.processor-waveform-detail').dataset.waveDetail === 'overview'", timeout=60000)
         source_rail = page.locator("#processor-source-scrollbar").bounding_box()
         page.mouse.click(source_rail["x"] + source_rail["width"] * .65, source_rail["y"] + source_rail["height"] / 2)
         result_independent_after = page.evaluate("""() => ({
@@ -3242,7 +3228,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         for phase in ("Подготовка формы сигнала…", "Подготовка обработчика…", "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово."):
             assert phase in probe["phases"], probe
         assert any("/core/ffmpeg-core.wasm" in request_url for method, request_url, _ in requests if method == "GET")
-        for path in ("processor-input-0", "processor-output.mp3", "processor-result-waveform.png", "processor-analysis.txt", "processor-filter.txt"):
+        for path in ("processor-input-0", "processor-output.mp3", "processor-analysis.txt", "processor-filter.txt"):
             assert any(message["type"] == "DELETE_FILE" and message["path"] == path for message in probe["messages"]), probe
         print(f"Real FFmpeg fixture passed: input={source_duration:.6f}s output={output_duration:.6f}s shortened={count}; MP3={result_info['size']} bytes; short pause preserved.")
         page.evaluate("document.activeElement.blur(); window.scrollTo(0, 0)")
@@ -3256,15 +3242,15 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
                 assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (selector, box)
             if screenshot_dir:
                 page.screenshot(path=str(screenshot_dir / f"processor-result-{width}.png"), full_page=True)
-        # Fail only waveform Blob publication after real FFmpeg generation; processing must remain available.
+        # Fail both shared waveform reader paths once; source/result audio must remain usable.
         page.evaluate("""() => {
-            const original = URL.createObjectURL;
-            URL.createObjectURL = blob => {
-                if (blob.type === 'image/png') {
-                    URL.createObjectURL = original;
-                    throw new Error('one-shot waveform preview failure');
+            const original=File.prototype.arrayBuffer;let failures=0;
+            File.prototype.arrayBuffer=function(){
+                if(this.name==='fixture.wav'){
+                    if(++failures===2)File.prototype.arrayBuffer=original;
+                    return Promise.reject(new Error('one-shot waveform read failure'));
                 }
-                return original(blob);
+                return original.call(this);
             };
         }""")
         page.locator("#processor-file").set_input_files(primary)
@@ -3272,13 +3258,13 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.get_by_text("Не удалось построить форму сигнала.", exact=True).count() == 1
         assert page.locator("#processor-source-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
         page.evaluate("""() => {
-            const original = URL.createObjectURL;
-            URL.createObjectURL = blob => {
-                if (blob.type === 'image/png') {
-                    URL.createObjectURL = original;
-                    throw new Error('one-shot result waveform preview failure');
+            const original=File.prototype.arrayBuffer;let failures=0;
+            File.prototype.arrayBuffer=function(){
+                if(this.name==='result.mp3'){
+                    if(++failures===2)File.prototype.arrayBuffer=original;
+                    return Promise.reject(new Error('one-shot waveform read failure'));
                 }
-                return original(blob);
+                return original.call(this);
             };
         }""")
         page.locator("#processor-run").click()
@@ -3616,6 +3602,8 @@ def main() -> int:
         check_design_a(browser, base_url, args.screenshot_dir)
         from s09a_waveform_alignment_smoke import check_waveform_alignment
         check_waveform_alignment(browser, base_url, args.screenshot_dir)
+        from s09a_waveform_consistency_smoke import check_waveform_consistency
+        check_waveform_consistency(browser, base_url, args.screenshot_dir)
         from s09a_waveform_motion_smoke import check_waveform_motion
         check_waveform_motion(browser, base_url, args.screenshot_dir)
         from s09a_meters_smoke import check_audio_meters

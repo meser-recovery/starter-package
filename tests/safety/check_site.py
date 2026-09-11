@@ -930,12 +930,11 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         "files.reduce((sum, file) => sum + file.size, 0)", "[...inputPaths, ...TEMP_PATHS]",
         "Выбрано дорожек:", "Дорожек сведено:", "Сокращено общих длинных пауз",
         "const WAVEFORM_PIXELS_PER_SECOND = 64;", "const WAVEFORM_MAX_WIDTH = 65536;",
-        "waveformImageSpec(", 'new Blob([image], { type: "image/png" })',
-        "processor-waveform-input-${track.id}", "processor-waveform-${track.id}.png",
+        "drawWaveformViewport(", "reader.read(track.file, track.duration)",
         "Не удалось построить форму сигнала.", "Подготовка формы сигнала…",
         "requestAnimationFrame", "ArrowLeft", "ArrowRight", 'event.key === "Home"', 'event.key === "End"',
-        "URL.revokeObjectURL(track.waveformURL)", "S · Solo", "M · Mute", "Удалить",
-        "processor-result-waveform.png", "resultWaveformURL", "processor-preview-audio",
+        "track.samples = null", "S · Solo", "M · Mute", "Удалить",
+        "resultWaveformSamples", "processor-preview-audio",
         "let sourceLeftVisibleTime = 0;", "let sourceViewportDuration = 0;",
         "sourceFollowEnabled", "source-scrollbar-thumb", "updateSourceScrollbar",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
@@ -947,7 +946,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if "navigation.hidden = displayWidth" in source or "navigation.hidden ? 0" in source:
         errors.append("Processor source scrollbar must remain visible while tracks are selected")
-    if re.search(r'^import\s+(?!\{\s*(?:sha256Hex|renderSourceTimeline|createAudioTransport|createAudioMeters|createWaveformDetail|waveformImageSpec)\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline|audio-transport|audio-meters|audio-waveform-detail|audio-waveform-image)\.mjs";)', source, re.M):
+    if re.search(r'^import\s+(?!\{\s*(?:sha256Hex|renderSourceTimeline|createAudioTransport|createAudioMeters|createWaveformDetail|createWaveformReader|drawWaveformViewport)\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline|audio-transport|audio-meters|audio-waveform-detail|speaker-waveform|audio-waveform-view)\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     page_source = page.read_text(encoding="utf-8")
     processor_markup = re.split(r'<section[^>]+id="announcement-processor-card"[^>]*>', page_source, maxsplit=1)[-1].split('</section>', 1)[0]

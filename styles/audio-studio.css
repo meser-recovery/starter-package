@@ -1,7 +1,6 @@
 /* Approved concept A. Shared only by the audio editor and archive surfaces. */
 .audio-studio {
   --studio-bg:#fbfcfd; --studio-panel:#f0f4f7; --studio-line:#d7e0e8;
-  --wave-bar-step:3;
   --studio-text:#21374a; --studio-muted:#52667a; --studio-accent:#126b80;
   --studio-wave:#3280af; --studio-wave-alt:#278c7c; --studio-selected:#dceef2;
   color:var(--studio-text); background:var(--studio-bg); font-family:system-ui,sans-serif;
@@ -225,3 +224,8 @@
 
 .audio-studio .daw-workspace .speaker-region-overlay.speaker-selection-overlay { box-shadow:none; }
 .audio-studio .daw-workspace .audio-meter:not(.audio-meter--master) { grid-template-columns:minmax(0,1fr) max-content; }
+
+/* All editors use the same continuous canvas envelope, including monitoring states. */
+.audio-studio .processor-track.is-muted canvas { opacity: .4; }
+.audio-studio .processor-track.is-solo-suppressed canvas { opacity: .55; }
+.audio-studio .processor-waveform canvas { border: 0; border-radius: 0; }

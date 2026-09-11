@@ -3,98 +3,74 @@ import assert from 'node:assert/strict';
 import { drawWaveformViewport } from '../../scripts/audio-waveform-view.mjs';
 import { waveformImageSpec } from '../../scripts/audio-waveform-image.mjs';
 function canvas() {
-  const fills = []; const context = { fillRect(...args) { fills.push(args); } };
-  return { style: {}, fills, getContext: () => context };
+  const points = []; let paints = 0;
+  const context = { fillRect() { paints++; }, beginPath() { points.length = 0; },
+    moveTo(...p) { points.push(p); }, lineTo(...p) { points.push(p); }, closePath() {}, fill() {} };
+  return { style: {}, points, get paints() { return paints; }, getContext: () => context };
 }
-test('FFmpeg columns retain their actual sample clock, including padded final windows', () => {
-  for (const duration of [32, 17.3, 9.37, 129.37, 3747]) {
+test('FFmpeg columns retain the actual padded sample clock', () => {
+  for (const duration of [32,17.3,9.37,129.37,3747]) {
     const width = Math.min(65536, Math.floor(duration * 4000));
-    const spec = waveformImageSpec(duration, width, 100);
-    assert.ok(spec.duration >= duration && spec.duration - duration < width / 48000);
-    assert.ok(Math.abs(spec.duration * spec.sampleRate - width) < 1e-8);
-    assert.match(spec.filter, /scale=lin:filter=peak:draw=full/);
-    const samples = new Float32Array(width); samples.sampleRate = spec.sampleRate;
-    const onset = Math.min(2.5, duration / 2);
-    samples[Math.floor(onset * spec.sampleRate)] = .25;
-    const c = canvas();
-    drawWaveformViewport(c, samples, duration, 1000, (onset - .1) * 1000, 200, 100, 2, 0);
-    const ink = c.fills.slice(1).filter(r => r[3] > 2);
-    assert.ok(ink.length > 0);
-    const drawnOnset = onset - .1 + ink[0][0] / 2000;
-    assert.ok(Math.abs(drawnOnset - onset) <= 1 / spec.sampleRate + .001);
-    assert.equal(Math.max(...ink.map(r => r[3])), 46);
+    const spec = waveformImageSpec(duration,width,100);
+    assert.ok(spec.duration >= duration && spec.duration-duration < width/48000);
+    assert.ok(Math.abs(spec.duration*spec.sampleRate-width)<1e-8);
+    assert.match(spec.filter,/scale=lin:filter=peak:draw=full/);
   }
 });
-test('visible bitmap is Retina sharp and bounded by viewport, not full recording width', () => {
-  const c = canvas();
-  drawWaveformViewport(c, new Float32Array(65536).fill(.5), 3600, 100, 100000, 900, 112, 2);
-  assert.equal(c.width, 1800); assert.equal(c.height, 224);
-  assert.equal(c.style.width, '900px'); assert.equal(c.style.left, '100000px');
-  assert.equal(c.fills.length, 1801);
+test('Retina bitmap stays bounded by viewport plus a fixed guard, even for hours', () => {
+  const c=canvas();drawWaveformViewport(c,new Float32Array(65536).fill(.5),3600,1000,100000,900,112,2);
+  assert.ok(c.width >= 1800 && c.width <= (900+640)*2);assert.equal(c.height,224);
+  assert.equal(c.width,parseFloat(c.style.width)*2);
 });
-test('zoomed-out bins retain narrow peaks rather than subsampling them away', () => {
-  const c = canvas(), samples = new Float32Array(1000); samples[79] = 1;
-  drawWaveformViewport(c, samples, 10, 1, 0, 10, 100, 1);
-  assert.deepEqual(c.fills[1], [0, 4, 1, 92]);
-  assert.equal(c.fills[2][3], 1);
+test('a narrow transient survives overview aggregation without spaced bars', () => {
+  const c=canvas(),s=new Float32Array(1000);s[79]=1;
+  drawWaveformViewport(c,s,10,1,0,10,100,1);
+  assert.ok(c.points.some(([x,y])=>x===.5&&y===4));
+  assert.ok(c.points.some(([x,y])=>x===1.5&&y===49.5));
 });
-test('panning and zoom use source time; shorter tracks do not stretch to longest track', () => {
-  const c = canvas(), samples = new Float32Array([0, .5, 1, 0]);
-  drawWaveformViewport(c, samples, 4, 10, 20, 40, 100, 1);
-  assert.deepEqual(c.fills[1], [0, 4, 1, 92]);
-  assert.equal(c.fills.length, 21); // only two seconds remain in this track
+test('panning retains the existing bitmap until its guard is exhausted', () => {
+  const c=canvas(),s=new Float32Array(64000).fill(.4);
+  drawWaveformViewport(c,s,32,1000,1000,800,100,2);
+  const origin=c.style.left,paints=c.paints;
+  for(const left of [1001,1007.5,1100,1190]) drawWaveformViewport(c,s,32,1000,left,800,100,2);
+  assert.equal(c.paints,paints);assert.equal(c.style.left,origin);
+  drawWaveformViewport(c,s,32,1000,1500,800,100,2);assert.equal(c.paints,paints+1);
 });
-
-test('detail window keeps absolute source time after seek, including a short final window', () => {
-  const c = canvas();
-  drawWaveformViewport(c, new Float32Array([0, 1, .5, 0]), .4, 1000, 80050, 500, 100, 2, 80);
-  // starts 50ms into the decoded 80.0–80.4s window, peak starts at 80.1s
-  assert.equal(c.fills[1][3], 1);
-  assert.equal(c.fills[102][3], 184);
-  assert.equal(c.fills.length, 701); // final 150ms beyond track end is blank
+test('source contour is identical across guard replacement and detail-window replacement', () => {
+  const s=Float32Array.from({length:64000},(_,i)=>((i*37)%101)/101);s.sampleRate=2000;
+  const c=canvas(),d=canvas();
+  drawWaveformViewport(c,s,32,300,2500,900,100,2);
+  const tail=s.slice(16000);tail.sampleRate=2000;
+  drawWaveformViewport(d,tail,24,300,2600,900,100,2,8);
+  const world=(v)=>new Map(v.points.map(([x,y])=>[x+parseFloat(v.style.left)*2+':'+(y<100?'upper':'lower'),y]));
+  const first=world(c),second=world(d);let compared=0;
+  for(const [x,y] of first) if(second.has(x)){assert.equal(second.get(x),y);compared++;}
+  assert.ok(compared>1000);
 });
-
-test('airy overview preserves a transient in the visual gap; word zoom remains pixel detailed', () => {
-  const previous=globalThis.getComputedStyle;
-  globalThis.getComputedStyle=()=>({getPropertyValue:key=>key==='--wave-bar-step'?'3':''});
+test('every zoom uses the same connected contour and never a bar-style threshold', () => {
+  const old=globalThis.getComputedStyle;
+  globalThis.getComputedStyle=()=>({getPropertyValue:k=>k==='--wave-bar-step'?'3':''});
   try {
-    const c=canvas(),samples=new Float32Array(1000);samples[299]=1;
-    drawWaveformViewport(c,samples,10,1,0,10,100,2);
-    assert.deepEqual(c.fills[1],[0,8,3,184]);
-    assert.equal(c.fills[2][0],6);
-    drawWaveformViewport(c,samples,10,1000,0,10,100,2);
-    assert.equal(c.fills.at(-1)[2],1);
-  } finally { if(previous)globalThis.getComputedStyle=previous;else delete globalThis.getComputedStyle; }
-});
-
-test('source columns and peaks stay identical through pixel and fractional panning', () => {
-  const previous = globalThis.getComputedStyle;
-  globalThis.getComputedStyle = () => ({ getPropertyValue: key => key === '--wave-bar-step' ? '3' : '' });
-  try {
-    const samples = Float32Array.from({length:64000}, (_, i) => ((i * 37) % 101) / 101);
-    samples.sampleRate = 2000;
-    for (const pps of [70, 300, 1000]) for (const dpr of [1, 2]) {
-      const full = canvas(); drawWaveformViewport(full, samples, 32, pps, 0, 900, 100, dpr);
-      const columns = new Map(full.fills.slice(1).map(([x,y,w,h]) => [x, [y,w,h]]));
-      for (const left of [1, 2, 7.5, 71.25]) {
-        const view = canvas(); drawWaveformViewport(view, samples, 32, pps, left, 400, 100, dpr);
-        const origin = Number.parseFloat(view.style.left) * dpr;
-        for (const [x,y,w,h] of view.fills.slice(1)) assert.deepEqual([y,w,h], columns.get(x + origin));
-      }
+    for(const pps of [1,80,159,160,300,1000])for(const dpr of [1,2]) {
+      const c=canvas();drawWaveformViewport(c,new Float32Array(65536).fill(.5),73,pps,0,500,100,dpr);
+      const upper=c.points.filter(([,y])=>y<50*dpr);
+      for(let i=2;i<upper.length-1;i++)assert.equal(upper[i][0]-upper[i-1][0],dpr);
+      assert.equal(Math.min(...upper.map(([,y])=>y))/dpr,27);
     }
-  } finally { if (previous) globalThis.getComputedStyle = previous; else delete globalThis.getComputedStyle; }
+  } finally {if(old)globalThis.getComputedStyle=old;else delete globalThis.getComputedStyle;}
+});
+test('a changed theme repaints a stationary waveform', () => {
+  const old=globalThis.getComputedStyle;let color='#123456';
+  globalThis.getComputedStyle=()=>({getPropertyValue:k=>k==='--track-wave'?color:''});
+  try {
+    const c=canvas(),s=new Float32Array(32).fill(.4);
+    drawWaveformViewport(c,s,32,10,0,100);const count=c.paints;
+    drawWaveformViewport(c,s,32,10,0,100);assert.equal(c.paints,count);
+    color='#654321';drawWaveformViewport(c,s,32,10,0,100);assert.equal(c.paints,count+1);
+  } finally {if(old)globalThis.getComputedStyle=old;else delete globalThis.getComputedStyle;}
 });
 
-test('stationary frames retain the bitmap; changing theme repaints it', () => {
-  const previous = globalThis.getComputedStyle; let color = '#123456';
-  globalThis.getComputedStyle = () => ({ getPropertyValue: key => key === '--track-wave' ? color : '' });
-  try {
-    const c = canvas(), samples = new Float32Array(32).fill(.4);
-    drawWaveformViewport(c, samples, 32, 10, 0, 100);
-    const fills = c.fills.length;
-    drawWaveformViewport(c, samples, 32, 10, 0, 100);
-    assert.equal(c.fills.length, fills);
-    color = '#654321'; drawWaveformViewport(c, samples, 32, 10, 0, 100);
-    assert.ok(c.fills.length > fills);
-  } finally { if (previous) globalThis.getComputedStyle = previous; else delete globalThis.getComputedStyle; }
+test('a shorter track ends at its source time instead of stretching into the shared timeline', () => {
+  const c=canvas();drawWaveformViewport(c,new Float32Array([.2,.5,1,.3]),4,10,20,400,100,2);
+  assert.equal(Math.max(...c.points.map(([x])=>x/2+parseFloat(c.style.left))),40);
 });

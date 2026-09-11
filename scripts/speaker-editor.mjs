@@ -737,7 +737,7 @@ function updateWaveWidths(anchor = false) {
   const selected = Number(byId("selection-start").value);
   const anchorTime = byId("selection-start").value ? selected : playhead > 0 ? playhead : center;
   byId("zoom").max = String(Math.max(8, Math.ceil(1000 / base)));
-  state.pixelsPerSecond = Math.max(.01, base * Number(byId("zoom").value));
+  state.pixelsPerSecond = Math.max(.01, Math.min(1000, base * Number(byId("zoom").value)));
   byId("zoom").setAttribute("aria-valuetext", `${state.pixelsPerSecond.toFixed(1)} пикселей в секунду`);
   const width = Math.max(first.clientWidth, Math.ceil(state.originalDuration * state.pixelsPerSecond));
   for (const control of byId("tracks").querySelectorAll(".speaker-waveform")) control.style.width = `${width}px`;

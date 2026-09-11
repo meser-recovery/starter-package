@@ -24,12 +24,15 @@ MEASURE = '''({prefix,rowSelector,seconds})=>new Promise(resolve=>{
     const starts=new Set(),begin=performance.now(),startTime=audio.currentTime;
     const snapshot=()=>{
         if(canvas.hidden){const signature=image.src+':'+image.getBoundingClientRect().width;if(imageSignature!==null&&signature!==imageSignature)imageChanges++;imageSignature=signature;return null;}
-        const ctx=canvas.getContext('2d'), width=canvas.width,height=canvas.height,hashes=new Uint32Array(width);
+        const ctx=canvas.getContext('2d'), height=canvas.height;
+        const origin=Math.round((parseFloat(canvas.style.left)||0)*devicePixelRatio);
+        const offset=Math.max(0,Math.round(scrolls[0].scrollLeft*devicePixelRatio)-origin);
+        const width=Math.min(canvas.width-offset,Math.floor(scrolls[0].clientWidth*devicePixelRatio)),hashes=new Uint32Array(width);
         for(const fraction of [.17,.26,.35,.43,.59,.71,.83]){
-            const data=ctx.getImageData(0,Math.floor(height*fraction),width,1).data;
+            const data=ctx.getImageData(offset,Math.floor(height*fraction),width,1).data;
             for(let x=0;x<width;x++)hashes[x]=(Math.imul(hashes[x],31)+(data[x*4]<<16)+(data[x*4+1]<<8)+data[x*4+2])>>>0;
         }
-        return {origin:Math.round((parseFloat(canvas.style.left)||0)*devicePixelRatio),hashes};
+        return {origin:origin+offset,hashes};
     };
     const frame=now=>{
         frames++;frameGaps.push(now-lastFrame);lastFrame=now;
@@ -73,7 +76,7 @@ def check_waveform_motion(browser, base_url, screenshot_dir=None):
             page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix,timeout=180000)
             if page.locator('#'+follow).get_attribute('aria-pressed')!='true':page.locator('#'+follow).click()
             rows=page.locator(row);scroll=rows.first.locator('.speaker-waveform-scroll' if mode=='speaker' else '.processor-waveform-scroll')
-            for label,target in [('fit',0),('airy',80),('medium',300),('detail',1000)]:
+            for label,target in [('fit',0),('overview',80),('medium',300),('detail',1000)]:
                 page.locator('#'+prefix+'-stop').click()
                 base=scroll.evaluate('e=>e.clientWidth/73.3')
                 value=(max(1,target/base) if mode=='speaker' else 100*math.log(max(base,target)/base)/math.log(1000/base))
@@ -104,10 +107,30 @@ def check_waveform_motion(browser, base_url, screenshot_dir=None):
                 page.wait_for_function('(id)=>document.getElementById(id).paused',arg=prefix)
                 before=scroll.evaluate('e=>e.scrollLeft');page.wait_for_timeout(150)
                 assert scroll.evaluate('e=>e.scrollLeft')==before,(mode,label,'moving after pause')
-                if output and label in ('airy','detail'):
+                if output and label in ('overview','detail'):
                     page.evaluate('scrollTo(0,0)')
                     page.screenshot(path=str(output/f'{mode}-{label}.png'),full_page=True)
                 print(f'Waveform motion {mode}/{label}: {report["fps"]:.1f} RAF fps, {report["updates"]}/{report["frames"]} scroll updates, {report["differences"]}/{report["comparisons"]} changed source pixels, detail windows={report["starts"]} PASS.',flush=True)
+            # Zoom in and back out while audio continues, including the detail
+            # decoder transition. Once ready, the contour must stay unchanged.
+            page.locator('#'+prefix+'-stop').click()
+            page.locator('#'+prefix).evaluate('a=>{a.playbackRate=1;a.currentTime=12}')
+            page.wait_for_function('(id)=>!document.getElementById(id).seeking',arg=prefix)
+            page.locator('#'+prefix+'-play').click()
+            for target in (80,1000,300,80):
+                base=scroll.evaluate('e=>e.clientWidth/73.3')
+                value=target/base if mode=='speaker' else 100*math.log(target/base)/math.log(1000/base)
+                page.locator('#'+zoom).evaluate('(e,v)=>{e.value=String(v);e.dispatchEvent(new Event("input",{bubbles:true}))}',value)
+                page.wait_for_function('(s)=>[...document.querySelectorAll(s+" canvas")].every(c=>!c.hidden&&!["loading","unavailable"].includes(c.dataset.waveDetail))',arg=row,timeout=180000)
+                page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+                report=page.evaluate(MEASURE,{'prefix':prefix,'rowSelector':row,'seconds':1.2})
+                assert report['endTime']>report['startTime']+1,(mode,target,report)
+                assert report['comparisons']>0 and report['differences']==0,(mode,target,report)
+                assert report['notReady']==0 and report['desynchronized']==0,(mode,target,report)
+                assert report['updates']>report['frames']*.75,(mode,target,report)
+                measurements.append({'editor':mode,'liveZoom':target,**report})
+            if output:(output/'measurements.json').write_text(json.dumps(measurements,indent=2)+'\n')
+            print(f'Waveform live zoom {mode}: 80→1000→300→80 px/s, uninterrupted audio and stable source pixels PASS.',flush=True)
             page.locator('#'+prefix+'-stop').click()
             if mode=='speaker':
                 page.locator('#speaker-editor-render').click()
