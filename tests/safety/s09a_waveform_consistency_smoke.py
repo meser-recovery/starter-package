@@ -34,23 +34,27 @@ def check_waveform_consistency(browser, base_url, screenshot_dir=None):
                 value=pps/base if mode=='speaker' else 100*math.log(pps/base)/math.log(1000/base)
                 page.locator('#'+zoom).evaluate('(e,v)=>{e.value=String(v);e.dispatchEvent(new Event("input",{bubbles:true}))}',value)
                 scroll.evaluate("e=>{const pps=parseFloat(e.firstElementChild.style.width)/73.3;e.scrollLeft=12*pps-e.clientWidth/2;e.dispatchEvent(new Event('scroll'))}")
-                page.wait_for_function('(r)=>{const c=document.querySelector(r+" canvas");return c&&!c.hidden&&!["loading","unavailable"].includes(c.dataset.waveDetail)}',arg=row,timeout=180000)
-                page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
-                values=page.locator(row).evaluate('''r=>{
-                    const c=r.querySelector('canvas'),wave=c.parentElement,ctx=c.getContext('2d');
+                # A retained ready bitmap can still belong to the previous
+                # viewport while seek/scroll events settle. Wait for the actual
+                # probe coordinates, then read the pixels in the same callback.
+                measured=page.wait_for_function('''selector=>{
+                    const c=document.querySelector(selector+' canvas');
+                    if(!c||c.hidden||['loading','unavailable'].includes(c.dataset.waveDetail))return false;
+                    const wave=c.parentElement,ctx=c.getContext('2d');
                     const pps=parseFloat(wave.style.width)/73.3,origin=parseFloat(c.style.left)||0;
                     const s=getComputedStyle(c),probe=document.createElement('canvas'),p=probe.getContext('2d');
                     p.fillStyle=s.getPropertyValue('--track-wave').trim()||s.getPropertyValue('--studio-wave').trim();p.fillRect(0,0,1,1);
                     const rgb=p.getImageData(0,0,1,1).data,values=[];
                     for(let i=0;i<32;i++){
                         const time=11.88+i*.008,x=Math.round((time*pps-origin)*devicePixelRatio);
-                        if(x<0||x>=c.width)throw new Error('comparison outside viewport');
+                        if(x<0||x>=c.width)return false;
                         const data=ctx.getImageData(x,0,1,c.height).data;let ink=0;
                         for(let y=0;y<c.height;y++){const j=y*4;if(Math.abs(data[j]-rgb[0])<3&&Math.abs(data[j+1]-rgb[1])<3&&Math.abs(data[j+2]-rgb[2])<3)ink++;}
                         values.push(ink/(c.height*.92));
                     }
                     return {pps,values};
-                }''')
+                }''',arg=row,timeout=180000)
+                values=measured.json_value();measured.dispose()
                 measurements[mode][pps]=values
                 assert max(values['values'])>.3,(mode,pps,values)
                 if output and pps in (80,1000):

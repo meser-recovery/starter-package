@@ -22,3 +22,9 @@ The implementation changes exactly match the supplied patch. Receiving changes a
 The existing `scripts/preview-audio-editor.py` server (PID 24348 when checked) continues on port 55153 and serves this checkout; no other preview was killed. The full post-commit browser run uses that URL. User tabs were not reloaded. Save work before manually refreshing.
 
 Synthetic WAV/M4A, native and bundled WASM decoding and decoded output signal were tested. No physical listening, private user Zoom recordings or design acceptance is claimed. No merge, production mutation, deployment or Closure Record.
+
+## Post-commit run and CI follow-up
+
+The complete uninterrupted Mac browser entry point **passed** on `c9df96dbf51d43642242ec171e65f5405060a27d` through port 55153 (`full-c9df96d.txt`). GitHub run [34645759125](https://github.com/meser-recovery/starter-package/actions/runs/34645759125) passed site and units but failed the new contour comparison with `comparison outside viewport` (`ci-c9df96d-failed.txt`). A ready retained bitmap could still precede the queued seek/scroll update on that runner.
+
+The follow-up changes only that regression: it waits until the canvas covers every comparison coordinate and reads all pixels atomically in the same callback. All amplitude, inter-editor difference, zoom and raster-seam assertions remain; no timeout was increased or assertion removed. Focused both-editor/five-scale/fractional-DPR comparison passed after this change (`consistency-followup.txt`). Final full Mac and exact-HEAD GitHub results are recorded in the PR body, separately from the c9df96d results here.

@@ -1,0 +1,1 @@
+Waveform parity PASS: same file in both editors at 80/159/160/300/1000 px/s, normalized visible contours.

@@ -1,0 +1,94 @@
+local-safety	Run local browser smoke suite	﻿2026-09-11T20:44:48.0334921Z ##[group]Run python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/site-server.log 2>&1 &
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0335663Z ^[[36;1mpython3 -m http.server 8000 --bind 127.0.0.1 >/tmp/site-server.log 2>&1 &^[[0m
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0335981Z ^[[36;1mserver_pid=$!^[[0m
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0336189Z ^[[36;1mtrap 'kill "$server_pid"' EXIT^[[0m
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0336550Z ^[[36;1mpython3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000^[[0m
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0369930Z shell: /usr/bin/bash -e {0}
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0370146Z env:
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0370368Z   pythonLocation: /opt/hostedtoolcache/Python/3.14.7/x64
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0370715Z   PKG_CONFIG_PATH: /opt/hostedtoolcache/Python/3.14.7/x64/lib/pkgconfig
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0371216Z   Python_ROOT_DIR: /opt/hostedtoolcache/Python/3.14.7/x64
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0371510Z   Python2_ROOT_DIR: /opt/hostedtoolcache/Python/3.14.7/x64
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0371801Z   Python3_ROOT_DIR: /opt/hostedtoolcache/Python/3.14.7/x64
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0372088Z   LD_LIBRARY_PATH: /opt/hostedtoolcache/Python/3.14.7/x64/lib
+local-safety	Run local browser smoke suite	2026-09-11T20:44:48.0372402Z ##[endgroup]
+local-safety	Run local browser smoke suite	2026-09-11T20:45:15.9547137Z S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+local-safety	Run local browser smoke suite	2026-09-11T20:45:15.9576044Z S09 CORS regression: http://127.0.0.1:40705
+local-safety	Run local browser smoke suite	2026-09-11T20:45:25.0582142Z S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+local-safety	Run local browser smoke suite	2026-09-11T20:45:25.0583026Z S09 CORS regression: http://127.0.0.1:40705/starter-package/
+local-safety	Run local browser smoke suite	2026-09-11T20:45:34.5537986Z S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+local-safety	Run local browser smoke suite	2026-09-11T20:45:34.5539687Z S09 CORS root/subpath regression passed (default Chromium web security).
+local-safety	Run local browser smoke suite	2026-09-11T20:45:46.8517198Z S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.
+local-safety	Run local browser smoke suite	2026-09-11T20:45:46.8517939Z Acceptance P1: new edits/Blob protected; close/newer intent fence delayed Speaker loads.
+local-safety	Run local browser smoke suite	2026-09-11T20:45:55.7303138Z Acceptance P1: Announcement session/draft/part 401+403 preserve work through cancel/reconnect and explicit retry.
+local-safety	Run local browser smoke suite	2026-09-11T20:45:56.7479795Z Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.
+local-safety	Run local browser smoke suite	2026-09-11T20:46:14.3132010Z Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+local-safety	Run local browser smoke suite	2026-09-11T20:46:23.8358007Z Region handles, contextual restore, live flags and bounded playback: PASS
+local-safety	Run local browser smoke suite	2026-09-11T20:46:56.4116738Z S09A corrective DPR 1: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+local-safety	Run local browser smoke suite	2026-09-11T20:46:56.4117910Z Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:05.9704107Z Region handles, contextual restore, live flags and bounded playback: PASS
+local-safety	Run local browser smoke suite	2026-09-11T20:47:35.2761140Z S09A corrective DPR 2: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:35.2765465Z Design A: PASS; DSP viewport/DOM/audio identity, real per-track silence/restoration, global cut skip, bounds stop, light/dark responsive.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:35.2767616Z Design A result: PASS; real Announcement render, readable light/dark result text and transport at 320/390/768/1440.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:35.2768579Z Waveform decoder alignment: 41.3s overview/detail/tail peaks PASS.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:37.9236140Z Waveform decoder alignment: 129.37s overview/detail/tail peaks PASS.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:41.6282551Z Waveform alignment PASS: native/WASM, short/long/tail windows, right-only/anti-phase peaks, both editors repeated fit/detail zoom, actual pixels and audible onset.
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4631412Z BROWSER SMOKE FAILED: Locator.evaluate: Error: comparison outside viewport
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4631957Z     at eval (eval at evaluate (:311:30), <anonymous>:9:50)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4632630Z     at UtilityScript.evaluate (<anonymous>:318:18)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4632911Z     at UtilityScript.<anonymous> (<anonymous>:1:44)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4640679Z Traceback (most recent call last):
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4664323Z   File "/home/runner/work/starter-package/starter-package/tests/safety/browser_smoke.py", line 3645, in <module>
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4664875Z     raise SystemExit(main())
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4665082Z                      ~~~~^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4665796Z   File "/home/runner/work/starter-package/starter-package/tests/safety/browser_smoke.py", line 3606, in main
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4666285Z     check_waveform_consistency(browser, base_url, args.screenshot_dir)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4666874Z     ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4667432Z   File "/home/runner/work/starter-package/starter-package/tests/safety/s09a_waveform_consistency_smoke.py", line 39, in check_waveform_consistency
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4667957Z     values=page.locator(row).evaluate('''r=>{
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4668306Z         const c=r.querySelector('canvas'),wave=c.parentElement,ctx=c.getContext('2d');
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4668620Z     ...<11 lines>...
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4668804Z         return {pps,values};
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4668991Z     }''')
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4669427Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/sync_api/_generated.py", line 18092, in evaluate
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4669881Z     self._sync(
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4670037Z     ~~~~~~~~~~^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4670208Z         self._impl_obj.evaluate(
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4670399Z         ^^^^^^^^^^^^^^^^^^^^^^^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4670581Z     ...<3 lines>...
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4670742Z         )
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4670883Z         ^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4671022Z     )
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4671165Z     ^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4671547Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/_impl/_sync_base.py", line 115, in _sync
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4671986Z     return task.result()
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4672161Z            ~~~~~~~~~~~^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4672568Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/_impl/_locator.py", line 195, in evaluate
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4673008Z     return await self._with_element(
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4673213Z            ^^^^^^^^^^^^^^^^^^^^^^^^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4673398Z     ...<2 lines>...
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4673556Z     )
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4673697Z     ^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4674077Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/_impl/_locator.py", line 118, in _with_element
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4674498Z     return await task(
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4674677Z            ^^^^^^^^^^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4674836Z     ...<2 lines>...
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4674986Z     )
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4675118Z     ^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4675639Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/_impl/_js_handle.py", line 72, in evaluate
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4676081Z     await self._channel.send(
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4676266Z     ...<6 lines>...
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4676413Z     )
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4676824Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 76, in send
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4677263Z     return await self._connection.wrap_api_call(
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4677503Z            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4677698Z     ...<3 lines>...
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4677850Z     )
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4677986Z     ^
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4678376Z   File "/opt/hostedtoolcache/Python/3.14.7/x64/lib/python3.14/site-packages/playwright/_impl/_connection.py", line 632, in wrap_api_call
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4678924Z     raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4679338Z playwright._impl._errors.Error: Locator.evaluate: Error: comparison outside viewport
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4679697Z     at eval (eval at evaluate (:311:30), <anonymous>:9:50)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4680135Z     at UtilityScript.evaluate (<anonymous>:318:18)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.4680393Z     at UtilityScript.<anonymous> (<anonymous>:1:44)
+local-safety	Run local browser smoke suite	2026-09-11T20:47:43.5520446Z ##[error]Process completed with exit code 1.
