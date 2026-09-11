@@ -52,7 +52,7 @@
 .processor-waveform:hover:not(:disabled) { border-color: var(--color-brand); }
 .processor-waveform:focus-visible, .processor-track button:focus-visible, .processor-zoom button:focus-visible, .processor-zoom input:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 2px; }
 .processor-waveform:disabled { cursor: wait; opacity: .72; }
-.processor-waveform img { display: block; width: 100%; height: 100%; object-fit: fill; pointer-events: none; }
+.processor-waveform img { display: block; width: 100%; max-width: none; height: 100%; object-fit: fill; pointer-events: none; }
 .processor-waveform-playhead { position: absolute; z-index: 1; top: 0; bottom: 0; left: 0; width: 3px; background: #fff; box-shadow: 0 0 0 1px rgba(0, 0, 0, .55); pointer-events: none; }
 .processor-waveform-scroll { max-width: 100%; height: 100px; overflow-x: auto; overflow-y: hidden; overscroll-behavior-inline: contain; border-radius: .45rem; cursor: grab; touch-action: pan-y; }
 .processor-waveform-scroll.is-dragging { cursor: grabbing; user-select: none; }

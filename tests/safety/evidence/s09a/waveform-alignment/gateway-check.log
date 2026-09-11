@@ -1,0 +1,4 @@
+
+> meser-audio-archive-gateway@1.0.0 check
+> node --check src/*.mjs && node --check test/*.mjs && node --check tools/*.mjs
+

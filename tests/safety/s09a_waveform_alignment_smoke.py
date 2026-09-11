@@ -96,7 +96,7 @@ def check_waveform_alignment(browser, base_url, screenshot_dir=None):
                     const c=row.querySelector('canvas'), image=row.querySelector('img');
                     const detail=c.dataset.waveDetail==='ready', useCanvas=mode==='speaker'||detail;
                     let source=c,left=parseFloat(c.style.left)||0,pixelRate=pps*devicePixelRatio,color;
-                    if(!useCanvas){source=document.createElement('canvas');source.width=image.naturalWidth;source.height=image.naturalHeight;source.getContext('2d').drawImage(image,0,0);left=0;pixelRate=source.width/(parseFloat(image.style.width)/pps);color='#74b2e6';}
+                    if(!useCanvas){source=document.createElement('canvas');source.width=image.naturalWidth;source.height=image.naturalHeight;source.getContext('2d').drawImage(image,0,0);left=0;pixelRate=source.width/(image.getBoundingClientRect().width/pps);color='#74b2e6';}
                     else{const s=getComputedStyle(c);color=s.getPropertyValue('--track-wave').trim()||s.getPropertyValue('--studio-wave').trim()||'#74b2e6';}
                     const probe=document.createElement('canvas'),ctx=probe.getContext('2d');ctx.fillStyle=color;ctx.fillRect(0,0,1,1);const rgb=ctx.getImageData(0,0,1,1).data;
                     const data=source.getContext('2d').getImageData(0,0,source.width,source.height).data;
@@ -112,7 +112,7 @@ def check_waveform_alignment(browser, base_url, screenshot_dir=None):
                 assert pixels['onset'] is not None and abs(pixels['onset']-10.5)<max(.012,3/pps),(mode,setting,pixels)
                 assert abs(pixels['peak']-.25)<.04,(mode,setting,pixels)
                 results.append({'editor':mode,'setting':setting,**pixels})
-                if output and setting=='max': track.screenshot(path=str(output/f'{mode}-detail.png'))
+                if output: track.screenshot(path=str(output/f'{mode}-{setting}.png'))
             # Observe actual native media output as the playhead crosses the onset.
             page.evaluate('''async prefix=>{
                 const {getPlaybackTap}=await import('./scripts/audio-meters.mjs');
