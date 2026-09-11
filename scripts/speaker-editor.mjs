@@ -1,4 +1,5 @@
 import { renderSourceTimeline } from "./audio-timeline.mjs";
+import { createAudioMeters } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
 import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { drawWaveformViewport } from "./audio-waveform-view.mjs";
@@ -30,6 +31,7 @@ const sourceTransport = createAudioTransport({
   getSelection: () => { if (!state.ready) return null; try { return readSelection(); } catch { return null; } },
   reportError: message => { byId("status").textContent = message; }
 });
+const meters = createAudioMeters({ root: workspace, resultAudio: byId("result-audio") });
 const clock = (seconds) => {
   if (!Number.isFinite(seconds)) return "—";
   const total = Math.max(0, Math.floor(seconds));
@@ -337,7 +339,7 @@ function paintEditGeometry(payload) {
       const flag = wave.querySelector(`.speaker-boundary--${kind}`);
       if (!flag) continue;
       flag.style.left = `${time / state.originalDuration * 100}%`;
-      flag.textContent = `${kind === "start" ? "Начало" : "Конец"} ${time.toFixed(3)}`;
+      flag.querySelector(".speaker-boundary-label").textContent = `${kind === "start" ? "Начало" : "Конец"} ${time.toFixed(3)}`;
       flag.setAttribute("aria-valuenow", String(time));
     }
   }
@@ -438,7 +440,7 @@ function boundaryMarker(kind, time, scroll) {
   marker.setAttribute("aria-label", `${kind === "start" ? "Начало" : "Конец"} всей записи`);
   marker.setAttribute("aria-valuemin", "0"); marker.setAttribute("aria-valuemax", String(state.originalDuration));
   marker.style.left = `${time / state.originalDuration * 100}%`;
-  marker.textContent = `${kind === "start" ? "Начало" : "Конец"} ${time.toFixed(3)}`; marker.setAttribute("aria-valuenow", String(time));
+  marker.append(element("span", "speaker-boundary-label", `${kind === "start" ? "Начало" : "Конец"} ${time.toFixed(3)}`)); marker.setAttribute("aria-valuenow", String(time));
   bindEdgeGesture(marker, scroll, () => time, value => setRecordingBoundary(state.payload, state.originalDuration, kind, value));
   return marker;
 }
@@ -587,6 +589,7 @@ function renderTracks() {
     const controls = element("div", "speaker-track-controls"); controls.append(header, processing, summary);
     item.append(controls, preview); list.append(item);
   });
+  meters.sync(state.tracks.map(track => ({ id: track.trackId, audio: track.audio, container: [...list.children].find(row => row.dataset.trackId === track.trackId)?.querySelector(".speaker-track-controls") })));
   updateWaveWidths();
   for (const scroll of list.querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = scrollLeft;
   redrawSourceWaves(); updateScrollbar(); applyMonitoring(); updateSelectionDuration();
@@ -1003,6 +1006,7 @@ function updateResultPlayhead() {
 }
 
 function teardown() {
+  meters.clear();
   sourceDetail.clear();
   state.cancelSelection?.(); state.selectedRegion = null; state.dragPayload = null; state.editTool = null; state.selectionScope = "track";
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;

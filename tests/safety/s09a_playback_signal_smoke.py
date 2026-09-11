@@ -61,14 +61,15 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
             page.set_viewport_size({'width':1280, 'height':900})
             rows = page.locator(row_selector)
             ids = rows.evaluate_all('rows=>rows.map(r=>r.dataset.trackId)')
-            page.evaluate('''() => {
-                window.signalContext ||= new AudioContext();
+            page.evaluate('''async () => {
+                const {getPlaybackTap} = await import('/scripts/audio-meters.mjs');
                 window.signalNodes ||= new WeakMap();
                 window.attachSignal = selector => [...document.querySelectorAll(selector)].map(audio => {
                     if (!signalNodes.has(audio)) {
-                        const source=signalContext.createMediaElementSource(audio), analyser=signalContext.createAnalyser();
+                        const tap=getPlaybackTap(audio); window.signalContext=tap.context;
+                        const source=tap.source, analyser=signalContext.createAnalyser();
                         analyser.fftSize=8192; analyser.smoothingTimeConstant=0;
-                        source.connect(analyser); analyser.connect(signalContext.destination);
+                        source.connect(analyser); // Independent observer; app alone owns the audible connection.
                         signalNodes.set(audio,analyser);
                     }
                     return audio;
@@ -134,6 +135,9 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
                 assert page.locator(selector).evaluate_all('audios=>audios.every(a=>a.paused)')
                 value = page.evaluate('(s)=>readSignal(s)[0]', result)
                 assert value['rms'] > .02 and abs(value['hz']-660) < 12, value
+                page.wait_for_function("Number(document.querySelector('#speaker-editor .audio-meter--master').dataset.rmsDb)>-40")
+                assert 'результат' in page.locator('#speaker-editor .audio-meter--master .audio-meter__heading').inner_text()
+                assert page.locator('#speaker-editor-tracks .audio-meter').evaluate_all('nodes=>nodes.every(e=>Number(e.dataset.rmsDb)===-Infinity)')
                 measurements.append({'mode':mode,'case':'render excludes 330 Hz; result pauses all sources','output':value})
                 page.locator('#' + prefix + '-play').click()
                 page.wait_for_function('(s)=>document.querySelector(s).paused', arg=result)

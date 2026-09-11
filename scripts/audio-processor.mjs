@@ -1,5 +1,6 @@
 import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { renderSourceTimeline } from "./audio-timeline.mjs";
+import { createAudioMeters } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 const sourceDetail = createWaveformDetail();
@@ -194,6 +195,11 @@ const sourceTransport = createAudioTransport({
   getSelection: () => sourceSelection,
   seek: seekSources, reportError: message => { status.textContent = message; }
 });
+
+const meters = createAudioMeters({ root: sourceAudio.closest(".processor-card"), resultAudio });
+function syncMeters() {
+  meters.sync(tracks.map(track => ({ id: String(track.id), audio: track.previewAudio, container: [...byId("file-info").children].find(row => row.dataset.trackId === String(track.id))?.querySelector(".processor-track__top") })));
+}
 
 function notifyProcessorSelection() {
   window.dispatchEvent(new CustomEvent("audio-processor-selection", {
@@ -694,6 +700,7 @@ function renderTracks() {
     list.append(item);
     scroll.scrollLeft = sourceLeftVisibleTime * sourcePixelsPerSecond;
   });
+  syncMeters();
   updateSelectionSummary();
   setBusy(Boolean(active));
   applyMonitoring();
@@ -768,6 +775,7 @@ function toggleMonitoring(id, action) {
 }
 
 function clearPreviewAudios(clearMaster = true) {
+  meters.clear();
   clearInterval(previewSyncTimer);
   previewSyncTimer = 0;
   for (const track of tracks) {
@@ -796,6 +804,7 @@ function setupPreviewAudios(position = 0, resume = false) {
     track.previewAudio = audio;
     audio.load();
   });
+  syncMeters();
   const restore = () => {
     seekSources(position);
     applyMonitoring();

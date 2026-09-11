@@ -121,3 +121,23 @@ test('moving bounds during playback takes effect immediately without changing mo
   assert.equal(f.audio.currentTime, 6); assert.equal(f.audio.paused, true);
   assert.equal(f.audio.muted, true); assert.equal(f.audio.volume, 1);
 });
+
+import { signalLevel, toDecibels } from '../../scripts/audio-meters.mjs';
+
+test('digital meters measure silence without NaN', () => {
+  assert.deepEqual(signalLevel(new Float32Array(64)), {power: 0, peak: 0});
+  assert.equal(toDecibels(0), -Infinity);
+  assert.deepEqual(signalLevel([]), {power: 0, peak: 0});
+});
+test('RMS and peak retain independent meaning and do not clamp clipping', () => {
+  const samples = Float32Array.from({length: 4800}, (_, i) => 1.25 * Math.sin(i * Math.PI / 24));
+  const {power, peak} = signalLevel(samples);
+  assert.ok(Math.abs(power - 1.25 ** 2 / 2) < .000001);
+  assert.equal(peak, 1.25);
+  assert.ok(toDecibels(peak) > 0);
+  assert.ok(Math.abs(toDecibels(peak) - toDecibels(Math.sqrt(power)) - 3.0103) < .0001);
+});
+test('both polarities contribute equally to level', () => {
+  assert.deepEqual(signalLevel([-.5,.5,-.5,.5]), {power:.25,peak:.5});
+  assert.ok(Math.abs(toDecibels(.5) + 6.0206) < .0001);
+});

@@ -232,9 +232,11 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
             if width >= 768:
                 lanes=page.locator('.speaker-track').evaluate_all("""rows => rows.map(row=>{
                     const r=row.getBoundingClientRect(), w=row.querySelector('.speaker-waveform-scroll').getBoundingClientRect();
-                    return {height:r.height,waveHeight:w.height,waveWidth:w.width,width:r.width};
+                    const meter=row.querySelector('.audio-meter').getBoundingClientRect();
+                    return {height:r.height,meterHeight:meter.height,waveHeight:w.height,waveWidth:w.width,width:r.width};
                 })""")
-                assert all(r['height'] <= 210 and r['waveHeight'] >= r['height']-2 and r['waveWidth'] > r['width']/2 for r in lanes), lanes
+                # Keep the old controls budget, plus at most 52px + 5px spacing for the requested meter.
+                assert all(r['height'] <= 267 and r['meterHeight'] <= 52 and r['height']-r['meterHeight']-5 <= 210 and r['waveHeight'] >= r['height']-2 and r['waveWidth'] > r['width']/2 for r in lanes), lanes
             else:
                 assert page.locator('.speaker-track__buttons button').first.evaluate('e=>e.getBoundingClientRect().height>=44')
             snapshot(f'speaker-{width}', '#speaker-editor')
@@ -252,9 +254,9 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
             if width >= 768:
                 lanes=page.locator('.processor-track').evaluate_all("""rows=>rows.map(row=>{
                     const r=row.getBoundingClientRect(), w=row.querySelector('.processor-waveform-scroll').getBoundingClientRect();
-                    return {height:r.height,waveHeight:w.height};
+                    return {height:r.height,meterHeight:row.querySelector('.audio-meter').getBoundingClientRect().height,waveHeight:w.height};
                 })""")
-                assert all(r['height']<=150 and r['waveHeight']>=r['height']-2 for r in lanes), lanes
+                assert all(r['height']<=207 and r['meterHeight']<=52 and r['height']-r['meterHeight']-5<=150 and r['waveHeight']>=r['height']-2 for r in lanes), lanes
             snapshot(f'announcement-{width}', '#announcement-processor-card')
         assert not outbound, outbound
         print(f'S09A corrective DPR {device_scale_factor}: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.')
