@@ -1775,7 +1775,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#speaker-editor-cancel").wait_for(state="visible")
         assert page.locator("#speaker-editor-add-cut").is_disabled()
         assert page.locator(".speaker-dsp input").first.is_disabled()
-        assert page.locator('.speaker-track button').filter(has_text="Исключить из микса").first.is_disabled()
+        assert page.locator('.speaker-track').get_by_role('button', name="Исключить из микса", exact=True).first.is_disabled()
         # Even a synthetic event cannot alter the captured render snapshot while the operation is active.
         page.locator(".speaker-dsp input").first.evaluate("""select => {
             select.checked = false; select.dispatchEvent(new Event('change', {bubbles: true}));
