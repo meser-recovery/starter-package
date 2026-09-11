@@ -1,6 +1,8 @@
 # S09A — approved design A, edited audition
 
-Status: implemented locally for handoff; no merge, production mutations or closure.
+Receiving Mac reconciliation, final smoke and captures: [Mac validation](mac/README.md).
+
+Author handoff status: implemented locally for handoff; no merge, production mutations or closure.
 Base: `eddac6b62b49c9bcab88203b2ac7f196193f4b17` (PR #36).
 
 The user selected A and asked to extend it to the rest of the audio interface.
@@ -30,7 +32,7 @@ real meter readings, not a rendered mockup or the user's recordings.
 - Native media remains the playback clock. This is not a sample-accurate DAW
   scheduler or a true-peak meter; physical listening was not performed.
 
-## Validation performed here
+## Validation performed by the patch author
 
 - Site contract and JavaScript syntax: PASS.
 - Transport/waveform unit suite: 25/25.

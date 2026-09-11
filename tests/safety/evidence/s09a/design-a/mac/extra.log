@@ -1,0 +1,5 @@
+Announcement canvas light [{'width': 1772, 'css': 886, 'pixel': [251, 252, 253, 255]}, {'width': 1772, 'css': 886, 'pixel': [251, 252, 253, 255]}]
+Announcement canvas dark [{'width': 1772, 'css': 886, 'pixel': [17, 23, 32, 255]}, {'width': 1772, 'css': 886, 'pixel': [17, 23, 32, 255]}]
+Announcement light/dark 320/390/768/1440, rendered result and DPR2 word waveform: PASS
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+Dark archive: full management/menu fixture PASS
