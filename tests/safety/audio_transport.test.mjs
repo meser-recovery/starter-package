@@ -14,7 +14,7 @@ class Element extends EventTarget {
   before(node) { this.ownerDocument.bar = node; }
   querySelector(tag) { return this.children.find(node => node.tag === tag) || this.children.map(node => node.querySelector(tag)).find(Boolean) || null; }
 }
-function fixture(selection = null, bounds = null) {
+function fixture(selection = null, bounds = null, cuts = []) {
   const doc = { createElement(tag) { return new Element(tag, this); }, createElementNS(ns, tag) { return this.createElement(tag); } };
   const audio = doc.createElement('audio'); audio.id = 'source-audio'; audio.setAttribute('src', 'blob:one');
   audio.currentTime = 0; audio.paused = true; audio.ended = false; audio.volume = 1; audio.muted = true;
@@ -24,7 +24,7 @@ function fixture(selection = null, bounds = null) {
   const resultAudio = doc.createElement('audio'); resultAudio.paused = true;
   resultAudio.pause = () => { resultAudio.paused = true; resultAudio.dispatchEvent(new Event('pause')); };
   resultAudio.play = () => { resultAudio.paused = false; resultAudio.dispatchEvent(new Event('play')); };
-  const transport = createAudioTransport({ audio, resultAudio, canPlay: () => enabled, seek: time => { seeks.push(time); audio.currentTime = time; }, getSelection: selection ? () => selection : undefined, getBounds: () => bounds, reportError: text => errors.push(text) });
+  const transport = createAudioTransport({ audio, resultAudio, canPlay: () => enabled, seek: time => { seeks.push(time); audio.currentTime = time; }, getSelection: selection ? () => selection : undefined, getBounds: () => bounds, getCuts: () => cuts, reportError: text => errors.push(text) });
   const [play, stop, volumeLabel] = doc.bar.children;
   return { audio, resultAudio, transport, play, stop, loop: doc.bar.children.find(node => node.id === "source-audio-loop"), setSelection: value => { selection = value; transport.refresh(); }, setBounds: value => { bounds = value; transport.refresh(); }, volume: volumeLabel.querySelector('input'), seeks, errors, plays: () => plays, enable: value => { enabled = value; transport.refresh(); } };
 }
@@ -140,4 +140,36 @@ test('RMS and peak retain independent meaning and do not clamp clipping', () => 
 test('both polarities contribute equally to level', () => {
   assert.deepEqual(signalLevel([-.5,.5,-.5,.5]), {power:.25,peak:.5});
   assert.ok(Math.abs(toDecibels(.5) + 6.0206) < .0001);
+});
+
+
+test('cuts skip their union, preserve monitoring, and stop at recording end', async () => {
+  const f = fixture(null, {start:1,end:9}, [{startSeconds:2,endSeconds:4},{startSeconds:3,endSeconds:5},{startSeconds:8,endSeconds:9}]);
+  await click(f.play); assert.equal(f.audio.currentTime,1);
+  f.audio.currentTime=2.01; f.audio.dispatchEvent(new Event('timeupdate'));
+  assert.equal(f.audio.currentTime,5); assert.equal(f.audio.muted,true);
+  f.audio.currentTime=8.01; f.audio.dispatchEvent(new Event('timeupdate'));
+  assert.equal(f.audio.currentTime,9); assert.equal(f.audio.paused,true);
+});
+test('loop skips cuts including its start and rejects a fully cut selection', async () => {
+  const f=fixture({startSeconds:2,endSeconds:7},{start:0,end:9},[{startSeconds:2,endSeconds:4},{startSeconds:6,endSeconds:7}]);
+  await click(f.loop); assert.equal(f.audio.currentTime,4);
+  f.audio.currentTime=6.1; f.audio.dispatchEvent(new Event('timeupdate')); assert.equal(f.audio.currentTime,4);
+  f.setSelection({startSeconds:2,endSeconds:3}); assert.equal(f.loop.disabled,true);
+  await click(f.stop);
+});
+import { mergeMutedRegions, editEnvelope, createEditGate } from '../../scripts/audio-edit-preview.mjs';
+test('edit envelope handles overlapping cut/silence and partial restoration', () => {
+  const regions=mergeMutedRegions([{startSeconds:1,endSeconds:3},{startSeconds:2,endSeconds:4},{startSeconds:5,endSeconds:6}]);
+  assert.deepEqual(regions,[{startSeconds:1,endSeconds:4},{startSeconds:5,endSeconds:6}]);
+  assert.deepEqual(editEnvelope(3,regions,4),{value:0,events:[{after:1,value:1},{after:2,value:0},{after:3,value:1}]});
+  assert.deepEqual(editEnvelope(4,regions,3),{value:1,events:[{after:1,value:0},{after:2,value:1}]});
+});
+test('edit gate reanchors on seek and restores unity without modifying mute', () => {
+  const audio=new EventTarget();Object.assign(audio,{currentTime:3,paused:true,muted:true,playbackRate:1});
+  const calls=[];const gain={cancelScheduledValues(){},setValueAtTime(value,time){calls.push([value,time]);}};
+  const gate=createEditGate(audio,{currentTime:10},gain);
+  gate.set([{startSeconds:2,endSeconds:5}]);assert.deepEqual(calls.at(-1),[0,10]);
+  audio.currentTime=6;audio.dispatchEvent(new Event('seeked'));assert.deepEqual(calls.at(-1),[1,10]);
+  gate.clear();assert.equal(audio.muted,true);assert.deepEqual(calls.at(-1),[1,10]);
 });

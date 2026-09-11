@@ -1,0 +1,6 @@
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+DPR 1 PASS
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+DPR 2 PASS

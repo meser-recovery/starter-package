@@ -743,7 +743,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared footer is missing")
         styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
-        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css"]:
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css", "styles/audio-studio.css"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
         if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),

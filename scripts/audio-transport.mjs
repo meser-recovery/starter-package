@@ -1,6 +1,7 @@
+import { nextAudibleTime } from "./audio-edit-preview.mjs";
 // One source transport for either editor. The media element remains the clock;
 // its muted flag belongs to a track and is never used as a master mute control.
-export function createAudioTransport({ audio, resultAudio, canPlay, seek, reportError, getSelection, getBounds }) {
+export function createAudioTransport({ audio, resultAudio, canPlay, seek, reportError, getSelection, getBounds, getCuts }) {
   const doc = audio.ownerDocument;
   const workspace = audio.closest('.speaker-editor, .processor-card');
   workspace?.classList.add('daw-workspace');
@@ -20,6 +21,11 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
     if (!audio.paused) { audio.pause(); return; }
     const range = loopEnabled ? loopRange() : playbackRange();
     if (range && (audio.currentTime < range.startSeconds || audio.currentTime >= range.endSeconds)) seek(range.startSeconds);
+    if (range && getCuts) {
+      const target = nextAudibleTime(audio.currentTime, getCuts(), range.endSeconds);
+      if (target >= range.endSeconds) return;
+      if (target !== audio.currentTime) seek(target);
+    }
     const source = audio.getAttribute('src');
     try { await audio.play(); } catch {
       if (canPlay() && audio.getAttribute('src') === source) reportError('Не удалось начать прослушивание. Нажмите воспроизведение ещё раз.');
@@ -55,7 +61,7 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
     if (!range || !Number.isFinite(range.startSeconds) || !Number.isFinite(range.endSeconds)) return null;
     const startSeconds = Math.max(range.startSeconds, bounds?.startSeconds || 0);
     const endSeconds = Math.min(range.endSeconds, bounds?.endSeconds ?? Infinity);
-    return endSeconds > startSeconds ? { startSeconds, endSeconds } : null;
+    return endSeconds > startSeconds && (!getCuts || nextAudibleTime(startSeconds, getCuts(), endSeconds) < endSeconds) ? { startSeconds, endSeconds } : null;
   };
   const loop = getSelection ? button('Повторять выделение', 'M20 7H7a4 4 0 0 0-4 4v2M16 3l4 4-4 4M4 17h13a4 4 0 0 0 4-4v-2M8 21l-4-4 4-4', async () => {
     if (!canPlay() || !loopRange()) return;
@@ -74,16 +80,21 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
     const label = doc.createElement('span'); label.textContent = 'Loop'; loop.append(label);
   }
   function checkLoop() {
-    const range = loopRange();
     if (!canPlay()) return;
-    if (loopEnabled && range) {
-      if (audio.currentTime >= range.endSeconds || audio.currentTime < range.startSeconds) seek(range.startSeconds);
-      return;
+    const range = loopEnabled ? loopRange() : playbackRange();
+    if (!range) return;
+    let target = audio.currentTime;
+    if (target >= range.endSeconds) {
+      if (loopEnabled) target = range.startSeconds;
+      else { audio.pause(); seek(range.endSeconds); return; }
     }
-    const bounds = playbackRange();
-    if (!bounds) return;
-    if (audio.currentTime >= bounds.endSeconds) { audio.pause(); seek(bounds.endSeconds); }
-    else if (audio.currentTime < bounds.startSeconds) seek(bounds.startSeconds);
+    target = Math.max(target, range.startSeconds);
+    if (getCuts) target = nextAudibleTime(target, getCuts(), range.endSeconds);
+    if (target >= range.endSeconds) {
+      if (loopEnabled) target = nextAudibleTime(range.startSeconds, getCuts?.() || [], range.endSeconds);
+      if (target >= range.endSeconds) { audio.pause(); seek(range.endSeconds); return; }
+    }
+    if (Math.abs(target-audio.currentTime) > .000001) seek(target);
   }
   function stopLoopFrame() {
     if (loopFrame !== null) globalThis.cancelAnimationFrame?.(loopFrame);

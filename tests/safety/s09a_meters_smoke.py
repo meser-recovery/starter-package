@@ -68,7 +68,7 @@ def check_audio_meters(browser, base_url, screenshot_dir=None):
             for width in (320,390,768,1280):
                 page.set_viewport_size({'width':width,'height':1000})
                 assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-                assert meters.evaluate_all('nodes=>nodes.every(e=>e.scrollWidth<=e.clientWidth && e.getBoundingClientRect().right<=e.parentElement.getBoundingClientRect().right+1)')
+                assert meters.evaluate_all('nodes=>nodes.every(e=>e.scrollWidth<=e.clientWidth && e.getBoundingClientRect().right<=e.parentElement.getBoundingClientRect().right+1)'), (mode,width,meters.evaluate_all('es=>es.map(e=>({scroll:e.scrollWidth,client:e.clientWidth,right:e.getBoundingClientRect().right,parent:e.parentElement.getBoundingClientRect().right}))'))
                 if output: page.locator(root).screenshot(path=str(output/(mode+'-'+str(width)+'.png')))
             if mode=='speaker':
                 for tool in ('cut','silence'):

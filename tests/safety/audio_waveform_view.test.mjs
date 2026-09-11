@@ -33,3 +33,16 @@ test('detail window keeps absolute source time after seek, including a short fin
   assert.equal(c.fills[102][3], 184);
   assert.equal(c.fills.length, 701); // final 150ms beyond track end is blank
 });
+
+test('airy overview preserves a transient in the visual gap; word zoom remains pixel detailed', () => {
+  const previous=globalThis.getComputedStyle;
+  globalThis.getComputedStyle=()=>({getPropertyValue:key=>key==='--wave-bar-step'?'3':''});
+  try {
+    const c=canvas(),samples=new Float32Array(1000);samples[299]=1;
+    drawWaveformViewport(c,samples,10,1,0,10,100,2);
+    assert.deepEqual(c.fills[1],[0,8,3,184]);
+    assert.equal(c.fills[2][0],6);
+    drawWaveformViewport(c,samples,10,1000,0,10,100,2);
+    assert.equal(c.fills.at(-1)[2],1);
+  } finally { if(previous)globalThis.getComputedStyle=previous;else delete globalThis.getComputedStyle; }
+});

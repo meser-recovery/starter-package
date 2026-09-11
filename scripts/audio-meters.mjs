@@ -1,7 +1,14 @@
+import { createEditGate } from "./audio-edit-preview.mjs";
 // Native media remains the playback clock and owns volume/mute. A single unity
 // connection carries sound; separate, unconnected-to-output taps only measure it.
 let context;
 const mediaTaps = new WeakMap();
+const mediaRegions = new WeakMap();
+export function setPlaybackRegions(audio, regions) {
+  if (!audio) return;
+  mediaRegions.set(audio, regions);
+  mediaTaps.get(audio)?.edits.set(regions);
+}
 export function getPlaybackTap(audio) {
   if (!context) {
     const AudioContext = globalThis.AudioContext || globalThis.webkitAudioContext;
@@ -10,8 +17,10 @@ export function getPlaybackTap(audio) {
   }
   let tap = mediaTaps.get(audio);
   if (!tap) {
-    const source = context.createMediaElementSource(audio);
-    tap = { context, source, connected: false }; mediaTaps.set(audio, tap);
+    const input = context.createMediaElementSource(audio), source = context.createGain();
+    input.connect(source);
+    const edits = createEditGate(audio, context, source.gain); edits.set(mediaRegions.get(audio) || []);
+    tap = { context, source, input, edits, connected: false }; mediaTaps.set(audio, tap);
   }
   if (!tap.connected) { tap.source.connect(context.destination); tap.connected = true; }
   return tap;
@@ -78,7 +87,15 @@ function meterView(label, master = false) {
 export function createAudioMeters({ root, resultAudio }) {
   const master = meterView('Микс', true);
   const persistentMedia = new Set([resultAudio, root.querySelector('audio.daw-media-clock')]);
-  root.querySelector('.daw-playback').after(master.node);
+  const playback = root.querySelector('.daw-playback');
+  const main = document.createElement('div'); main.className = 'studio-transport-main';
+  playback.before(main); main.append(playback);
+  const clock = root.querySelector('#speaker-editor-source-time, #processor-source-time');
+  if (clock) main.append(clock);
+  main.append(master.node);
+  const scale = document.createElement('div'); scale.className = 'audio-meter__scale'; scale.setAttribute('aria-hidden', 'true');
+  for (const value of ['−60', '−36', '−24', '−12', '0 dBFS']) { const label = document.createElement('span'); label.textContent = value; scale.append(label); }
+  master.node.append(scale);
   let entries = new Map(), bus, masterTap, frame = null, last = 0;
   const playing = audio => Boolean(audio?.src && !audio.paused && !audio.ended);
   function disconnect(entry) {
@@ -109,7 +126,7 @@ export function createAudioMeters({ root, resultAudio }) {
     const running = active && context?.state === 'running';
     if ([...entries.values()].some(entry => entry.failed)) master.unavailable();
     else master.paint(running ? masterTap?.read() : null, now, dt, running);
-    master.name.textContent = playing(resultAudio) ? 'Микс · результат' : 'Микс · исходники';
+    master.name.textContent = playing(resultAudio) ? 'MASTER · результат' : root.id === 'speaker-editor' ? 'MASTER · монтаж' : 'MASTER · исходники';
     if (active && !document.hidden) frame = requestAnimationFrame(tick); else last = 0;
   }
   function wake() {

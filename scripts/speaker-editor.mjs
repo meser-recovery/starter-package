@@ -1,5 +1,5 @@
 import { renderSourceTimeline } from "./audio-timeline.mjs";
-import { createAudioMeters } from "./audio-meters.mjs";
+import { createAudioMeters, setPlaybackRegions } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
 import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { drawWaveformViewport } from "./audio-waveform-view.mjs";
@@ -27,6 +27,7 @@ const fingerprint = (value) => JSON.stringify(value);
 const editorBusy = () => Boolean(state.operation) || state.saveLocked || state.projectSaving;
 const sourceTransport = createAudioTransport({
   audio: byId("source-audio"), resultAudio: byId("result-audio"), canPlay: () => state.ready && !editorBusy(), seek: seekSource,
+  getCuts: () => (state.dragPayload || state.payload)?.globalCuts || [],
   getBounds: () => state.ready ? recordingBoundaries(state.dragPayload || state.payload, state.originalDuration) : null,
   getSelection: () => { if (!state.ready) return null; try { return readSelection(); } catch { return null; } },
   reportError: message => { byId("status").textContent = message; }
@@ -319,6 +320,7 @@ function restoreSelected(key) {
 // Paint a draft gesture without rebuilding the DOM that owns pointer capture.
 // The canonical payload, history and saved candidate change only on pointerup.
 function paintEditGeometry(payload) {
+  syncEditPreview(payload);
   const bounds = recordingBoundaries(payload, state.originalDuration);
   for (const wave of byId("tracks").querySelectorAll(".speaker-waveform")) {
     wave.querySelectorAll("[data-gesture-preview]").forEach(n => n.remove());
@@ -520,6 +522,7 @@ function pointerTime(event, scroll) {
 function selectControl(label, value, values, change) {
   const wrapper = element("label", "speaker-dsp-field", label);
   const input = document.createElement("input"); input.setAttribute("aria-label", label);
+  input.dataset.dspField = {"Улучшение":"enhancement", "Выравнивание громкости":"leveling", "Компрессия":"compression"}[label];
   input.disabled = editorBusy() || !state.ready;
   const output = element("span", "speaker-dsp-value");
   if (values.length === 2) {
@@ -540,7 +543,35 @@ function selectControl(label, value, values, change) {
   wrapper.append(input, output); return wrapper;
 }
 
+let trackPresentation = '';
+function updateTrackSettings() {
+  for (const track of state.tracks) {
+    const row = [...byId("tracks").children].find(row => row.dataset.trackId === track.trackId);
+    const setting = state.payload.trackProcessing.find(s => s.trackId === track.trackId);
+    if (!row || !setting) continue;
+    for (const input of row.querySelectorAll('[data-dsp-field]')) {
+      const field = input.dataset.dspField, value = setting[field];
+      if (input.type === 'checkbox') input.checked = value !== 'off';
+      else input.value = String(['off','light','medium','strong'].indexOf(value));
+      const label = field === 'compression' ? ['Выкл.','Лёгкая','Средняя','Сильная'][Number(input.value)] : input.checked ? (field === 'enhancement' ? 'Мягкое' : 'Вкл.') : 'Выкл.';
+      input.closest('label').querySelector('.speaker-dsp-value').textContent = label;
+      if (input.type === 'range') input.setAttribute('aria-valuetext',label);
+    }
+    row.querySelector('.speaker-track__summary').textContent = processingLabel(setting);
+  }
+}
+function syncEditPreview(payload = state.dragPayload || state.payload) {
+  for (const track of state.tracks) setPlaybackRegions(track.audio, payload ? [
+    ...payload.globalCuts, ...payload.trackSilenceRegions.filter(r => r.trackId === track.trackId)
+  ] : []);
+}
 function renderTracks() {
+  const presentation = fingerprint([state.sourceEpoch, state.ready, editorBusy(), state.preparationError,
+    state.payload.trackIds, state.payload.excludedTrackIds, state.payload.globalCuts, state.payload.trackSilenceRegions, state.selectedRegion]);
+  if (trackPresentation === presentation && byId("tracks").children.length === state.tracks.length) {
+    updateTrackSettings(); applyMonitoring(); updateSelectionDuration(); return;
+  }
+  trackPresentation = presentation;
   const list = byId("tracks");
   const focused = list.contains(document.activeElement) ? document.activeElement : null;
   const focusedRegion = focused?.closest("[data-region-id]")?.dataset.regionId, focusedEdge = focused?.dataset.edge;
@@ -566,6 +597,7 @@ function renderTracks() {
     }
     const editsDisabled = editorBusy() || !state.ready;
     const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
+    include.setAttribute("aria-label", include.textContent); include.title = include.textContent; include.textContent = excluded.has(trackId) ? "Вне микса" : "В миксе";
     const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
     const down = makeButton("Вниз", () => moveTrack(trackId, 1), trackId, editsDisabled || index === state.payload.trackIds.length - 1);
     for (const [button, icon] of [[up, "↑"], [down, "↓"]]) {
@@ -654,6 +686,7 @@ function updateRenderState() {
 
 function render() {
   state.cancelSelection?.();
+  syncEditPreview();
   if (!state.session) return;
   if (state.payload) { renderTracks(); renderRegions(); }
   else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
@@ -1006,6 +1039,7 @@ function updateResultPlayhead() {
 }
 
 function teardown() {
+  trackPresentation = ""; syncEditPreview(null);
   meters.clear();
   sourceDetail.clear();
   state.cancelSelection?.(); state.selectedRegion = null; state.dragPayload = null; state.editTool = null; state.selectionScope = "track";
@@ -1107,6 +1141,7 @@ window.addEventListener("resize", () => {
   }
   updateWaveWidths(); updateResultWidth();
 });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
 window.addEventListener("pagehide", () => teardown());
 
 for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click", () => {

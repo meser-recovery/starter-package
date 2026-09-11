@@ -1,0 +1,33 @@
+✔ play/pause and stop preserve per-track mute; controls follow media events (7.742197ms)
+✔ unready/locked sources cannot start playback or seek (0.735257ms)
+✔ source and result cannot play over each other; track mute remains unchanged (0.522456ms)
+✔ master listening volume does not alter any track mute flag (0.309876ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (0.964933ms)
+✔ loop starts at selection and wraps at its right edge without changing mute or volume (0.937882ms)
+✔ stop pauses loop; clearing selection, locking and replacing media disable it (0.754546ms)
+✔ loop handles an end-of-file range and never restarts after result playback takes over (0.487634ms)
+✔ recording bounds govern play, replay, stop and an external playing seek (1.224704ms)
+✔ loop intersects recording bounds and disables for an outside selection (0.892324ms)
+✔ moving bounds during playback takes effect immediately without changing monitor controls (0.612662ms)
+✔ digital meters measure silence without NaN (0.462897ms)
+✔ RMS and peak retain independent meaning and do not clamp clipping (0.967196ms)
+✔ both polarities contribute equally to level (0.145268ms)
+✔ cuts skip their union, preserve monitoring, and stop at recording end (1.323633ms)
+✔ loop skips cuts including its start and rejects a fully cut selection (0.672322ms)
+✔ edit envelope handles overlapping cut/silence and partial restoration (0.487934ms)
+✔ edit gate reanchors on seek and restores unity without modifying mute (0.300042ms)
+✔ detail decoding uses a bounded source window and reuses it across panning (444.313223ms)
+✔ late decode cannot paint a changed viewport or a replaced File session (442.045353ms)
+✔ zooming out during a decode does not replace the overview with stale detail (440.681216ms)
+✔ visible bitmap is Retina sharp and bounded by viewport, not full recording width (1.949385ms)
+✔ zoomed-out bins retain narrow peaks rather than subsampling them away (1.132856ms)
+✔ panning and zoom use source time; shorter tracks do not stretch to longest track (1.010211ms)
+✔ detail window keeps absolute source time after seek, including a short final window (0.298299ms)
+ℹ tests 25
+ℹ suites 0
+ℹ pass 25
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1431.033135

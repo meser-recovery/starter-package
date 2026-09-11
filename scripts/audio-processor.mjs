@@ -1495,6 +1495,10 @@ window.addEventListener("resize", () => {
   if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
   if (resultWaveformURL) setResultZoom(resultPixelsPerSecond);
 });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
+  if (resultWaveformURL) setResultZoom(resultPixelsPerSecond);
+});
 status.textContent = supported ? "Выберите файлы и нажмите «Обработать»." : UNSUPPORTED;
 setBusy(false);
 byId("heading").dataset.ready = "true";
