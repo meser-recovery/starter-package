@@ -110,7 +110,9 @@ def check_region_handles(page, output=None):
         assert abs(float(flag.get_attribute('aria-valuenow'))-before)<.000001
         assert page.locator('[data-gesture-preview]').count()==0
         drag(flag,delta); page.mouse.up()
-        assert page.evaluate(state)!=original
+        changed=page.evaluate(state);assert changed!=original
+        page.locator('#speaker-editor-undo').click();assert page.evaluate(state)==original
+        page.locator('#speaker-editor-redo').click();assert page.evaluate(state)==changed
     cuts=page.evaluate(state)['globalCuts']
     start=next(r['endSeconds'] for r in cuts if r['startSeconds']==0)
     duration=page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().originalDuration")

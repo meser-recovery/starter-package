@@ -42,6 +42,11 @@ failed. The plain-selection target now stays clear of handles; payload equality
 is checked before and immediately after the gesture, and intentional touch
 resizing has its own regression. No geometry or audio tolerance was relaxed.
 
+The old timeline fixture expected 100ms flag keyboard steps and failed against
+the package's new 10ms contract. It now asserts exactly 10ms and 1s with Shift,
+retaining the numeric tolerance and adding boundary region-ID preservation.
+Live recording-flag gestures also explicitly verify one-step Undo/Redo.
+
 Site contract, JS/Python syntax, strict HTML nesting, 18 transport/waveform/detail
 units, gateway syntax and 80 gateway tests are required alongside the complete
 site-wide browser smoke. [Mac evidence](evidence/s09a/region-handles/mac/README.md)

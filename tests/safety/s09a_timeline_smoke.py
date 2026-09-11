@@ -92,9 +92,11 @@ def check_flags_and_keyboard(page,output,dpr):
         assert flag.get_attribute('aria-valuenow')==initial
         assert page.evaluate(state)==baseline
         flag.focus();page.keyboard.press('ArrowRight' if kind=='start' else 'ArrowLeft')
-        assert abs(float(flag.get_attribute('aria-valuenow'))-float(initial)-direction*.1)<.00001
+        assert abs(float(flag.get_attribute('aria-valuenow'))-float(initial)-direction*.01)<.00001
+        before_shift=page.evaluate(state)
         page.keyboard.press('Shift+ArrowRight' if kind=='start' else 'Shift+ArrowLeft')
-        assert abs(float(flag.get_attribute('aria-valuenow'))-float(initial)-direction*1.1)<.00001
+        assert abs(float(flag.get_attribute('aria-valuenow'))-float(initial)-direction*1.01)<.00001
+        assert [r['regionId'] for r in page.evaluate(state)['globalCuts']]==[r['regionId'] for r in before_shift['globalCuts']]
         page.keyboard.press('Home' if kind=='start' else 'End')
         assert page.evaluate(state)==baseline
         assert flag.evaluate('e=>e===document.activeElement')
