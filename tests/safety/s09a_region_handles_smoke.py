@@ -2,6 +2,14 @@
 from s09a_edit_modes_smoke import apply_selection, restore_selection
 
 
+def edge_box(handle):
+    # The expanded precision toolbar/error can cover an otherwise in-view edge.
+    handle.evaluate("e=>e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})")
+    box=handle.bounding_box()
+    assert handle.evaluate("e=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+r.width/2,r.y+r.height/2))}"), 'The edge must receive the gesture'
+    return box
+
+
 def check_region_handles(page, output=None):
     state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
     baseline = page.evaluate(state)
@@ -19,7 +27,7 @@ def check_region_handles(page, output=None):
         page.mouse.move(box['x'] + box['width'] * b, y, steps=4); page.mouse.up()
 
     def drag(handle, delta):
-        handle.scroll_into_view_if_needed(); b = handle.bounding_box()
+        b = edge_box(handle)
         x, y = b['x'] + b['width']/2, b['y'] + b['height']/2
         page.mouse.move(x, y); page.mouse.down(); page.mouse.move(x+delta, y, steps=6)
 
@@ -195,7 +203,7 @@ def check_region_identity_and_collisions(page, baseline):
         region=choose(region_id,row)
         pps=rows.nth(row).locator('.speaker-waveform').bounding_box()['width']/3
         for edge,delta in [('end',.6*pps),('start',.6*pps)]:
-            handle=region.locator('[data-edge='+edge+']');handle.scroll_into_view_if_needed();box=handle.bounding_box()
+            handle=region.locator('[data-edge='+edge+']');box=edge_box(handle)
             x,y=box['x']+box['width']/2,box['y']+box['height']/2
             width=region.bounding_box()['width']
             page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+delta,y)
@@ -204,7 +212,7 @@ def check_region_identity_and_collisions(page, baseline):
             assert page.locator('#speaker-editor-selection-error').inner_text()
             page.mouse.up();assert page.evaluate(state)==before
         # Native touch input intentionally grabs the region edge, committing once.
-        handle=region.locator('[data-edge=end]');handle.scroll_into_view_if_needed();box=handle.bounding_box()
+        handle=region.locator('[data-edge=end]');box=edge_box(handle)
         x,y=box['x']+box['width']/2,box['y']+box['height']/2
         touch=page.context.new_cdp_session(page)
         touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
@@ -221,7 +229,7 @@ def check_region_identity_and_collisions(page, baseline):
     # late pointerup from the detached element, and keeps the exact Files.
     create('cut',.5,1.1)
     before=page.evaluate(state);region=choose(before['globalCuts'][0]['regionId'])
-    handle=region.locator('[data-edge=end]');handle.scroll_into_view_if_needed();box=handle.bounding_box()
+    handle=region.locator('[data-edge=end]');box=edge_box(handle)
     handle.evaluate('e=>window.oldRegionHandle=e')
     page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down()
     page.mouse.move(box['x']+box['width']/2+20,box['y']+box['height']/2)

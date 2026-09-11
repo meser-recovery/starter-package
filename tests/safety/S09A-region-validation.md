@@ -46,6 +46,10 @@ The old timeline fixture expected 100ms flag keyboard steps and failed against
 the package's new 10ms contract. It now asserts exactly 10ms and 1s with Shift,
 retaining the numeric tolerance and adding boundary region-ID preservation.
 Live recording-flag gestures also explicitly verify one-step Undo/Redo.
+Supplementary WAV capture found that the expanded sticky precision/error panel
+could cover an edge despite Playwright considering it in view. Edge gestures
+now center the handle and assert the actual hit target before mouse/touch input;
+collision tests therefore cannot pass by accidentally dragging the error panel.
 
 Site contract, JS/Python syntax, strict HTML nesting, 18 transport/waveform/detail
 units, gateway syntax and 80 gateway tests are required alongside the complete
