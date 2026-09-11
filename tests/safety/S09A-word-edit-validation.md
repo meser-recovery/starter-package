@@ -57,6 +57,14 @@ with playback, paused end seeking and a deterministic delayed-event regression.
 The regression failed before the fix; no media-clock or geometry tolerance was
 relaxed. The rail is scrolled into view before coordinate-based interaction.
 
+Final evidence-head CI exposed another old assumption: the total Worker count
+was fixed at two even after maximum zoom can create a display-only decoder.
+The smoke now waits for actual detail before checking reuse, observes native
+Worker IDs, and requires the same processing Worker for the no-pause fixture,
+its exact termination on cancel, and exactly one live replacement on retry.
+Initial lazy loading and all virtual-FS, result-byte and audio checks remain.
+This removes the debounce race without allowing processor leaks/recreation.
+
 Site contract, JS/Python syntax, strict HTML nesting, all 15 transport/waveform/
 detail units, gateway syntax and 80 gateway tests are required alongside the
 complete browser smoke. Source-bound results and exact submitted-head CI are

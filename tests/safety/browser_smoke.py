@@ -2974,7 +2974,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
     context.route("**/*", isolate_processor_gateway)
     # Observe native workers and object URLs without replacing the engine or its work.
     context.add_init_script("""(() => {
-        window.processorProbe = {workers: 0, terminated: 0, messages: [], urls: [], revoked: [], phases: [], files: {}, logs: []};
+        window.processorProbe = {workers: 0, terminated: 0, terminatedIds: [], messages: [], urls: [], revoked: [], phases: [], files: {}, logs: []};
         const NativeWorker = window.Worker;
         window.Worker = class extends NativeWorker {
             constructor(...args) {
@@ -2992,11 +2992,12 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             }
             postMessage(message, ...args) {
                 this.pending.set(message.id, message.data);
-                window.processorProbe.messages.push({type: message.type, path: message.data?.path, args: message.data?.args});
+                window.processorProbe.messages.push({worker: this.probeId, type: message.type, path: message.data?.path, args: message.data?.args});
                 return super.postMessage(message, ...args);
             }
             terminate() {
                 window.processorProbe.terminated++;
+                window.processorProbe.terminatedIds.push(this.probeId);
                 for (const key of Object.keys(window.processorProbe.files)) if (key.startsWith(this.probeId + ':')) delete window.processorProbe.files[key];
                 return super.terminate();
             }
@@ -3105,6 +3106,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.locator(".processor-track .processor-waveform").count() == 1
         assert page.locator('.processor-track button[data-track-action="solo"]').get_attribute("aria-pressed") == "false"
         assert page.locator('.processor-track button[data-track-action="mute"]').get_attribute("aria-pressed") == "false"
+        assert page.evaluate("window.processorProbe.workers") == 2
         waveform_messages = page.evaluate("window.processorProbe.messages")
         assert any(message["type"] == "EXEC" and any("showwavespic=" in arg for arg in message["args"]) for message in waveform_messages), waveform_messages
         waveform_deletes = [message["path"] for message in waveform_messages if message["type"] == "DELETE_FILE"]
@@ -3182,7 +3184,9 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-source-follow").click()
         page.locator("#processor-source-zoom-range").evaluate(
             "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-        page.wait_for_timeout(50)
+        # Force actual detail decoding, so engine-reuse checks cannot pass
+        # only because its debounced worker has not started on a fast runner.
+        page.wait_for_function("document.querySelector('.processor-waveform-detail').dataset.waveDetail === 'ready'", timeout=60000)
         source_rail = page.locator("#processor-source-scrollbar").bounding_box()
         page.mouse.click(source_rail["x"] + source_rail["width"] * .65, source_rail["y"] + source_rail["height"] / 2)
         result_independent_after = page.evaluate("""() => ({
@@ -3224,7 +3228,11 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert download.suggested_filename == "fixture-edited.mp3" and download.failure() is None
         assert page.locator(".archive-item").count() == 0
         probe = page.evaluate("window.processorProbe")
-        assert probe["workers"] == 2, probe
+        processing_workers = {message["worker"] for message in probe["messages"]
+                              if message["type"] == "WRITE_FILE" and message["path"].startswith("processor-input-")}
+        assert len(processing_workers) == 1, processing_workers
+        processing_worker = next(iter(processing_workers))
+        assert processing_worker not in probe["terminatedIds"], probe
         for phase in ("Подготовка формы сигнала…", "Подготовка обработчика…", "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово."):
             assert phase in probe["phases"], probe
         assert any("/core/ffmpeg-core.wasm" in request_url for method, request_url, _ in requests if method == "GET")
@@ -3280,7 +3288,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         no_pause = wav_payload("no-pauses.WAV", ((1, True), (1, False), (1, True)), comment="silence_start: 0")
         page.locator("#processor-file").set_input_files(no_pause)
         wait_waveforms(page, 1)
-        exec_before = len([message for message in page.evaluate("window.processorProbe.messages") if message["type"] == "EXEC"])
+        exec_before = len([message for message in page.evaluate("window.processorProbe.messages") if message["type"] == "EXEC" and message["worker"] == processing_worker])
         assert_processor_no_result(page)
         revoked = page.evaluate("window.processorProbe.revoked")
         assert all(value in revoked for value in prior_urls), (prior_urls, revoked)
@@ -3293,7 +3301,10 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             await (await fetch(document.getElementById('processor-download').href)).arrayBuffer()))""")
         assert bytes(passthrough_bytes) == no_pause["buffer"]
         probe = page.evaluate("window.processorProbe")
-        assert probe["workers"] == 2 and len([message for message in probe["messages"] if message["type"] == "EXEC"]) >= exec_before + 1
+        assert {message["worker"] for message in probe["messages"]
+                if message["type"] == "WRITE_FILE" and message["path"].startswith("processor-input-")} == {processing_worker}, probe
+        assert processing_worker not in probe["terminatedIds"], probe
+        assert len([message for message in probe["messages"] if message["type"] == "EXEC" and message["worker"] == processing_worker]) >= exec_before + 1
         assert "processor-output.mp3" not in probe["files"]
         print("No-long-pause fixture passed: exact-byte passthrough result/download, no output encode; loaded engine reused; metadata cannot spoof detector output.")
 
@@ -3312,11 +3323,15 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-run").click()
         wait_processor_status(page, "Обработка отменена.")
         assert_processor_no_result(page)
-        assert page.evaluate("window.processorProbe.terminated") == 2
+        assert page.evaluate("window.processorProbe.terminatedIds").count(processing_worker) == 1
         assert page.locator("#processor-source-audio").get_attribute("src").startswith("blob:")
         page.locator("#processor-run").click()
         wait_processor_status(page, "Готово.")
-        assert page.evaluate("window.processorProbe.workers") == 3
+        retried = page.evaluate("window.processorProbe")
+        replacement_workers = {message["worker"] for message in retried["messages"]
+                               if message["type"] == "WRITE_FILE" and message["path"].startswith("processor-input-")} - {processing_worker}
+        assert len(replacement_workers) == 1, retried
+        assert not replacement_workers.intersection(retried["terminatedIds"]), retried
 
         # Real leading/trailing EOF handling and stereo preservation, plus a Unicode filename.
         page.locator("#processor-file").set_input_files(wav_payload("Спикерское.wav", ((3, False), (1, True), (3, False)), channels=2))
