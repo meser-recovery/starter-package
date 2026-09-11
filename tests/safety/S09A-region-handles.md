@@ -1,5 +1,9 @@
 # S09A — Contextual restoration and live region edges
 
+This report describes the supplied package environment. See
+[current Mac validation](S09A-region-validation.md) for the applied branch,
+additional regressions, full smoke/CI and persistent preview.
+
 Base: `4d3bd133a1e8e3d482c3b515109c1b826546d528`, draft PR #36.
 Package continuation; no merge, production changes or Closure.
 

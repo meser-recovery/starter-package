@@ -1,6 +1,10 @@
 # Region handles — local package evidence
 
-See [scope and validation](../../../../S09A-region-handles.md).
+These 12 PNGs/logs are supplied-package evidence for commit
+`22e879bcb208d037ae3ea5cfb22fd23ebcb5912a`. They are preserved separately from
+[current Mac evidence](mac/README.md), not attributed to the current checkout.
+
+See [scope and validation](../../../S09A-region-handles.md).
 `manifest.json` binds application/test bytes and the 12 captured PNGs.
 Screenshots are real Chromium views with synthetic two-track WAV audio.
 DPR 1 and DPR 2 are emulated; they are not physical device or user acceptance.

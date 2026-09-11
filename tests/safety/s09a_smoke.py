@@ -78,7 +78,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
     def snapshot():
         return page.evaluate("async()=>{const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();return {session:s.session,payload:s.payload,draft:s.draft,files:s.files.map(f=>[f.name,f.size]),epoch:s.sourceEpoch,candidate:s.candidate?.candidateType}}")
     def unchanged(before):
-        after=snapshot(); assert after['payload']==before['payload']; assert after['files']==before['files']; assert after['epoch']==before['epoch']
+        after=snapshot(); assert after['payload']==before['payload'], (before['payload'],after['payload']); assert after['files']==before['files']; assert after['epoch']==before['epoch']
     def overflow(): assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.viewport_size
     try:
         page.goto(base_url+'/Audio-Editor.html'); page.wait_for_function("document.getElementById('source-session-session-status').textContent.includes('активен')")
@@ -140,14 +140,18 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-selection-start').fill('0')
         page.locator('#speaker-editor-selection-end').fill('0')
         scroll.scroll_into_view_if_needed();box=scroll.bounding_box()
-        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+r.height*.7))}'), 'Sticky transport covers the touch selection target'
-        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+20,r.y+r.height*.7).closest(".speaker-boundary")}'), 'Select the waveform body, below the draggable flags'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+60,r.y+r.height*.7))}'), 'Sticky transport covers the touch selection target'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+60,r.y+r.height*.7).closest(".speaker-boundary")}'), 'Select the waveform body, below the draggable flags'
+        # Stay clear of touch-expanded edge handles: this fixture tests plain
+        # selection, while the region helper exercises intentional edge drags.
+        unchanged(edited)
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+60,r.y+r.height*.7).closest(".speaker-region-handle")}')
         touch=context.new_cdp_session(page)
-        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+20,'y':box['y']+box['height']*.7}]})
-        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+70,'y':box['y']+box['height']*.7}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+60,'y':box['y']+box['height']*.7}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+110,'y':box['y']+box['height']*.7}]})
         touch.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         assert float(page.locator('#speaker-editor-selection-end').input_value())>float(page.locator('#speaker-editor-selection-start').input_value())
-        touch.detach()
+        touch.detach();unchanged(edited)
         page.locator('.speaker-track').first.get_by_role('button',name='S · Solo').click();unchanged(edited)
         assert page.locator('.speaker-track.is-solo').count()==1
         for width in (320,390,768,1280):

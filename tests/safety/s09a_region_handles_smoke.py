@@ -24,7 +24,9 @@ def check_region_handles(page, output=None):
         page.mouse.move(x, y); page.mouse.down(); page.mouse.move(x+delta, y, steps=6)
 
     def shot(name):
-        if output: page.locator('#speaker-editor').screenshot(path=str(output/(name+'.png')))
+        if output:
+            page.evaluate('document.activeElement?.blur()')
+            page.locator('#speaker-editor').screenshot(path=str(output/(name+'.png')))
 
     for tool, key, row in [('cut', 'globalCuts', 0), ('silence', 'trackSilenceRegions', 1)]:
         select(.25,.45,row); apply_selection(page,tool)
@@ -61,13 +63,20 @@ def check_region_handles(page, output=None):
         handle=region.locator('[data-edge=end]'); drag(handle,20)
         handle.dispatch_event('pointercancel',{'pointerId':1}); page.mouse.up()
         assert page.evaluate(state)==original and abs(region.bounding_box()['width']-width)<1
+        drag(handle,20)
+        handle.evaluate('e=>e.releasePointerCapture(1)'); page.mouse.up()
+        assert page.evaluate(state)==original and abs(region.bounding_box()['width']-width)<1
         # Keyboard edge changes commit once and preserve focus after rebuilding rows.
         handle.focus(); page.keyboard.press('ArrowLeft')
-        assert page.evaluate(state)[key][0]['endSeconds'] < original[key][0]['endSeconds']
+        assert abs(page.evaluate(state)[key][0]['endSeconds'] - original[key][0]['endSeconds'] + .01) < .000001
+        page.keyboard.press('Shift+ArrowRight')
+        assert abs(page.evaluate(state)[key][0]['endSeconds'] - original[key][0]['endSeconds'] - .99) < .000001
         assert handle.evaluate('e=>e===document.activeElement')
         restore_selection(page,tool); assert page.evaluate(state)==baseline
         assert page.locator('#speaker-editor-add-'+tool).get_attribute('data-mode')=='apply'
         page.keyboard.press('Escape')
+
+    check_region_identity_and_collisions(page, baseline)
 
     # Word-scale resizing uses source seconds, not overview pixels.
     select(.25,.45); apply_selection(page,'cut')
@@ -119,6 +128,21 @@ def check_region_handles(page, output=None):
     page.locator('#speaker-editor-source-audio-stop').click()
     assert page.locator('#speaker-editor-source-audio-loop').inner_text()=='Loop'
     assert page.locator('#speaker-editor-source-audio-loop svg').evaluate('e=>getComputedStyle(e).fill')=='none'
+    # The actual source loop clips an oversized selection to recording bounds.
+    for edge,value in [('start',0),('end',duration)]:
+        page.locator('#speaker-editor-selection-'+edge).evaluate('(e,v)=>{e.value=v;e.dispatchEvent(new Event("input",{bubbles:true}))}',str(value))
+    page.evaluate("""()=>{const a=document.getElementById('speaker-editor-source-audio');window.boundLoops=0;
+        let previous=a.currentTime;const tick=()=>{if(a.currentTime<previous-.1)boundLoops++;previous=a.currentTime;
+            if(boundLoops<2)requestAnimationFrame(tick)};requestAnimationFrame(tick)}""")
+    page.locator('#speaker-editor-source-audio-loop').click()
+    page.wait_for_function('window.boundLoops>=2',timeout=15000)
+    assert page.locator('#speaker-editor-source-audio-loop').get_attribute('aria-pressed')=='true'
+    title=page.locator('#speaker-editor-source-audio-loop').get_attribute('title')
+    assert f'{start:.3f}–{end:.3f}' in title,title
+    page.locator('#speaker-editor-source-audio-stop').click()
+    page.locator('#speaker-editor-selection-end').evaluate('(e,v)=>{e.value=v;e.dispatchEvent(new Event("input",{bubbles:true}))}',str(start/2))
+    assert page.locator('#speaker-editor-source-audio-loop').is_disabled()
+    assert page.locator('#speaker-editor-source-audio-loop').get_attribute('aria-pressed')=='false'
     rows.first.locator('.speaker-boundary--start').focus(); page.keyboard.press('Home')
     rows.first.locator('.speaker-boundary--end').focus(); page.keyboard.press('End')
     assert page.evaluate(state)==baseline
@@ -128,3 +152,88 @@ def check_region_handles(page, output=None):
         assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
     page.set_viewport_size({'width':1280,'height':900})
     print('Region handles, contextual restore, live flags and bounded playback: PASS',flush=True)
+
+
+def check_region_identity_and_collisions(page, baseline):
+    state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
+    rows = page.locator('#speaker-editor-tracks .speaker-track')
+
+    def create(tool, start, end, row=0):
+        page.keyboard.press('Escape')
+        detail=page.locator('.speaker-selection details')
+        if not detail.evaluate('e=>e.open'):detail.locator('summary').click()
+        page.locator('#speaker-editor-selection-track').select_option(rows.nth(row).get_attribute('data-track-id'))
+        for edge, value in [('start',start),('end',end)]:
+            page.locator('#speaker-editor-selection-'+edge).evaluate(
+                '(e,v)=>{e.value=v;e.dispatchEvent(new Event("input",{bubbles:true}))}', str(value))
+        apply_selection(page,tool)
+
+    def choose(region_id, row=0):
+        region=rows.nth(row).locator(f'[data-region-id="{region_id}"]')
+        region.focus();page.keyboard.press('Enter')
+        return region
+
+    def remove(region_id, tool, row=0):
+        choose(region_id,row);page.locator('#speaker-editor-add-'+tool).click()
+
+    # Coincident cut and silence remain distinct edits, selected by ID/type.
+    create('cut',.5,1.1);create('silence',.5,1.1,1)
+    current=page.evaluate(state);cut=current['globalCuts'][0];silence=current['trackSilenceRegions'][0]
+    choose(cut['regionId']);assert page.locator('#speaker-editor-add-cut').get_attribute('data-mode')=='restore'
+    page.locator('#speaker-editor-selection-start').evaluate('e=>{e.value=.6;e.dispatchEvent(new Event("input",{bubbles:true}))}')
+    assert page.locator('#speaker-editor-add-cut').get_attribute('data-mode')=='apply'
+    remove(cut['regionId'],'cut')
+    assert page.evaluate(state)['globalCuts']==baseline['globalCuts']
+    assert page.evaluate(state)['trackSilenceRegions']==[silence]
+    remove(silence['regionId'],'silence',1);assert page.evaluate(state)==baseline
+
+    for tool,key,row in [('cut','globalCuts',0),('silence','trackSilenceRegions',1)]:
+        create(tool,.4,.8,row);create(tool,1.2,1.6,row)
+        before=page.evaluate(state);region_id=before[key][0]['regionId']
+        region=choose(region_id,row)
+        pps=rows.nth(row).locator('.speaker-waveform').bounding_box()['width']/3
+        for edge,delta in [('end',.6*pps),('start',.6*pps)]:
+            handle=region.locator('[data-edge='+edge+']');handle.scroll_into_view_if_needed();box=handle.bounding_box()
+            x,y=box['x']+box['width']/2,box['y']+box['height']/2
+            width=region.bounding_box()['width']
+            page.mouse.move(x,y);page.mouse.down();page.mouse.move(x+delta,y)
+            assert page.evaluate(state)==before
+            assert abs(region.bounding_box()['width']-width)<1
+            assert page.locator('#speaker-editor-selection-error').inner_text()
+            page.mouse.up();assert page.evaluate(state)==before
+        # Native touch input intentionally grabs the region edge, committing once.
+        handle=region.locator('[data-edge=end]');handle.scroll_into_view_if_needed();box=handle.bounding_box()
+        x,y=box['x']+box['width']/2,box['y']+box['height']/2
+        touch=page.context.new_cdp_session(page)
+        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':x,'y':y}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':x+20,'y':y}]})
+        assert page.evaluate(state)==before
+        assert region.bounding_box()['width']>width+15
+        touch.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]});touch.detach()
+        assert abs(page.evaluate(state)[key][0]['endSeconds']-.8-20/pps)<.002
+        page.locator('#speaker-editor-undo').click();assert page.evaluate(state)==before
+        for r in before[key]:remove(r['regionId'],tool,row)
+        assert page.evaluate(state)==baseline
+    page.keyboard.press('Escape')
+    # Replacing prepared source state cancels an in-flight edge, including a
+    # late pointerup from the detached element, and keeps the exact Files.
+    create('cut',.5,1.1)
+    before=page.evaluate(state);region=choose(before['globalCuts'][0]['regionId'])
+    handle=region.locator('[data-edge=end]');handle.scroll_into_view_if_needed();box=handle.bounding_box()
+    handle.evaluate('e=>window.oldRegionHandle=e')
+    page.mouse.move(box['x']+box['width']/2,box['y']+box['height']/2);page.mouse.down()
+    page.mouse.move(box['x']+box['width']/2+20,box['y']+box['height']/2)
+    assert page.evaluate(state)==before
+    page.evaluate("""async()=>{const m=await import('./scripts/speaker-editor.mjs');const s=m.getSpeakerSaveState();
+        window.regionEpoch=s.sourceEpoch;
+        await m.closeSpeakerEditor(true);
+        await m.openSpeakerEditor({session:s.session,files:s.files});
+        window.oldRegionHandle.dispatchEvent(new PointerEvent('pointerup',{pointerId:1,bubbles:true}));}""")
+    page.mouse.up()
+    assert page.evaluate(state)==baseline
+    assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().sourceEpoch>regionEpoch")
+    assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files.every((f,i)=>f===handleFiles[i])")
+    assert page.locator('[data-gesture-preview]').count()==0
+    detail=page.locator('.speaker-selection details')
+    if detail.evaluate('e=>e.open'):detail.locator('summary').click()
+    print('Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.',flush=True)
