@@ -3,8 +3,8 @@
 - Package base: `80c1ef5c83fd6317f11ca3ecd539a03f82d8d101`.
 - Implementation and PNG capture source:
   `9e3881c00c866cbf1a3d87302475ab828a92d96e`.
-- Complete post-commit browser smoke and current Worker identity regression:
-  `88b15bac2f01a4fadea16ea8bb1d014a21d22def`. Application bytes are unchanged
+- Complete post-commit browser smoke and current Worker/seek regressions:
+  `7c4cd0801e895460a325554a76361143fee856bd`. Application bytes are unchanged
   from the PNG source; only test/evidence files changed.
 - Evidence is committed separately. Draft PR #36 records the exact submitted
   HEAD and its final Linux local-safety result without another commit changing
@@ -19,7 +19,7 @@
 - [Gateway syntax](gateway-check.log), [gateway tests](gateway.log): 80/80 PASS.
 - [Complete post-commit browser smoke](browser-full.log): PASS, default Chromium
   security and isolated local fixtures. Command:
-  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-word-final-v3`.
+  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-word-final-v4`.
 - Full corrective smoke runs at DPR 1 and 2, including four widths, two synthetic
   1:02:27 M4As, forced native decode failure/bundled WASM fallback, exact Files and
   retry, per-track detail after immediate scroll to 80s, <=32-second windows,
@@ -51,7 +51,11 @@ Maximum zoom may start a debounced display decoder. The smoke now waits for
 actual detail, observes native Worker IDs, and checks the same processing
 Worker's reuse, exact cancel termination and one live replacement on retry.
 The full post-commit run above includes that correction. The failed CI attempt
-is preserved in the PR history and is not counted as a pass.
+is preserved in the PR history and is not counted as a pass. A subsequent CI
+caught the paused-seek wait accepting old centered geometry before seeking
+began. It now requires the requested clock, completed native seek and the new
+rendered source position, preserving the 8px/2px geometry limits. The full run
+linked above includes both test corrections.
 
 ## Current captures
 
