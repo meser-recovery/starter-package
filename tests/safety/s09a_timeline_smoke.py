@@ -51,7 +51,16 @@ def check_timeline_controls(browser, base_url, screenshot_dir=None):
                     assert page.locator('#'+rail_id).bounding_box()['y']>=rows.last.bounding_box()['y']+rows.last.bounding_box()['height']
                     if mode=='speaker':
                         assert rows.first.locator('canvas').evaluate('c=>Math.abs(c.width-c.getBoundingClientRect().width*devicePixelRatio)<=2')
-                        assert rows.first.locator('canvas').evaluate('c=>{const p=c.getContext("2d").getImageData(0,0,c.width,c.height).data;return p.some((v,i)=>i%4===0&&v===116)}')
+                        # Verify real waveform pixels in the active theme, not
+                        # the previous hard-coded #74b2e6 palette's red channel.
+                        assert rows.first.locator('canvas').evaluate('''c=>{
+                            const style=getComputedStyle(c), probe=document.createElement('canvas');
+                            probe.width=probe.height=1;const ctx=probe.getContext('2d');
+                            ctx.fillStyle=style.getPropertyValue('--track-wave').trim()||style.getPropertyValue('--studio-wave').trim()||'#74b2e6';
+                            ctx.fillRect(0,0,1,1);const expected=ctx.getImageData(0,0,1,1).data;
+                            const pixels=c.getContext('2d').getImageData(0,0,c.width,c.height).data;
+                            return pixels.some((v,i)=>i%4===0&&v===expected[0]&&pixels[i+1]===expected[1]&&pixels[i+2]===expected[2]&&pixels[i+3]===255);
+                        }''')
                     else:
                         assert rows.first.locator('img').evaluate('i=>i.complete&&i.naturalWidth>=4096')
                     if output:
