@@ -1,0 +1,8 @@
+Drag target: {'rect': {'x': 361, 'y': 151.5, 'width': 838, 'height': 256.890625, 'top': 151.5, 'right': 1199, 'bottom': 408.390625, 'left': 361}, 'target': '<summary>Точное редактирование</summary>', 'precision': True}
+Traceback (most recent call last):
+  File "/private/tmp/diagnose-meters-s09a.py", line 249, in <module>
+    browser=p.chromium.launch();check_s09a(browser,args.base_url,args.screenshot_dir);browser.close()
+                                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/private/tmp/diagnose-meters-s09a.py", line 123, in check_s09a
+    raise RuntimeError('Target diagnosis complete')
+RuntimeError: Target diagnosis complete

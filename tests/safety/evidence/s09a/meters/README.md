@@ -1,5 +1,7 @@
 # S09A: thin region edges, stable tools, digital meters
 
+Receiving Mac logs, captures and reconciliation are recorded separately in [Mac validation](mac/README.md).
+
 Implementation base: `7680424624a231191e228e71190a8b1dbf7c9af0`.
 Local review branch: `codex/s09a-meters`. Intended receiving branch: `codex/s09a-editor-corrective-ux`, draft PR #36.
 
@@ -15,7 +17,7 @@ Local review branch: `codex/s09a-meters`. Intended receiving branch: `codex/s09a
 
 The native playback contract for volume, seek and source replacement is documented in the [W3C Web Audio specification](https://www.w3.org/TR/webaudio/#MediaElementAudioSourceNode).
 
-## Validation performed locally
+## Validation performed by the patch author
 
 - Site contract, changed JavaScript syntax and git whitespace checks: PASS.
 - Existing transport/waveform command including three meter numeric regressions: **21/21 PASS**.
