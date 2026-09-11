@@ -3614,6 +3614,8 @@ def main() -> int:
         check_s09a_editor_corrective(browser, base_url, args.screenshot_dir, device_scale_factor=2)
         from s09a_design_a_smoke import check_design_a
         check_design_a(browser, base_url, args.screenshot_dir)
+        from s09a_waveform_alignment_smoke import check_waveform_alignment
+        check_waveform_alignment(browser, base_url, args.screenshot_dir)
         from s09a_meters_smoke import check_audio_meters
         check_audio_meters(browser, base_url, args.screenshot_dir)
         from s09a_playback_signal_smoke import check_playback_signal

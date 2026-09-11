@@ -1,10 +1,30 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { drawWaveformViewport } from '../../scripts/audio-waveform-view.mjs';
+import { waveformImageSpec } from '../../scripts/audio-waveform-image.mjs';
 function canvas() {
   const fills = []; const context = { fillRect(...args) { fills.push(args); } };
   return { style: {}, fills, getContext: () => context };
 }
+test('FFmpeg columns retain their actual sample clock, including padded final windows', () => {
+  for (const duration of [32, 17.3, 9.37, 129.37, 3747]) {
+    const width = Math.min(65536, Math.floor(duration * 4000));
+    const spec = waveformImageSpec(duration, width, 100);
+    assert.ok(spec.duration >= duration && spec.duration - duration < width / 48000);
+    assert.ok(Math.abs(spec.duration * spec.sampleRate - width) < 1e-8);
+    assert.match(spec.filter, /scale=lin:filter=peak:draw=full/);
+    const samples = new Float32Array(width); samples.sampleRate = spec.sampleRate;
+    const onset = Math.min(2.5, duration / 2);
+    samples[Math.floor(onset * spec.sampleRate)] = .25;
+    const c = canvas();
+    drawWaveformViewport(c, samples, duration, 1000, (onset - .1) * 1000, 200, 100, 2, 0);
+    const ink = c.fills.slice(1).filter(r => r[3] > 2);
+    assert.ok(ink.length > 0);
+    const drawnOnset = onset - .1 + ink[0][0] / 2000;
+    assert.ok(Math.abs(drawnOnset - onset) <= 1 / spec.sampleRate + .001);
+    assert.equal(Math.max(...ink.map(r => r[3])), 46);
+  }
+});
 test('visible bitmap is Retina sharp and bounded by viewport, not full recording width', () => {
   const c = canvas();
   drawWaveformViewport(c, new Float32Array(65536).fill(.5), 3600, 100, 100000, 900, 112, 2);

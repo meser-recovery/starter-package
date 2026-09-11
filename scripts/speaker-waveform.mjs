@@ -3,6 +3,7 @@
 // recording. The decoder's temporary image is released after extraction.
 const WIDTH = 65536;
 const HEIGHT = 100;
+import { waveformImageSpec } from './audio-waveform-image.mjs';
 
 export function createWaveformReader(signal) {
   let engine;
@@ -16,18 +17,23 @@ export function createWaveformReader(signal) {
     const context = new AudioContextClass();
     try {
       const buffer = await context.decodeAudioData(await file.arrayBuffer()); check();
-      const data = buffer.getChannelData(0); const samples = new Float32Array(WIDTH);
-      for (let x = 0; x < WIDTH; x++) {
-        for (let i = Math.floor(x * data.length / WIDTH); i < Math.min(data.length, Math.max(Math.floor(x * data.length / WIDTH) + 1, Math.floor((x + 1) * data.length / WIDTH))); i++) {
-          samples[x] = Math.max(samples[x], Math.abs(data[i]));
+      const samples = new Float32Array(WIDTH);
+      for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
+        const data = buffer.getChannelData(channel);
+        for (let x = 0; x < WIDTH; x++) {
+          for (let i = Math.floor(x * data.length / WIDTH); i < Math.min(data.length, Math.max(Math.floor(x * data.length / WIDTH) + 1, Math.floor((x + 1) * data.length / WIDTH))); i++) {
+            samples[x] = Math.max(samples[x], Math.abs(data[i]));
+          }
         }
       }
+      samples.sampleRate = WIDTH / buffer.duration;
       return samples;
     } finally { await context.close(); }
   }
 
   async function ffmpegSamples(file, duration, start = null) {
     const width = Number.isFinite(duration) ? Math.min(WIDTH, Math.max(1, Math.floor(duration * 4000))) : WIDTH;
+    const spec = waveformImageSpec(duration, width, HEIGHT);
     if (!engine) {
       const { FFmpeg } = await import("../vendor/ffmpeg/ffmpeg/index.js"); check();
       engine = new FFmpeg();
@@ -41,7 +47,7 @@ export function createWaveformReader(signal) {
       await currentEngine.writeFile(input, new Uint8Array(await file.arrayBuffer())); check();
       // A fixed-size image avoids retaining an hour of decoded PCM in Web Audio.
       const code = await currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", ...(start === null ? [] : ["-ss", String(start), "-t", String(duration)]), "-i", input,
-        "-filter_complex", `aformat=channel_layouts=mono,aresample=8000,showwavespic=s=${width}x${HEIGHT}:colors=white`,
+        "-filter_complex", spec.filter,
         "-frames:v", "1", "-an", "-pix_fmt", "rgba", "-f", "rawvideo", output]);
       check();
       if (code !== 0) throw new Error("FFmpeg waveform decoding failed");
@@ -51,6 +57,7 @@ export function createWaveformReader(signal) {
       for (let x = 0; x < width; x++) for (let y = 0; y < HEIGHT; y++) {
         if (pixels[(y * width + x) * 4] > 0) samples[x] = Math.max(samples[x], Math.abs(y - HEIGHT / 2) / (HEIGHT / 2));
       }
+      samples.sampleRate = spec.sampleRate;
       return samples;
     } finally {
       if (engine === currentEngine) {

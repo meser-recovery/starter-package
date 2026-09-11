@@ -12,7 +12,7 @@ export function drawWaveformViewport(canvas, samples, duration, pixelsPerSecond,
   context.fillStyle = theme?.getPropertyValue('--track-wave').trim() || theme?.getPropertyValue('--studio-wave').trim() || '#74b2e6';
   const count = samples?.length || 0;
   if (!count || !(duration > 0) || !(pixelsPerSecond > 0)) return;
-  const rate = count / duration;
+  const rate = samples.sampleRate || count / duration;
   // The overview uses A's fine, spaced strokes. Aggregate the whole cell,
   // including its visual gap, so short peaks cannot disappear. At word zoom
   // return to every device pixel instead of sacrificing temporal detail.

@@ -1,4 +1,5 @@
 import { createWaveformDetail } from "./audio-waveform-detail.mjs";
+import { waveformImageSpec } from "./audio-waveform-image.mjs";
 import { renderSourceTimeline } from "./audio-timeline.mjs";
 import { createAudioMeters } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
@@ -188,6 +189,7 @@ let sourceZoomInitialized = false;
 let resultPixelsPerSecond = 2;
 let resultDuration = NaN;
 let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
+let resultWaveformDuration = 0;
 let resultZoomMinimum = 2;
 let resultZoomMaximum = 2;
 const sourceTransport = createAudioTransport({
@@ -364,7 +366,7 @@ function sourceDisplayWidth(track) {
 
 function sourceImageDisplayWidth(track) {
   if (!sourceZoomInitialized || !Number.isFinite(track.duration) || track.duration <= 0) return track.waveformWidth;
-  return Math.max(1, Math.ceil(track.duration * sourcePixelsPerSecond));
+  return Math.max(1, (track.waveformDuration || track.duration) * sourcePixelsPerSecond);
 }
 
 function maximumSourceLeftTime() {
@@ -576,7 +578,7 @@ function redrawSourceDetails() {
     if (!canvas || !scroll || !track.waveformURL) continue;
     canvas.hidden = true;
     sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
-      scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.waveformWidth / track.duration);
+      scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.waveformWidth / (track.waveformDuration || track.duration));
   }
 }
 
@@ -1111,7 +1113,9 @@ async function buildWaveform(track, currentEngine, operation) {
     renderTracks();
     const bytes = new Uint8Array(await operation.wait(track.file.arrayBuffer()));
     await operation.wait(currentEngine.writeFile(inputPath, bytes));
-    const filter = `[0:a:0]aformat=channel_layouts=mono,showwavespic=s=${track.waveformWidth}x${WAVEFORM_HEIGHT}:colors=#74b2e6[v]`;
+    const spec = waveformImageSpec(track.duration, track.waveformWidth, Math.round(WAVEFORM_HEIGHT * .92), '#74b2e6');
+    track.waveformDuration = spec.duration;
+    const filter = `[0:a:0]${spec.filter},pad=${track.waveformWidth}:${WAVEFORM_HEIGHT}:0:(oh-ih)/2[v]`;
     const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", inputPath,
       "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", outputPath]));
     if (code !== 0) throw new Error("waveform");
@@ -1246,6 +1250,8 @@ function setResultZoom(value, anchorTime) {
     (viewport.scrollLeft + viewport.clientWidth / 2) / resultPixelsPerSecond;
   resultPixelsPerSecond = Math.max(resultZoomMinimum, Math.min(resultZoomMaximum, value));
   byId("result-waveform-control").style.width = `${resultDisplayWidth()}px`;
+  const image = byId("result-waveform-control").querySelector('img');
+  if (image) image.style.width = `${resultWaveformDuration * resultPixelsPerSecond}px`;
   viewport.scrollLeft = Math.max(0, centerTime * resultPixelsPerSecond - viewport.clientWidth / 2);
   updateResultZoomRange();
   updateResultPlayhead();
@@ -1304,7 +1310,9 @@ async function buildResultWaveform(currentEngine, operation, duration) {
   try {
     resultDuration = duration;
     resultWaveformWidth = waveformWidth(duration);
-    const filter = `[0:a:0]aformat=channel_layouts=mono,showwavespic=s=${resultWaveformWidth}x${WAVEFORM_HEIGHT}:colors=#74b2e6[v]`;
+    const spec = waveformImageSpec(duration, resultWaveformWidth, Math.round(WAVEFORM_HEIGHT * .92), '#74b2e6');
+    resultWaveformDuration = spec.duration;
+    const filter = `[0:a:0]${spec.filter},pad=${resultWaveformWidth}:${WAVEFORM_HEIGHT}:0:(oh-ih)/2[v]`;
     const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", OUTPUT_PATH,
       "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", RESULT_WAVEFORM_PATH]));
     if (code !== 0) throw new Error("waveform");

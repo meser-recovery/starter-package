@@ -261,7 +261,7 @@ function drawCanvas(canvas, track, timelineDuration = state.originalDuration) {
   drawWaveformViewport(canvas, track.samples, track.duration, pps || width / timelineDuration,
     scroll?.scrollLeft || 0, width, canvas.parentElement?.clientHeight || 112);
   if (track.file && scroll) sourceDetail.draw(canvas, track.file, track.duration, pps, scroll.scrollLeft, width,
-    canvas.parentElement?.clientHeight || 112, (track.samples?.length || 0) / track.duration);
+    canvas.parentElement?.clientHeight || 112, track.samples?.sampleRate || (track.samples?.length || 0) / track.duration);
   canvas.dataset.timelineDuration = String(timelineDuration);
   canvas.dataset.usedWidth = String(track.duration * (pps || width / timelineDuration));
 }
