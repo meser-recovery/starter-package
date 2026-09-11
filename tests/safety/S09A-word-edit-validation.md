@@ -44,6 +44,19 @@ requires a detail canvas on each track. No waveform geometry or audio tolerance
 was relaxed. The existing source overview PNG assertions and independent result
 waveform behavior remain.
 
+The capture-enabled discovery run also exposed Follow disengaging on a long
+source at maximum zoom. A delayed scroll notification for the already assigned
+position reproduced the bug at all three widths after the old two-frame lock
+expired. Synchronization now ignores that unchanged position independently of
+frame timing and records the actual browser-rounded/clamped scroll position.
+Diagnostics also reproduced a floating target of 149940.49999999997px rounded
+to 149941px, which exceeded the former 0.5px comparison. Different user positions
+still apply immediately after zoom.
+The long-source navigation fixture runs without screenshot capture in CI too,
+with playback, paused end seeking and a deterministic delayed-event regression.
+The regression failed before the fix; no media-clock or geometry tolerance was
+relaxed. The rail is scrolled into view before coordinate-based interaction.
+
 Site contract, JS/Python syntax, strict HTML nesting, all 15 transport/waveform/
 detail units, gateway syntax and 80 gateway tests are required alongside the
 complete browser smoke. Source-bound results and exact submitted-head CI are

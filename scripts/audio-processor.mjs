@@ -175,8 +175,7 @@ let active = null;
 let playheadFrame = 0;
 let resultPlayheadFrame = 0;
 let previewSyncTimer = 0;
-let sourceScrollLock = false;
-let sourceScrollReleaseFrame = 0;
+const sourceSynchronizedScroll = new WeakMap();
 let sourcePixelsPerSecond = 2;
 let sourceTimelineDuration = NaN;
 let sourceLeftVisibleTime = 0;
@@ -393,23 +392,16 @@ function updateSourceScrollbar() {
   rail.setAttribute("aria-valuetext", `${clockDuration(sourceLeftVisibleTime)} из ${clockDuration(Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0)}`);
 }
 
-function releaseSourceScrollLock() {
-  cancelAnimationFrame(sourceScrollReleaseFrame);
-  sourceScrollReleaseFrame = requestAnimationFrame(() => {
-    sourceScrollReleaseFrame = requestAnimationFrame(() => { sourceScrollLock = false; });
-  });
-}
-
 function setSourceLeftVisibleTime(value) {
   sourceLeftVisibleTime = Math.max(0, Math.min(maximumSourceLeftTime(), Number.isFinite(value) ? value : 0));
   const target = sourceLeftVisibleTime * sourcePixelsPerSecond;
-  sourceScrollLock = true;
   for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
     if (Math.abs(scroll.scrollLeft - target) > .5) scroll.scrollLeft = target;
+    // Retain the browser-rounded/clamped position, not an ideal float target.
+    sourceSynchronizedScroll.set(scroll, scroll.scrollLeft);
   }
   updateSourceScrollbar();
   redrawSourceDetails();
-  releaseSourceScrollLock();
 }
 
 function setSourceFollow(enabled) {
@@ -420,8 +412,6 @@ function setSourceFollow(enabled) {
 
 function disengageSourceFollow() {
   if (sourceFollowEnabled) setSourceFollow(false);
-  sourceScrollLock = false;
-  cancelAnimationFrame(sourceScrollReleaseFrame);
 }
 
 function followSourcePlayhead(time = sourceAudio.currentTime || 0) {
@@ -565,9 +555,10 @@ function installPan(scroll, onManualPan, altOnly = false) {
 function syncSourceScroll(event) {
   if (sourcePixelsPerSecond <= 0) return;
   const origin = event.currentTarget;
-  // Ignore only our synchronized position, not a new user scroll arriving in
-  // the two animation frames following zoom. That viewport needs new detail.
-  if (sourceScrollLock && Math.abs(origin.scrollLeft - sourceLeftVisibleTime * sourcePixelsPerSecond) <= .5) return;
+  // Our scroll event may arrive after rendering/decoding has finished. Ignore
+  // an unchanged synchronized position regardless of elapsed frames, while a
+  // new user position must still apply immediately after zoom.
+  if (origin.scrollLeft === sourceSynchronizedScroll.get(origin)) return;
   disengageSourceFollow();
   setSourceLeftVisibleTime(origin.scrollLeft / sourcePixelsPerSecond);
 }
@@ -966,8 +957,6 @@ function revokeTrackURLs(track) {
 function clearTracks(resetInput = true) {
   sourceSelection = null; sourceSelectionEpoch++;
   cancelAnimationFrame(playheadFrame);
-  cancelAnimationFrame(sourceScrollReleaseFrame);
-  sourceScrollLock = false;
   clearPreviewAudios(true);
   for (const track of tracks) revokeTrackURLs(track);
   tracks = [];

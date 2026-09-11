@@ -2876,40 +2876,54 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert_result(1, 5.35, 2)
     assert page.evaluate("window.processorProbe.workers") == probe_before["workers"] + 1
 
-    # Local visual evidence uses a long, low-rate real waveform so the shared scrollbar is useful even at 1280px.
-    if screenshot_dir:
-        visual_a = wav_payload("Навигация-A.wav", ((150, True), (150, False)), sample_rate=8000)
-        visual_b = wav_payload("Навигация-B.wav", ((150, False), (150, True)), frequency=660, sample_rate=8000)
-        select_tracks([visual_a, visual_b], expected_size_prefix="4,")
-        for width in (390, 768, 1280):
-            page.set_viewport_size({"width": width, "height": 900})
-            if page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true":
-                page.locator("#processor-source-follow").click()
-            page.locator("#processor-source-zoom-fit").click()
-            assert page.locator("#processor-source-navigation").is_visible()
-            assert page.locator("#processor-source-scrollbar-thumb").is_visible()
-            assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] >= page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
-            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-            page.screenshot(path=str(screenshot_dir / f"source-fit-{width}.png"), full_page=True)
-            page.locator("#processor-source-zoom-range").evaluate(
-                "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-            assert page.locator("#processor-source-navigation").is_visible()
-            assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] < page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
-            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-            page.wait_for_timeout(50)
-            rail_box = page.locator("#processor-source-scrollbar").bounding_box()
-            page.mouse.click(rail_box["x"] + rail_box["width"] / 2, rail_box["y"] + rail_box["height"] / 2)
-            page.screenshot(path=str(screenshot_dir / f"source-scrollbar-middle-{width}.png"), full_page=True)
+    # Long-source navigation is required in CI too, independently of PNG capture.
+    visual_a = wav_payload("Навигация-A.wav", ((150, True), (150, False)), sample_rate=8000)
+    visual_b = wav_payload("Навигация-B.wav", ((150, False), (150, True)), frequency=660, sample_rate=8000)
+    select_tracks([visual_a, visual_b], expected_size_prefix="4,")
+    for width in (390, 768, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        if page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true":
             page.locator("#processor-source-follow").click()
-            page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
-                audio.currentTime = 150; await audio.play(); }""")
-            page.wait_for_timeout(250)
-            assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true"
-            page.screenshot(path=str(screenshot_dir / f"source-follow-playing-{width}.png"), full_page=True)
-            page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
-            page.evaluate("document.getElementById('processor-source-audio').currentTime = 299.8")
-            page.wait_for_timeout(50)
-            page.screenshot(path=str(screenshot_dir / f"source-follow-end-{width}.png"), full_page=True)
+        page.locator("#processor-source-zoom-fit").click()
+        assert page.locator("#processor-source-navigation").is_visible()
+        assert page.locator("#processor-source-scrollbar-thumb").is_visible()
+        assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] >= page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-fit-{width}.png"), full_page=True)
+        page.locator("#processor-source-zoom-range").evaluate(
+            "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+        assert page.locator("#processor-source-navigation").is_visible()
+        assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] < page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+        page.wait_for_timeout(50)
+        page.locator("#processor-source-scrollbar").scroll_into_view_if_needed()
+        rail_box = page.locator("#processor-source-scrollbar").bounding_box()
+        page.mouse.click(rail_box["x"] + rail_box["width"] / 2, rail_box["y"] + rail_box["height"] / 2)
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-scrollbar-middle-{width}.png"), full_page=True)
+        page.locator("#processor-source-follow").click()
+        page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
+            audio.currentTime = 150; await audio.play(); }""")
+        page.wait_for_timeout(250)
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-follow-playing-{width}.png"), full_page=True)
+        page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
+        # A fractional target at 1000px/s is rounded by the browser. Its own
+        # scroll notification must not be interpreted as a manual pan.
+        page.evaluate("document.getElementById('processor-source-audio').currentTime = 150.0005")
+        page.wait_for_timeout(100)
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        page.evaluate("document.getElementById('processor-source-audio').currentTime = 299.8")
+        page.wait_for_timeout(50)
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-follow-end-{width}.png"), full_page=True)
+        # A delayed scroll notification for the position we assigned must be
+        # idempotent even after rendering/decoding has outlived two frames.
+        page.evaluate("()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(r))))")
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        before = page.locator(".processor-waveform-scroll").evaluate_all("es=>es.map(e=>e.scrollLeft)")
+        page.locator(".processor-waveform-scroll").first.dispatch_event("scroll")
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        assert page.locator(".processor-waveform-scroll").evaluate_all("es=>es.map(e=>e.scrollLeft)") == before
+    print("Long-source Follow passed: 1000px/s, playback/paused end seek and delayed synchronized scroll at three widths.", flush=True)
 
     long_name = "Очень-длинное-название-спикерского-" * 6 + ".wav"
     long_track = dict(track_a, name=long_name)
