@@ -1,11 +1,11 @@
 """Runs within the existing synthetic two-track speaker browser fixture."""
 
-from s09a_edit_modes_smoke import apply_selection
+from s09a_edit_modes_smoke import apply_selection, restore_selection
 
 
 def check_selection_tools(page, output=None):
     tools = page.locator('.speaker-selection__actions button')
-    assert tools.count() == 6
+    assert tools.count() == 4
     for button in tools.all():
         assert button.is_enabled() if button.get_attribute('id') in ('speaker-editor-add-cut','speaker-editor-add-silence') else button.is_disabled()
         assert button.locator('svg[aria-hidden=true]').count() == 1
@@ -60,7 +60,7 @@ def check_selection_tools(page, output=None):
     page.mouse.up()
     assert page.locator('#speaker-editor-selection-track').input_value() == ids[1]
     assert 'Дорожка 2' in page.locator('#speaker-selection-summary').inner_text()
-    assert tools.locator('svg').count() == 6
+    assert tools.locator('svg').count() == 4
     apply_selection(page, 'silence')
     payload = page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload")
     assert payload['trackSilenceRegions'][0]['trackId'] == ids[1]
@@ -77,6 +77,8 @@ def check_selection_tools(page, output=None):
     from s09a_edit_modes_smoke import check_edit_modes
     check_edit_modes(page, output)
     check_waveform_interactions(page, output)
+    from s09a_region_handles_smoke import check_region_handles
+    check_region_handles(page, output)
 
     for width in (320, 390, 768, 1280):
         page.set_viewport_size({'width': width, 'height': 900})
@@ -153,15 +155,15 @@ def check_waveform_interactions(page, output=None):
     unrelated = page.evaluate(state)['globalCuts'][-1]
     shot('timeline-cuts-and-silence')
     rows.first.locator(f'[data-region-id="{region_id}"]').click()
-    page.locator('#speaker-editor-restore-silence').click()
-    page.locator('#speaker-editor-restore-cut').click()
+    restore_selection(page, 'silence')
+    restore_selection(page, 'cut')
     current = page.evaluate(state)
     assert current['trackSilenceRegions'] == []
     assert current['globalCuts'] == [unrelated]
     shot('timeline-selective-restore')
     rows.first.locator(f'[data-region-id="{unrelated["regionId"]}"]').focus()
     page.keyboard.press('Enter')
-    page.locator('#speaker-editor-restore-cut').click()
+    restore_selection(page, 'cut')
     assert page.evaluate(state) == baseline
 
     for kind, delta in [('start', .05), ('end', -.05)]:

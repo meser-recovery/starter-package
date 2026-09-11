@@ -14,7 +14,7 @@ class Element extends EventTarget {
   before(node) { this.ownerDocument.bar = node; }
   querySelector(tag) { return this.children.find(node => node.tag === tag) || this.children.map(node => node.querySelector(tag)).find(Boolean) || null; }
 }
-function fixture(selection = null) {
+function fixture(selection = null, bounds = null) {
   const doc = { createElement(tag) { return new Element(tag, this); }, createElementNS(ns, tag) { return this.createElement(tag); } };
   const audio = doc.createElement('audio'); audio.id = 'source-audio'; audio.setAttribute('src', 'blob:one');
   audio.currentTime = 0; audio.paused = true; audio.ended = false; audio.volume = 1; audio.muted = true;
@@ -24,9 +24,9 @@ function fixture(selection = null) {
   const resultAudio = doc.createElement('audio'); resultAudio.paused = true;
   resultAudio.pause = () => { resultAudio.paused = true; resultAudio.dispatchEvent(new Event('pause')); };
   resultAudio.play = () => { resultAudio.paused = false; resultAudio.dispatchEvent(new Event('play')); };
-  const transport = createAudioTransport({ audio, resultAudio, canPlay: () => enabled, seek: time => { seeks.push(time); audio.currentTime = time; }, getSelection: selection ? () => selection : undefined, reportError: text => errors.push(text) });
+  const transport = createAudioTransport({ audio, resultAudio, canPlay: () => enabled, seek: time => { seeks.push(time); audio.currentTime = time; }, getSelection: selection ? () => selection : undefined, getBounds: () => bounds, reportError: text => errors.push(text) });
   const [play, stop, volumeLabel] = doc.bar.children;
-  return { audio, resultAudio, transport, play, stop, loop: doc.bar.children.find(node => node.id === "source-audio-loop"), setSelection: value => { selection = value; transport.refresh(); }, volume: volumeLabel.querySelector('input'), seeks, errors, plays: () => plays, enable: value => { enabled = value; transport.refresh(); } };
+  return { audio, resultAudio, transport, play, stop, loop: doc.bar.children.find(node => node.id === "source-audio-loop"), setSelection: value => { selection = value; transport.refresh(); }, setBounds: value => { bounds = value; transport.refresh(); }, volume: volumeLabel.querySelector('input'), seeks, errors, plays: () => plays, enable: value => { enabled = value; transport.refresh(); } };
 }
 const click = async element => { element.dispatchEvent(new Event('click')); await new Promise(resolve => setImmediate(resolve)); };
 
@@ -93,4 +93,31 @@ test('loop handles an end-of-file range and never restarts after result playback
   await new Promise(resolve => setImmediate(resolve)); assert.equal(f.audio.currentTime, 1); assert.equal(f.audio.paused, false);
   f.resultAudio.play(); f.audio.currentTime = 2; f.audio.dispatchEvent(new Event('timeupdate'));
   assert.equal(f.audio.paused, true); assert.equal(f.resultAudio.paused, false);
+});
+
+
+test('recording bounds govern play, replay, stop and an external playing seek', async () => {
+  const f = fixture(null, { start: 2, end: 5 });
+  await click(f.play); assert.equal(f.audio.currentTime, 2);
+  f.audio.currentTime = 5.01; f.audio.dispatchEvent(new Event('timeupdate'));
+  assert.equal(f.audio.paused, true); assert.equal(f.audio.currentTime, 5);
+  await click(f.play); assert.equal(f.audio.currentTime, 2); assert.equal(f.audio.paused, false);
+  f.audio.currentTime = 0; f.audio.dispatchEvent(new Event('seeked')); assert.equal(f.audio.currentTime, 2);
+  await click(f.stop); assert.equal(f.audio.currentTime, 2); assert.equal(f.audio.paused, true);
+});
+test('loop intersects recording bounds and disables for an outside selection', async () => {
+  const f = fixture({ startSeconds: 1, endSeconds: 8 }, { start: 2, end: 5 });
+  await click(f.loop); assert.equal(f.audio.currentTime, 2);
+  f.audio.currentTime = 5; f.audio.dispatchEvent(new Event('timeupdate'));
+  assert.equal(f.audio.currentTime, 2); assert.equal(f.audio.paused, false);
+  f.setSelection({ startSeconds: 6, endSeconds: 8 });
+  assert.equal(f.loop.getAttribute('aria-pressed'), 'false'); assert(f.loop.disabled);
+  f.audio.currentTime = 5.1; f.audio.dispatchEvent(new Event('timeupdate')); assert.equal(f.audio.paused, true);
+});
+test('moving bounds during playback takes effect immediately without changing monitor controls', async () => {
+  const f = fixture(null, { start: 0, end: 10 }); await click(f.play);
+  f.audio.currentTime = 3; f.setBounds({ start: 4, end: 8 }); assert.equal(f.audio.currentTime, 4);
+  f.audio.currentTime = 7; f.setBounds({ start: 4, end: 6 });
+  assert.equal(f.audio.currentTime, 6); assert.equal(f.audio.paused, true);
+  assert.equal(f.audio.muted, true); assert.equal(f.audio.volume, 1);
 });

@@ -190,3 +190,17 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
 .daw-workspace[data-edit-tool="silence"] .speaker-selection-overlay { background: #268d8955; border-color: #167d78; }
 
 .daw-workspace .processor-waveform-detail { position: absolute; top: 0; pointer-events: none; max-width: none; }
+
+/* Region handles sit above selection tint; bounds repaint the shaded area live. */
+.daw-workspace .speaker-region-handle { position: absolute; top: 28px; bottom: 4px; width: 10px; z-index: 6; cursor: ew-resize; touch-action: none; border-radius: 3px; background: #fff9; border: 1px solid #18354c; }
+.daw-workspace .speaker-region-handle--start { left: -5px; }
+.daw-workspace .speaker-region-handle--end { right: -5px; }
+.daw-workspace .speaker-region-handle:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+.daw-workspace .speaker-region-overlay[hidden] { display: none; }
+.daw-workspace .speaker-region-overlay[data-gesture-preview] { pointer-events: none; }
+.daw-workspace .speaker-region-overlay.is-region-selected { z-index: 4; box-shadow: inset 0 0 0 2px #fff; }
+.daw-workspace .edit-tool[data-mode="restore"] { background: #d6eee2; color: #164732; border-color: #398665; }
+.daw-workspace .daw-playback .daw-loop { width: auto; display: inline-flex; gap: 5px; align-items: center; padding-inline: 8px; }
+.daw-workspace .daw-playback .daw-loop svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+@media (pointer: coarse) { .daw-workspace .speaker-region-handle { width: 16px; } .daw-workspace .speaker-region-handle--start { left: -8px; } .daw-workspace .speaker-region-handle--end { right: -8px; } }
+.daw-workspace .speaker-boundary { z-index: 7; }

@@ -11,13 +11,30 @@ def apply_selection(page, tool):
     page.keyboard.press('Escape')
 
 
+def restore_selection(page, tool):
+    key = 'globalCuts' if tool == 'cut' else 'trackSilenceRegions'
+    region_id = page.evaluate("""async key => {
+        const payload = (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload;
+        const start = Number(document.getElementById('speaker-editor-selection-start').value);
+        const end = Number(document.getElementById('speaker-editor-selection-end').value);
+        const trackId = document.getElementById('speaker-editor-selection-track').value;
+        return payload[key].find(r => Math.abs(r.startSeconds-start)<.000001 && Math.abs(r.endSeconds-end)<.000001 && (key==='globalCuts'||r.trackId===trackId))?.regionId;
+    }""", key)
+    assert region_id, 'A corresponding region must exist'
+    region = page.locator(f'#speaker-editor-tracks [data-region-id="{region_id}"]').first
+    region.focus(); page.keyboard.press('Enter')
+    button = page.locator('#speaker-editor-add-' + tool)
+    assert button.get_attribute('data-mode') == 'restore'
+    button.click()
+
+
 def check_edit_modes(page, output=None):
     state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
     rows = page.locator('.speaker-track')
     baseline = page.evaluate(state)
     assert page.locator('.speaker-selection__actions button').evaluate_all(
         "bs => bs.map(b => b.id.replace('speaker-editor-',''))") == [
-            'set-start','set-end','add-cut','restore-cut','add-silence','restore-silence']
+            'set-start','set-end','add-cut','add-silence']
     page.locator('#speaker-editor-zoom-fit').click()
     page.locator('#speaker-editor-add-cut').click()
     assert page.evaluate(state) == baseline, 'Arming an edit must not change the recipe'
@@ -37,7 +54,7 @@ def check_edit_modes(page, output=None):
     start_drag(); page.mouse.up()
     cut = page.evaluate(state)['globalCuts'][-1]
     assert page.locator('.speaker-region-overlay--cut').count() == rows.count()
-    page.locator('#speaker-editor-restore-cut').click()
+    restore_selection(page, 'cut')
     assert page.evaluate(state) == baseline
     # A global preview includes an excluded row; cancellation preserves its
     # existing exclusion and does not commit a cut or leave a captured pointer.
@@ -66,7 +83,7 @@ def check_edit_modes(page, output=None):
     assert page.evaluate(state)['globalCuts'] == baseline['globalCuts']
     silence = page.evaluate(state)['trackSilenceRegions'][-1]
     assert silence['trackId'] == rows.nth(1).get_attribute('data-track-id')
-    page.locator('#speaker-editor-restore-silence').click()
+    restore_selection(page, 'silence')
     assert page.evaluate(state) == baseline
     page.keyboard.press('Escape')
     # Max zoom must permit a 100ms word fragment to occupy ~100 CSS pixels.
@@ -85,7 +102,7 @@ def check_edit_modes(page, output=None):
     cut = page.evaluate(state)['globalCuts'][-1]
     assert abs(cut['endSeconds']-cut['startSeconds']-100/pps)<.002,cut
     if output: page.locator('#speaker-editor').screenshot(path=str(output/'tool-word-cut.png'))
-    page.locator('#speaker-editor-restore-cut').click()
+    restore_selection(page, 'cut')
     assert page.evaluate(state) == baseline
     page.keyboard.press('Escape'); page.locator('#speaker-editor-zoom-fit').click()
     page.locator('.speaker-waveform').first.click(position={'x':80,'y':60})
@@ -124,7 +141,7 @@ def check_word_detail(page, mode, output=None):
         current=page.evaluate(state);assert len(current['globalCuts'])==len(baseline['globalCuts'])+1
         cut=current['globalCuts'][-1];assert abs(cut['endSeconds']-cut['startSeconds']-100/pps)<.002
         if output: page.locator('#speaker-editor').screenshot(path=str(output/'hour-recording-word-cut.png'))
-        page.locator('#speaker-editor-restore-cut').click();assert page.evaluate(state)==baseline
+        restore_selection(page, 'cut');assert page.evaluate(state)==baseline
         assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files.every((f,i)=>f===wordFiles[i])")
         page.keyboard.press('Escape')
     page.locator('#speaker-editor-zoom-fit' if speaker else '#processor-source-zoom-fit').click()

@@ -1,0 +1,61 @@
+{
+  "base": "4d3bd133a1e8e3d482c3b515109c1b826546d528",
+  "source_sha256": {
+    "Audio-Editor.html": "0dc0b3bcf8c79e12c6d338f497eaa1e2a7f23a120e71bffbb3f4673bed8d62df",
+    "scripts/speaker-editor.mjs": "ff6eb14a4db66bc21df855adbc3107bf97f6aebc5007344e2dc20247e0f26203",
+    "scripts/audio-project.mjs": "6d5606965e60b7bb2629886559f92ea43da8a5116868864702851ff82e47249e",
+    "scripts/audio-transport.mjs": "ed2389cc4d0b07546b10521a9f8c5eb680c13858df49cfb5b7518ba1dc1430c2",
+    "styles/audio-workspace.css": "7db9e62cba4b76b89a8f0531ac681146f1e3d852392da458acce67a6aec54b43",
+    "tests/safety/s09a_region_handles_smoke.py": "40203c8dafc2f367c999f23a3b03f16f7f18bbdc27a622967f2fe2237c9e7d93"
+  },
+  "screenshots": [
+    {
+      "name": "recording-end-live-dpr1.png",
+      "sha256": "9c334f3615454c23fd2d13f32177bd53e5508ce0b19ca1759d08dcd375e1e388"
+    },
+    {
+      "name": "recording-end-live-dpr2.png",
+      "sha256": "f8a0bc45d972064ccddaa556b46e4a9f66ef930a7aea1f49719b891f5ba17273"
+    },
+    {
+      "name": "recording-start-live-dpr1.png",
+      "sha256": "72a3388fee2ae18be0f7487b9b29ceff6d1f801612f5c86e30a598cdba8c362c"
+    },
+    {
+      "name": "recording-start-live-dpr2.png",
+      "sha256": "7a71032e22e6883233500a3f5f33aa739a9e83f19ae42638a5eddea8cfd6ad0a"
+    },
+    {
+      "name": "resize-cut-end-live-dpr1.png",
+      "sha256": "2ecc1faffd9eead723f2b94bd79107b449300577af7cc83bb0537e8c5889a97b"
+    },
+    {
+      "name": "resize-cut-end-live-dpr2.png",
+      "sha256": "b691db8cbcdec67e0093b24c4e22ec669f91872fbf22648d8929556bf0162009"
+    },
+    {
+      "name": "resize-silence-start-live-dpr1.png",
+      "sha256": "897087d1db4b4bd6b21a8cde8b008e1d874ed07c5e6a54a66cfe19f6ddb7ce08"
+    },
+    {
+      "name": "resize-silence-start-live-dpr2.png",
+      "sha256": "f11cea04edea6020d0f37e0531bec439338d2b61f5771b7446cd6912243da970"
+    },
+    {
+      "name": "toolbar-1280.png",
+      "sha256": "1bcd0119b003eed2958a8480a4af336a87896bc580149104a11d35b13d499ad3"
+    },
+    {
+      "name": "toolbar-320.png",
+      "sha256": "433637c014d4df648495451169dd901defcd784f9b72c0df6a14b17c97b59ea9"
+    },
+    {
+      "name": "toolbar-390.png",
+      "sha256": "e6d2c316396729fc89e6efc47c9a34971fdac9d87747dbf8a9599dfd1df4c6e8"
+    },
+    {
+      "name": "toolbar-768.png",
+      "sha256": "6cfd3b80061dfe3b1a53385ac2a2dff5fd7de1d459e1c695cdeea67deef84fe4"
+    }
+  ]
+}

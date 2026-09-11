@@ -19,13 +19,14 @@ const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
-  editTool: null, selectionScope: "track", cancelSelection: null, pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
+  selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "track", cancelSelection: null, pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
 const editorBusy = () => Boolean(state.operation) || state.saveLocked || state.projectSaving;
 const sourceTransport = createAudioTransport({
   audio: byId("source-audio"), resultAudio: byId("result-audio"), canPlay: () => state.ready && !editorBusy(), seek: seekSource,
+  getBounds: () => state.ready ? recordingBoundaries(state.dragPayload || state.payload, state.originalDuration) : null,
   getSelection: () => { if (!state.ready) return null; try { return readSelection(); } catch { return null; } },
   reportError: message => { byId("status").textContent = message; }
 });
@@ -90,7 +91,8 @@ function notifyState() {
   window.dispatchEvent(new CustomEvent("speaker-editor-state", { detail: getSpeakerSaveState() }));
 }
 
-function setSelection(start, end, trackId = null, scope = state.editTool === "cut" ? "all" : "track") {
+function setSelection(start, end, trackId = null, scope = state.editTool === "cut" ? "all" : "track", region = null) {
+  state.selectedRegion = region;
   state.selectionScope = scope;
   byId("selection-start").value = Number.isFinite(start) ? String(microseconds(start)) : "";
   byId("selection-end").value = Number.isFinite(end) ? String(microseconds(end)) : "";
@@ -139,6 +141,7 @@ function updateSelectionDuration() {
   }
   sourceTransport.refresh();
   updateRestoreTools();
+  for (const overlay of byId("tracks").querySelectorAll("[data-region-id]")) overlay.classList.toggle("is-region-selected", overlay.dataset.regionId === state.selectedRegion?.id);
   for (const wave of workspace.querySelectorAll(".speaker-waveform[data-track-id]")) {
     wave.querySelector(".speaker-selection-overlay")?.remove();
     const selected = wave.dataset.trackId === trackId;
@@ -267,20 +270,39 @@ function redrawSourceWaves() {
   }
 }
 
+const editButtonTemplates = new Map();
 function selectedEdits(key) {
-  let range; try { range = readSelection(); } catch { return []; }
-  return (state.payload?.[key] || []).filter(r =>
-    Math.abs(r.startSeconds - range.startSeconds) < .000001 && Math.abs(r.endSeconds - range.endSeconds) < .000001 &&
-    (key === "globalCuts" || r.trackId === byId("selection-track").value));
+  return state.selectedRegion?.key === key
+    ? (state.payload?.[key] || []).filter(r => r.regionId === state.selectedRegion.id) : [];
 }
 
 function updateRestoreTools() {
-  for (const [key, id] of [["globalCuts", "restore-cut"], ["trackSilenceRegions", "restore-silence"]]) {
-    const tool = byId(id); if (!tool) continue;
-    tool.disabled = !state.ready || editorBusy() || !selectedEdits(key).length;
-    tool.title = tool.disabled ? "Выберите соответствующий отмеченный сегмент на волне" :
-      `Снять ${key === "globalCuts" ? "вырез на всех дорожках" : "тишину на выбранной дорожке"}: ${byId("selection-start").value}–${byId("selection-end").value} с`;
+  for (const [key, id, label] of [["globalCuts", "add-cut", "Снять вырез"], ["trackSilenceRegions", "add-silence", "Снять тишину"]]) {
+    const button = byId(id);
+    if (!editButtonTemplates.has(id)) editButtonTemplates.set(id, [...button.childNodes].map(n => n.cloneNode(true)));
+    const region = selectedEdits(key)[0];
+    const mode = region ? "restore" : "apply";
+    if (button.dataset.mode !== mode) {
+      button.replaceChildren(...editButtonTemplates.get(id).map(n => n.cloneNode(true)));
+      if (region) {
+        button.querySelector("span").replaceChildren(document.createTextNode(label), element("small", "", key === "globalCuts" ? "Выбранный вырез · все дорожки" : "Выбранный регион · одна дорожка"));
+        const svg = button.querySelector("svg"); svg.replaceChildren();
+        const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+        path.setAttribute("d", "M8 4 3 9l5 5M3 9h10a7 7 0 0 1 0 14"); svg.append(path);
+      }
+      button.dataset.mode = mode;
+    }
+    if (region) {
+      button.setAttribute("aria-pressed", "false");
+      button.title = `${label}: ${region.startSeconds.toFixed(3)}–${region.endSeconds.toFixed(3)} с`;
+      button.setAttribute("aria-label", button.title);
+    }
   }
+}
+
+function selectRegion(region, key, trackId) {
+  setSelection(region.startSeconds, region.endSeconds, trackId || region.trackId,
+    key === "globalCuts" ? "all" : "track", { key, id: region.regionId });
 }
 
 function restoreSelected(key) {
@@ -288,64 +310,136 @@ function restoreSelected(key) {
   if (!ids.size) return;
   const next = structuredClone(state.payload);
   next[key] = next[key].filter(r => !ids.has(r.regionId));
+  state.selectedRegion = null;
   commitPayload(next, key === "globalCuts" ? "снят выбранный вырез" : "снята выбранная тишина");
 }
 
-function markEditableRegion(overlay, region, trackId) {
-  overlay.dataset.regionId = region.regionId;
-  overlay.setAttribute("role", "button"); overlay.tabIndex = 0;
-  overlay.setAttribute("aria-label", `${overlay.title}. Выбрать для снятия правки.`);
-  overlay.addEventListener("keydown", event => {
-    if (!["Enter", " "].includes(event.key) || !state.ready || editorBusy()) return;
-    event.preventDefault(); event.stopPropagation();
-    setSelection(region.startSeconds, region.endSeconds, trackId, state.payload.globalCuts.includes(region) ? "all" : "track");
+// Paint a draft gesture without rebuilding the DOM that owns pointer capture.
+// The canonical payload, history and saved candidate change only on pointerup.
+function paintEditGeometry(payload) {
+  const bounds = recordingBoundaries(payload, state.originalDuration);
+  for (const wave of byId("tracks").querySelectorAll(".speaker-waveform")) {
+    wave.querySelectorAll("[data-gesture-preview]").forEach(n => n.remove());
+    const regions = [...payload.globalCuts, ...payload.trackSilenceRegions.filter(r => r.trackId === wave.dataset.trackId)];
+    const regionMap = new Map(regions.map(r => [r.regionId, r]));
+    const painted = new Set();
+    for (const overlay of wave.querySelectorAll("[data-region-id]")) {
+      painted.add(overlay.dataset.regionId);
+      const region = regionMap.get(overlay.dataset.regionId);
+      overlay.hidden = !region;
+      if (region) paintRegion(overlay, region);
+    }
+    for (const region of regions) if (!painted.has(region.regionId)) {
+      const overlay = element("span", "speaker-region-overlay speaker-region-overlay--cut");
+      overlay.dataset.gesturePreview = "true"; paintRegion(overlay, region); wave.append(overlay);
+    }
+    for (const [kind, time] of Object.entries(bounds)) {
+      const flag = wave.querySelector(`.speaker-boundary--${kind}`);
+      if (!flag) continue;
+      flag.style.left = `${time / state.originalDuration * 100}%`;
+      flag.textContent = `${kind === "start" ? "Начало" : "Конец"} ${time.toFixed(3)}`;
+      flag.setAttribute("aria-valuenow", String(time));
+    }
+  }
+  sourceTransport.refresh();
+}
+function paintRegion(overlay, region) {
+  overlay.style.left = `${region.startSeconds / state.originalDuration * 100}%`;
+  overlay.style.width = `${(region.endSeconds - region.startSeconds) / state.originalDuration * 100}%`;
+  for (const handle of overlay.querySelectorAll("[data-edge]")) {
+    const value = region[handle.dataset.edge === "start" ? "startSeconds" : "endSeconds"];
+    handle.setAttribute("aria-valuenow", String(value));
+    handle.setAttribute("aria-valuetext", `${value.toFixed(3)} с`);
+  }
+}
+
+function bindEdgeGesture(handle, scroll, getValue, makePayload, onPreview = () => {}) {
+  let drag = null;
+  const cancel = () => {
+    if (!drag) return;
+    const old = drag; drag = null; state.dragPayload = null; state.cancelSelection = null;
+    if (handle.hasPointerCapture(old.id)) handle.releasePointerCapture(old.id);
+    if (old.epoch === state.sourceEpoch) {
+      setSelection(...old.selection); paintEditGeometry(state.payload);
+    }
+  };
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || !state.ready || editorBusy()) return;
+    event.preventDefault(); event.stopPropagation(); state.cancelSelection?.();
+    drag = { id: event.pointerId, x: event.clientX, left: scroll.scrollLeft, value: getValue(),
+      epoch: state.sourceEpoch, base: state.payload, next: null,
+      selection: [byId("selection-start").value === "" ? NaN : Number(byId("selection-start").value), byId("selection-end").value === "" ? NaN : Number(byId("selection-end").value), byId("selection-track").value, state.selectionScope, state.selectedRegion] };
+    state.cancelSelection = cancel; handle.setPointerCapture(event.pointerId);
   });
+  const move = event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    if (drag.epoch !== state.sourceEpoch || drag.base !== state.payload || !state.ready || editorBusy()) { cancel(); return; }
+    const value = microseconds(Math.max(0, Math.min(state.originalDuration,
+      drag.value + (event.clientX - drag.x + scroll.scrollLeft - drag.left) / state.pixelsPerSecond)));
+    try {
+      drag.next = makePayload(value); state.dragPayload = drag.next;
+      onPreview(drag.next); paintEditGeometry(drag.next); byId("selection-error").textContent = "";
+    } catch (error) { byId("selection-error").textContent = error.message; }
+  };
+  handle.addEventListener("pointermove", move);
+  handle.addEventListener("pointerup", event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    event.stopPropagation(); move(event); if (!drag) return;
+    const old = drag; drag = null; state.dragPayload = null; state.cancelSelection = null;
+    if (handle.hasPointerCapture(old.id)) handle.releasePointerCapture(old.id);
+    if (old.next && old.base === state.payload && old.epoch === state.sourceEpoch && !editorBusy()) {
+      commitPayload(old.next, "границы региона");
+    }
+    paintEditGeometry(state.payload);
+  });
+  handle.addEventListener("pointercancel", cancel); handle.addEventListener("lostpointercapture", cancel);
+  handle.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.stopPropagation(); cancel(); return; }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !state.ready || editorBusy()) return;
+    event.preventDefault(); event.stopPropagation();
+    const value = event.key === "Home" ? 0 : event.key === "End" ? state.originalDuration
+      : getValue() + (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 1 : .01);
+    try { const next = makePayload(microseconds(value)); onPreview(next); commitPayload(next, "границы региона"); }
+    catch (error) { byId("selection-error").textContent = error.message; }
+  });
+}
+
+function markEditableRegion(overlay, region, trackId, scroll) {
+  const key = state.payload.globalCuts.includes(region) ? "globalCuts" : "trackSilenceRegions";
+  overlay.dataset.regionId = region.regionId;
+  overlay.setAttribute("role", "group"); overlay.tabIndex = 0;
+  overlay.setAttribute("aria-label", `${overlay.title}. Выбрать для снятия правки; края изменяют границы.`);
+  overlay.addEventListener("keydown", event => {
+    if (event.target !== overlay || !["Enter", " "].includes(event.key) || !state.ready || editorBusy()) return;
+    event.preventDefault(); event.stopPropagation(); selectRegion(region, key, trackId);
+  });
+  for (const edge of ["start", "end"]) {
+    const handle = element("span", `speaker-region-handle speaker-region-handle--${edge}`);
+    handle.dataset.edge = edge; handle.tabIndex = 0; handle.setAttribute("role", "slider");
+    handle.setAttribute("aria-label", `${key === "globalCuts" ? "Вырез" : "Тишина"}: ${edge === "start" ? "левая" : "правая"} граница`);
+    handle.setAttribute("aria-valuemin", "0"); handle.setAttribute("aria-valuemax", String(state.originalDuration));
+    const field = edge === "start" ? "startSeconds" : "endSeconds";
+    bindEdgeGesture(handle, scroll, () => region[field], value => {
+      const next = structuredClone(state.payload);
+      const target = next[key].find(r => r.regionId === region.regionId); target[field] = value;
+      // Keep neighbouring regions separate so resizing never silently loses an ID.
+      if (next[key].some(r => r !== target && (key === "globalCuts" || r.trackId === target.trackId) &&
+          target.startSeconds <= r.endSeconds && target.endSeconds >= r.startSeconds)) throw new Error("Граница достигла соседнего региона.");
+      return normalizeSpeakerPayload(next, state.payload.trackIds, state.originalDuration);
+    }, next => selectRegion(next[key].find(r => r.regionId === region.regionId), key, trackId));
+    overlay.append(handle);
+  }
+  paintRegion(overlay, region);
 }
 
 function boundaryMarker(kind, time, scroll) {
   const marker = element("span", `speaker-boundary speaker-boundary--${kind}`);
-  const label = kind === "start" ? "Начало" : "Конец";
   marker.setAttribute("role", "slider"); marker.tabIndex = 0;
-  marker.setAttribute("aria-label", `${label} всей записи`);
+  marker.setAttribute("aria-label", `${kind === "start" ? "Начало" : "Конец"} всей записи`);
   marker.setAttribute("aria-valuemin", "0"); marker.setAttribute("aria-valuemax", String(state.originalDuration));
-  const paint = value => {
-    for (const flag of workspace.querySelectorAll(`.speaker-boundary--${kind}`)) {
-      flag.style.left = `${value / state.originalDuration * 100}%`;
-      flag.textContent = `${label} ${value.toFixed(3)}`;
-      flag.setAttribute("aria-valuenow", String(value));
-    }
-  };
   marker.style.left = `${time / state.originalDuration * 100}%`;
-  marker.textContent = `${label} ${time.toFixed(3)}`; marker.setAttribute("aria-valuenow", String(time));
-  let drag = null;
-  marker.addEventListener("pointerdown", event => {
-    if (event.button !== 0 || !state.ready || editorBusy()) return;
-    event.preventDefault(); event.stopPropagation();
-    drag = { id: event.pointerId, x: event.clientX, left: scroll.scrollLeft, value: time, epoch: state.sourceEpoch };
-    marker.setPointerCapture(event.pointerId);
-  });
-  marker.addEventListener("pointermove", event => {
-    if (!drag || drag.id !== event.pointerId || drag.epoch !== state.sourceEpoch || editorBusy()) return;
-    const value = microseconds(Math.max(0, Math.min(state.originalDuration,
-      time + (event.clientX - drag.x + scroll.scrollLeft - drag.left) / state.pixelsPerSecond)));
-    try { setRecordingBoundary(state.payload, state.originalDuration, kind, value); drag.value = value; paint(value); byId("selection-error").textContent = ""; }
-    catch (error) { byId("selection-error").textContent = error.message; }
-  });
-  marker.addEventListener("pointerup", event => {
-    if (!drag || drag.id !== event.pointerId) return;
-    event.stopPropagation(); const current = drag; drag = null; marker.releasePointerCapture(event.pointerId);
-    if (current.epoch !== state.sourceEpoch || editorBusy() || current.value === time) { paint(time); return; }
-    commitPayload(setRecordingBoundary(state.payload, state.originalDuration, kind, current.value), "граница записи");
-  });
-  const cancel = () => { if (drag) { drag = null; paint(time); } };
-  marker.addEventListener("pointercancel", cancel); marker.addEventListener("lostpointercapture", cancel);
-  marker.addEventListener("keydown", event => {
-    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !state.ready || editorBusy()) return;
-    event.preventDefault(); event.stopPropagation();
-    const value = event.key === "Home" ? 0 : event.key === "End" ? state.originalDuration : time + (event.key === "ArrowLeft" ? -1 : 1) * (event.shiftKey ? 1 : .1);
-    try { commitPayload(setRecordingBoundary(state.payload, state.originalDuration, kind, microseconds(value)), "граница записи"); }
-    catch (error) { byId("selection-error").textContent = error.message; }
-  });
+  marker.textContent = `${kind === "start" ? "Начало" : "Конец"} ${time.toFixed(3)}`; marker.setAttribute("aria-valuenow", String(time));
+  bindEdgeGesture(marker, scroll, () => time, value => setRecordingBoundary(state.payload, state.originalDuration, kind, value));
   return marker;
 }
 
@@ -357,12 +451,12 @@ function waveform(track) {
   for (const cut of state.payload.globalCuts) {
     const overlay = element("span", "speaker-region-overlay speaker-region-overlay--cut");
     overlay.style.left = `${cut.startSeconds / state.originalDuration * 100}%`; overlay.style.width = `${(cut.endSeconds - cut.startSeconds) / state.originalDuration * 100}%`;
-    overlay.title = `Глобальный вырез ${cut.startSeconds.toFixed(6)}–${cut.endSeconds.toFixed(6)} с`; markEditableRegion(overlay, cut, track.trackId); control.append(overlay);
+    overlay.title = `Глобальный вырез ${cut.startSeconds.toFixed(6)}–${cut.endSeconds.toFixed(6)} с`; markEditableRegion(overlay, cut, track.trackId, scroll); control.append(overlay);
   }
   for (const region of state.payload.trackSilenceRegions.filter((item) => item.trackId === track.trackId)) {
     const overlay = element("span", "speaker-region-overlay speaker-region-overlay--silence");
     overlay.style.left = `${region.startSeconds / state.originalDuration * 100}%`; overlay.style.width = `${(region.endSeconds - region.startSeconds) / state.originalDuration * 100}%`;
-    overlay.title = `Тишина ${region.startSeconds.toFixed(6)}–${region.endSeconds.toFixed(6)} с`; markEditableRegion(overlay, region, track.trackId); control.append(overlay);
+    overlay.title = `Тишина ${region.startSeconds.toFixed(6)}–${region.endSeconds.toFixed(6)} с`; markEditableRegion(overlay, region, track.trackId, scroll); control.append(overlay);
   }
   const bounds = recordingBoundaries(state.payload, state.originalDuration);
   for (const [kind, time] of Object.entries(bounds)) control.append(boundaryMarker(kind, time, scroll));
@@ -372,7 +466,7 @@ function waveform(track) {
   control.addEventListener("pointerdown", (event) => {
     if (!state.ready || editorBusy() || event.button !== 0 || pointerStart !== null) return;
     previousSelection = ["selection-start", "selection-end"].map(id => byId(id).value === "" ? NaN : Number(byId(id).value));
-    previousSelection.push(byId("selection-track").value, state.selectionScope);
+    previousSelection.push(byId("selection-track").value, state.selectionScope, state.selectedRegion);
     state.cancelSelection = cancelSelection;
     pointerEpoch = state.sourceEpoch; pointerX = event.clientX; clickedRegion = event.target.closest("[data-region-id]")?.dataset.regionId;
     pointerId = event.pointerId; pointerStart = pointerTime(event, scroll); control.setPointerCapture(event.pointerId);
@@ -388,7 +482,7 @@ function waveform(track) {
     const end = pointerTime(event, scroll);
     if (Math.abs(event.clientX - pointerX) <= 4) {
       const region = [...state.payload.globalCuts, ...state.payload.trackSilenceRegions].find(r => r.regionId === clickedRegion);
-      if (region) setSelection(region.startSeconds, region.endSeconds, track.trackId, state.payload.globalCuts.includes(region) ? "all" : "track");
+      if (region) selectRegion(region, state.payload.globalCuts.includes(region) ? "globalCuts" : "trackSilenceRegions", track.trackId);
       else { setSelection(end, end, track.trackId); seekSource(end); }
     } else setSelection(Math.min(pointerStart, end), Math.max(pointerStart, end), track.trackId);
     const apply = Math.abs(event.clientX - pointerX) > 4 && state.editTool;
@@ -447,6 +541,7 @@ function selectControl(label, value, values, change) {
 function renderTracks() {
   const list = byId("tracks");
   const focused = list.contains(document.activeElement) ? document.activeElement : null;
+  const focusedRegion = focused?.closest("[data-region-id]")?.dataset.regionId, focusedEdge = focused?.dataset.edge;
   const focusedBoundary = focused?.classList.contains("speaker-boundary--start") ? "start" : focused?.classList.contains("speaker-boundary--end") ? "end" : null;
   const focusedRow = focused?.closest(".speaker-track"), focusIndex = focusedRow ? [...focusedRow.querySelectorAll("button, select, input")].indexOf(focused) : -1;
   const scrollLeft = list.querySelector(".speaker-waveform-scroll")?.scrollLeft || 0;
@@ -495,7 +590,9 @@ function renderTracks() {
   updateWaveWidths();
   for (const scroll of list.querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = scrollLeft;
   redrawSourceWaves(); updateScrollbar(); applyMonitoring(); updateSelectionDuration();
-  if (focusedRow && focusedBoundary) {
+  if (focusedRow && focusedRegion && focusedEdge) {
+    [...list.children].find(row => row.dataset.trackId === focusedRow.dataset.trackId)?.querySelector(`[data-region-id="${focusedRegion}"] [data-edge="${focusedEdge}"]`)?.focus({ preventScroll: true });
+  } else if (focusedRow && focusedBoundary) {
     [...list.children].find(row => row.dataset.trackId === focusedRow.dataset.trackId)?.querySelector(`.speaker-boundary--${focusedBoundary}`)?.focus({ preventScroll: true });
   } else if (focusedRow && focusIndex >= 0) {
     const row = [...list.children].find(row => row.dataset.trackId === focusedRow.dataset.trackId);
@@ -524,7 +621,7 @@ function renderRegions() {
       const target = collection.find((item) => item.regionId === region.regionId); target.startSeconds = Number(start.value); target.endSeconds = Number(end.value);
       commitPayload(next, "границы региона");
     }, null, editsDisabled);
-    const select = makeButton("Выбрать", () => { setSelection(region.startSeconds, region.endSeconds, region.trackId); row.scrollIntoView({ block: "nearest" }); }, null, editsDisabled);
+    const select = makeButton("Выбрать", () => { selectRegion(region, region.kind === "cut" ? "globalCuts" : "trackSilenceRegions", region.trackId); row.scrollIntoView({ block: "nearest" }); }, null, editsDisabled);
     const remove = makeButton("Удалить", () => {
       const next = structuredClone(state.payload); const key = region.kind === "cut" ? "globalCuts" : "trackSilenceRegions";
       next[key] = next[key].filter((item) => item.regionId !== region.regionId); commitPayload(next, "удаление региона");
@@ -553,6 +650,7 @@ function updateRenderState() {
 }
 
 function render() {
+  state.cancelSelection?.();
   if (!state.session) return;
   if (state.payload) { renderTracks(); renderRegions(); }
   else { byId("tracks").replaceChildren(); byId("regions").replaceChildren(); }
@@ -611,7 +709,8 @@ function updateWaveWidths(anchor = false) {
 }
 
 function seekSource(seconds) {
-  const target = Math.max(0, Math.min(state.originalDuration, seconds));
+  const bounds = recordingBoundaries(state.dragPayload || state.payload, state.originalDuration);
+  const target = Math.max(bounds.start, Math.min(bounds.end, seconds));
   for (const track of state.tracks) if (track.audio) { try { track.audio.currentTime = Math.min(target, track.duration); } catch { /* metadata settled asynchronously */ } }
   synchronizePlayback();
   updatePlayheads();
@@ -905,7 +1004,7 @@ function updateResultPlayhead() {
 
 function teardown() {
   sourceDetail.clear();
-  state.cancelSelection?.(); state.editTool = null; state.selectionScope = "track";
+  state.cancelSelection?.(); state.selectedRegion = null; state.dragPayload = null; state.editTool = null; state.selectionScope = "track";
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
@@ -955,10 +1054,13 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   }
 }
 
-byId("selection-track").addEventListener("change", () => { state.selectionScope = state.editTool === "cut" ? "all" : "track"; updateSelectionDuration(); });
-byId("selection-start").addEventListener("input", updateSelectionDuration); byId("selection-end").addEventListener("input", updateSelectionDuration);
+byId("selection-track").addEventListener("change", () => { state.selectedRegion = null; state.selectionScope = state.editTool === "cut" ? "all" : "track"; updateSelectionDuration(); });
+for (const id of ["selection-start", "selection-end"]) byId(id).addEventListener("input", () => { state.selectedRegion = null; updateSelectionDuration(); });
 function selectEditTool(tool) {
   state.cancelSelection?.();
+  const key = tool === "cut" ? "globalCuts" : "trackSilenceRegions";
+  if (selectedEdits(key).length) { restoreSelected(key); return; }
+  state.selectedRegion = null;
   state.editTool = state.editTool === tool ? null : tool;
   state.selectionScope = state.editTool === "cut" ? "all" : "track";
   updateSelectionDuration();
@@ -967,7 +1069,7 @@ byId("add-cut").addEventListener("click", () => selectEditTool("cut")); byId("ad
 document.addEventListener("keydown", event => {
   if (!state.session || workspace.hidden) return;
   if (event.key === "Escape") {
-    state.cancelSelection?.(); state.editTool = null; updateSelectionDuration();
+    state.cancelSelection?.(); state.selectedRegion = null; state.editTool = null; updateSelectionDuration();
   }
   if (event.key === "Enter" && [byId("selection-start"), byId("selection-end")].includes(event.target) && state.editTool) {
     event.preventDefault(); addRegion(state.editTool);
@@ -1021,4 +1123,3 @@ byId("source-retry").addEventListener("click", async () => {
 byId("result-waveform-scroll").addEventListener("scroll", () => {
   if (state.resultSamples) drawCanvas(byId("result-waveform").querySelector("canvas"), { samples: state.resultSamples, duration: state.resultDuration }, state.resultDuration);
 }, { passive: true });
-for (const [id, key] of [["restore-cut", "globalCuts"], ["restore-silence", "trackSilenceRegions"]]) byId(id).addEventListener("click", () => restoreSelected(key));

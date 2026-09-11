@@ -1,0 +1,26 @@
+✔ play/pause and stop preserve per-track mute; controls follow media events (5.67079ms)
+✔ unready/locked sources cannot start playback or seek (0.811572ms)
+✔ source and result cannot play over each other; track mute remains unchanged (0.525841ms)
+✔ master listening volume does not alter any track mute flag (0.332881ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (0.86949ms)
+✔ loop starts at selection and wraps at its right edge without changing mute or volume (0.626594ms)
+✔ stop pauses loop; clearing selection, locking and replacing media disable it (0.660966ms)
+✔ loop handles an end-of-file range and never restarts after result playback takes over (0.818612ms)
+✔ recording bounds govern play, replay, stop and an external playing seek (0.668858ms)
+✔ loop intersects recording bounds and disables for an outside selection (1.357224ms)
+✔ moving bounds during playback takes effect immediately without changing monitor controls (0.484219ms)
+✔ detail decoding uses a bounded source window and reuses it across panning (443.354358ms)
+✔ late decode cannot paint a changed viewport or a replaced File session (441.765315ms)
+✔ zooming out during a decode does not replace the overview with stale detail (440.383423ms)
+✔ visible bitmap is Retina sharp and bounded by viewport, not full recording width (1.573039ms)
+✔ zoomed-out bins retain narrow peaks rather than subsampling them away (1.028599ms)
+✔ panning and zoom use source time; shorter tracks do not stretch to longest track (0.191899ms)
+✔ detail window keeps absolute source time after seek, including a short final window (0.325219ms)
+ℹ tests 18
+ℹ suites 0
+ℹ pass 18
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1410.237557
