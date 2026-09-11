@@ -1,8 +1,11 @@
 # PR #36 word-scale editing: current Mac evidence
 
 - Package base: `80c1ef5c83fd6317f11ca3ecd539a03f82d8d101`.
-- Current implementation/regression and capture source:
+- Implementation and PNG capture source:
   `9e3881c00c866cbf1a3d87302475ab828a92d96e`.
+- Complete post-commit browser smoke and current Worker identity regression:
+  `88b15bac2f01a4fadea16ea8bb1d014a21d22def`. Application bytes are unchanged
+  from the PNG source; only test/evidence files changed.
 - Evidence is committed separately. Draft PR #36 records the exact submitted
   HEAD and its final Linux local-safety result without another commit changing
   that verified HEAD.
@@ -16,7 +19,7 @@
 - [Gateway syntax](gateway-check.log), [gateway tests](gateway.log): 80/80 PASS.
 - [Complete post-commit browser smoke](browser-full.log): PASS, default Chromium
   security and isolated local fixtures. Command:
-  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-word-final-v2`.
+  `venv/bin/python -u -B tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000 --screenshot-dir /private/tmp/s09a-word-final-v3`.
 - Full corrective smoke runs at DPR 1 and 2, including four widths, two synthetic
   1:02:27 M4As, forced native decode failure/bundled WASM fallback, exact Files and
   retry, per-track detail after immediate scroll to 80s, <=32-second windows,
@@ -42,6 +45,13 @@ problem; synchronization now compares the actual assigned scroll position.
 Long playback, fractional seeks and delayed events run unconditionally in CI at
 390/768/1280. The deterministic delayed-event test failed on the pre-fix app.
 Existing geometry limits and signal tolerances remain intact.
+
+The first evidence-head CI failed an obsolete total-Worker-count assertion.
+Maximum zoom may start a debounced display decoder. The smoke now waits for
+actual detail, observes native Worker IDs, and checks the same processing
+Worker's reuse, exact cancel termination and one live replacement on retry.
+The full post-commit run above includes that correction. The failed CI attempt
+is preserved in the PR history and is not counted as a pass.
 
 ## Current captures
 
