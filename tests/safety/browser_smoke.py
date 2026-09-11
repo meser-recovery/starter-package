@@ -2466,9 +2466,10 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     capture_state("mix-one-selected")
     select_tracks([track_a, track_b])
     assert page.locator(".processor-track .processor-waveform img").count() == 2
-    assert page.locator("#processor-track-switcher, .processor-waveform-detail, #processor-file-info details").count() == 0
+    assert page.locator("#processor-track-switcher, .processor-waveform-detail:not(canvas), #processor-file-info details").count() == 0
     assert page.get_by_text("Solo и Mute влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
     assert page.locator("#processor-preview-audios .processor-preview-audio").count() == 1
+    assert page.locator(".processor-track canvas.processor-waveform-detail").count() == 2
     waveform_urls = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.src)")
     assert len(set(waveform_urls)) == 2 and all(source.startswith("blob:") for source in waveform_urls), waveform_urls
     waveform_blobs = page.evaluate("""async urls => Promise.all(urls.map(async source => {
@@ -3575,6 +3576,7 @@ def main() -> int:
         check_s09a_acceptance(browser, base_url, args.screenshot_dir)
         from s09a_editor_corrective_smoke import check_s09a_editor_corrective
         check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
+        check_s09a_editor_corrective(browser, base_url, args.screenshot_dir, device_scale_factor=2)
         from s09a_playback_signal_smoke import check_playback_signal
         check_playback_signal(browser, base_url, args.screenshot_dir)
         from s09a_timeline_smoke import check_timeline_controls

@@ -1,3 +1,5 @@
+> Current Mac continuation: [word-edit validation](S09A-word-edit-validation.md). The package report below retains its original environment and evidence attribution.
+
 # S09A — word-scale zoom and tool-first edits
 
 Base: `80c1ef5c83fd6317f11ca3ecd539a03f82d8d101` (draft PR #36).

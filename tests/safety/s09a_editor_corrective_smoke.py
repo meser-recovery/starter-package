@@ -7,9 +7,9 @@ from urllib.parse import urlparse
 from s09a_smoke import fixture
 
 
-def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
+def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_scale_factor=1):
     site = urlparse(base_url)
-    context = browser.new_context(viewport={'width': 1280, 'height': 900})
+    context = browser.new_context(viewport={'width': 1280, 'height': 900}, device_scale_factor=device_scale_factor)
     context.add_init_script("sessionStorage.setItem('meser_service_access_v1','granted');window.__MESER_AUDIO_ARCHIVE_GATEWAY__='https://gateway.test';")
     outbound = []
     fault = {'wasm': False, 'hold_wasm': False}
@@ -35,7 +35,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
 
     context.route('**/*', intercept)
     page = context.new_page()
-    output = Path(screenshot_dir)/'s09a-corrective' if screenshot_dir else None
+    output = Path(screenshot_dir)/('s09a-corrective' if device_scale_factor == 1 else f's09a-corrective-dpr{device_scale_factor}') if screenshot_dir else None
     if output:
         output.mkdir(parents=True, exist_ok=True)
 
@@ -257,6 +257,6 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None):
                 assert all(r['height']<=150 and r['waveHeight']>=r['height']-2 for r in lanes), lanes
             snapshot(f'announcement-{width}', '#announcement-processor-card')
         assert not outbound, outbound
-        print('S09A corrective: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.')
+        print(f'S09A corrective DPR {device_scale_factor}: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.')
     finally:
         context.close()

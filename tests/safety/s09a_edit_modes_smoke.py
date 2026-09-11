@@ -39,12 +39,29 @@ def check_edit_modes(page, output=None):
     assert page.locator('.speaker-region-overlay--cut').count() == rows.count()
     page.locator('#speaker-editor-restore-cut').click()
     assert page.evaluate(state) == baseline
+    # A global preview includes an excluded row; cancellation preserves its
+    # existing exclusion and does not commit a cut or leave a captured pointer.
+    rows.nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
+    excluded = page.evaluate(state)
+    wave.scroll_into_view_if_needed(); b = wave.bounding_box(); start_drag()
+    assert page.locator('.speaker-selection-overlay[data-scope=all]').count() == rows.count()
+    assert rows.nth(1).locator('.speaker-selection-overlay').count() == 1
+    assert page.evaluate(state) == excluded
+    rows.first.locator('.speaker-waveform').dispatch_event('pointercancel', {'pointerId':1})
+    page.mouse.up(); assert page.evaluate(state) == excluded
+    assert page.locator('#speaker-editor-add-cut').get_attribute('aria-pressed') == 'true'
+    rows.nth(1).get_by_role('button',name='Вернуть в микс',exact=True).click()
+    assert page.evaluate(state) == baseline
     page.locator('#speaker-editor-add-silence').click()
     wave = rows.nth(1).locator('.speaker-waveform-scroll')
     wave.scroll_into_view_if_needed(); b = wave.bounding_box()
     start_drag()
     assert rows.first.locator('.speaker-selection-overlay').count() == 0
     assert rows.nth(1).locator('.speaker-selection-overlay').count() == 1
+    rows.nth(1).locator('.speaker-waveform').dispatch_event('pointercancel', {'pointerId':1})
+    page.mouse.up(); assert page.evaluate(state) == baseline
+    assert page.locator('#speaker-editor-add-silence').get_attribute('aria-pressed') == 'true'
+    start_drag()
     page.mouse.up()
     assert page.evaluate(state)['globalCuts'] == baseline['globalCuts']
     silence = page.evaluate(state)['trackSilenceRegions'][-1]
@@ -92,4 +109,22 @@ def check_word_detail(page, mode, output=None):
     page.mouse.click(b['x']+100,b['y']+b['height']*.65)
     assert abs(audio.evaluate('a=>a.currentTime')-expected)<.02
     if output: page.locator('#speaker-editor' if speaker else '#announcement-processor-card').screenshot(path=str(output/(mode+'-word-detail.png')))
+    if speaker:
+        state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
+        baseline = page.evaluate(state)
+        page.evaluate("async()=>{window.wordFiles=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files}")
+        page.locator('#speaker-editor-add-cut').click()
+        scroll.scroll_into_view_if_needed(); b=scroll.bounding_box()
+        pps=scroll.evaluate('e=>e.firstElementChild.getBoundingClientRect().width')/audio.evaluate('a=>a.duration')
+        page.mouse.move(b['x']+100,b['y']+b['height']*.65);page.mouse.down()
+        page.mouse.move(b['x']+200,b['y']+b['height']*.65,steps=6)
+        assert page.evaluate(state)==baseline
+        assert page.locator('.speaker-selection-overlay[data-scope=all]').count()==2
+        page.mouse.up()
+        current=page.evaluate(state);assert len(current['globalCuts'])==len(baseline['globalCuts'])+1
+        cut=current['globalCuts'][-1];assert abs(cut['endSeconds']-cut['startSeconds']-100/pps)<.002
+        if output: page.locator('#speaker-editor').screenshot(path=str(output/'hour-recording-word-cut.png'))
+        page.locator('#speaker-editor-restore-cut').click();assert page.evaluate(state)==baseline
+        assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files.every((f,i)=>f===wordFiles[i])")
+        page.keyboard.press('Escape')
     page.locator('#speaker-editor-zoom-fit' if speaker else '#processor-source-zoom-fit').click()

@@ -1,3 +1,5 @@
+> Current word-scale/tool-mode continuation: [validation and regression coverage](S09A-word-edit-validation.md). Prior audit rows and screenshots retain their original source SHAs.
+
 > Current timeline-controls continuation: [seven-requirement validation](S09A-timeline-validation.md), including waveform detail, loop, selective restoration, flags, DSP and Retina. Earlier audit rows and their source SHAs remain historical.
 
 # S09A corrective audit after PR #35
