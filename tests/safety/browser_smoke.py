@@ -3616,6 +3616,8 @@ def main() -> int:
         check_design_a(browser, base_url, args.screenshot_dir)
         from s09a_waveform_alignment_smoke import check_waveform_alignment
         check_waveform_alignment(browser, base_url, args.screenshot_dir)
+        from s09a_waveform_motion_smoke import check_waveform_motion
+        check_waveform_motion(browser, base_url, args.screenshot_dir)
         from s09a_meters_smoke import check_audio_meters
         check_audio_meters(browser, base_url, args.screenshot_dir)
         from s09a_playback_signal_smoke import check_playback_signal

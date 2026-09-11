@@ -576,8 +576,7 @@ function redrawSourceDetails() {
     const wave = byId("file-info").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
     const scroll = wave?.parentElement, canvas = wave?.querySelector("canvas");
     if (!canvas || !scroll || !track.waveformURL) continue;
-    canvas.hidden = true;
-    sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
+    canvas.hidden = !sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
       scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.waveformWidth / (track.waveformDuration || track.duration));
   }
 }

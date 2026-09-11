@@ -20,7 +20,7 @@ const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
-  selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "track", cancelSelection: null, pixelsPerSecond: 2, follow: false, scrollLock: false, resultDuration: NaN, resultPixelsPerSecond: 2
+  selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "track", cancelSelection: null, pixelsPerSecond: 2, follow: false, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
@@ -258,10 +258,10 @@ function drawCanvas(canvas, track, timelineDuration = state.originalDuration) {
   const scroll = canvas.closest(".speaker-waveform-scroll, .speaker-result-waveform-scroll");
   const width = scroll?.clientWidth || 800;
   const pps = scroll?.id === "speaker-editor-result-waveform-scroll" ? state.resultPixelsPerSecond : state.pixelsPerSecond;
-  drawWaveformViewport(canvas, track.samples, track.duration, pps || width / timelineDuration,
-    scroll?.scrollLeft || 0, width, canvas.parentElement?.clientHeight || 112);
-  if (track.file && scroll) sourceDetail.draw(canvas, track.file, track.duration, pps, scroll.scrollLeft, width,
+  const detailed = track.file && scroll && sourceDetail.draw(canvas, track.file, track.duration, pps, scroll.scrollLeft, width,
     canvas.parentElement?.clientHeight || 112, track.samples?.sampleRate || (track.samples?.length || 0) / track.duration);
+  if (!detailed) drawWaveformViewport(canvas, track.samples, track.duration, pps || width / timelineDuration,
+    scroll?.scrollLeft || 0, width, canvas.parentElement?.clientHeight || 112);
   canvas.dataset.timelineDuration = String(timelineDuration);
   canvas.dataset.usedWidth = String(track.duration * (pps || width / timelineDuration));
 }
@@ -719,10 +719,14 @@ function updateScrollbar() {
   rail.setAttribute("aria-valuemax", String(max)); rail.setAttribute("aria-valuenow", String(Math.round(first.scrollLeft)));
 }
 
+const synchronizedScroll = new WeakMap();
 function syncScroll(origin) {
-  if (state.scrollLock) return; state.scrollLock = true;
-  for (const scroll of byId("tracks").querySelectorAll(".speaker-waveform-scroll")) if (scroll !== origin) scroll.scrollLeft = origin.scrollLeft;
-  redrawSourceWaves(); updateScrollbar(); requestAnimationFrame(() => { state.scrollLock = false; });
+  if (synchronizedScroll.get(origin) === origin.scrollLeft) return;
+  for (const scroll of byId("tracks").querySelectorAll(".speaker-waveform-scroll")) {
+    if (scroll !== origin) scroll.scrollLeft = origin.scrollLeft;
+    synchronizedScroll.set(scroll, scroll.scrollLeft);
+  }
+  redrawSourceWaves(); updateScrollbar();
 }
 
 function updateWaveWidths(anchor = false) {
@@ -1123,6 +1127,17 @@ byId("source-audio").addEventListener("ended", stopOtherPlayback);
 for (const name of ["seeking", "seeked"]) byId("source-audio").addEventListener(name, synchronizePlayback);
 for (const name of ["ratechange", "volumechange"]) byId("source-audio").addEventListener(name, synchronizePlayback);
 for (const name of ["timeupdate", "seeked", "play", "ended"]) byId("source-audio").addEventListener(name, updatePlayheads);
+function animateMediaPlayhead(audio, draw) {
+  let frame;
+  const tick = () => {
+    if (audio.paused || audio.ended) return;
+    draw(); frame = requestAnimationFrame(tick);
+  };
+  audio.addEventListener('play', () => { cancelAnimationFrame(frame); frame = requestAnimationFrame(tick); });
+  for (const event of ['pause', 'ended', 'emptied']) audio.addEventListener(event, () => { cancelAnimationFrame(frame); draw(); });
+}
+animateMediaPlayhead(byId('source-audio'), updatePlayheads);
+animateMediaPlayhead(byId('result-audio'), updateResultPlayhead);
 byId("source-scrollbar").addEventListener("click", (event) => { const rail = byId("source-scrollbar"); const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first) return; first.scrollLeft = (event.clientX - rail.getBoundingClientRect().left) / rail.clientWidth * maximumScroll(); syncScroll(first); });
 byId("source-scrollbar").addEventListener("keydown", (event) => { if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return; event.preventDefault(); const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first) return; first.scrollLeft = event.key === "Home" ? 0 : event.key === "End" ? maximumScroll() : first.scrollLeft + (event.key === "ArrowLeft" ? -60 : 60); syncScroll(first); });
 byId("result-zoom").addEventListener("input", updateResultWidth); byId("result-audio").addEventListener("timeupdate", updateResultPlayhead);

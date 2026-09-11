@@ -32,7 +32,9 @@ export function createWaveformReader(signal) {
   }
 
   async function ffmpegSamples(file, duration, start = null) {
-    const width = Number.isFinite(duration) ? Math.min(WIDTH, Math.max(1, Math.floor(duration * 4000))) : WIDTH;
+    // All detail windows share a 0.5ms grid, including the final short window.
+    // Shifting the cached window must not regroup the samples under a word.
+    const width = start === null ? Math.min(WIDTH, Math.max(1, Math.floor(duration * 4000))) : Math.max(1, Math.ceil(duration * 2000));
     const spec = waveformImageSpec(duration, width, HEIGHT);
     if (!engine) {
       const { FFmpeg } = await import("../vendor/ffmpeg/ffmpeg/index.js"); check();

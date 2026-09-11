@@ -66,3 +66,35 @@ test('airy overview preserves a transient in the visual gap; word zoom remains p
     assert.equal(c.fills.at(-1)[2],1);
   } finally { if(previous)globalThis.getComputedStyle=previous;else delete globalThis.getComputedStyle; }
 });
+
+test('source columns and peaks stay identical through pixel and fractional panning', () => {
+  const previous = globalThis.getComputedStyle;
+  globalThis.getComputedStyle = () => ({ getPropertyValue: key => key === '--wave-bar-step' ? '3' : '' });
+  try {
+    const samples = Float32Array.from({length:64000}, (_, i) => ((i * 37) % 101) / 101);
+    samples.sampleRate = 2000;
+    for (const pps of [70, 300, 1000]) for (const dpr of [1, 2]) {
+      const full = canvas(); drawWaveformViewport(full, samples, 32, pps, 0, 900, 100, dpr);
+      const columns = new Map(full.fills.slice(1).map(([x,y,w,h]) => [x, [y,w,h]]));
+      for (const left of [1, 2, 7.5, 71.25]) {
+        const view = canvas(); drawWaveformViewport(view, samples, 32, pps, left, 400, 100, dpr);
+        const origin = Number.parseFloat(view.style.left) * dpr;
+        for (const [x,y,w,h] of view.fills.slice(1)) assert.deepEqual([y,w,h], columns.get(x + origin));
+      }
+    }
+  } finally { if (previous) globalThis.getComputedStyle = previous; else delete globalThis.getComputedStyle; }
+});
+
+test('stationary frames retain the bitmap; changing theme repaints it', () => {
+  const previous = globalThis.getComputedStyle; let color = '#123456';
+  globalThis.getComputedStyle = () => ({ getPropertyValue: key => key === '--track-wave' ? color : '' });
+  try {
+    const c = canvas(), samples = new Float32Array(32).fill(.4);
+    drawWaveformViewport(c, samples, 32, 10, 0, 100);
+    const fills = c.fills.length;
+    drawWaveformViewport(c, samples, 32, 10, 0, 100);
+    assert.equal(c.fills.length, fills);
+    color = '#654321'; drawWaveformViewport(c, samples, 32, 10, 0, 100);
+    assert.ok(c.fills.length > fills);
+  } finally { if (previous) globalThis.getComputedStyle = previous; else delete globalThis.getComputedStyle; }
+});
