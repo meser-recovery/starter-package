@@ -92,6 +92,9 @@ def check_waveform_alignment(browser, base_url, screenshot_dir=None):
                 scroll.evaluate('(e,p)=>e.scrollLeft=p>100?10*p:0',pps)
                 if setting=='max': page.wait_for_function('(c)=>c.dataset.waveDetail==="ready"',arg=canvas.element_handle(),timeout=180000)
                 else: page.wait_for_function('(c)=>c.dataset.waveDetail==="overview"',arg=canvas.element_handle())
+                # Ready detail is retained during scroll. Wait for the scroll
+                # event's paint, not a previous viewport's already-ready flag.
+                page.wait_for_function('(c)=>c.hidden||Math.abs(parseFloat(c.style.left)-c.parentElement.parentElement.scrollLeft)<1',arg=canvas.element_handle())
                 pixels=track.evaluate('''(row,{pps,mode})=>{
                     const c=row.querySelector('canvas'), image=row.querySelector('img');
                     const detail=c.dataset.waveDetail==='ready', useCanvas=mode==='speaker'||detail;

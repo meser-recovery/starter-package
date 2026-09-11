@@ -1,0 +1,31 @@
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:55366
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:55366/starter-package/
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
+S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.
+Acceptance P1: new edits/Blob protected; close/newer intent fence delayed Speaker loads.
+Acceptance P1: Announcement session/draft/part 401+403 preserve work through cancel/reconnect and explicit retry.
+Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 1: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 2: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Design A: PASS; DSP viewport/DOM/audio identity, real per-track silence/restoration, global cut skip, bounds stop, light/dark responsive.
+Design A result: PASS; real Announcement render, readable light/dark result text and transport at 320/390/768/1440.
+Waveform decoder alignment: 41.3s overview/detail/tail peaks PASS.
+Waveform decoder alignment: 129.37s overview/detail/tail peaks PASS.
+BROWSER SMOKE FAILED: ('announcement', 'max', {'onset': None, 'peak': 0, 'pps': 1000.0000000000001, 'detail': True, 'left': 20207})
+Traceback (most recent call last):
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3657, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3618, in main
+    check_waveform_alignment(browser, base_url, args.screenshot_dir)
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/s09a_waveform_alignment_smoke.py", line 112, in check_waveform_alignment
+    assert pixels['onset'] is not None and abs(pixels['onset']-10.5)<max(.012,3/pps),(mode,setting,pixels)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ('announcement', 'max', {'onset': None, 'peak': 0, 'pps': 1000.0000000000001, 'detail': True, 'left': 20207})

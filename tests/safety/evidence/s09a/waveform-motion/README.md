@@ -66,3 +66,14 @@ No merge, production mutations or Closure Record.
 - [speaker-detail.png](speaker-detail.png): `151b1ce0944c4cefc54037dff502927800bf70cfeb2e98efdf3c242e2352afed`
 - [announcement-airy.png](announcement-airy.png): `9a81240fe5e25e30674c31fe71d454c19248b4cfdc6d4cb912d79f0ad7786580`
 - [announcement-detail.png](announcement-detail.png): `2bcd537193b3b6e6e7a2bd1a26d0e5aca49f3567f52a94103d45ddc8b75690a5`
+
+## Full-suite viewport synchronization follow-up
+
+The first full local run on `b17339d` exposed an older onset-test race
+([discovery log](alignment-discovery.log), not counted as PASS). After requesting
+scrollLeft=10000, it read a ready canvas still positioned at 20207 before the
+scroll event repainted it. Retaining ready detail removed the old incidental
+wait for decoding. The test now waits for the actual canvas origin to match the
+scroller, then keeps all existing onset/amplitude/pixel/audio assertions.
+[Focused rerun](alignment-settled.log): PASS. The follow-up changes the test and
+evidence only; final full local smoke and exact-HEAD CI are recorded in PR #36.

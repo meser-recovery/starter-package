@@ -1,0 +1,3 @@
+Waveform decoder alignment: 41.3s overview/detail/tail peaks PASS.
+Waveform decoder alignment: 129.37s overview/detail/tail peaks PASS.
+Waveform alignment PASS: native/WASM, short/long/tail windows, right-only/anti-phase peaks, both editors repeated fit/detail zoom, actual pixels and audible onset.
