@@ -1,5 +1,8 @@
 # S09A — one-shot tools and Speaker render performance evidence
 
+The subsequent bounded two-Worker cold-mixdown implementation and measurements
+are recorded in `../first-mixdown/README.md`.
+
 This is implementation and review evidence for draft PR #36. It is not an
 acceptance or closure record. The comparison base is
 `419869e5f91c1b057a92c1bd2585540a7c057fe1`.

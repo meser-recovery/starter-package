@@ -6,6 +6,7 @@ import { drawWaveformViewport } from "./audio-waveform-view.mjs";
 import { defaultTrackColor, installEditorExpansion, installSpaceTransport, installTimelineZoomGestures } from "./audio-timeline-ux.mjs";
 import { createWaveformReader } from "./speaker-waveform.mjs";
 import { LoudnessMeasurementCache, SourceIdentityRegistry } from "./speaker-render-cache.mjs";
+import { chooseSpeakerAnalysisConcurrency, runSpeakerAnalysisQueue } from "./speaker-analysis-queue.mjs";
 import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 import {
@@ -27,6 +28,7 @@ const state = {
   scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
   measurementCache: new LoudnessMeasurementCache(128), sourceIdentities: new SourceIdentityRegistry(), lastRenderProfile: null
 };
+let renderOperationSequence = 0;
 
 const fingerprint = (value) => JSON.stringify(value);
 const editorBusy = () => Boolean(state.operation) || state.saveLocked || state.projectSaving;
@@ -564,6 +566,7 @@ function selectControl(label, value, values, change) {
     output.textContent = values[input.checked ? 1 : 0][1];
     input.addEventListener("change", () => change(values[input.checked ? 1 : 0][0]));
   } else {
+    wrapper.classList.add("speaker-dsp-field--compression");
     input.type = "range"; input.min = "0"; input.max = "3"; input.step = "1";
     input.value = String(values.findIndex(item => item[0] === value));
     const refresh = () => { output.textContent = values[Number(input.value)][1]; input.setAttribute("aria-valuetext", output.textContent); };
@@ -572,7 +575,8 @@ function selectControl(label, value, values, change) {
     input.title = "Выкл. · Лёгкая · Средняя · Сильная";
     const ticks = element("span", "speaker-compression-ticks"); ticks.setAttribute("aria-hidden", "true");
     for (const [, text] of values) ticks.append(element("span", "", text));
-    wrapper.append(input, ticks, output); return wrapper;
+    const scale = element("span", "speaker-compression-scale"); scale.append(input, ticks);
+    wrapper.append(scale, output); return wrapper;
   }
   wrapper.append(input, output); return wrapper;
 }
@@ -1108,16 +1112,66 @@ export async function protectSpeakerTransition() {
 }
 
 function operation() {
-  const controller = new AbortController(); state.operation = controller; return controller;
+  const controller = new AbortController();
+  controller.operationIdentity = ++renderOperationSequence;
+  controller.engines = new Set();
+  controller.pending = new Set();
+  controller.finished = new Promise(resolve => { controller.resolveFinished = resolve; });
+  state.operation = controller;
+  return controller;
 }
 
 async function ensureEngine(controller) {
-  if (state.engine?.loaded) return state.engine;
+  if (state.engine?.loaded) { controller.engines.add(state.engine); return state.engine; }
   const { FFmpeg } = await import("../vendor/ffmpeg/ffmpeg/index.js"); if (controller.signal.aborted) throw new DOMException("cancelled", "AbortError");
-  const engine = new FFmpeg(); state.engine = engine;
-  await engine.load({ coreURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.js", import.meta.url).href,
-    wasmURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.wasm", import.meta.url).href });
-  if (controller.signal.aborted) throw new DOMException("cancelled", "AbortError"); return engine;
+  const engine = new FFmpeg(); state.engine = engine; controller.engines.add(engine);
+  try {
+    await engine.load({ coreURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.js", import.meta.url).href,
+      wasmURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.wasm", import.meta.url).href });
+    if (controller.signal.aborted) throw new DOMException("cancelled", "AbortError"); return engine;
+  } catch (error) {
+    terminateRenderEngine(engine, controller);
+    throw error;
+  }
+}
+
+async function createAuxiliaryEngine(controller) {
+  const { FFmpeg } = await import("../vendor/ffmpeg/ffmpeg/index.js");
+  abortCheck(controller);
+  if (globalThis.__MESER_SPEAKER_TEST_AUX_LOAD_FAILURE__ === true) {
+    globalThis.__MESER_SPEAKER_TEST_AUX_LOAD_FAILURE__ = false;
+    throw new Error("Auxiliary Worker load failure");
+  }
+  const engine = new FFmpeg(); controller.engines.add(engine);
+  try {
+    await engine.load({ coreURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.js", import.meta.url).href,
+      wasmURL: new URL("../vendor/ffmpeg/core/ffmpeg-core.wasm", import.meta.url).href });
+    abortCheck(controller);
+    return engine;
+  } catch (error) {
+    try { engine.terminate(); } catch { /* A failed Worker may already be gone. */ }
+    controller.engines.delete(engine);
+    throw error;
+  }
+}
+
+function terminateRenderEngine(engine, controller) {
+  if (!engine) return;
+  try { engine.terminate(); } catch { /* Termination is idempotent for operation cleanup. */ }
+  controller?.engines?.delete(engine);
+  if (state.engine === engine) state.engine = null;
+}
+
+async function terminateOperationEngines(controller) {
+  if (!controller) return;
+  for (const engine of [...controller.engines]) terminateRenderEngine(engine, controller);
+  await Promise.allSettled([...controller.pending]);
+}
+
+function trackOperationPromise(controller, promise) {
+  controller.pending.add(promise);
+  promise.finally(() => controller.pending.delete(promise)).catch(() => {});
+  return promise;
 }
 
 function abortCheck(controller) { if (controller.signal.aborted || state.operation !== controller) throw new DOMException("cancelled", "AbortError"); }
@@ -1148,6 +1202,11 @@ async function resultMetadata(blob) {
   const url = URL.createObjectURL(blob); try { return await metadataFor(url); } finally { URL.revokeObjectURL(url); }
 }
 
+function auxiliaryInfrastructureFailure(error) {
+  if (error?.speakerAnalysisKind === "dsp" || error?.name === "AbortError") return false;
+  return /worker|wasm|memory|load|terminated|message|network/i.test(String(error?.message || error || ""));
+}
+
 async function renderSpeaker() {
   if (!state.ready || editorBusy() || byId("render").disabled) return;
   const epoch = state.sourceEpoch;
@@ -1165,10 +1224,10 @@ async function renderSpeaker() {
   const inputPathByTrack = new Map(included.map((trackId, index) => [trackId, inputPaths[index]]));
   const inputIndexByTrack = new Map(included.map((trackId, index) => [trackId, index]));
   const outputPath = "speaker-output.mp3"; const filterPath = "speaker-filter.txt";
-  const measurements = {}; let logListener = null;
+  const measurements = {}; let logListener = null; let mainEngine = null; let auxiliaryEngine = null;
   const renderStarted = performance.now();
   const profile = {
-    schemaVersion: 1,
+    schemaVersion: 2,
     engineBuild: SPEAKER_FFMPEG_BUILD,
     browser: navigator.userAgent,
     coldEngine: !state.engine?.loaded,
@@ -1191,6 +1250,14 @@ async function renderSpeaker() {
     usedJsHeapBytesBefore: Number.isFinite(performance.memory?.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null,
     usedJsHeapBytesAfter: null,
     analysisExecCount: 0,
+    analysisConcurrencyRequested: 1,
+    analysisConcurrency: 1,
+    analysisEngineCount: 0,
+    analysisEnginesCreated: 0,
+    analysisEnginesTerminated: 0,
+    analysisTaskCountCompleted: 0,
+    analysisFallbackReason: null,
+    auxiliaryLoadMs: 0,
     cacheHits: 0,
     cacheMisses: 0,
     inputTransfers: [],
@@ -1201,27 +1268,28 @@ async function renderSpeaker() {
   clearCandidate(); const controller = operation();
   byId("cancel").hidden = false; setRenderStage("Подготовка аудио…"); render();
   try {
-    const engine = await timedRenderStage(profile, "engineInitializationMs", "Подготовка аудио…", controller,
+    mainEngine = await timedRenderStage(profile, "engineInitializationMs", "Подготовка аудио…", controller,
       async () => await ensureEngine(controller));
     abortCheck(controller);
-    const inputStarted = performance.now();
-    for (let index = 0; index < includedSources.length; index++) {
-      const source = includedSources[index];
-      setRenderStage(`Подготовка аудио: дорожка ${index + 1} из ${includedSources.length}…`);
+    const mainInputs = new Set();
+    const transferToMain = async trackId => {
+      if (mainInputs.has(trackId)) return;
+      const source = sourceByTrack.get(trackId); const path = inputPathByTrack.get(trackId);
       const readStarted = performance.now();
       const bytes = new Uint8Array(await source.file.arrayBuffer());
       const sizeBytes = bytes.byteLength;
       const readMs = performance.now() - readStarted;
       abortCheck(controller);
       const writeStarted = performance.now();
-      await engine.writeFile(inputPaths[index], bytes);
+      await mainEngine.writeFile(path, bytes);
       const writeMs = performance.now() - writeStarted;
       abortCheck(controller);
-      profile.inputTransfers.push({ trackId: source.trackId, sizeBytes,
+      mainInputs.add(trackId);
+      profile.inputTransfers.push({ trackId: source.trackId, engine: "main", sizeBytes,
         readMs: Math.round(readMs * 10) / 10, writeMs: Math.round(writeMs * 10) / 10 });
-    }
-    profile.phases.inputReadAndWriteMs = Math.round((performance.now() - inputStarted) * 10) / 10;
+    };
     const leveled = included.filter((id) => snapshot.payload.trackProcessing.find((item) => item.trackId === id).leveling === "on");
+    const misses = [];
     for (const [analysisIndex, trackId] of leveled.entries()) {
       const source = sourceByTrack.get(trackId);
       const cacheKey = speakerAnalysisCacheKey({ sourceIdentity: state.sourceIdentities.identity(source.file), trackId,
@@ -1235,55 +1303,158 @@ async function renderSpeaker() {
         continue;
       }
       profile.cacheMisses += 1;
-      const analysisStarted = performance.now();
-      const label = `Измерение громкости: дорожка ${analysisIndex + 1} из ${leveled.length}…`;
-      const logs = [];
-      logListener = ({ message }) => { logs.push(message); if (logs.length > 240) logs.shift(); };
-      engine.on("log", logListener);
+      misses.push({ trackId, source, cacheKey, analysisIndex,
+        operationKey: `${controller.operationIdentity}:${trackId}:${cacheKey}` });
+    }
+    const override = [1, 2].includes(Number(globalThis.__MESER_SPEAKER_ANALYSIS_CONCURRENCY__))
+      ? Number(globalThis.__MESER_SPEAKER_ANALYSIS_CONCURRENCY__) : null;
+    profile.analysisConcurrencyRequested = chooseSpeakerAnalysisConcurrency({ missCount: misses.length,
+      hardwareConcurrency: navigator.hardwareConcurrency, deviceMemory: navigator.deviceMemory, override });
+    profile.analysisConcurrency = profile.analysisConcurrencyRequested;
+    profile.analysisEngineCount = misses.length ? 1 : 0;
+    profile.analysisEnginesCreated = misses.length && profile.coldEngine ? 1 : 0;
+    if (profile.analysisConcurrency === 2) {
+      const auxiliaryLoadStarted = performance.now();
       try {
-        const graph = buildLevelingAnalysisFilter({ inputIndex: 0, trackId,
-          duration: snapshot.originalDurationSeconds, payload: snapshot.payload });
-        const code = await timedRenderStage(profile, `analysisTrack${analysisIndex + 1}Ms`, label, controller,
-          async () => await engine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", inputPathByTrack.get(trackId),
-            "-filter_complex", graph, "-map", "[analysis]", "-f", "null", "-"]));
-        profile.analysisExecCount += 1;
+        auxiliaryEngine = await createAuxiliaryEngine(controller);
+        profile.analysisEngineCount = 2;
+        profile.analysisEnginesCreated += 1;
+      } catch (error) {
+        if (controller.signal.aborted) throw error;
+        profile.analysisConcurrency = 1;
+        profile.analysisFallbackReason = `auxiliary-load: ${String(error?.message || error)}`;
+      } finally {
+        profile.auxiliaryLoadMs = Math.round((performance.now() - auxiliaryLoadStarted) * 10) / 10;
+      }
+    }
+    const runAnalysisTask = async (task, slot) => {
+      const engine = slot === 0 ? mainEngine : auxiliaryEngine;
+      if (!engine?.loaded) throw new Error("Worker измерения громкости не готов.");
+      const path = slot === 0 ? inputPathByTrack.get(task.trackId) : `speaker-analysis-${controller.operationIdentity}`;
+      const analysisStarted = performance.now();
+      let readMs = 0; let writeMs = 0; let sizeBytes = task.source.file.size;
+      if (slot === 0) await transferToMain(task.trackId);
+      else {
+        const readStarted = performance.now();
+        const bytes = new Uint8Array(await task.source.file.arrayBuffer()); sizeBytes = bytes.byteLength;
+        readMs = performance.now() - readStarted; abortCheck(controller);
+        const writeStarted = performance.now(); await engine.writeFile(path, bytes); writeMs = performance.now() - writeStarted;
         abortCheck(controller);
-        if (code !== 0) throw new Error("Не удалось измерить громкость дорожки.");
+        profile.inputTransfers.push({ trackId: task.trackId, engine: "auxiliary", sizeBytes,
+          readMs: Math.round(readMs * 10) / 10, writeMs: Math.round(writeMs * 10) / 10 });
+      }
+      const logs = [];
+      const listener = ({ message }) => { logs.push(message); if (logs.length > 240) logs.shift(); };
+      engine.on("log", listener);
+      try {
+        const graph = buildLevelingAnalysisFilter({ inputIndex: 0, trackId: task.trackId,
+          duration: snapshot.originalDurationSeconds, payload: snapshot.payload });
+        profile.analysisExecCount += 1;
+        const code = await engine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", path,
+          "-filter_complex", graph, "-map", "[analysis]", "-f", "null", "-"], -1, { signal: controller.signal });
+        abortCheck(controller);
+        if (code !== 0) { const error = new Error("Не удалось измерить громкость дорожки."); error.speakerAnalysisKind = "dsp"; throw error; }
         const parsed = parseLoudnormMeasurements(logs);
         abortCheck(controller);
         if (epoch !== state.sourceEpoch) throw new DOMException("cancelled", "AbortError");
-        measurements[trackId] = state.measurementCache.set(cacheKey, parsed);
-        profile.analyses.push({ trackId, cacheHit: false,
-          durationMs: Math.round((performance.now() - analysisStarted) * 10) / 10 });
+        return { operationIdentity: controller.operationIdentity, trackId: task.trackId, cacheKey: task.cacheKey,
+          measurements: parsed, analysisIndex: task.analysisIndex, worker: slot === 0 ? "main" : "auxiliary",
+          startedAtMs: Math.round((analysisStarted - renderStarted) * 10) / 10,
+          endedAtMs: Math.round((performance.now() - renderStarted) * 10) / 10,
+          durationMs: Math.round((performance.now() - analysisStarted) * 10) / 10 };
       } finally {
-        if (logListener) engine.off("log", logListener);
-        logListener = null;
-      }
-    }
-    const graph = buildSpeakerFilterGraph(snapshot.payload, snapshot.originalDurationSeconds, measurements, inputIndexByTrack);
-    await engine.writeFile(filterPath, encoder.encode(graph));
-    const finalLoudnormLog = [];
-    logListener = ({ message }) => {
-      if (/^(?:Output Integrated|Output True Peak|Output LRA|Output Threshold|Normalization Type):/.test(message.trim())) {
-        finalLoudnormLog.push(message.trim());
-        if (finalLoudnormLog.length > 80) finalLoudnormLog.shift();
+        engine.off("log", listener);
+        if (slot === 1 && engine.loaded) { try { await engine.deleteFile(path); } catch { /* Only the current auxiliary input may exist. */ } }
       }
     };
-    engine.on("log", logListener);
+    let latestAnalysisProgress = { completed: 0, total: misses.length, running: [] };
+    const showAnalysisProgress = () => {
+      if (state.operation !== controller) return;
+      const ready = profile.cacheHits + latestAnalysisProgress.completed;
+      const running = latestAnalysisProgress.running.map(task => task.analysisIndex + 1).sort((a, b) => a - b);
+      const active = running.length ? `; ${running.length === 1 ? "обрабатывается дорожка" : "обрабатываются дорожки"} ${running.join(" и ")}` : "";
+      setRenderStage(`Измерение громкости: готовы ${ready} из ${leveled.length}${active}. Прошло ${((performance.now() - analysisWallStarted) / 1000).toFixed(1)} с.`);
+    };
+    const analysisWallStarted = performance.now();
+    let analysisTimer = null;
+    let analysisResults = new Map();
+    if (misses.length) {
+      analysisTimer = setInterval(showAnalysisProgress, 400); showAnalysisProgress();
+      const runQueue = (tasks, concurrency) => trackOperationPromise(controller, runSpeakerAnalysisQueue({ tasks, concurrency,
+        signal: controller.signal, runTask: runAnalysisTask,
+        onProgress: progress => { latestAnalysisProgress = progress; showAnalysisProgress(); } }));
+      try {
+        analysisResults = await runQueue(misses, profile.analysisConcurrency);
+      } catch (error) {
+        const partial = error?.speakerAnalysisResults instanceof Map ? error.speakerAnalysisResults : new Map();
+        if (error?.speakerAnalysisSlot === 1 && auxiliaryInfrastructureFailure(error) && !controller.signal.aborted) {
+          profile.analysisFallbackReason = `auxiliary-worker: ${String(error?.message || error)}`;
+          terminateRenderEngine(auxiliaryEngine, controller); auxiliaryEngine = null; profile.analysisEnginesTerminated += 1;
+          profile.analysisConcurrency = 1;
+          const unfinished = misses.filter(task => !partial.has(task.operationKey));
+          latestAnalysisProgress = { completed: partial.size, total: misses.length, running: [] };
+          const retried = await runQueue(unfinished, 1);
+          analysisResults = new Map([...partial, ...retried]);
+        } else {
+          await terminateOperationEngines(controller);
+          throw error;
+        }
+      } finally {
+        if (analysisTimer) clearInterval(analysisTimer);
+      }
+    }
+    profile.phases.analysisWallMs = Math.round((performance.now() - analysisWallStarted) * 10) / 10;
+    if (auxiliaryEngine) { terminateRenderEngine(auxiliaryEngine, controller); auxiliaryEngine = null; profile.analysisEnginesTerminated += 1; }
+    abortCheck(controller);
+    for (const task of misses) {
+      const result = analysisResults.get(task.operationKey);
+      if (!result || result.operationIdentity !== controller.operationIdentity || result.trackId !== task.trackId || result.cacheKey !== task.cacheKey) {
+        throw new Error("Результат измерения громкости не соответствует дорожке.");
+      }
+      measurements[task.trackId] = state.measurementCache.set(task.cacheKey, result.measurements);
+      profile.analyses.push({ trackId: task.trackId, cacheHit: false, worker: result.worker,
+        measurements: structuredClone(result.measurements), startedAtMs: result.startedAtMs,
+        endedAtMs: result.endedAtMs, durationMs: result.durationMs });
+    }
+    profile.analysisTaskCountCompleted = misses.length;
+    profile.analyses.sort((left, right) => leveled.indexOf(left.trackId) - leveled.indexOf(right.trackId));
+    const inputStarted = performance.now();
+    for (let index = 0; index < included.length; index++) {
+      setRenderStage(`Подготовка аудио: дорожка ${index + 1} из ${included.length}…`);
+      await transferToMain(included[index]);
+    }
+    profile.phases.inputReadAndWriteMs = Math.round((performance.now() - inputStarted) * 10) / 10;
+    const graph = buildSpeakerFilterGraph(snapshot.payload, snapshot.originalDurationSeconds, measurements, inputIndexByTrack);
+    await mainEngine.writeFile(filterPath, encoder.encode(graph));
+    const finalLoudnormLog = [];
+    const debugFormatLog = [];
+    const debugFormats = globalThis.__MESER_SPEAKER_RENDER_DEBUG_FORMATS__ === true;
+    logListener = ({ message }) => {
+      const line = message.trim();
+      if (/^(?:Output Integrated|Output True Peak|Output LRA|Output Threshold|Normalization Type):/.test(line)) {
+        finalLoudnormLog.push(line);
+        if (finalLoudnormLog.length > 80) finalLoudnormLog.shift();
+      }
+      if (debugFormats && /(?:auto_aresample|Parsed_(?:loudnorm|acompressor|amix|alimiter)|Hz)/.test(line)) {
+        debugFormatLog.push(line); if (debugFormatLog.length > 240) debugFormatLog.shift();
+      }
+    };
+    mainEngine.on("log", logListener);
     let code;
     try {
       code = await timedRenderStage(profile, "finalRenderMs", "Монтаж, обработка и кодирование…", controller,
-        async () => await engine.exec(["-hide_banner", "-nostats", "-xerror", ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
+        async () => await mainEngine.exec(["-hide_banner", "-nostats", "-xerror", ...(debugFormats ? ["-loglevel", "verbose"] : []), ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
           "-filter_complex_script", filterPath, "-map", "[speaker_mix]", "-vn", "-sn", "-dn", "-c:a", "libmp3lame", "-b:a", "128k", outputPath]));
     } finally {
-      if (logListener) engine.off("log", logListener);
+      if (logListener) mainEngine.off("log", logListener);
       logListener = null;
       profile.finalLoudnormLog = finalLoudnormLog;
+      if (debugFormats) profile.debugFormatLog = debugFormatLog;
     }
     abortCheck(controller); if (code !== 0) throw new Error("Не удалось создать MP3. Проверьте исходники и повторите.");
     const candidate = await timedRenderStage(profile, "resultValidationMs", "Проверка результата…", controller, async () => {
       const readStarted = performance.now();
-      const bytes = await engine.readFile(outputPath);
+      const bytes = await mainEngine.readFile(outputPath);
       profile.phases.resultReadMs = Math.round((performance.now() - readStarted) * 10) / 10;
       if (!bytes.byteLength) throw new Error("Не удалось создать MP3.");
       const blob = new Blob([bytes], { type: "audio/mpeg" });
@@ -1297,7 +1468,7 @@ async function renderSpeaker() {
     });
     abortCheck(controller);
     await timedRenderStage(profile, "waveformPreparationMs", "Подготовка формы волны…", controller,
-      async () => await presentCandidate(candidate, controller, engine, outputPath));
+      async () => await presentCandidate(candidate, controller, mainEngine, outputPath));
     abortCheck(controller);
     profile.outcome = "success";
     setRenderStage("Финальная версия готова. В архив ничего не передавалось.", true);
@@ -1306,20 +1477,25 @@ async function renderSpeaker() {
     profile.outcome = error?.name === "AbortError" || error?.message === "cancelled" ? "cancelled" : "failed";
     clearCandidate(); byId("render-status").textContent = userMessage(error, "Не удалось собрать результат. Проект и исходники остались в памяти.");
   } finally {
-    if (epoch !== state.sourceEpoch) return;
-    if (logListener) state.engine?.off("log", logListener);
-    if (state.engine?.loaded) for (const path of [...inputPaths, filterPath, outputPath]) { try { await state.engine.deleteFile(path); } catch { /* fixed temporary path may be absent */ } }
-    profile.phases.totalMs = Math.round((performance.now() - renderStarted) * 10) / 10;
-    profile.cacheEntriesAfter = state.measurementCache.size;
-    profile.usedJsHeapBytesAfter = Number.isFinite(performance.memory?.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null;
-    state.lastRenderProfile = profile;
-    if (state.operation === controller) state.operation = null;
-    byId("cancel").hidden = true; byId("progress").hidden = true; render();
+    try {
+      if (logListener) mainEngine?.off("log", logListener);
+      terminateRenderEngine(auxiliaryEngine, controller);
+      if (mainEngine?.loaded) for (const path of [...inputPaths, filterPath, outputPath]) { try { await mainEngine.deleteFile(path); } catch { /* Fixed temporary path may be absent. */ } }
+      profile.phases.totalMs = Math.round((performance.now() - renderStarted) * 10) / 10;
+      profile.cacheEntriesAfter = state.measurementCache.size;
+      profile.usedJsHeapBytesAfter = Number.isFinite(performance.memory?.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null;
+      if (epoch === state.sourceEpoch) state.lastRenderProfile = profile;
+      if (state.operation === controller) state.operation = null;
+      if (epoch === state.sourceEpoch) { byId("cancel").hidden = true; byId("progress").hidden = true; render(); }
+    } finally {
+      controller.resolveFinished();
+    }
   }
 }
 
-function cancelRender() {
-  if (!state.operation) return; state.operation.abort(); state.engine?.terminate(); state.engine = null; clearCandidate();
+async function cancelRender() {
+  const controller = state.operation;
+  if (!controller) return; controller.abort(); await terminateOperationEngines(controller); await controller.finished; clearCandidate();
   byId("render-status").textContent = "Создание финальной версии отменено. Проект и исходники сохранены в памяти."; byId("cancel").hidden = true; byId("progress").hidden = true; render();
 }
 
@@ -1359,14 +1535,14 @@ function updateResultPlayhead() {
   byId("result-time").textContent = `${clock(current)} / ${clock(state.resultDuration)}`;
 }
 
-function teardown() {
+async function teardown() {
   trackPresentation = ""; syncEditPreview(null);
   meters.clear();
   sourceDetail.clear();
   state.cancelSelection?.(); state.selectedRegion = null; state.dragPayload = null; state.editTool = null; state.selectionScope = "track";
   state.measurementCache.clear(); state.sourceIdentities.reset(); state.lastRenderProfile = null;
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
-  cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
+  await cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
   state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
@@ -1385,7 +1561,7 @@ export async function closeSpeakerEditor(force = false, isCurrent = () => true) 
   }
   if (!force && !await protectSpeakerTransition()) return false;
   if (!isCurrent()) return false;
-  teardown(); return true;
+  await teardown(); return true;
 }
 
 export async function openSpeakerEditor({ session, files, draft = null, saveDraft: save, onSaved, isCurrent = () => true }) {

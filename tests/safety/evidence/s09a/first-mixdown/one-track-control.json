@@ -1,0 +1,170 @@
+{
+  "label": "one-track-control",
+  "browser": "151.0.7922.34",
+  "baseUrl": "http://127.0.0.1:56893",
+  "forcedAnalysisConcurrency": 2,
+  "inputs": [
+    {
+      "name": "hour-330-44k-mono.m4a",
+      "sizeBytes": 29556739
+    }
+  ],
+  "runs": [
+    {
+      "temperature": "cold",
+      "wallMs": 171745.6,
+      "usedJsHeapBytesBefore": 60300000,
+      "usedJsHeapBytesAfter": 60300000,
+      "workerOperations": {
+        "engineLoadMs": [
+          80.2
+        ],
+        "inputWriteMs": [
+          4.1
+        ],
+        "auxiliaryInputWriteMs": [],
+        "analysisExecMs": [
+          60885.1
+        ],
+        "finalExecMs": [
+          106528.4
+        ],
+        "waveformExecMs": [
+          3736.5
+        ],
+        "resultReadMs": [
+          23.2
+        ]
+      },
+      "stages": [
+        {
+          "label": "Подготовка аудио…",
+          "firstAtMs": 0.0,
+          "lastAtMs": 0.0
+        },
+        {
+          "label": "Измерение громкости: готовы 0 из 1; обрабатывается дорожка 1.",
+          "firstAtMs": 90.1,
+          "lastAtMs": 60891.6
+        },
+        {
+          "label": "Измерение громкости: готовы 1 из 1.",
+          "firstAtMs": 61000.5,
+          "lastAtMs": 61000.5
+        },
+        {
+          "label": "Подготовка аудио: дорожка 1 из 1…",
+          "firstAtMs": 61000.6,
+          "lastAtMs": 61000.6
+        },
+        {
+          "label": "Монтаж, обработка и кодирование…",
+          "firstAtMs": 61006.4,
+          "lastAtMs": 167407.7
+        },
+        {
+          "label": "Проверка результата…",
+          "firstAtMs": 167535.3,
+          "lastAtMs": 167535.3
+        },
+        {
+          "label": "Подготовка формы волны…",
+          "firstAtMs": 167603.0,
+          "lastAtMs": 171205.6
+        },
+        {
+          "label": "Финальная версия готова. В архив ничего не передавалось.",
+          "firstAtMs": 171376.3,
+          "lastAtMs": 171376.3
+        }
+      ],
+      "applicationProfile": {
+        "schemaVersion": 2,
+        "engineBuild": "ffmpeg-wasm-0.12.15/core-0.12.10/ffmpeg-n5.1.4-single-thread",
+        "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+        "coldEngine": true,
+        "sourceDurationSeconds": 3600,
+        "resultDurationSeconds": 3600,
+        "sourceCount": 1,
+        "includedTrackCount": 1,
+        "includedSources": [
+          {
+            "trackId": "4d00b7da-a005-4798-9bee-e15eae1a8c2f",
+            "mediaType": "audio/x-m4a",
+            "sizeBytes": 29556739,
+            "durationSeconds": 3600
+          }
+        ],
+        "settings": [
+          {
+            "trackId": "4d00b7da-a005-4798-9bee-e15eae1a8c2f",
+            "enhancement": "gentle",
+            "leveling": "on",
+            "compression": "light"
+          }
+        ],
+        "globalCutCount": 0,
+        "trackSilenceCount": 0,
+        "outputSampleRate": 48000,
+        "cacheEntriesBefore": 0,
+        "cacheEntriesAfter": 1,
+        "usedJsHeapBytesBefore": 60300000,
+        "usedJsHeapBytesAfter": 60300000,
+        "analysisExecCount": 1,
+        "analysisConcurrencyRequested": 1,
+        "analysisConcurrency": 1,
+        "analysisEngineCount": 1,
+        "analysisEnginesCreated": 1,
+        "analysisEnginesTerminated": 0,
+        "analysisTaskCountCompleted": 1,
+        "analysisFallbackReason": null,
+        "auxiliaryLoadMs": 0,
+        "cacheHits": 0,
+        "cacheMisses": 1,
+        "inputTransfers": [
+          {
+            "trackId": "4d00b7da-a005-4798-9bee-e15eae1a8c2f",
+            "engine": "main",
+            "sizeBytes": 29556739,
+            "readMs": 20.9,
+            "writeMs": 4.1
+          }
+        ],
+        "analyses": [
+          {
+            "trackId": "4d00b7da-a005-4798-9bee-e15eae1a8c2f",
+            "cacheHit": false,
+            "worker": "main",
+            "startedAtMs": 95.5,
+            "endedAtMs": 61006.2,
+            "durationMs": 60910.7
+          }
+        ],
+        "phases": {
+          "engineInitializationMs": 89.1,
+          "analysisWallMs": 60911.1,
+          "inputReadAndWriteMs": 0,
+          "finalRenderMs": 106528.6,
+          "resultReadMs": 23.3,
+          "resultValidationMs": 67.9,
+          "waveformPreparationMs": 3773.3,
+          "totalMs": 171384.8
+        },
+        "outcome": "success",
+        "finalLoudnormLog": [
+          "Output Integrated:   -19.0 LUFS",
+          "Output True Peak:    -11.1 dBTP",
+          "Output LRA:            0.0 LU",
+          "Output Threshold:    -29.0 LUFS",
+          "Normalization Type:   Dynamic"
+        ]
+      },
+      "result": {
+        "sizeBytes": 57600912,
+        "sha256": "7a2ed13407ac6ab7aea51f000d398eba6ce1c2d408d6001e33333db441aa4d91",
+        "durationSeconds": 3600
+      }
+    }
+  ],
+  "pageErrors": []
+}

@@ -162,22 +162,33 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
 .daw-workspace .speaker-dsp-field input[role="switch"]::before { content: ""; display: block; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px #13293d66; }
 .daw-workspace .speaker-dsp-field input[role="switch"]:checked { background: #187856; }
 .daw-workspace .speaker-dsp-field input[role="switch"]:checked::before { transform: translateX(14px); }
-.daw-workspace .speaker-dsp-field input[type="range"] { grid-column: 1 / -1; width: 100%; min-width: 0; height: 22px; min-height: 22px; margin: 0; accent-color: #24618c; }
+.daw-workspace .speaker-dsp-field input[type="range"] { width: 100%; min-width: 0; height: 22px; min-height: 22px; margin: 0; accent-color: #24618c; }
 .daw-workspace .speaker-dsp-value { grid-column: 1 / -1; font-size: .7rem; color: #345568; }
 .daw-workspace .speaker-dsp-field:has(input[role="switch"]) .speaker-dsp-value { display: none; }
-.daw-workspace .speaker-dsp-field:has(input[type="range"]) .speaker-dsp-value { grid-column: 2; grid-row: 1; }
-.daw-workspace .speaker-compression-ticks { display: flex; justify-content: space-between; grid-column: 1 / -1; font-size: .6rem; gap: 2px; }
-.daw-workspace .speaker-compression-ticks span { min-width: 0; overflow-wrap: anywhere; }
+.daw-workspace .speaker-dsp-field--compression { grid-template-columns: minmax(0, 1fr) auto; }
+.daw-workspace .speaker-dsp-field--compression .speaker-dsp-value { grid-column: 2; grid-row: 1; min-width: 4.5rem; text-align: end; }
+.daw-workspace .speaker-compression-scale { --speaker-compression-thumb: 16px; display: grid; grid-column: 1 / -1; grid-row: 2; min-width: 0; padding-inline: 24px; box-sizing: border-box; }
+.daw-workspace .speaker-compression-scale > input { grid-column: 1; grid-row: 1; }
+.daw-workspace .speaker-compression-ticks { position: relative; display: block; grid-column: 1; grid-row: 2; min-height: 1.25em; font-size: .6rem; }
+.daw-workspace .speaker-compression-ticks span { position: absolute; top: 0; width: min(4.5rem, calc((100% - var(--speaker-compression-thumb)) / 3)); text-align: center; white-space: normal; overflow-wrap: anywhere; transform: translateX(-50%); }
+.daw-workspace .speaker-compression-ticks span:nth-child(1) { left: calc(var(--speaker-compression-thumb) / 2); }
+.daw-workspace .speaker-compression-ticks span:nth-child(2) { left: calc(33.333333% + var(--speaker-compression-thumb) / 6); }
+.daw-workspace .speaker-compression-ticks span:nth-child(3) { left: calc(66.666667% - var(--speaker-compression-thumb) / 6); }
+.daw-workspace .speaker-compression-ticks span:nth-child(4) { left: calc(100% - var(--speaker-compression-thumb) / 2); }
 .daw-workspace #speaker-editor-result-waveform canvas { position: absolute; top: 0; right: auto; }
 .daw-workspace .speaker-dsp-field input:focus-visible { outline: 3px solid #176aba; outline-offset: 2px; }
 .daw-workspace .speaker-dsp-field input:disabled { opacity: .5; cursor: default; }
 @media (min-width: 768px) {
   .daw-workspace .speaker-track-controls { gap: 1px; padding-block: 4px; }
   .daw-workspace .speaker-track .speaker-dsp { margin-top: 0; }
-  .daw-workspace .speaker-dsp-field:has(input[type="range"]) { grid-template-columns: max-content minmax(0, 1fr); row-gap: 0; }
-  .daw-workspace .speaker-dsp-field input[type="range"] { grid-column: 2; grid-row: 1; }
-  .daw-workspace .speaker-dsp-field:has(input[type="range"]) .speaker-dsp-value { grid-column: 1; grid-row: 2; }
-  .daw-workspace .speaker-compression-ticks { grid-column: 2; grid-row: 2; }
+  .daw-workspace .speaker-dsp-field--compression { grid-template-columns: max-content minmax(0, 1fr); row-gap: 0; }
+  .daw-workspace .speaker-dsp-field--compression .speaker-compression-scale { display: contents; }
+  .daw-workspace .speaker-dsp-field--compression .speaker-compression-scale > input,
+  .daw-workspace .speaker-dsp-field--compression .speaker-compression-ticks { grid-column: 2; width: 100%; margin-inline: 0; box-sizing: border-box; }
+  .daw-workspace .speaker-dsp-field--compression .speaker-compression-scale > input { grid-row: 1; }
+  .daw-workspace .speaker-dsp-field--compression .speaker-compression-ticks { grid-row: 2; }
+  .daw-workspace .speaker-dsp-field--compression .speaker-compression-ticks span { width: max-content; white-space: nowrap; overflow-wrap: normal; }
+  .daw-workspace .speaker-dsp-field--compression .speaker-dsp-value { position: static; grid-column: 1; grid-row: 2; width: auto; height: auto; min-width: 0; overflow: visible; clip-path: none; text-align: start; }
 }
 @media (pointer: coarse) {
   .daw-workspace .speaker-boundary { min-height: 36px; line-height: 36px; }

@@ -91,7 +91,7 @@
 .audio-studio .daw-workspace .speaker-dsp-field input[type=checkbox]::after { width:11px;height:11px;top:3px;left:3px;box-shadow:none; }
 .audio-studio .daw-workspace .speaker-dsp-field input[type=checkbox]:checked::after { transform:translateX(11px); }
 .audio-studio .daw-workspace .speaker-dsp-field input[type=range] { accent-color:var(--studio-accent); }
-.audio-studio .daw-workspace .speaker-compression-ticks { font-size:10px; }
+.audio-studio .daw-workspace .speaker-compression-ticks { font-size:10px; letter-spacing:-.15px; }
 .audio-studio .daw-workspace .speaker-dsp-value { min-height:14px;line-height:14px;font-size:10px; }
 .audio-studio .daw-workspace :is(.speaker-waveform,.processor-waveform) { background:var(--studio-bg);border-color:var(--studio-line);border-radius:0; }
 .audio-studio .daw-workspace :is(.speaker-source-scrollbar,.processor-source-scrollbar) { background:var(--studio-panel);border-color:var(--studio-line); }
@@ -173,10 +173,11 @@
 .audio-studio .speaker-selection__fields output { background:var(--studio-panel);color:var(--studio-text);border-color:var(--studio-line); }
 .audio-studio .daw-workspace :is(.speaker-track,.processor-track) { position:relative;z-index:0; }
 .audio-studio .daw-workspace .speaker-dsp-value { color:var(--studio-muted); }
-.audio-studio .daw-workspace .speaker-compression-ticks { grid-column:1/-1;white-space:nowrap; }
+.audio-studio .daw-workspace .speaker-compression-ticks { white-space:normal; }
 .audio-studio .daw-workspace .speaker-scrollbar,.audio-studio .daw-workspace .processor-source-scrollbar { background:var(--studio-panel);border-color:var(--studio-line); }
 .audio-studio .daw-workspace .speaker-scrollbar>span,.audio-studio .daw-workspace .processor-source-scrollbar__thumb { background:var(--studio-muted);border:0;box-shadow:none; }
 @media(min-width:768px) {
+ .audio-studio #speaker-editor.daw-workspace { --lane-panel:252px; }
  .audio-studio .daw-workspace .speaker-selection__actions { display:grid;grid-template-columns:44px 44px minmax(0,1fr) minmax(0,1fr); }
  .audio-studio .daw-workspace :is(#speaker-editor-set-start,#speaker-editor-set-end)>span { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%); }
  .audio-studio .daw-workspace .speaker-selection button.edit-tool { white-space:nowrap; }
@@ -184,16 +185,10 @@
 .audio-studio .daw-workspace .speaker-dsp-field input[role=switch] { position:relative;padding:0; }
 .audio-studio .daw-workspace .speaker-dsp-field input[role=switch]::before { content:none; }
 .audio-studio .daw-workspace .speaker-dsp-field input[role=switch]::after { content:'';position:absolute;background:var(--studio-bg);border-radius:50%; }
-.audio-studio .daw-workspace .speaker-dsp-field:has(input[type=range]) { grid-template-columns:1fr auto; }
-.audio-studio .daw-workspace .speaker-dsp-field:has(input[type=range]) .speaker-dsp-value { grid-column:2;grid-row:1; }
-.audio-studio .daw-workspace .speaker-dsp-field input[type=range] { grid-column:1/-1;grid-row:2; }
-.audio-studio .daw-workspace .speaker-compression-ticks { grid-column:1/-1;grid-row:3; }
+.audio-studio .daw-workspace .speaker-dsp-field--compression { grid-template-columns:1fr auto; }
 @media(min-width:768px) {
  .audio-studio .daw-workspace :is(.speaker-track-controls,.processor-track__top) { padding-block:9px; }
- .audio-studio .daw-workspace .speaker-dsp-field:has(input[type=range]) { grid-template-columns:max-content minmax(0,1fr); }
- .audio-studio .daw-workspace .speaker-dsp-field input[type=range] { grid-column:2;grid-row:1; }
- .audio-studio .daw-workspace .speaker-compression-ticks { grid-row:2; }
- .audio-studio .daw-workspace .speaker-dsp-field:has(input[type=range]) .speaker-dsp-value { position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%); }
+ .audio-studio .daw-workspace .speaker-dsp-field--compression { grid-template-columns:max-content minmax(0,1fr); }
 }
 /* A transformed sticky ancestor must not reveal the off-screen skip link. */
 .audio-studio .skip-link:not(:focus) { clip-path:inset(50%); }

@@ -32,6 +32,8 @@ def check_waveform_consistency(browser, base_url, screenshot_dir=None):
                 scroll=page.locator(row+' [class$="waveform-scroll"]')
                 base=scroll.evaluate('e=>e.clientWidth/73.3')
                 value=pps/base if mode=='speaker' else 100*math.log(pps/base)/math.log(1000/base)
+                if pps == 1000:
+                    value = page.locator('#'+zoom).evaluate('e=>Number(e.max)')
                 page.locator('#'+zoom).evaluate('(e,v)=>{e.value=String(v);e.dispatchEvent(new Event("input",{bubbles:true}))}',value)
                 scroll.evaluate("e=>{const pps=parseFloat(e.firstElementChild.style.width)/73.3;e.scrollLeft=12*pps-e.clientWidth/2;e.dispatchEvent(new Event('scroll'))}")
                 # A retained ready bitmap can still belong to the previous

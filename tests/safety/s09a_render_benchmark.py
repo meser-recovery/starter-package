@@ -48,6 +48,7 @@ def summarize_operations(operations):
     return {
         "engineLoadMs": durations("LOAD"),
         "inputWriteMs": durations("WRITE_FILE", lambda item: str(item.get("path") or "").startswith("speaker-input-")),
+        "auxiliaryInputWriteMs": durations("WRITE_FILE", lambda item: str(item.get("path") or "").startswith("speaker-analysis-")),
         "analysisExecMs": durations("EXEC", is_analysis),
         "finalExecMs": durations("EXEC", is_final),
         "waveformExecMs": durations("EXEC", is_waveform),
@@ -68,11 +69,13 @@ def summarize_stages(stages):
     return result
 
 
-def run_benchmark(base_url, inputs, label):
+def run_benchmark(base_url, inputs, label, analysis_concurrency=None, cold_only=False):
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch()
         context = browser.new_context(viewport={"width": 1280, "height": 900})
         context.add_init_script("sessionStorage.setItem('meser_service_access_v1','granted')")
+        if analysis_concurrency:
+            context.add_init_script(f"window.__MESER_SPEAKER_ANALYSIS_CONCURRENCY__={analysis_concurrency}")
         context.add_init_script(PROBE)
         site = urlparse(base_url)
         context.route("**/*", lambda route: route.continue_() if urlparse(route.request.url).netloc == site.netloc else route.abort())
@@ -91,7 +94,7 @@ def run_benchmark(base_url, inputs, label):
             compression.fill("1"); compression.dispatch_event("change")
 
         runs = []
-        for temperature in ("cold", "warm"):
+        for temperature in (("cold",) if cold_only else ("cold", "warm")):
             marker = page.evaluate("window.renderBenchmark.operations.length")
             stage_marker = page.evaluate("window.renderBenchmark.stages.length")
             heap_before = page.evaluate("performance.memory?.usedJSHeapSize ?? null")
@@ -119,6 +122,7 @@ def run_benchmark(base_url, inputs, label):
                 "result": result["result"],
             })
         result = {"label": label, "browser": browser.version, "baseUrl": base_url,
+                  "forcedAnalysisConcurrency": analysis_concurrency,
                   "inputs": [{"name": path.name, "sizeBytes": path.stat().st_size} for path in inputs],
                   "runs": runs, "pageErrors": errors}
         context.close(); browser.close()
@@ -131,8 +135,10 @@ def main():
     parser.add_argument("--input", action="append", type=Path, required=True)
     parser.add_argument("--label", required=True)
     parser.add_argument("--output", type=Path)
+    parser.add_argument("--analysis-concurrency", type=int, choices=(1, 2))
+    parser.add_argument("--cold-only", action="store_true")
     args = parser.parse_args()
-    result = run_benchmark(args.base_url, args.input, args.label)
+    result = run_benchmark(args.base_url, args.input, args.label, args.analysis_concurrency, args.cold_only)
     text = json.dumps(result, ensure_ascii=False, indent=2)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

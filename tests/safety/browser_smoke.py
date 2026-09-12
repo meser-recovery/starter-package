@@ -3639,8 +3639,11 @@ def main() -> int:
         check_approved_timeline_ux(browser, base_url, args.screenshot_dir)
         from s09a_input_focus_smoke import check_input_focus
         check_input_focus(browser, base_url)
-        from s09a_speaker_render_performance_smoke import check_speaker_render_performance
+        from s09a_speaker_render_performance_smoke import check_speaker_parallel_equivalence, check_speaker_render_performance
         check_speaker_render_performance(browser, base_url)
+        check_speaker_parallel_equivalence(browser, base_url)
+        from s09a_compression_scale_smoke import check_compression_scale
+        check_compression_scale(browser, base_url, args.screenshot_dir)
         from s09a_corrective_management_smoke import check_s09a_corrective_management
         check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)

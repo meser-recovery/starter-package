@@ -34,20 +34,24 @@ def check_speaker_render_performance(browser, base_url):
                     any("print_format=json" in str(arg) for arg in (message.get("args") or []))])
 
     def render(expected_analyses, expected_inputs=3):
-        before = page.evaluate("window.speakerRenderProbe.messages.length")
+        before = page.evaluate("({messages:window.speakerRenderProbe.messages.length,workers:window.speakerRenderProbe.workers})")
         page.locator("#speaker-editor-render").click()
         page.get_by_text("Финальная версия готова. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
         result = page.evaluate("""async before => {
           const state=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
           const bytes=new Uint8Array(await state.candidate.blob.arrayBuffer());
           const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
-          return {messages:window.speakerRenderProbe.messages.slice(before),profile:state.renderProfile,hash,size:bytes.length};
+          return {messages:window.speakerRenderProbe.messages.slice(before.messages),profile:state.renderProfile,hash,size:bytes.length,
+            workersCreated:window.speakerRenderProbe.workers-before.workers};
         }""", before)
         assert analysis_count(result["messages"]) == expected_analyses, result
         writes = [message["path"] for message in result["messages"] if message["type"] == "WRITE_FILE" and
                   str(message.get("path") or "").startswith("speaker-input-")]
         assert len(writes) == expected_inputs and len(set(writes)) == expected_inputs, result
         assert result["profile"]["analysisExecCount"] == expected_analyses, result
+        assert result["profile"]["analysisConcurrency"] <= 2, result
+        if expected_analyses <= 1:
+            assert result["profile"]["analysisConcurrency"] == 1 and result["workersCreated"] <= 1, result
         assert result["profile"]["includedTrackCount"] == expected_inputs, result
         assert result["profile"]["outcome"] == "success" and result["size"] > 0, result
         normalization = [line for line in result["profile"].get("finalLoudnormLog", [])
@@ -70,6 +74,9 @@ def check_speaker_render_performance(browser, base_url):
 
         cold = render(3)
         assert cold["profile"]["cacheMisses"] == 3 and cold["profile"]["cacheHits"] == 0
+        assert cold["profile"]["analysisConcurrency"] == 2 and cold["profile"]["analysisEngineCount"] == 2, cold
+        assert cold["workersCreated"] == 2, cold
+        assert {item.get("worker") for item in cold["profile"]["analyses"]} == {"main", "auxiliary"}, cold
         warm = render(0)
         assert warm["profile"]["cacheHits"] == 3 and warm["hash"] == cold["hash"]
 
@@ -79,8 +86,11 @@ def check_speaker_render_performance(browser, base_url):
         assert compressed["profile"]["cacheHits"] == 3
 
         page.locator('.speaker-track [data-dsp-field="enhancement"]').first.check()
-        enhanced = render(1)
-        assert enhanced["profile"]["cacheHits"] == 2 and enhanced["profile"]["cacheMisses"] == 1
+        page.locator('.speaker-track [data-dsp-field="enhancement"]').nth(1).check()
+        enhanced = render(2)
+        assert enhanced["profile"]["cacheHits"] == 1 and enhanced["profile"]["cacheMisses"] == 2
+        assert enhanced["profile"]["analysisConcurrency"] == 2, enhanced
+        page.locator('.speaker-track [data-dsp-field="enhancement"]').nth(1).uncheck()
 
         page.locator("#speaker-editor-selection-start").fill("1")
         page.locator("#speaker-editor-selection-end").fill("1.4")
@@ -128,7 +138,7 @@ def check_speaker_render_performance(browser, base_url):
         assert redone["profile"]["cacheHits"] == 3
 
         stages = page.evaluate("window.speakerRenderProbe.stages")
-        for label in ("Подготовка аудио", "Измерение громкости", "Готовое измерение громкости",
+        for label in ("Подготовка аудио", "Измерение громкости",
                       "Монтаж, обработка и кодирование", "Проверка результата", "Подготовка формы волны"):
             assert any(label in stage for stage in stages), (label, stages)
 
@@ -139,8 +149,25 @@ def check_speaker_render_performance(browser, base_url):
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
         for index in range(3): page.locator('.speaker-track [data-dsp-field="leveling"]').nth(index).check()
+        before = page.evaluate("({messages:window.speakerRenderProbe.messages.length,terminated:window.speakerRenderProbe.terminated})")
+        page.locator("#speaker-editor-render").click()
+        page.wait_for_function("""before => window.speakerRenderProbe.messages.slice(before.messages).filter(m =>
+          m.type==='EXEC' && (m.args||[]).some(arg=>String(arg).includes('print_format=json'))).length===2""", arg=before, timeout=180000)
+        page.locator("#speaker-editor-cancel").click()
+        page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=30000)
+        assert page.evaluate("window.speakerRenderProbe.terminated",) - before["terminated"] == 2
         replaced = render(3)
         assert replaced["profile"]["cacheHits"] == 0 and replaced["profile"]["cacheMisses"] == 3
+
+        # An auxiliary Worker infrastructure failure falls back exactly once to
+        # the already loaded main engine without changing the DSP result path.
+        for index in range(3): page.locator('.speaker-track [data-dsp-field="enhancement"]').nth(index).check()
+        page.evaluate("window.__MESER_SPEAKER_TEST_AUX_LOAD_FAILURE__=true")
+        fallback = render(3)
+        assert fallback["profile"]["analysisConcurrencyRequested"] == 2, fallback
+        assert fallback["profile"]["analysisConcurrency"] == 1, fallback
+        assert str(fallback["profile"]["analysisFallbackReason"]).startswith("auxiliary-load:"), fallback
+        assert fallback["workersCreated"] == 0, fallback
 
         # A real loudnorm -inf/invalid measurement fails closed and is retried, never cached as ready.
         page.locator("#processor-file").set_input_files([fixture(0, 2)])
@@ -163,3 +190,51 @@ def check_speaker_render_performance(browser, base_url):
         print("Speaker render performance: PASS (real analysis EXEC counts, LRU identity, included-input mapping, cancellation and honest stages)", flush=True)
     finally:
         context.close()
+
+
+def check_speaker_parallel_equivalence(browser, base_url):
+    """Sequential and parallel cold snapshots must produce identical DSP data and MP3 bytes."""
+    site = urlparse(base_url)
+
+    def cold(concurrency):
+        context = browser.new_context(viewport={"width": 1280, "height": 900})
+        context.add_init_script(f"sessionStorage.setItem('meser_service_access_v1','granted'); window.__MESER_SPEAKER_ANALYSIS_CONCURRENCY__={concurrency}")
+        context.route("**/*", lambda route: route.continue_() if urlparse(route.request.url).netloc == site.netloc else route.abort())
+        page = context.new_page(); errors = []
+        page.on("pageerror", lambda error: errors.append(str(error)))
+        try:
+            page.goto(base_url.rstrip("/") + "/Audio-Editor.html")
+            page.locator("#source-session-mode-device").click()
+            page.locator("#processor-file").set_input_files([fixture(330, 6), fixture(440, 6), fixture(550, 6)])
+            page.locator("#open-local-speaker").click()
+            page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
+            for index in range(3):
+                row = page.locator(".speaker-track").nth(index)
+                row.locator('[data-dsp-field="enhancement"]').check()
+                row.locator('[data-dsp-field="leveling"]').check()
+                compression = row.locator('[data-dsp-field="compression"]')
+                compression.fill("1"); compression.dispatch_event("change")
+            page.locator("#speaker-editor-render").click()
+            page.get_by_text("Финальная версия готова. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
+            result = page.evaluate("""async () => {
+              const state=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
+              const bytes=new Uint8Array(await state.candidate.blob.arrayBuffer());
+              const hash=[...new Uint8Array(await crypto.subtle.digest('SHA-256',bytes))].map(v=>v.toString(16).padStart(2,'0')).join('');
+              return {hash,duration:state.candidate.resultDurationSeconds,
+                measurements:state.renderProfile.analyses.map(item=>item.measurements),
+                settings:state.renderProfile.settings.map(({trackId,...setting})=>setting),
+                normalization:state.renderProfile.finalLoudnormLog,
+                concurrency:state.renderProfile.analysisConcurrency};
+            }""")
+            assert not errors, errors
+            return result
+        finally:
+            context.close()
+
+    sequential = cold(1); parallel = cold(2)
+    assert sequential["concurrency"] == 1 and parallel["concurrency"] == 2
+    assert sequential["measurements"] == parallel["measurements"], (sequential, parallel)
+    assert sequential["settings"] == parallel["settings"]
+    assert sequential["normalization"] == parallel["normalization"]
+    assert sequential["duration"] == parallel["duration"] and sequential["hash"] == parallel["hash"]
+    print("Speaker parallel equivalence: PASS (measurements, settings, normalization log, duration and MP3 SHA-256)", flush=True)
