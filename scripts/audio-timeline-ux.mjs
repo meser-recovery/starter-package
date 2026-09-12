@@ -49,12 +49,28 @@ function isNativeControl(target) {
 
 export function installSpaceTransport({ workspace, sourceAudio, resultAudio, sourceButton, canHandle }) {
   let context = "source";
+  // A pointer click on a studio command should not make Space repeat that
+  // command. Tab navigation still gives native buttons their usual Space key.
+  let pointerButton = null;
+  document.addEventListener("pointerdown", event => {
+    pointerButton = event.target instanceof Element ? event.target.closest("button") : null;
+    if (pointerButton?.getAttribute("aria-controls") === workspace.id) context = "source";
+  }, { capture: true });
+  document.addEventListener("focusin", event => {
+    if (event.target !== pointerButton) pointerButton = null;
+  });
   for (const eventName of ["pointerdown", "focusin"]) workspace.addEventListener(eventName, event => {
     context = resultAudio?.closest("section")?.contains(event.target) ? "result" : "source";
   });
   document.addEventListener("keydown", event => {
+    if (event.key === "Tab") pointerButton = null;
     if (event.code !== "Space" || event.repeat || event.isComposing || event.defaultPrevented || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return;
-    if (workspace.hidden || !workspace.isConnected || document.querySelector("dialog[open]") || isNativeControl(event.target) || !canHandle()) return;
+    const pointerCommand = pointerButton && event.target === pointerButton &&
+      (workspace.contains(pointerButton) || pointerButton.getAttribute("aria-controls") === workspace.id) &&
+      !pointerButton.disabled && !pointerButton.closest('[aria-expanded="true"], [role="menu"], [role="dialog"], dialog');
+    if (workspace.hidden || !workspace.isConnected || !workspace.getClientRects().length ||
+        document.querySelector('dialog[open], [role="menu"]:not([hidden])') ||
+        (isNativeControl(event.target) && !pointerCommand) || !canHandle()) return;
     event.preventDefault();
     if (context === "result" && resultAudio && resultAudio.getAttribute("src")) {
       if (resultAudio.paused) {
