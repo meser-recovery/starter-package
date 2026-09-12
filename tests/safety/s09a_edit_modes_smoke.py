@@ -8,6 +8,7 @@ def apply_selection(page, tool):
         button.click()
     page.locator('.speaker-waveform').first.focus()
     page.keyboard.press('Enter')
+    assert button.get_attribute('aria-pressed') == 'false', 'A successful keyboard commit must consume the tool'
     page.keyboard.press('Escape')
 
 
@@ -26,11 +27,13 @@ def restore_selection(page, tool):
     button = page.locator('#speaker-editor-add-' + tool)
     assert button.get_attribute('data-mode') == 'restore'
     button.click()
+    assert button.get_attribute('aria-pressed') == 'false', 'Restoring a region must not arm its creation tool'
 
 
 def check_edit_modes(page, output=None):
     state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
     rows = page.locator('.speaker-track')
+    page.locator('.speaker-selection details').evaluate('e => e.open = true')
     baseline = page.evaluate(state)
     assert page.locator('.speaker-selection__actions button').evaluate_all(
         "bs => bs.map(b => b.id.replace('speaker-editor-',''))") == [
@@ -40,10 +43,10 @@ def check_edit_modes(page, output=None):
     assert page.evaluate(state) == baseline, 'Arming an edit must not change the recipe'
     wave = rows.first.locator('.speaker-waveform-scroll')
     wave.scroll_into_view_if_needed(); b = wave.bounding_box()
-    def start_drag():
-        page.mouse.move(b['x'] + b['width']*.22, b['y'] + b['height']*.6)
+    def start_drag(start=.22, end=.32):
+        page.mouse.move(b['x'] + b['width']*start, b['y'] + b['height']*.6)
         page.mouse.down()
-        page.mouse.move(b['x'] + b['width']*.32, b['y'] + b['height']*.6, steps=5)
+        page.mouse.move(b['x'] + b['width']*end, b['y'] + b['height']*.6, steps=5)
     start_drag()
     assert page.locator('.speaker-selection-overlay[data-scope=all]').count() == rows.count()
     assert page.evaluate(state) == baseline, 'Dragging is a preview until pointerup'
@@ -52,14 +55,30 @@ def check_edit_modes(page, output=None):
     assert page.evaluate(state) == baseline
     page.locator('#speaker-editor-add-cut').click()
     start_drag(); page.mouse.up()
-    cut = page.evaluate(state)['globalCuts'][-1]
+    cut_payload = page.evaluate(state)
+    cut = cut_payload['globalCuts'][-1]
+    assert page.locator('#speaker-editor-add-cut').get_attribute('aria-pressed') == 'false'
+    assert page.locator('#speaker-editor').get_attribute('data-edit-tool') == 'select'
     assert page.locator('.speaker-region-overlay--cut').count() == rows.count()
+    # The next drag is an ordinary time/Loop selection and cannot create a second cut.
+    start_drag(.38, .48); page.mouse.up()
+    assert page.evaluate(state) == cut_payload
+    page.locator('#speaker-editor-add-cut').click()
+    start_drag(.38, .48); page.mouse.up()
+    two_cuts = page.evaluate(state)
+    assert len(two_cuts['globalCuts']) == len(cut_payload['globalCuts']) + 1
+    assert page.locator('#speaker-editor-add-cut').get_attribute('aria-pressed') == 'false'
     restore_selection(page, 'cut')
+    first_region = page.locator(f'#speaker-editor-tracks [data-region-id="{cut["regionId"]}"]').first
+    first_region.focus(); page.keyboard.press('Enter')
+    assert page.locator('#speaker-editor-add-cut').get_attribute('data-mode') == 'restore'
+    page.locator('#speaker-editor-add-cut').click()
     assert page.evaluate(state) == baseline
     # A global preview includes an excluded row; cancellation preserves its
     # existing exclusion and does not commit a cut or leave a captured pointer.
     rows.nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
     excluded = page.evaluate(state)
+    page.locator('#speaker-editor-add-cut').click()
     wave.scroll_into_view_if_needed(); b = wave.bounding_box(); start_drag()
     assert page.locator('.speaker-selection-overlay[data-scope=all]').count() == rows.count()
     assert rows.nth(1).locator('.speaker-selection-overlay').count() == 1
@@ -83,9 +102,25 @@ def check_edit_modes(page, output=None):
     assert page.evaluate(state)['globalCuts'] == baseline['globalCuts']
     silence = page.evaluate(state)['trackSilenceRegions'][-1]
     assert silence['trackId'] == rows.nth(1).get_attribute('data-track-id')
-    restore_selection(page, 'silence')
+    assert page.locator('#speaker-editor-add-silence').get_attribute('aria-pressed') == 'false'
+    silence_payload = page.evaluate(state)
+    start_drag(.42, .52); page.mouse.up()
+    assert page.evaluate(state) == silence_payload
+    silence_region = page.locator(f'#speaker-editor-tracks [data-region-id="{silence["regionId"]}"]').first
+    silence_region.focus(); page.keyboard.press('Enter')
+    assert page.locator('#speaker-editor-add-silence').get_attribute('data-mode') == 'restore'
+    page.locator('#speaker-editor-add-silence').click()
+    assert page.locator('#speaker-editor-add-silence').get_attribute('aria-pressed') == 'false'
     assert page.evaluate(state) == baseline
+    # Invalid keyboard confirmation keeps the armed tool; Escape consumes it explicitly.
+    page.locator('#speaker-editor-add-cut').click()
+    page.locator('#speaker-editor-selection-start').fill('1')
+    page.locator('#speaker-editor-selection-end').fill('1')
+    page.locator('#speaker-editor-selection-end').press('Enter')
+    assert page.evaluate(state) == baseline
+    assert page.locator('#speaker-editor-add-cut').get_attribute('aria-pressed') == 'true'
     page.keyboard.press('Escape')
+    assert page.locator('#speaker-editor-add-cut').get_attribute('aria-pressed') == 'false'
     # Max zoom must permit a 100ms word fragment to occupy ~100 CSS pixels.
     zoom = page.locator('#speaker-editor-zoom')
     zoom.fill(zoom.get_attribute('max')); zoom.dispatch_event('input')

@@ -5,12 +5,14 @@ import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { drawWaveformViewport } from "./audio-waveform-view.mjs";
 import { defaultTrackColor, installEditorExpansion, installSpaceTransport, installTimelineZoomGestures } from "./audio-timeline-ux.mjs";
 import { createWaveformReader } from "./speaker-waveform.mjs";
+import { LoudnessMeasurementCache, SourceIdentityRegistry } from "./speaker-render-cache.mjs";
 import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 import {
   SpeakerHistory, buildLevelingAnalysisFilter, buildSpeakerCandidate, buildSpeakerFilterGraph,
   createSpeakerRenderSnapshot, defaultSpeakerPayload, microseconds, normalizeSpeakerPayload, parseLoudnormMeasurements,
-  rebindSpeakerCandidate, removedDuration, resultDuration, SPEAKER_PAYLOAD_SCHEMA
+  rebindSpeakerCandidate, removedDuration, resultDuration, speakerAnalysisCacheKey, SPEAKER_FFMPEG_BUILD, SPEAKER_PAYLOAD_SCHEMA,
+  SPEAKER_SAMPLE_RATE
 } from "./speaker-editor-core.mjs";
 
 const byId = (id) => document.getElementById(`speaker-editor-${id}`);
@@ -22,7 +24,8 @@ const state = {
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
-  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2
+  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
+  measurementCache: new LoudnessMeasurementCache(128), sourceIdentities: new SourceIdentityRegistry(), lastRenderProfile: null
 };
 
 const fingerprint = (value) => JSON.stringify(value);
@@ -72,7 +75,8 @@ export function getSpeakerSaveState() {
     originalDuration: state.originalDuration,
     files: state.session?.sourceTracks.map(t => state.filesById.get(t.trackId)) || [],
     ready: state.ready,
-    saving: state.saveLocked
+    saving: state.saveLocked,
+    renderProfile: state.lastRenderProfile ? structuredClone(state.lastRenderProfile) : null
   };
 }
 export function setSpeakerSaveLocked(locked) {
@@ -170,16 +174,17 @@ function clearCandidate() {
 function commitPayload(next, action) {
   if (!state.ready || editorBusy()) {
     byId("selection-error").textContent = editorBusy() ? "Дождитесь окончания текущей операции или отмените её." : "Исходники ещё не готовы для редактирования.";
-    return;
+    return false;
   }
   try {
     const normalized = normalizeSpeakerPayload(next, state.session.sourceTracks.map((track) => track.trackId), state.originalDuration);
-    if (fingerprint(normalized) === fingerprint(state.payload)) return;
+    if (fingerprint(normalized) === fingerprint(state.payload)) return false;
     state.payload = state.history.commit(normalized);
     clearCandidate();
     byId("status").textContent = `Изменение применено: ${action}. Проект не сохранён.`;
     render();
-  } catch (error) { byId("selection-error").textContent = userMessage(error, "Изменение не применено."); }
+    return true;
+  } catch (error) { byId("selection-error").textContent = userMessage(error, "Изменение не применено."); return false; }
 }
 
 function undo() {
@@ -740,7 +745,11 @@ function addRegion(kind) {
     const selection = readSelection(); const next = structuredClone(state.payload);
     if (kind === "cut") next.globalCuts.push({ regionId: crypto.randomUUID(), ...selection });
     else next.trackSilenceRegions.push({ regionId: crypto.randomUUID(), trackId: byId("selection-track").value, ...selection });
-    commitPayload(next, kind === "cut" ? "глобальный вырез" : "тишина на одной дорожке");
+    if (commitPayload(next, kind === "cut" ? "глобальный вырез" : "тишина на одной дорожке")) {
+      state.editTool = null;
+      state.selectionScope = "all";
+      updateSelectionDuration();
+    }
   } catch (error) { byId("selection-error").textContent = userMessage(error, "Проверьте выделение."); }
 }
 
@@ -1107,6 +1116,28 @@ async function ensureEngine(controller) {
 
 function abortCheck(controller) { if (controller.signal.aborted || state.operation !== controller) throw new DOMException("cancelled", "AbortError"); }
 
+function setRenderStage(message, complete = false) {
+  const progress = byId("progress");
+  progress.hidden = false;
+  if (complete) progress.value = 100;
+  else progress.removeAttribute("value");
+  byId("render-status").textContent = message;
+}
+
+async function timedRenderStage(profile, key, label, controller, task) {
+  const started = performance.now();
+  const refresh = () => {
+    if (state.operation === controller) setRenderStage(`${label} Прошло ${((performance.now() - started) / 1000).toFixed(1)} с.`);
+  };
+  refresh();
+  const timer = setInterval(refresh, 400);
+  try { return await task(); }
+  finally {
+    clearInterval(timer);
+    profile.phases[key] = Math.round((performance.now() - started) * 10) / 10;
+  }
+}
+
 async function resultMetadata(blob) {
   const url = URL.createObjectURL(blob); try { return await metadataFor(url); } finally { URL.revokeObjectURL(url); }
 }
@@ -1121,47 +1152,161 @@ async function renderSpeaker() {
   } catch (error) {
     byId("render-status").textContent = userMessage(error, "Не удалось зафиксировать безопасное состояние для сборки."); return;
   }
-  clearCandidate(); const controller = operation(); const inputPaths = snapshot.sources.map((_, index) => `speaker-input-${index}`);
-  const outputPath = "speaker-output.mp3"; const filterPath = "speaker-filter.txt"; const measurements = {}; let logListener = null;
-  byId("cancel").hidden = false; byId("progress").hidden = false; byId("progress").value = 2; byId("render-status").textContent = "Подготовка локального обработчика…"; render();
+  const included = snapshot.payload.trackIds.filter((id) => !snapshot.payload.excludedTrackIds.includes(id));
+  const sourceByTrack = new Map(snapshot.sources.map(source => [source.trackId, source]));
+  const includedSources = included.map(trackId => sourceByTrack.get(trackId));
+  const inputPaths = includedSources.map((_, index) => `speaker-input-${index}`);
+  const inputPathByTrack = new Map(included.map((trackId, index) => [trackId, inputPaths[index]]));
+  const inputIndexByTrack = new Map(included.map((trackId, index) => [trackId, index]));
+  const outputPath = "speaker-output.mp3"; const filterPath = "speaker-filter.txt";
+  const measurements = {}; let logListener = null;
+  const renderStarted = performance.now();
+  const profile = {
+    schemaVersion: 1,
+    engineBuild: SPEAKER_FFMPEG_BUILD,
+    browser: navigator.userAgent,
+    coldEngine: !state.engine?.loaded,
+    sourceDurationSeconds: snapshot.originalDurationSeconds,
+    resultDurationSeconds: null,
+    sourceCount: snapshot.sources.length,
+    includedTrackCount: included.length,
+    includedSources: includedSources.map(source => ({
+      trackId: source.trackId,
+      mediaType: source.file.type || "application/octet-stream",
+      sizeBytes: source.file.size,
+      durationSeconds: state.tracks.find(track => track.trackId === source.trackId)?.duration || snapshot.originalDurationSeconds
+    })),
+    settings: included.map(trackId => structuredClone(snapshot.payload.trackProcessing.find(item => item.trackId === trackId))),
+    globalCutCount: snapshot.payload.globalCuts.length,
+    trackSilenceCount: snapshot.payload.trackSilenceRegions.filter(region => included.includes(region.trackId)).length,
+    outputSampleRate: SPEAKER_SAMPLE_RATE,
+    cacheEntriesBefore: state.measurementCache.size,
+    cacheEntriesAfter: null,
+    usedJsHeapBytesBefore: Number.isFinite(performance.memory?.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null,
+    usedJsHeapBytesAfter: null,
+    analysisExecCount: 0,
+    cacheHits: 0,
+    cacheMisses: 0,
+    inputTransfers: [],
+    analyses: [],
+    phases: {},
+    outcome: "running"
+  };
+  clearCandidate(); const controller = operation();
+  byId("cancel").hidden = false; setRenderStage("Подготовка аудио…"); render();
   try {
-    const engine = await ensureEngine(controller); abortCheck(controller);
-    for (let index = 0; index < snapshot.sources.length; index++) {
-      const file = snapshot.sources[index].file; await engine.writeFile(inputPaths[index], new Uint8Array(await file.arrayBuffer())); abortCheck(controller);
-      byId("progress").value = 10 + Math.round((index + 1) / snapshot.sources.length * 20);
+    const engine = await timedRenderStage(profile, "engineInitializationMs", "Подготовка аудио…", controller,
+      async () => await ensureEngine(controller));
+    abortCheck(controller);
+    const inputStarted = performance.now();
+    for (let index = 0; index < includedSources.length; index++) {
+      const source = includedSources[index];
+      setRenderStage(`Подготовка аудио: дорожка ${index + 1} из ${includedSources.length}…`);
+      const readStarted = performance.now();
+      const bytes = new Uint8Array(await source.file.arrayBuffer());
+      const sizeBytes = bytes.byteLength;
+      const readMs = performance.now() - readStarted;
+      abortCheck(controller);
+      const writeStarted = performance.now();
+      await engine.writeFile(inputPaths[index], bytes);
+      const writeMs = performance.now() - writeStarted;
+      abortCheck(controller);
+      profile.inputTransfers.push({ trackId: source.trackId, sizeBytes,
+        readMs: Math.round(readMs * 10) / 10, writeMs: Math.round(writeMs * 10) / 10 });
     }
-    const included = snapshot.payload.trackIds.filter((id) => !snapshot.payload.excludedTrackIds.includes(id));
-    for (const trackId of included.filter((id) => snapshot.payload.trackProcessing.find((item) => item.trackId === id).leveling === "on")) {
-      const logs = []; logListener = ({ message }) => logs.push(message); engine.on("log", logListener);
-      byId("render-status").textContent = `Измерение громкости: дорожка ${snapshot.payload.trackIds.indexOf(trackId) + 1}…`;
-      const graph = buildLevelingAnalysisFilter({ inputIndex: snapshot.payload.trackIds.indexOf(trackId), trackId,
+    profile.phases.inputReadAndWriteMs = Math.round((performance.now() - inputStarted) * 10) / 10;
+    const leveled = included.filter((id) => snapshot.payload.trackProcessing.find((item) => item.trackId === id).leveling === "on");
+    for (const [analysisIndex, trackId] of leveled.entries()) {
+      const source = sourceByTrack.get(trackId);
+      const cacheKey = speakerAnalysisCacheKey({ sourceIdentity: state.sourceIdentities.identity(source.file), trackId,
         duration: snapshot.originalDurationSeconds, payload: snapshot.payload });
-      const code = await engine.exec(["-hide_banner", "-nostats", "-xerror", ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
-        "-filter_complex", graph, "-map", "[analysis]", "-f", "null", "-"]);
-      engine.off("log", logListener); logListener = null; abortCheck(controller); if (code !== 0) throw new Error("Не удалось измерить громкость дорожки.");
-      measurements[trackId] = parseLoudnormMeasurements(logs);
+      const cached = state.measurementCache.get(cacheKey);
+      if (cached) {
+        measurements[trackId] = cached;
+        profile.cacheHits += 1;
+        profile.analyses.push({ trackId, cacheHit: true, durationMs: 0 });
+        setRenderStage(`Готовое измерение громкости: дорожка ${analysisIndex + 1} из ${leveled.length}.`);
+        continue;
+      }
+      profile.cacheMisses += 1;
+      const analysisStarted = performance.now();
+      const label = `Измерение громкости: дорожка ${analysisIndex + 1} из ${leveled.length}…`;
+      const logs = [];
+      logListener = ({ message }) => { logs.push(message); if (logs.length > 240) logs.shift(); };
+      engine.on("log", logListener);
+      try {
+        const graph = buildLevelingAnalysisFilter({ inputIndex: 0, trackId,
+          duration: snapshot.originalDurationSeconds, payload: snapshot.payload });
+        const code = await timedRenderStage(profile, `analysisTrack${analysisIndex + 1}Ms`, label, controller,
+          async () => await engine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", inputPathByTrack.get(trackId),
+            "-filter_complex", graph, "-map", "[analysis]", "-f", "null", "-"]));
+        profile.analysisExecCount += 1;
+        abortCheck(controller);
+        if (code !== 0) throw new Error("Не удалось измерить громкость дорожки.");
+        const parsed = parseLoudnormMeasurements(logs);
+        abortCheck(controller);
+        if (epoch !== state.sourceEpoch) throw new DOMException("cancelled", "AbortError");
+        measurements[trackId] = state.measurementCache.set(cacheKey, parsed);
+        profile.analyses.push({ trackId, cacheHit: false,
+          durationMs: Math.round((performance.now() - analysisStarted) * 10) / 10 });
+      } finally {
+        if (logListener) engine.off("log", logListener);
+        logListener = null;
+      }
     }
-    byId("progress").value = 55; byId("render-status").textContent = "Применение монтажа, обработки и финального лимитера…";
-    const graph = buildSpeakerFilterGraph(snapshot.payload, snapshot.originalDurationSeconds, measurements); await engine.writeFile(filterPath, encoder.encode(graph));
-    const code = await engine.exec(["-hide_banner", "-nostats", "-xerror", ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
-      "-filter_complex_script", filterPath, "-map", "[speaker_mix]", "-vn", "-sn", "-dn", "-c:a", "libmp3lame", "-b:a", "128k", outputPath]);
+    const graph = buildSpeakerFilterGraph(snapshot.payload, snapshot.originalDurationSeconds, measurements, inputIndexByTrack);
+    await engine.writeFile(filterPath, encoder.encode(graph));
+    const finalLoudnormLog = [];
+    logListener = ({ message }) => {
+      if (/^(?:Output Integrated|Output True Peak|Output LRA|Output Threshold|Normalization Type):/.test(message.trim())) {
+        finalLoudnormLog.push(message.trim());
+        if (finalLoudnormLog.length > 80) finalLoudnormLog.shift();
+      }
+    };
+    engine.on("log", logListener);
+    let code;
+    try {
+      code = await timedRenderStage(profile, "finalRenderMs", "Монтаж, обработка и кодирование…", controller,
+        async () => await engine.exec(["-hide_banner", "-nostats", "-xerror", ...inputPaths.flatMap((path) => ["-protocol_whitelist", "file", "-i", path]),
+          "-filter_complex_script", filterPath, "-map", "[speaker_mix]", "-vn", "-sn", "-dn", "-c:a", "libmp3lame", "-b:a", "128k", outputPath]));
+    } finally {
+      if (logListener) engine.off("log", logListener);
+      logListener = null;
+      profile.finalLoudnormLog = finalLoudnormLog;
+    }
     abortCheck(controller); if (code !== 0) throw new Error("Не удалось создать MP3. Проверьте исходники и повторите.");
-    const bytes = await engine.readFile(outputPath); if (!bytes.byteLength) throw new Error("Не удалось создать MP3.");
-    const blob = new Blob([bytes], { type: "audio/mpeg" }); const actualDuration = await resultMetadata(blob); abortCheck(controller);
-    if (Math.abs(actualDuration - resultDuration(snapshot.originalDurationSeconds, snapshot.payload.globalCuts)) > 1152 / 48000) throw new Error("Длительность результата не совпадает с монтажом.");
-    const candidate = snapshot.local ? { candidateType: "local-speaker", blob, payload: snapshot.payload,
-      presentationFilename: `${snapshot.title}-speaker.mp3`, originalDurationSeconds: snapshot.originalDurationSeconds,
-      resultDurationSeconds: actualDuration, globallyRemovedDurationSeconds: removedDuration(snapshot.payload.globalCuts), sizeBytes: blob.size } :
-      await buildSpeakerCandidate({ blob, snapshot, measurements, resultDurationSeconds: actualDuration, sha256: sha256Hex }); abortCheck(controller);
-    await presentCandidate(candidate, controller); abortCheck(controller);
-    byId("progress").value = 100; byId("render-status").textContent = "Финальная версия готова. В архив ничего не передавалось.";
+    const candidate = await timedRenderStage(profile, "resultValidationMs", "Проверка результата…", controller, async () => {
+      const readStarted = performance.now();
+      const bytes = await engine.readFile(outputPath);
+      profile.phases.resultReadMs = Math.round((performance.now() - readStarted) * 10) / 10;
+      if (!bytes.byteLength) throw new Error("Не удалось создать MP3.");
+      const blob = new Blob([bytes], { type: "audio/mpeg" });
+      const actualDuration = await resultMetadata(blob); abortCheck(controller);
+      if (Math.abs(actualDuration - resultDuration(snapshot.originalDurationSeconds, snapshot.payload.globalCuts)) > 1152 / 48000) throw new Error("Длительность результата не совпадает с монтажом.");
+      profile.resultDurationSeconds = actualDuration;
+      return snapshot.local ? { candidateType: "local-speaker", blob, payload: snapshot.payload,
+        presentationFilename: `${snapshot.title}-speaker.mp3`, originalDurationSeconds: snapshot.originalDurationSeconds,
+        resultDurationSeconds: actualDuration, globallyRemovedDurationSeconds: removedDuration(snapshot.payload.globalCuts), sizeBytes: blob.size } :
+        await buildSpeakerCandidate({ blob, snapshot, measurements, resultDurationSeconds: actualDuration, sha256: sha256Hex });
+    });
+    abortCheck(controller);
+    await timedRenderStage(profile, "waveformPreparationMs", "Подготовка формы волны…", controller,
+      async () => await presentCandidate(candidate, controller, engine, outputPath));
+    abortCheck(controller);
+    profile.outcome = "success";
+    setRenderStage("Финальная версия готова. В архив ничего не передавалось.", true);
   } catch (error) {
     if (epoch !== state.sourceEpoch) return;
+    profile.outcome = error?.name === "AbortError" || error?.message === "cancelled" ? "cancelled" : "failed";
     clearCandidate(); byId("render-status").textContent = userMessage(error, "Не удалось собрать результат. Проект и исходники остались в памяти.");
   } finally {
     if (epoch !== state.sourceEpoch) return;
     if (logListener) state.engine?.off("log", logListener);
     if (state.engine?.loaded) for (const path of [...inputPaths, filterPath, outputPath]) { try { await state.engine.deleteFile(path); } catch { /* fixed temporary path may be absent */ } }
+    profile.phases.totalMs = Math.round((performance.now() - renderStarted) * 10) / 10;
+    profile.cacheEntriesAfter = state.measurementCache.size;
+    profile.usedJsHeapBytesAfter = Number.isFinite(performance.memory?.usedJSHeapSize) ? performance.memory.usedJSHeapSize : null;
+    state.lastRenderProfile = profile;
     if (state.operation === controller) state.operation = null;
     byId("cancel").hidden = true; byId("progress").hidden = true; render();
   }
@@ -1172,15 +1317,18 @@ function cancelRender() {
   byId("render-status").textContent = "Создание финальной версии отменено. Проект и исходники сохранены в памяти."; byId("cancel").hidden = true; byId("progress").hidden = true; render();
 }
 
-async function resultSamples(blob, duration, signal) {
-  const reader = createWaveformReader(signal);
-  try { return await reader.read(new File([blob], "result.mp3", { type: "audio/mpeg" }), duration); }
+async function resultSamples(blob, duration, signal, engine = null, outputPath = null) {
+  const reader = createWaveformReader(signal, engine);
+  try {
+    if (engine && outputPath && duration > 120) return await reader.readPath(outputPath, duration);
+    return await reader.read(new File([blob], "result.mp3", { type: "audio/mpeg" }), duration);
+  }
   finally { reader.dispose(); }
 }
 
-async function presentCandidate(candidate, controller) {
+async function presentCandidate(candidate, controller, engine = null, outputPath = null) {
   const epoch = state.presentationEpoch;
-  const samples = await resultSamples(candidate.blob, candidate.resultDurationSeconds, controller.signal); abortCheck(controller);
+  const samples = await resultSamples(candidate.blob, candidate.resultDurationSeconds, controller.signal, engine, outputPath); abortCheck(controller);
   if (epoch !== state.presentationEpoch) throw new DOMException("cancelled", "AbortError");
   state.candidate = candidate;
   state.candidateUrl = URL.createObjectURL(candidate.blob); byId("result-audio").src = state.candidateUrl;
@@ -1210,6 +1358,7 @@ function teardown() {
   meters.clear();
   sourceDetail.clear();
   state.cancelSelection?.(); state.selectedRegion = null; state.dragPayload = null; state.editTool = null; state.selectionScope = "track";
+  state.measurementCache.clear(); state.sourceIdentities.reset(); state.lastRenderProfile = null;
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }

@@ -31,7 +31,7 @@ export function createWaveformReader(signal, sharedEngine = null) {
     } finally { await context.close(); }
   }
 
-  async function ffmpegSamples(file, duration, start = null) {
+  async function ffmpegSamples(file, duration, start = null, existingInput = null) {
     // All detail windows share a 0.5ms grid, including the final short window.
     // Shifting the cached window must not regroup the samples under a word.
     const width = start === null ? Math.min(WIDTH, Math.max(1, Math.floor(duration * 4000))) : Math.max(1, Math.ceil(duration * 2000));
@@ -44,9 +44,10 @@ export function createWaveformReader(signal, sharedEngine = null) {
     }
     check();
     const currentEngine = engine;
-    const input = "speaker-waveform-input", output = "speaker-waveform.rgba";
+    const input = existingInput || "speaker-waveform-input", output = "speaker-waveform.rgba";
     try {
-      await currentEngine.writeFile(input, new Uint8Array(await file.arrayBuffer())); check();
+      if (!existingInput) await currentEngine.writeFile(input, new Uint8Array(await file.arrayBuffer()));
+      check();
       // A fixed-size image avoids retaining an hour of decoded PCM in Web Audio.
       const code = await currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", ...(start === null ? [] : ["-ss", String(start), "-t", String(duration)]), "-i", input,
         "-filter_complex", spec.filter,
@@ -63,7 +64,7 @@ export function createWaveformReader(signal, sharedEngine = null) {
       return samples;
     } finally {
       if (engine === currentEngine) {
-        for (const path of [input, output]) { try { await currentEngine.deleteFile(path); } catch { /* May not have been written. */ } }
+        for (const path of [output, ...(existingInput ? [] : [input])]) { try { await currentEngine.deleteFile(path); } catch { /* May not have been written. */ } }
       }
     }
   }
@@ -82,6 +83,11 @@ export function createWaveformReader(signal, sharedEngine = null) {
       check();
       if (!Number.isFinite(start) || start < 0 || !(duration > 0) || duration > 32) throw new Error("Invalid waveform window");
       return ffmpegSamples(file, duration, start);
+    },
+    async readPath(path, duration) {
+      check();
+      if (!sharedEngine || typeof path !== "string" || !path) throw new Error("Prepared waveform input is unavailable");
+      return ffmpegSamples(null, duration, null, path);
     },
     dispose() { signal?.removeEventListener("abort", terminate); terminate(); }
   };

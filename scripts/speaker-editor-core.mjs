@@ -4,6 +4,8 @@ export const SPEAKER_SAMPLE_RATE = 48000;
 export const SPEAKER_PAYLOAD_MAX_BYTES = 900 * 1024;
 export const SPEAKER_MAX_REGIONS = 10000;
 export const SPEAKER_FRAME_TOLERANCE_SECONDS = 1152 / SPEAKER_SAMPLE_RATE;
+export const SPEAKER_ANALYSIS_VERSION = "speaker-leveling-analysis-v1";
+export const SPEAKER_FFMPEG_BUILD = "ffmpeg-wasm-0.12.15/core-0.12.10/ffmpeg-n5.1.4-single-thread";
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 const ENHANCEMENT = new Set(["off", "gentle"]);
@@ -259,12 +261,28 @@ export function buildLevelingAnalysisFilter(options) {
   return graph.replace("[analysis]", ",loudnorm=I=-19:TP=-3:LRA=11:print_format=json[analysis]");
 }
 
-export function buildSpeakerFilterGraph(payload, duration, measurements = {}) {
+export function speakerAnalysisCacheKey({ sourceIdentity, trackId, duration, payload }) {
+  if (typeof sourceIdentity !== "string" || !sourceIdentity) fail("Идентичность источника для анализа недоступна.");
+  return JSON.stringify({
+    analysisVersion: SPEAKER_ANALYSIS_VERSION,
+    processorVersion: SPEAKER_PROCESSOR_VERSION,
+    engineBuild: SPEAKER_FFMPEG_BUILD,
+    sourceIdentity,
+    durationSeconds: microseconds(duration, "Исходная длительность"),
+    graph: buildLevelingAnalysisFilter({ inputIndex: 0, trackId, duration, payload })
+  });
+}
+
+export function buildSpeakerFilterGraph(payload, duration, measurements = {}, inputIndexByTrack = null) {
   const normalized = normalizeSpeakerPayload(payload, payload.trackIds, duration);
   const included = normalized.trackIds.filter((id) => !normalized.excludedTrackIds.includes(id));
   if (!included.length) fail("Верните хотя бы одну дорожку в микс.");
-  const inputByTrack = new Map(normalized.trackIds.map((id, index) => [id, index]));
-  const tracks = included.map((trackId, index) => buildTrackFilter({ inputIndex: inputByTrack.get(trackId), trackId, duration,
+  const inputByTrack = inputIndexByTrack || new Map(normalized.trackIds.map((id, index) => [id, index]));
+  const inputIndex = (trackId) => inputByTrack instanceof Map ? inputByTrack.get(trackId) : inputByTrack[trackId];
+  if (included.some((trackId) => !Number.isInteger(inputIndex(trackId)) || inputIndex(trackId) < 0)) {
+    fail("Не удалось сопоставить дорожки со входами FFmpeg.");
+  }
+  const tracks = included.map((trackId, index) => buildTrackFilter({ inputIndex: inputIndex(trackId), trackId, duration,
     payload: normalized, measurement: measurements[trackId] || null, outputLabel: `speaker_track_${index}` }));
   const labels = included.map((_, index) => `[speaker_track_${index}]`).join("");
   return `${tracks.join(";")};${labels}amix=inputs=${included.length}:duration=longest:normalize=0,` +

@@ -2954,6 +2954,29 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     print("Multi-track cancellation/retry, virtual-FS cleanup, URL revocation, filenames and 390/768/1280 responsive states passed.")
 
 
+def check_local_preview_archive_hint(browser, base_url: str) -> None:
+    """A production gateway failure from localhost explains the known origin boundary."""
+    context = browser.new_context()
+    context.add_init_script(f"sessionStorage.setItem('{SERVICE_SESSION_KEY}', 'granted')")
+    local_host = urlparse(base_url).netloc
+    context.route("**/*", lambda route: route.continue_()
+                  if urlparse(route.request.url).netloc == local_host else route.abort())
+    page = context.new_page()
+    try:
+        goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+        page.locator("#source-session-authenticate").click()
+        page.locator("#source-session-password").fill("browser-smoke-only")
+        page.locator('#source-session-login-form button[type="submit"]').click()
+        page.get_by_text(
+            "Production-архив недоступен из локального preview из-за ограничения origin. "
+            "Локальная обработка доступна; для передачи откройте опубликованный сайт.",
+            exact=True,
+        ).wait_for(timeout=10000)
+        print("Local preview archive origin hint passed.")
+    finally:
+        context.close()
+
+
 def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -> None:
     """UI/asset checks everywhere; real WASM only for the local/PR HTTP server."""
     context = browser.new_context(viewport={"width": 390, "height": 900}, accept_downloads=True)
@@ -3616,10 +3639,13 @@ def main() -> int:
         check_approved_timeline_ux(browser, base_url, args.screenshot_dir)
         from s09a_input_focus_smoke import check_input_focus
         check_input_focus(browser, base_url)
+        from s09a_speaker_render_performance_smoke import check_speaker_render_performance
+        check_speaker_render_performance(browser, base_url)
         from s09a_corrective_management_smoke import check_s09a_corrective_management
         check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
+        check_local_preview_archive_hint(browser, base_url)
         check_audio_processor(browser, base_url, args.screenshot_dir)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")

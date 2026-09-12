@@ -11,6 +11,7 @@ const speakerId = (id) => document.getElementById(`speaker-editor-${id}`);
 const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ ||
   document.querySelector('meta[name="audio-archive-gateway"]')?.content.trim().replace(/\/$/, "") || "";
 const gateway = new AudioArchiveGateway(baseUrl);
+const productionGatewayOrigin = "https://meserproject.duckdns.org";
 const state = {
   localContext: null, localProject: null, editorMode: null,
   authenticated: false, authSequence: 0, retryAction: null, reconnectNeeded: false,
@@ -80,7 +81,16 @@ function userError(error, fallback) {
   if (error?.status === 413) return "Объём данных превышает допустимый предел.";
   if (error?.status === 422) return "Проверка целостности данных не пройдена. Операция остановлена без изменений.";
   if (error?.status >= 500) return "Архив временно недоступен. Повторите действие позже.";
-  if (error instanceof TypeError) return "Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.";
+  if (error instanceof TypeError) {
+    let localPreview = false;
+    try {
+      localPreview = ["127.0.0.1", "localhost", "::1"].includes(location.hostname) &&
+        new URL(baseUrl).origin === productionGatewayOrigin;
+    } catch { /* an invalid gateway URL is reported by the regular connection message */ }
+    return localPreview ?
+      "Production-архив недоступен из локального preview из-за ограничения origin. Локальная обработка доступна; для передачи откройте опубликованный сайт." :
+      "Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.";
+  }
   return fallback;
 }
 
