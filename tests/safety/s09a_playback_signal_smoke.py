@@ -62,7 +62,8 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
             rows = page.locator(row_selector)
             ids = rows.evaluate_all('rows=>rows.map(r=>r.dataset.trackId)')
             page.evaluate('''async () => {
-                const {getPlaybackTap} = await import('/scripts/audio-meters.mjs');
+                const moduleUrl = new URL('scripts/audio-meters.mjs', document.baseURI).href;
+                const {getPlaybackTap} = await import(moduleUrl);
                 window.signalNodes ||= new WeakMap();
                 window.attachSignal = selector => [...document.querySelectorAll(selector)].map(audio => {
                     if (!signalNodes.has(audio)) {
