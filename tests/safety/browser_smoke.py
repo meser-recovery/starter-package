@@ -2956,6 +2956,9 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
 
 def check_local_preview_archive_hint(browser, base_url: str) -> None:
     """A production gateway failure from localhost explains the known origin boundary."""
+    if urlparse(base_url).hostname not in {"localhost", "127.0.0.1", "::1"}:
+        print("Local preview archive origin hint skipped for non-loopback deployment.")
+        return
     context = browser.new_context()
     context.add_init_script(f"sessionStorage.setItem('{SERVICE_SESSION_KEY}', 'granted')")
     local_host = urlparse(base_url).netloc
