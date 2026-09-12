@@ -102,6 +102,13 @@ window.AdminAccessHash = AdminAccessHash;
   const SESSION_KEY = "meser_service_access_v1";
   const LANDING_URL = "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html";
 
+  // Reuse the service session when returning through the shared header link.
+  if (sessionStorage.getItem(SESSION_KEY) === "granted") {
+    document.documentElement.hidden = true;
+    location.replace(LANDING_URL);
+    return;
+  }
+
   const form = document.getElementById("admin-access-form");
   const passwordInput = document.getElementById("admin-password");
   const passwordToggle = document.getElementById("admin-password-toggle");
