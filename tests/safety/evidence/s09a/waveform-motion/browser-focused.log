@@ -1,0 +1,9 @@
+Waveform motion speaker/fit: 59.5 RAF fps, 0/90 scroll updates, 0/156640 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/airy: 60.4 RAF fps, 91/91 scroll updates, 0/158164 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/medium: 60.3 RAF fps, 91/91 scroll updates, 0/157500 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/detail: 60.0 RAF fps, 678/679 scroll updates, 0/1102870 changed source pixels, detail windows=['0', '16', '24', '40', '48'] PASS.
+Speaker rendered result: 60.0 RAF fps, 91/91 playhead updates, unchanged waveform PASS.
+Waveform motion announcement/fit: 60.1 RAF fps, 0/91 scroll updates, 0/0 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/airy: 60.1 RAF fps, 91/91 scroll updates, 0/158158 changed source pixels, detail windows=['0'] PASS.
+Waveform motion announcement/medium: 60.3 RAF fps, 91/91 scroll updates, 0/157488 changed source pixels, detail windows=['0'] PASS.
+Waveform motion announcement/detail: 60.0 RAF fps, 677/679 scroll updates, 0/1102822 changed source pixels, detail windows=['0', '16', '24', '40', '48'] PASS.

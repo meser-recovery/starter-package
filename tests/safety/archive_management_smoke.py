@@ -94,8 +94,12 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     def primary_card():
         return page.locator('#session-list .archive-card').filter(has_text='Встреча Й')
 
+    def details_for(card):
+        card.locator('.audio-actions > summary').click()
+        card.get_by_role('button', name='Сведения о записи').click()
+
     def open_primary():
-        primary_card().get_by_role('button', name='Сведения о записи').click()
+        details_for(primary_card())
         page.locator('#metadata-title').wait_for()
 
     def no_overflow():
@@ -168,11 +172,11 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
 
         # A late detail response must not replace a more recently selected session.
         fault['hold'] = '/v1/source-sessions/' + snapshot['primary']['id']
-        primary_card().get_by_role('button', name='Сведения о записи').click()
+        details_for(primary_card())
         page.wait_for_timeout(150)
         assert held
         fault['hold'] = None
-        page.locator('#session-list .archive-card').filter(has_text='Новая запись').get_by_role('button', name='Сведения о записи').click()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Новая запись'))
         page.wait_for_function("document.getElementById('metadata-title')?.value === 'Новая запись'")
         while held:
             fulfill(*held.pop(0))
@@ -184,7 +188,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.set_viewport_size({'width': 390, 'height': 900})
         page.locator('#metadata-title').fill('Моё исправление')
         command('conflict', id=snapshot['primary']['id'])
-        page.get_by_role('button', name='Сохранить метаданные').click()
+        page.get_by_role('button', name='Сохранить название и дату').click()
         page.wait_for_function("document.getElementById('metadata-status').textContent.includes('Введённые значения')")
         assert page.locator('#metadata-title').input_value() == 'Моё исправление'
         assert command('snapshot')['primary']['title'] == 'Изменено в другом окне'
@@ -192,7 +196,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.get_by_role('button', name='Загрузить актуальные сведения').click()
         page.wait_for_function("document.getElementById('metadata-title')?.value === 'Изменено в другом окне'")
         page.locator('#metadata-title').fill('Исправленная запись')
-        page.get_by_role('button', name='Сохранить метаданные').click()
+        page.get_by_role('button', name='Сохранить название и дату').click()
         page.wait_for_function("document.getElementById('metadata-title')?.value === 'Исправленная запись' && !document.querySelector('#detail form button').disabled")
         saved = command('snapshot')['primary']
         assert saved['recordedAt'] == snapshot['primary']['recordedAt']
@@ -250,7 +254,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         fault['corrupt'] = False
 
         # Archived results and source-deleted outputs survive a page reload.
-        page.locator('#session-list .archive-card').filter(has_text='Исправленная запись').get_by_role('button', name='Сведения о записи').click()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
         page.locator('#detail').get_by_role('button', name='Убрать из рабочего списка', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Вернуть для обработки', exact=True).wait_for()
         page.locator('#detail').get_by_role('button', name='Удалить исходники', exact=True).click()
@@ -264,7 +268,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         # Incoming sessions with deleted sources must also reject processing intent.
         page.get_by_text('Фильтры', exact=True).click()
         page.locator('[name=showRemoved]').check()
-        page.locator('#session-list .archive-card').filter(has_text='Исправленная запись').get_by_role('button', name='Сведения о записи').click()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
         page.locator('#detail').get_by_role('button', name='Вернуть для обработки', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Убрать из рабочего списка', exact=True).wait_for()
         start = len(trace)
@@ -275,7 +279,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         load()
 
         # Strong purge confirmation; cancel leaves state untouched.
-        page.locator('#session-list .archive-card').filter(has_text='Исправленная запись').get_by_role('button', name='Сведения о записи').click()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
         page.locator('#detail').get_by_text('Опасная зона', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Удалить запись полностью').click()
         page.locator('#purge-confirmation').fill('да')
@@ -366,7 +370,10 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             start = len(trace)
             page.reload()
             page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Показано') || document.getElementById('source-session-list').children.length > 0")
-            assert not any('/drafts/' in path or path.endswith('/content') for _, path, _ in trace[start:])
+            # Current-project badges now require draft reads; reloading must not reopen or download sources.
+            assert all(method == 'GET' for method, _, _ in trace[start:])
+            assert not any('/blobs/' in path or path.endswith('/content') for _, path, _ in trace[start:])
+            assert page.locator('#speaker-editor').is_hidden()
         for session_id, workflow, expected in [(snapshot['archived']['id'], 'speaker', 'Новая обработка недоступна'), ('bad', 'speaker', 'Некорректная ссылка')]:
             start = len(trace)
             page.goto(base_url + f'/Audio-Editor.html?session={session_id}&workflow={workflow}')

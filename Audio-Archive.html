@@ -10,10 +10,11 @@
   <link rel="stylesheet" href="styles/foundation.css">
   <link rel="stylesheet" href="styles/components.css">
   <link rel="stylesheet" href="styles/audio-archive.css">
+  <link rel="stylesheet" href="styles/audio-studio.css">
   <script src="scripts/service-landing.js"></script>
   <script type="module" src="scripts/audio-archive.mjs"></script>
 </head>
-<body class="site-page">
+<body class="audio-studio site-page">
   <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
   <header class="site-header"><div class="container site-header__content">
     <a class="site-header__title" href="./">Проект Мэсэр</a>
@@ -35,7 +36,7 @@
       <p id="matching" role="status"></p><div id="session-list" class="cards"></div>
     </section>
     <section id="detail" aria-labelledby="detail-title" hidden><h2 id="detail-title" tabindex="-1">Сведения о записи</h2><div id="detail-body"></div></section>
-    <section id="projects"><h2>Проекты спикерских</h2><div id="project-list" class="cards"></div></section><section id="results" aria-labelledby="results-title"><h2 id="results-title">Готовые записи</h2><p>Доступны также для архивированных записей и после удаления исходников.</p><div id="result-sections"></div>
+    <section id="projects"><h2>Проекты спикерских</h2><div id="project-list" class="cards"></div></section><section id="results" aria-labelledby="results-title"><h2 id="results-title">Готовые записи</h2><p>Доступны также для записей, убранных из рабочего списка, и после удаления исходников.</p><div id="result-sections"></div>
       <div id="player" hidden><h3 id="player-title"></h3><p id="player-meta"></p><audio id="audio" controls preload="none"></audio><a id="download">Скачать проверенный файл</a><button id="player-close" type="button">Закрыть проигрыватель</button></div><p id="playback-status" role="status"></p>
     </section>
     <details id="maintenance"><summary id="maintenance-title">Техническое обслуживание</summary><p>Продолжение с локальными файлами выполняется в прежней вкладке редактора. Не закрывайте её: повторное открытие не возвращает потерянный результат.</p><div id="operations" class="cards"></div><div id="observations"></div>

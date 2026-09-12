@@ -131,7 +131,7 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
             assert page.locator('#speaker-editor').is_visible()
             if not page.locator('.speaker-selection details').evaluate('e=>e.open'):
                 page.get_by_text('Точное редактирование', exact=True).click()
-            page.locator('#speaker-editor-selection-start').fill('.05'); page.locator('#speaker-editor-set-start').click()
+            page.locator('#speaker-editor-selection-start').fill('.05'); page.locator('#speaker-editor-selection-end').fill('.2'); page.locator('#speaker-editor-set-start').click()
             page.locator('#speaker-editor-render').click()
             page.wait_for_function("!document.getElementById('speaker-editor-result').hidden", timeout=60000)
             changed = remember()
@@ -165,7 +165,7 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
             open_primary(False)
             if not page.locator('.speaker-selection details').evaluate('e=>e.open'):
                 page.get_by_text('Точное редактирование', exact=True).click()
-            page.locator('#speaker-editor-selection-start').fill('.05'); page.locator('#speaker-editor-set-start').click()
+            page.locator('#speaker-editor-selection-start').fill('.05'); page.locator('#speaker-editor-selection-end').fill('.2'); page.locator('#speaker-editor-set-start').click()
             choose(primary, 'speaker')
             page.locator('#speaker-unsaved-save').click()
             page.wait_for_function("document.getElementById('speaker-editor-status').textContent==='Все изменения сохранены'")
@@ -173,7 +173,7 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
             assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload.globalCuts[0].endSeconds") == .05
             if not page.locator('.speaker-selection details').evaluate('e=>e.open'):
                 page.get_by_text('Точное редактирование', exact=True).click()
-            page.locator('#speaker-editor-selection-start').fill('.08'); page.locator('#speaker-editor-set-start').click()
+            page.locator('#speaker-editor-selection-start').fill('.08'); page.locator('#speaker-editor-selection-end').fill('.2'); page.locator('#speaker-editor-set-start').click()
             page.locator('#open-local-announcement').click(); page.locator('#speaker-unsaved-save').click()
             page.locator('#announcement-processor-card').wait_for(state='visible')
             page.wait_for_function("!document.getElementById('processor-run').disabled")
@@ -193,7 +193,7 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
                     if dirty:
                         if not page.locator('.speaker-selection details').evaluate('e=>e.open'):
                             page.get_by_text('Точное редактирование', exact=True).click()
-                        page.locator('#speaker-editor-selection-start').fill('.1'); page.locator('#speaker-editor-set-start').click()
+                        page.locator('#speaker-editor-selection-start').fill('.1'); page.locator('#speaker-editor-selection-end').fill('.2'); page.locator('#speaker-editor-set-start').click()
                         page.locator('#speaker-editor-render').click()
                         page.wait_for_function("!document.getElementById('speaker-editor-result').hidden", timeout=60000)
                     before = remember(); start = len(trace)

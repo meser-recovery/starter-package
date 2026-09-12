@@ -1,3 +1,11 @@
+# Post-merge corrective evidence
+
+Current PR #36 workspace follow-up: [local browser validation and preview](../../S09A-workspace-validation.md). Earlier reports below retain their original environment and source SHA.
+
+PR #36 P1 follow-up: [deletion during preparation — coverage gap and correction](../../S09A-PR36-review-fix.md).
+
+[Current corrective index](corrective/README.md) · [43-section audit](../../S09A-corrective-audit.md). Original captures and CI history below retain their original source SHAs.
+
 # S09A screenshot and validation index
 
 PR #35 Acceptance corrections have a [separate before/after evidence index](acceptance-fixes/README.md); the captures below retain their original source SHA.

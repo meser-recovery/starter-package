@@ -1,0 +1,37 @@
+[
+  {
+    "path": "announcement-word-detail.png",
+    "sha256": "26e7cfcdbfde8292b30a4d9909cfeda746b066642ff069087ed986f04afad5d7",
+    "bytes": 185205
+  },
+  {
+    "path": "s09a-corrective/announcement-word-detail.png",
+    "sha256": "3d98f630f03aa66b9addd65269e050bc33296e6821064355827e41886ad4c15a",
+    "bytes": 82097
+  },
+  {
+    "path": "s09a-corrective/selection-tools-320.png",
+    "sha256": "7072dc8f9c28110bfe0e2415b60efdd0b52c30c113ae15cf10cfe90950d6d16a",
+    "bytes": 240784
+  },
+  {
+    "path": "s09a-corrective/speaker-word-detail.png",
+    "sha256": "5af847fb4f4a0cc522ee36e3933a472783251127b3ca402fffa2556b183f5ada",
+    "bytes": 118900
+  },
+  {
+    "path": "s09a-corrective/tool-cut-during-drag.png",
+    "sha256": "bcfe3c6f1eb1f37216a3cd6ae7e84a56b8af2386557525201302056339c3c406",
+    "bytes": 121846
+  },
+  {
+    "path": "s09a-corrective/tool-word-cut.png",
+    "sha256": "d25fbf9830d78d0e07458284f047a9ffd4e5079a6cf42a6b202c24768cee124a",
+    "bytes": 125351
+  },
+  {
+    "path": "speaker-word-detail.png",
+    "sha256": "c6dd3eca8518fb348511f647420d5a3a44db63eb5f6c6f9ee96ee433285266a5",
+    "bytes": 280070
+  }
+]

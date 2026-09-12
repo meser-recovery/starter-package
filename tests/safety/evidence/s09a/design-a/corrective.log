@@ -1,0 +1,4 @@
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 1: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Full corrective browser fixture, DPR 1: PASS

@@ -1,0 +1,104 @@
+
+> meser-audio-archive-gateway@1.0.0 test
+> node --test --test-concurrency=1 test/*.test.mjs
+
+✔ S09 both lifecycle observations retain higher revision once and reject malformed manifests (2.502127ms)
+✔ S09 normalized title, filename and exact identity search; AND filters and inclusive UTC dates (14.094662ms)
+✔ S09 every session/result sort is stable, immutable, preserves missing-date placement and workflow ownership (2.016486ms)
+✔ S09 overview counts operations independently and never fabricates unavailable zeros (0.30568ms)
+✔ S09 recovery matrix denies malformed/unknown/discarding finalization and pending-delete discard (0.515646ms)
+✔ S09 validated navigation contains identity/workflow only and rejects duplicates and ineligible sessions (0.492341ms)
+✔ S09 request generations discard late results after a newer view/logout (0.217378ms)
+{"level":"error","message":"request_failed","requestId":"609986e2-47c7-47c6-a344-215ad7bc8235","method":"PATCH","path":"/v1/source-sessions/31b989b7-6be0-5538-87c8-c52c8ccdd671","status":409,"durationMs":0,"errorType":"Error"}
+✔ S09 real gateway metadata conflicts and lifecycle retain canonical bytes and other metadata (88.107749ms)
+{"level":"error","message":"request_failed","requestId":"438607d1-f5c9-407e-9624-7783daef5f8d","method":"POST","path":"/v1/source-sessions/35d4823f-9d15-540b-9e62-9254bf395dfa/outputs/announcement/delete","status":409,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"2df938e6-03bc-414e-9735-4e33a443daee","method":"POST","path":"/v1/source-sessions/35d4823f-9d15-540b-9e62-9254bf395dfa/purge","status":400,"durationMs":0,"errorType":"ValidationError"}
+{"level":"error","message":"request_failed","requestId":"3bf2b718-cd49-4247-b731-9303a9f96843","method":"GET","path":"/v1/source-sessions/35d4823f-9d15-540b-9e62-9254bf395dfa","status":404,"durationMs":0,"errorType":"Error"}
+✔ S09 real gateway deletion previews, stale writes, non-cascade series/source deletion, exact purge and retained playback (185.819673ms)
+✔ S09 read-only discovery and verified playback trace; corrupted, missing, reordered and wrong-workflow parts fail closed (16.581497ms)
+✔ scrypt password verifier accepts only the original password (123.089691ms)
+✔ session cookie is signed, HttpOnly cross-site capable, expiring, and CSRF bound (3.667202ms)
+✔ login throttle is bounded and blocks repeated failures (0.695287ms)
+{"level":"error","message":"request_failed","requestId":"51ba6afb-4d7a-42ca-ac08-388f3330ac72","method":"GET","path":"/v1/config","status":403,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"674ecb48-fafd-429b-b706-b2b4061948e2","method":"GET","path":"/v1/source-sessions","status":401,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"90ae0be7-c051-4993-9814-8dbd04ac155d","method":"POST","path":"/v1/source-sessions/11111111-1111-4111-8111-111111111111/archive","status":403,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"26124c7c-290a-4b0e-a22d-464075c1de06","method":"GET","path":"/v1/source-sessions/%E0%A4%A","status":400,"durationMs":0,"errorType":"ValidationError"}
+{"level":"error","message":"request_failed","requestId":"64de24e6-0fb8-4308-bfbd-22108329fac0","method":"POST","path":"/v1/source-sessions/11111111-1111-4111-8111-111111111111/outputs/announcement/publications","status":403,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"b2eca898-da24-4609-aa13-e857261b2ff3","method":"PUT","path":"/v1/announcement-publications/22222222-2222-4222-8222-222222222222/blobs/33333333-3333-4333-8333-333333333333/parts/1","status":413,"durationMs":0,"errorType":"ValidationError"}
+✔ gateway enforces exact origin, authentication, CORS, cookie and CSRF (127.0279ms)
+✔ incremental SHA-256 matches known vectors and block boundaries (9.087062ms)
+✔ chunk planner uses 16 MiB default, permits 64 MiB boundary, and rejects unsafe inputs (853.791556ms)
+✔ chunk planner keeps identifiers and hashes stable for one idempotency operation (2.569529ms)
+✔ chunk planner observes cancellation immediately after every part read (1.77322ms)
+✔ ordered parts reconstruct byte-identically and corruption fails closed (6.718947ms)
+✔ Announcement publication planning is deterministic and reconstructed output uses recipe presentation metadata (4.400946ms)
+✔ ingestion is idempotent, hidden until finalization, integrity checked, and recoverable (17.42041ms)
+✔ an idempotency key cannot be reused with changed immutable ingestion data (2.389568ms)
+✔ partial maintenance recovery requires original files and never finalizes early (2.347831ms)
+✔ workflow states are independent and stale session mutations conflict (4.590102ms)
+✔ shared draft reopens and stale draft or source revisions cannot overwrite it (7.062263ms)
+✔ archive and restore mutate metadata without touching release assets (2.369016ms)
+✔ deletion is explicit, non-cascading, resumable, and version numbers are not reused (4.604153ms)
+✔ retained S08A v1 output descriptors remain readable without rewrite (1.548592ms)
+✔ purge writes a tombstone, removes only its release/drafts, and catalog rebuild reports orphans (3.043843ms)
+✔ explicit incomplete ingestion discard is recoverable and does not become visible (0.501816ms)
+✔ malformed persisted transactions fail closed and are never offered for recovery (0.382887ms)
+✔ Announcement publication reserves once, finalizes atomically, and verifies stored bytes (12.372599ms)
+✔ Announcement publication replays the legacy S08B transaction identity (3.574753ms)
+✔ Announcement upload failures persist only bounded safe metadata and retry the same reserved job (6.830255ms)
+✔ Announcement finalize failures remain safely recoverable without reserving another version (5.210665ms)
+✔ cancelled publications block destruction until discard and reserved versions are burned (6.57464ms)
+✔ passthrough publication accepts only exact source bytes, hash, size, and media type (3.913362ms)
+✔ Archived Source Sessions deny new Announcement publication until explicit restore (3.149592ms)
+{"level":"error","message":"request_failed","requestId":"d39e7853-5b14-4fe7-8807-22712c0bc216","method":"POST","path":"/v1/maintenance/incomplete/d19976c3-26fd-5d52-a8c4-091ed1e717b9/resume","status":409,"durationMs":0,"errorType":"Error"}
+{"level":"error","message":"request_failed","requestId":"bb855b1b-ab71-458e-b83b-8ad01af82693","method":"POST","path":"/v1/source-sessions/ingestions","status":409,"durationMs":0,"errorType":"Error"}
+✔ real frontend client resumes one interrupted logical ingestion without duplicates (121.068537ms)
+✔ real frontend client cancels during hashing before contacting ingestion API (3.703186ms)
+✔ real frontend and gateway publish, retrieve, and verify one Announcement output (98.797585ms)
+✔ real frontend and gateway save, retrieve, and verify one Speaker output (87.296461ms)
+✔ configuration fixes GitHub scope and accepts one exact HTTPS Pages origin (1.974272ms)
+✔ configuration reads each secret file once, preserves PEM newlines, and strips only the final newline (0.923491ms)
+✔ configuration loads startup secrets from real files (3.315482ms)
+✔ configuration fails closed without disclosing unreadable or empty secret contents (0.398921ms)
+✔ GitHub App JWT is short-lived RS256 and installation request is machine-only (6.537804ms)
+✔ atomic JSON commit stays inside fixed repository and rejects arbitrary paths (3.218816ms)
+✔ canonical ingestion transaction paths use their structural UUID (6.753559ms)
+✔ S08B publication jobs and immutable recipe paths accept only structural UUIDs (0.417329ms)
+✔ release asset upload uses opaque deterministic name and fixed upload host (0.494295ms)
+✔ real GitHub adapter canonicalizes draft upload URLs for a new frontend ingestion (126.866122ms)
+✔ frontend resumes a legacy draft transaction and reconstructs through the authenticated real GitHub adapter (102.672344ms)
+✔ legacy draft URL normalization is narrow and finalized transactions stay strict (2.744292ms)
+✔ real GitHub adapter still accepts deletion transaction paths (0.47187ms)
+✔ S09A: local identity, reordered duplicate names, exact bytes and montage bind only to finalized canonical tracks (130.043671ms)
+✔ S09A: failure after finalization and uncertain project write retry without duplicate source sessions or drafts (94.791718ms)
+✔ S09A: uncertainty after source finalization reuses ingestion identity; changed targets fail closed (88.654377ms)
+✔ S09A: boundaries use only compatible cuts, preserve interior/silence, undo/redo and reject empty range (1.151474ms)
+✔ S09A: edits after a failed or uncertain save reconcile the prior attempt before saving the latest montage (173.660806ms)
+✔ S09A: byte download authentication errors retain status for reconnect (71.682827ms)
+✔ S09A: cancelled source upload preserves the plan/key and retries the same source session (78.203035ms)
+✔ self-hosted Compose isolates gateway ports, networks, and file secrets (1.138194ms)
+✔ Caddy terminates one hostname behind loopback HAProxy and replaces forwarding headers (0.648677ms)
+✔ host HAProxy uses exact SNI passthrough and unconditional Xray default (0.308414ms)
+✔ runbook is gated, unresolved values fail closed, and provider remnants are absent (0.796299ms)
+✔ all frontend gateway hooks contain the exact production origin (0.615257ms)
+✔ regions use microseconds, stable union IDs, track identity, bounds, and original timeline mapping (2.553575ms)
+✔ speaker/v1 validation is exact while announcement/v1 and legacy draft reads stay compatible (16.430443ms)
+✔ Undo/Redo includes edit state, clears a Redo branch, and reset establishes a remote baseline (0.558701ms)
+✔ centralized filters use identical cuts, equal-duration silence, every DSP enum, mix and limiter (2.360064ms)
+✔ candidate hash, durations, invalidation, unchanged-save rebinding and frame tolerance are exact (2.371261ms)
+✔ Speaker recipe and save plan are strict, versioned, and require a non-zero canonical draft (22.255324ms)
+✔ Speaker save reserves independently, uploads exact parts, finalizes once, restores after source deletion, and deletes without reuse (19.068415ms)
+✔ Speaker cancelled jobs recover only when complete; discard removes attributable assets and burns the version (9.992163ms)
+✔ fully uploaded Speaker save finalizes after reload without local bytes and archived sessions deny new saves (11.479537ms)
+✔ Speaker finalize and discard are mutually exclusive when finalization commits first (8.85184ms)
+✔ Speaker finalize and discard are mutually exclusive when discard claims first (6.8969ms)
+✔ Speaker discard resumes safely after deletion is interrupted (7.204184ms)
+✔ Speaker series deletion removes only its recipes and assets while retaining draft, sources, and counter (11.107937ms)
+ℹ tests 80
+ℹ suites 0
+ℹ pass 80
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4095.869321

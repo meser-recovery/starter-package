@@ -1,0 +1,33 @@
+Real source waveform passed: shared native peak reader, Retina canvas and empty waveform FS.
+Gateway-unavailable persistence fallback passed: local S07 source state remained intact.
+Real FFmpeg fixture passed: input=7.000000s output=4.347120s shortened=1; MP3=70679 bytes; short pause preserved.
+Waveform failure fallbacks passed: source and result preview failures retained native playback and a valid processed MP3.
+No-long-pause fixture passed: exact-byte passthrough result/download, no output encode; loaded engine reused; metadata cannot spoof detector output.
+Real boundary fixture passed: leading/trailing silence, output=1.700862s, shortened=2; cancel/retry passed.
+Shared source scrollbar/follow passed: fit visibility, bidirectional time sync, centered playback, pause/resume, zoom, boundary clamps and manual disengage.
+Synchronized preview passed: compact tracks, shared zoom/scroll/playheads, drag-vs-click seeking, native transport sync, drift correction and Solo/Mute precedence.
+Real two-track mix passed: 8s -> 5.349333s, common pauses=1, MP3=128kbps; A/B solo and overlapping speech retained, peak=0.902806, clipped fraction=0.000000.
+Real three-track intersection passed: 8s -> 6.346667s, common pauses=1; C protects 3-4s and all three simultaneous tones survive.
+Real no-common-silence mix passed: MP3 produced, exact mixed-without-cuts status, pause count=0, removed duration near zero.
+Duration safety passed: >0.5s rejected after independent analyses with no final encode; exactly 0.5s accepted, longest timeline preserved, missing tail counted as silence.
+Long-source Follow passed: 1000px/s, playback/paused end seek and delayed synchronized scroll at three widths.
+Multi-track cancellation/retry, virtual-FS cleanup, URL revocation, filenames and 390/768/1280 responsive states passed.
+Unsupported-browser processor fallback passed; archive remains functional.
+Timeline flags/DSP: DPR 1, start/end drag cancellation, keyboard steps, focus, switches and four compression presets passed.
+Timeline controls: DPR 1, both editors, four widths, zoom+scroll seek, three real loop cycles and independent Mute passed.
+Timeline flags/DSP: DPR 2, start/end drag cancellation, keyboard steps, focus, switches and four compression presets passed.
+Timeline controls: DPR 2, both editors, four widths, zoom+scroll seek, three real loop cycles and independent Mute passed.
+Digital meters: PASS; both editors, stereo anti-phase, summed master/clip, mute, stop/reset, four widths, stable tools, thin edges.
+S09A real media signal: PASS; 20 tone/RMS cases, both editors, mute/solo/volume/reorder/exclusion/result isolation.
+Waveform decoder alignment: 41.3s overview/detail/tail peaks PASS.
+Waveform decoder alignment: 129.37s overview/detail/tail peaks PASS.
+Waveform alignment PASS: native/WASM, short/long/tail windows, right-only/anti-phase peaks, both editors repeated fit/detail zoom, actual pixels and audible onset.
+Waveform motion speaker/fit: 60.1 RAF fps, 0/91 scroll updates, 0/158400 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/overview: 60.3 RAF fps, 91/91 scroll updates, 0/158164 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/medium: 60.2 RAF fps, 91/91 scroll updates, 0/157504 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/detail: 59.1 RAF fps, 666/669 scroll updates, 0/1085272 changed source pixels, detail windows=['0', '16', '24', '40', '48'] PASS.
+Speaker rendered result: 59.4 RAF fps, 90/90 playhead updates, unchanged waveform PASS.
+Waveform motion announcement/fit: 60.2 RAF fps, 0/91 scroll updates, 0/158400 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/overview: 60.2 RAF fps, 91/91 scroll updates, 0/158158 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/medium: 60.2 RAF fps, 91/91 scroll updates, 0/157492 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/detail: 59.8 RAF fps, 676/676 scroll updates, 0/1097644 changed source pixels, detail windows=['0', '16', '24', '40', '48'] PASS.

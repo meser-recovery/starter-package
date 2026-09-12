@@ -1,5 +1,11 @@
 # S09A implementation validation
 
+Current PR #36 workspace follow-up: [local browser validation and preview](S09A-workspace-validation.md). Earlier reports below retain their original environment and source SHA.
+
+PR #36 P1 follow-up: [deletion during preparation — coverage gap and correction](S09A-PR36-review-fix.md).
+
+Current post-merge corrective work: [all 43 PLAN sections, §42 expectations and A01–A18](S09A-corrective-audit.md). See [new source-bound evidence](evidence/s09a/corrective/README.md). The PR #35 implementation and Acceptance repair records below are historical, not proof of this corrective result.
+
 Current PR #35 Acceptance corrections and regressions: [Acceptance repair record](S09A-acceptance-fixes.md). The original validation below is historical evidence for its stated SHAs.
 
 This is implementation/PR evidence, not ACCEPT, stage closure or production E2E evidence.

@@ -1,4 +1,12 @@
+import { createWaveformDetail } from "./audio-waveform-detail.mjs";
+import { createWaveformReader } from "./speaker-waveform.mjs";
+import { drawWaveformViewport } from "./audio-waveform-view.mjs";
+import { renderSourceTimeline } from "./audio-timeline.mjs";
+import { createAudioMeters } from "./audio-meters.mjs";
+import { createAudioTransport } from "./audio-transport.mjs";
+import { defaultTrackColor, installEditorExpansion, installSpaceTransport, installTimelineZoomGestures } from "./audio-timeline-ux.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
+const sourceDetail = createWaveformDetail();
 
 // Stage 7 DSP contract: S08B adds provenance/publication only and does not alter these values.
 const MIN_SILENCE_SECONDS = 2.0;
@@ -11,16 +19,14 @@ const MAX_DURATION_DIFFERENCE_SECONDS = 0.5;
 // Only multi-track mixing uses this clock; single-track processing stays unchanged.
 const MIX_SAMPLE_RATE = 48000;
 const WAVEFORM_HEIGHT = 100;
-// Source and result waveforms keep at most four generated samples per second;
-// the width floor preserves usable short-file rendering without unbounded images.
-const WAVEFORM_PIXELS_PER_SECOND = 4;
-const WAVEFORM_MIN_WIDTH = 640;
-const WAVEFORM_MAX_WIDTH = 16384;
+// Bounded high-resolution envelopes for detailed zoom, including Retina screens.
+const WAVEFORM_PIXELS_PER_SECOND = 64;
+const WAVEFORM_MIN_WIDTH = 4096;
+const WAVEFORM_MAX_WIDTH = 65536;
 const OUTPUT_PATH = "processor-output.mp3";
-const RESULT_WAVEFORM_PATH = "processor-result-waveform.png";
 const PROGRESS_PATH = "processor-analysis.txt";
 const FILTER_PATH = "processor-filter.txt";
-const TEMP_PATHS = [OUTPUT_PATH, RESULT_WAVEFORM_PATH, PROGRESS_PATH, FILTER_PATH];
+const TEMP_PATHS = [OUTPUT_PATH, PROGRESS_PATH, FILTER_PATH];
 const UNSUPPORTED = "Обработка аудио не поддерживается в этом браузере.";
 const CANCELLED = "Обработка отменена.";
 const DURATION_MISMATCH = "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.";
@@ -163,16 +169,17 @@ let selectedProvenance = [];
 let provenanceContext = null;
 let resultCandidate = null;
 let tracks = [];
+let sourceSelection = null, sourceSelectionEpoch = 0;
 let nextTrackId = 1;
 let resultURL = null;
-let resultWaveformURL = null;
+let resultWaveformSamples = null;
+let resultWaveformFile = null;
 let engine = null;
 let active = null;
 let playheadFrame = 0;
 let resultPlayheadFrame = 0;
 let previewSyncTimer = 0;
-let sourceScrollLock = false;
-let sourceScrollReleaseFrame = 0;
+const sourceSynchronizedScroll = new WeakMap();
 let sourcePixelsPerSecond = 2;
 let sourceTimelineDuration = NaN;
 let sourceLeftVisibleTime = 0;
@@ -181,11 +188,27 @@ let sourceFollowEnabled = false;
 let sourceZoomMinimum = 2;
 let sourceZoomMaximum = 2;
 let sourceZoomInitialized = false;
+let sourceScaleMode = "time";
+let sourceTimeZoomValue = 50;
+let sourceTrackHeight = 196;
+let sourceLoopEnabled = false;
+let sourceLoopRange = null;
 let resultPixelsPerSecond = 2;
 let resultDuration = NaN;
 let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
 let resultZoomMinimum = 2;
 let resultZoomMaximum = 2;
+const sourceTransport = createAudioTransport({
+  audio: sourceAudio, resultAudio, canPlay: () => !active && tracks.length > 0 && tracks.every(track => Number.isFinite(track.duration)),
+  getSelection: () => sourceSelection,
+  seek: seekSources, reportError: message => { status.textContent = message; },
+  onLoopChange: ({ enabled, range }) => { sourceLoopEnabled = enabled; sourceLoopRange = range; renderProcessorGlobalRegions(); }
+});
+
+const meters = createAudioMeters({ root: sourceAudio.closest(".processor-card"), resultAudio });
+function syncMeters() {
+  meters.sync(tracks.map(track => ({ id: String(track.id), audio: track.previewAudio, container: [...byId("file-info").children].find(row => row.dataset.trackId === String(track.id))?.querySelector(".processor-track__top") })));
+}
 
 function notifyProcessorSelection() {
   window.dispatchEvent(new CustomEvent("audio-processor-selection", {
@@ -260,9 +283,8 @@ function clearResult() {
   cancelAnimationFrame(resultPlayheadFrame);
   clearAudio(resultAudio);
   if (resultURL) URL.revokeObjectURL(resultURL);
-  if (resultWaveformURL) URL.revokeObjectURL(resultWaveformURL);
   resultURL = null;
-  resultWaveformURL = null;
+  resultWaveformSamples = null; resultWaveformFile = null;
   resultDuration = NaN;
   resultWaveformWidth = WAVEFORM_MIN_WIDTH;
   const resultControl = byId("result-waveform-control");
@@ -297,8 +319,9 @@ function setBusy(busy) {
   if (!busy) {
     for (const resolve of idleWaiters) resolve(); idleWaiters.clear();
     updateSourceZoomRange();
-    if (resultWaveformURL) updateResultZoomRange();
+    if (resultWaveformSamples) updateResultZoomRange();
   }
+  sourceTransport.refresh();
 }
 
 function stop() {
@@ -347,18 +370,15 @@ function sourceDisplayWidth(track) {
   return Math.max(1, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond));
 }
 
-function sourceImageDisplayWidth(track) {
-  if (!sourceZoomInitialized || !Number.isFinite(track.duration) || track.duration <= 0) return track.waveformWidth;
-  return Math.max(1, Math.min(track.waveformWidth, Math.ceil(track.duration * sourcePixelsPerSecond)));
-}
-
 function maximumSourceLeftTime() {
   return Math.max(0, (Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0) - sourceViewportDuration);
 }
 
 function sourceScrollbarGeometry() {
   const rail = byId("source-scrollbar");
-  const railWidth = Math.max(0, rail.clientWidth);
+  const railStyle = getComputedStyle(rail);
+  const railWidth = Math.max(0, rail.getBoundingClientRect().width -
+    parseFloat(railStyle.borderLeftWidth) - parseFloat(railStyle.borderRightWidth));
   const duration = Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0;
   const fraction = duration > 0 ? Math.min(1, Math.max(0, sourceViewportDuration / duration)) : 1;
   const thumbWidth = railWidth ? Math.min(railWidth, Math.max(36, railWidth * fraction)) : 0;
@@ -377,25 +397,21 @@ function updateSourceScrollbar() {
   rail.setAttribute("aria-valuemin", "0");
   rail.setAttribute("aria-valuemax", String(Math.round(maxLeft * 1000) / 1000));
   rail.setAttribute("aria-valuenow", String(Math.round(sourceLeftVisibleTime * 1000) / 1000));
+  renderSourceTimeline("announcement-source-timeline", sourceTimelineDuration, sourcePixelsPerSecond, sourceLeftVisibleTime * sourcePixelsPerSecond);
+  renderProcessorGlobalRegions();
   rail.setAttribute("aria-valuetext", `${clockDuration(sourceLeftVisibleTime)} из ${clockDuration(Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0)}`);
-}
-
-function releaseSourceScrollLock() {
-  cancelAnimationFrame(sourceScrollReleaseFrame);
-  sourceScrollReleaseFrame = requestAnimationFrame(() => {
-    sourceScrollReleaseFrame = requestAnimationFrame(() => { sourceScrollLock = false; });
-  });
 }
 
 function setSourceLeftVisibleTime(value) {
   sourceLeftVisibleTime = Math.max(0, Math.min(maximumSourceLeftTime(), Number.isFinite(value) ? value : 0));
   const target = sourceLeftVisibleTime * sourcePixelsPerSecond;
-  sourceScrollLock = true;
   for (const scroll of byId("file-info").querySelectorAll(".processor-waveform-scroll")) {
     if (Math.abs(scroll.scrollLeft - target) > .5) scroll.scrollLeft = target;
+    // Retain the browser-rounded/clamped position, not an ideal float target.
+    sourceSynchronizedScroll.set(scroll, scroll.scrollLeft);
   }
   updateSourceScrollbar();
-  releaseSourceScrollLock();
+  redrawSourceDetails();
 }
 
 function setSourceFollow(enabled) {
@@ -406,8 +422,6 @@ function setSourceFollow(enabled) {
 
 function disengageSourceFollow() {
   if (sourceFollowEnabled) setSourceFollow(false);
-  sourceScrollLock = false;
-  cancelAnimationFrame(sourceScrollReleaseFrame);
 }
 
 function followSourcePlayhead(time = sourceAudio.currentTime || 0) {
@@ -455,29 +469,159 @@ function seekFromControl(event) {
   seekSources((scroll.scrollLeft + event.clientX - box.left) / sourcePixelsPerSecond);
 }
 
+function updateSourceSelection(range) {
+  sourceSelection = range;
+  for (const wave of byId("file-info").querySelectorAll(".processor-waveform")) {
+    wave.querySelector(".processor-selection-overlay")?.remove();
+    if (!range || !(sourceTimelineDuration > 0)) continue;
+    const overlay = document.createElement("span"); overlay.className = "processor-selection-overlay";
+    overlay.style.left = `${range.startSeconds / sourceTimelineDuration * 100}%`;
+    overlay.style.width = `${(range.endSeconds - range.startSeconds) / sourceTimelineDuration * 100}%`;
+    wave.append(overlay);
+  }
+  let summary = byId("loop-selection-summary");
+  if (!summary) { summary = document.createElement("span"); summary.id = "processor-loop-selection-summary"; sourceAudio.before(summary); }
+  summary.textContent = range ? `Выделение: ${range.startSeconds.toFixed(3)}–${range.endSeconds.toFixed(3)} с` : "Клик — позиция; протянуть — выделить для повтора; Alt + протянуть — прокрутка.";
+  sourceTransport.refresh();
+}
+
+let processorLoopDrag = null;
+function paintProcessorLoopStrip(strip) {
+  if (!strip || !sourceLoopRange || !(sourceTimelineDuration > 0)) return;
+  strip.style.left = `${sourceLoopRange.startSeconds / sourceTimelineDuration * 100}%`;
+  strip.style.width = `${(sourceLoopRange.endSeconds - sourceLoopRange.startSeconds) / sourceTimelineDuration * 100}%`;
+  strip.title = `Loop · ${sourceLoopRange.startSeconds.toFixed(3)}–${sourceLoopRange.endSeconds.toFixed(3)} с`;
+  for (const handle of strip.querySelectorAll("[data-loop-edge]")) {
+    const value = sourceLoopRange[handle.dataset.loopEdge === "start" ? "startSeconds" : "endSeconds"];
+    handle.setAttribute("aria-valuenow", String(value)); handle.setAttribute("aria-valuetext", `${value.toFixed(3)} с`);
+  }
+}
+
+function bindProcessorLoopHandle(handle, edge) {
+  let drag = null;
+  const cancelDrag = () => {
+    if (!drag) return;
+    const old = drag; drag = null; processorLoopDrag = null;
+    if (handle.hasPointerCapture(old.id)) handle.releasePointerCapture(old.id);
+    updateSourceSelection(old.range);
+  };
+  const update = event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const delta = (event.clientX - drag.x) / sourcePixelsPerSecond;
+    let start = drag.range.startSeconds, end = drag.range.endSeconds;
+    if (edge === "start") start = Math.max(0, Math.min(end - .000001, start + delta));
+    else end = Math.min(sourceTimelineDuration, Math.max(start + .000001, end + delta));
+    updateSourceSelection({ startSeconds: start, endSeconds: end });
+  };
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || !sourceLoopEnabled || active || !sourceLoopRange) return;
+    event.preventDefault(); event.stopPropagation(); drag = { id: event.pointerId, x: event.clientX, range: { ...sourceLoopRange } };
+    processorLoopDrag = drag; handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", update);
+  handle.addEventListener("pointerup", event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    update(event); drag = null; processorLoopDrag = null;
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    renderProcessorGlobalRegions();
+  });
+  handle.addEventListener("pointercancel", cancelDrag); handle.addEventListener("lostpointercapture", cancelDrag);
+  handle.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.stopPropagation(); cancelDrag(); return; }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !sourceLoopRange) return;
+    event.preventDefault(); event.stopPropagation(); const step = event.shiftKey ? 1 : .01;
+    let start = sourceLoopRange.startSeconds, end = sourceLoopRange.endSeconds;
+    const value = event.key === "Home" ? 0 : event.key === "End" ? sourceTimelineDuration : (edge === "start" ? start : end) + (event.key === "ArrowLeft" ? -step : step);
+    if (edge === "start") start = Math.max(0, Math.min(end - .000001, value)); else end = Math.min(sourceTimelineDuration, Math.max(start + .000001, value));
+    updateSourceSelection({ startSeconds: start, endSeconds: end });
+  });
+}
+
+function renderProcessorGlobalRegions() {
+  const layer = byId("global-regions"); const first = byId("file-info")?.querySelector(".processor-waveform-scroll");
+  for (const wave of byId("file-info")?.querySelectorAll(".processor-waveform") || []) {
+    wave.querySelector(".timeline-loop-region")?.remove();
+    if (sourceLoopEnabled && sourceLoopRange && sourceTimelineDuration > 0) {
+      const loop = document.createElement("span"); loop.className = "timeline-loop-region";
+      loop.style.left = `${sourceLoopRange.startSeconds / sourceTimelineDuration * 100}%`;
+      loop.style.width = `${(sourceLoopRange.endSeconds - sourceLoopRange.startSeconds) / sourceTimelineDuration * 100}%`;
+      loop.title = `Loop · ${sourceLoopRange.startSeconds.toFixed(3)}–${sourceLoopRange.endSeconds.toFixed(3)} с`; wave.append(loop);
+    }
+  }
+  if (!layer || !first || !(sourceTimelineDuration > 0)) { layer?.replaceChildren(); return; }
+  layer.style.width = `${Math.max(first.clientWidth, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond))}px`;
+  layer.style.transform = `translateX(${-first.scrollLeft}px)`;
+  if (processorLoopDrag) { paintProcessorLoopStrip(layer.querySelector(".timeline-loop-strip")); return; }
+  layer.replaceChildren();
+  if (!sourceLoopEnabled || !sourceLoopRange) return;
+  const strip = document.createElement("span"); strip.className = "timeline-loop-strip";
+  const label = document.createElement("span"); label.className = "timeline-region-label"; label.textContent = "Loop"; strip.append(label);
+  for (const edge of ["start", "end"]) {
+    const handle = document.createElement("span"); handle.className = `timeline-loop-handle timeline-loop-handle--${edge}`; handle.dataset.loopEdge = edge;
+    handle.tabIndex = 0; handle.setAttribute("role", "slider"); handle.setAttribute("aria-valuemin", "0"); handle.setAttribute("aria-valuemax", String(sourceTimelineDuration));
+    handle.setAttribute("aria-label", `Loop: ${edge === "start" ? "левая" : "правая"} граница`); bindProcessorLoopHandle(handle, edge); strip.append(handle);
+  }
+  paintProcessorLoopStrip(strip); layer.append(strip);
+}
+
+function installSourceSelection(scroll) {
+  let drag = null;
+  const time = event => Math.max(0, Math.min(sourceTimelineDuration,
+    (scroll.scrollLeft + event.clientX - scroll.getBoundingClientRect().left) / sourcePixelsPerSecond));
+  scroll.addEventListener("pointerdown", event => {
+    if (drag || event.button !== 0 || event.altKey || active || !Number.isFinite(sourceTimelineDuration)) return;
+    drag = { id: event.pointerId, x: event.clientX, start: time(event), previous: sourceSelection, epoch: sourceSelectionEpoch };
+    scroll.setPointerCapture(event.pointerId);
+  });
+  scroll.addEventListener("pointermove", event => {
+    if (!drag || drag.id !== event.pointerId || drag.epoch !== sourceSelectionEpoch || active || Math.abs(event.clientX - drag.x) <= 4) return;
+    const end = time(event);
+    updateSourceSelection({ startSeconds: Math.min(drag.start, end), endSeconds: Math.max(drag.start, end) });
+  });
+  scroll.addEventListener("pointerup", event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const current = drag; drag = null; scroll.releasePointerCapture(event.pointerId);
+    if (current.epoch !== sourceSelectionEpoch) return;
+    if (active) { updateSourceSelection(current.previous); return; }
+    if (Math.abs(event.clientX - current.x) <= 4) { updateSourceSelection(null); seekSources(time(event)); }
+    else { const end = time(event); updateSourceSelection({ startSeconds: Math.min(current.start, end), endSeconds: Math.max(current.start, end) }); }
+    scroll.dataset.dragEnded = String(Date.now());
+  });
+  const cancel = () => { if (drag) { const previous = drag; drag = null; if (previous.epoch === sourceSelectionEpoch) updateSourceSelection(previous.previous); } };
+  scroll.addEventListener("pointercancel", cancel); scroll.addEventListener("lostpointercapture", cancel);
+}
+
 function navigateWaveform(event) {
   if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key)) return;
   event.preventDefault();
   const current = sourceAudio.currentTime || 0;
-  const step = event.shiftKey ? 30 : 5;
+  if (event.shiftKey) {
+    const start = sourceSelection?.startSeconds ?? current, end = sourceSelection?.endSeconds ?? current;
+    const next = event.key === "Home" ? start : event.key === "End" ? sourceTimelineDuration : end + (event.key === "ArrowLeft" ? -.1 : .1);
+    updateSourceSelection({ startSeconds: start, endSeconds: Math.max(start, Math.min(sourceTimelineDuration, next)) });
+    return;
+  }
+  updateSourceSelection(null);
+  const step = 5;
   const target = event.key === "Home" ? 0 : event.key === "End" ? sourceTimelineDuration :
     current + (event.key === "ArrowLeft" ? -step : step);
   seekSources(target);
 }
 
-function installPan(scroll, onManualPan) {
+function installPan(scroll, onManualPan, altOnly = false) {
   let startX = 0;
   let startScroll = 0;
-  let dragging = false;
+  let dragging = false, panPointer = null;
   scroll.addEventListener("pointerdown", (event) => {
-    if (event.button !== 0) return;
+    if (panPointer !== null || event.button !== 0 || (altOnly && !event.altKey)) return;
+    panPointer = event.pointerId;
     startX = event.clientX;
     startScroll = scroll.scrollLeft;
     dragging = false;
     scroll.setPointerCapture(event.pointerId);
   });
   scroll.addEventListener("pointermove", (event) => {
-    if (!scroll.hasPointerCapture(event.pointerId)) return;
+    if (panPointer !== event.pointerId || !scroll.hasPointerCapture(event.pointerId)) return;
     if (Math.abs(event.clientX - startX) > 6 && !dragging) {
       dragging = true;
       onManualPan?.();
@@ -488,8 +632,8 @@ function installPan(scroll, onManualPan) {
     scroll.scrollLeft = startScroll - (event.clientX - startX);
   });
   const finish = (event) => {
-    if (!scroll.hasPointerCapture(event.pointerId)) return;
-    scroll.releasePointerCapture(event.pointerId);
+    if (panPointer !== event.pointerId || !scroll.hasPointerCapture(event.pointerId)) return;
+    panPointer = null; scroll.releasePointerCapture(event.pointerId);
     scroll.classList.remove("is-dragging");
     if (dragging) scroll.dataset.dragEnded = String(Date.now());
   };
@@ -498,10 +642,28 @@ function installPan(scroll, onManualPan) {
 }
 
 function syncSourceScroll(event) {
-  if (sourceScrollLock || sourcePixelsPerSecond <= 0) return;
+  if (sourcePixelsPerSecond <= 0) return;
   const origin = event.currentTarget;
+  // Our scroll event may arrive after rendering/decoding has finished. Ignore
+  // an unchanged synchronized position regardless of elapsed frames, while a
+  // new user position must still apply immediately after zoom.
+  if (origin.scrollLeft === sourceSynchronizedScroll.get(origin)) return;
   disengageSourceFollow();
   setSourceLeftVisibleTime(origin.scrollLeft / sourcePixelsPerSecond);
+}
+
+function redrawSourceDetails() {
+  for (const track of tracks) {
+    const wave = byId("file-info").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
+    const scroll = wave?.parentElement, canvas = wave?.querySelector("canvas");
+    if (!canvas || !scroll || !track.samples) continue;
+    canvas.hidden = false;
+    if (!sourceDetail.draw(canvas, track.file, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
+      scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT, track.samples.sampleRate)) {
+      drawWaveformViewport(canvas, track.samples, track.duration, sourcePixelsPerSecond, scroll.scrollLeft,
+        scroll.clientWidth, wave.clientHeight || WAVEFORM_HEIGHT);
+    }
+  }
 }
 
 function waveformControl(track) {
@@ -514,20 +676,25 @@ function waveformControl(track) {
   control.setAttribute("aria-label", `Форма сигнала дорожки ${track.ordinal}: ${track.file.name}`);
   control.setAttribute("aria-describedby", "processor-source-time");
   control.addEventListener("keydown", navigateWaveform);
-  if (track.waveformURL) {
-    const image = document.createElement("img");
-    image.src = track.waveformURL;
-    image.alt = "";
-    image.width = track.waveformWidth;
-    image.height = WAVEFORM_HEIGHT;
-    image.style.width = `${sourceImageDisplayWidth(track)}px`;
-    control.append(image);
-  } else {
+  if (!track.samples) {
     const message = document.createElement("span");
     message.className = "processor-waveform-status";
     message.textContent = track.loading ? "Подготовка формы сигнала…" :
       track.waveformFailed ? "Не удалось построить форму сигнала." : "Форма сигнала ещё не построена.";
     control.append(message);
+  }
+  const detailCanvas = document.createElement("canvas"); detailCanvas.hidden = true;
+  detailCanvas.className = "processor-waveform-detail"; control.append(detailCanvas);
+  if (sourceTimelineDuration > 0 && Number.isFinite(track.duration) && track.duration < sourceTimelineDuration) {
+    const outside = document.createElement("span"); outside.className = "timeline-outside-region";
+    outside.style.left = `${track.duration / sourceTimelineDuration * 100}%`; outside.style.width = `${(sourceTimelineDuration - track.duration) / sourceTimelineDuration * 100}%`;
+    outside.title = `Вне записи · ${track.duration.toFixed(3)}–${sourceTimelineDuration.toFixed(3)} с`;
+    const label = document.createElement("span"); label.className = "timeline-region-label"; label.textContent = "Вне записи"; outside.append(label); control.append(outside);
+  }
+  if (sourceLoopEnabled && sourceLoopRange && sourceTimelineDuration > 0) {
+    const loop = document.createElement("span"); loop.className = "timeline-loop-region";
+    loop.style.left = `${sourceLoopRange.startSeconds / sourceTimelineDuration * 100}%`; loop.style.width = `${(sourceLoopRange.endSeconds - sourceLoopRange.startSeconds) / sourceTimelineDuration * 100}%`;
+    loop.title = `Loop · ${sourceLoopRange.startSeconds.toFixed(3)}–${sourceLoopRange.endSeconds.toFixed(3)} с`; control.append(loop);
   }
   const playhead = document.createElement("span");
   playhead.className = "processor-waveform-playhead";
@@ -544,6 +711,7 @@ function renderTracks() {
     const item = document.createElement("li");
     item.className = "processor-track";
     item.dataset.trackId = String(track.id);
+    item.style.setProperty("--track-wave", track.color || defaultTrackColor(index));
     const top = document.createElement("div");
     top.className = "processor-track__top";
     const heading = document.createElement("div");
@@ -557,7 +725,11 @@ function renderTracks() {
     const meta = document.createElement("span");
     meta.className = "processor-track__meta";
     meta.textContent = `${fileSize(track.file.size)} МБ · ${clockDuration(track.duration)}`;
-    heading.append(number, name, meta);
+    const colorLabel = document.createElement("label"); colorLabel.className = "track-color-control";
+    const color = document.createElement("input"); color.type = "color"; color.value = track.color || defaultTrackColor(index);
+    color.setAttribute("aria-label", `Цвет дорожки ${track.ordinal}: ${track.file.name}`); color.title = color.getAttribute("aria-label");
+    color.addEventListener("input", () => { track.color = color.value; item.style.setProperty("--track-wave", track.color); redrawSourceDetails(); });
+    colorLabel.append(color); heading.append(colorLabel, number, name, meta);
     const scroll = document.createElement("div");
     scroll.className = "processor-waveform-scroll";
     scroll.dataset.trackId = String(track.id);
@@ -567,7 +739,9 @@ function renderTracks() {
     scroll.addEventListener("wheel", (event) => {
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || event.shiftKey) disengageSourceFollow();
     }, { passive: true });
-    installPan(scroll, disengageSourceFollow);
+    installTimelineZoomGestures(scroll, { getZoom: () => sourcePixelsPerSecond, setZoomAt: setProcessorZoomAt });
+    installSourceSelection(scroll);
+    installPan(scroll, disengageSourceFollow, true);
     const actions = document.createElement("div");
     actions.className = "processor-track__actions";
     const solo = document.createElement("button");
@@ -575,15 +749,21 @@ function renderTracks() {
     solo.dataset.trackId = String(track.id);
     solo.dataset.trackAction = "solo";
     solo.setAttribute("aria-pressed", String(track.solo));
-    solo.textContent = "Соло";
+    solo.textContent = "S · Solo";
     solo.addEventListener("click", () => toggleMonitoring(track.id, "solo"));
     const mute = document.createElement("button");
     mute.type = "button";
     mute.dataset.trackId = String(track.id);
     mute.dataset.trackAction = "mute";
     mute.setAttribute("aria-pressed", String(track.muted));
-    mute.textContent = "Заглушить";
+    mute.textContent = "M · Mute";
     mute.addEventListener("click", () => toggleMonitoring(track.id, "mute"));
+    for (const [button, action] of [[solo, "Solo"], [mute, "Mute"]]) {
+      button.title = `${action} · Дорожка ${index + 1} · ${track.file.name} · только прослушивание`;
+      button.setAttribute("aria-label", button.textContent);
+      button.setAttribute("aria-description", button.title);
+      button.textContent = action === "Solo" ? "S" : "M";
+    }
     const moveUp = document.createElement("button");
     moveUp.type = "button";
     moveUp.dataset.trackId = String(track.id);
@@ -608,16 +788,21 @@ function renderTracks() {
     remove.textContent = "Удалить";
     remove.addEventListener("click", () => removeTrack(track.id));
     actions.append(solo, mute, moveUp, moveDown, remove);
+    const monitorStatus = document.createElement("span"); monitorStatus.className = "track-monitor-status";
+    actions.append(monitorStatus);
     top.append(heading, actions);
     item.append(top, scroll);
     list.append(item);
     scroll.scrollLeft = sourceLeftVisibleTime * sourcePixelsPerSecond;
   });
+  syncMeters();
+  applyProcessorTrackHeight();
   updateSelectionSummary();
   setBusy(Boolean(active));
   applyMonitoring();
   if (sourceZoomInitialized) updateSourceNavigation();
   updatePlayheads();
+  updateSourceSelection(sourceSelection);
 }
 
 function updatePlayheads() {
@@ -633,6 +818,8 @@ function updatePlayheads() {
 function animatePlayhead() {
   cancelAnimationFrame(playheadFrame);
   const frame = () => {
+    // A frame queued before pause must not move the zoomed viewport afterward.
+    if (sourceAudio.paused || sourceAudio.ended) return;
     if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
     updatePlayheads();
     if (!sourceAudio.paused && !sourceAudio.ended) playheadFrame = requestAnimationFrame(frame);
@@ -659,7 +846,10 @@ function applyMonitoring() {
     const audible = hasSolo ? track.solo : !track.muted;
     if (track.previewAudio) track.previewAudio.muted = !audible;
     const row = byId("source").querySelector(`.processor-track[data-track-id="${track.id}"]`);
-    row?.classList.toggle("is-muted", !audible); row?.classList.toggle("is-solo", track.solo);
+    row?.classList.toggle("is-muted", track.muted); row?.classList.toggle("is-solo", track.solo);
+    row?.classList.toggle("is-solo-suppressed", !track.muted && !audible);
+    const status = row?.querySelector(".track-monitor-status");
+    if (status) status.textContent = track.muted ? "Mute · эта дорожка выключена" : track.solo ? "Solo · в прослушивании" : !audible ? "Не слышна: Solo другой дорожки" : "В прослушивании";
     const solo = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="solo"]`);
     const mute = byId("source").querySelector(`button[data-track-id="${track.id}"][data-track-action="mute"]`);
     solo?.setAttribute("aria-pressed", String(track.solo));
@@ -681,6 +871,7 @@ function toggleMonitoring(id, action) {
 }
 
 function clearPreviewAudios(clearMaster = true) {
+  meters.clear();
   clearInterval(previewSyncTimer);
   previewSyncTimer = 0;
   for (const track of tracks) {
@@ -709,6 +900,7 @@ function setupPreviewAudios(position = 0, resume = false) {
     track.previewAudio = audio;
     audio.load();
   });
+  syncMeters();
   const restore = () => {
     seekSources(position);
     applyMonitoring();
@@ -727,6 +919,7 @@ sourceAudio.addEventListener("play", () => {
   previewSyncTimer = window.setInterval(() => correctPreviewDrift(false), 500);
 });
 sourceAudio.addEventListener("pause", () => {
+  cancelAnimationFrame(playheadFrame);
   clearInterval(previewSyncTimer);
   previewSyncTimer = 0;
   for (const track of tracks.filter((item) => item.previewAudio !== sourceAudio)) track.previewAudio?.pause();
@@ -743,22 +936,22 @@ function sourceZoomBounds() {
   const viewport = byId("file-info").querySelector(".processor-waveform-scroll");
   const durations = tracks.map((track) => track.duration).filter((duration) => Number.isFinite(duration) && duration > 0);
   sourceTimelineDuration = durations.length ? Math.max(...durations) : NaN;
-  const nativeRates = tracks.filter((track) => Number.isFinite(track.duration) && track.duration > 0)
-    .map((track) => track.waveformWidth / track.duration);
-  sourceZoomMaximum = nativeRates.length ? Math.min(...nativeRates) : 2;
+  sourceZoomMaximum = durations.length ? 1000 : 2;
   sourceZoomMinimum = Number.isFinite(sourceTimelineDuration) && viewport ?
-    Math.min(sourceZoomMaximum, viewport.clientWidth / sourceTimelineDuration) : sourceZoomMaximum;
+    Math.max(.01, Math.min(sourceZoomMaximum, viewport.clientWidth / sourceTimelineDuration)) : sourceZoomMaximum;
 }
 
 function updateSourceZoomRange() {
   const range = byId("source-zoom-range");
-  const span = sourceZoomMaximum - sourceZoomMinimum;
-  range.value = String(span > 0 ? Math.round((sourcePixelsPerSecond - sourceZoomMinimum) / span * 100) : 0);
+  const span = Math.log(sourceZoomMaximum / sourceZoomMinimum);
+  sourceTimeZoomValue = span > 0 ? Math.round(Math.log(sourcePixelsPerSecond / sourceZoomMinimum) / span * 100) : 0;
+  if (sourceScaleMode === "time") range.value = String(sourceTimeZoomValue);
+  byId("source-scale-value").textContent = sourceScaleMode === "height" ? `${sourceTrackHeight} px` : `${sourcePixelsPerSecond.toFixed(sourcePixelsPerSecond < 10 ? 1 : 0)} px/s`;
   byId("source-zoom-out").disabled = Boolean(active) || sourcePixelsPerSecond <= sourceZoomMinimum + .001;
   byId("source-zoom-in").disabled = Boolean(active) || sourcePixelsPerSecond >= sourceZoomMaximum - .001;
 }
 
-function setSourceZoom(value, anchorTime) {
+function setSourceZoom(value, anchorTime, anchorOffset) {
   sourceZoomBounds();
   const centerTime = Number.isFinite(anchorTime) ? anchorTime : sourceFollowEnabled ?
     (sourceAudio.currentTime || 0) : sourceLeftVisibleTime + sourceViewportDuration / 2;
@@ -768,15 +961,39 @@ function setSourceZoom(value, anchorTime) {
     const control = byId("source").querySelector(`.processor-waveform[data-track-id="${track.id}"]`);
     if (control) {
       control.style.width = `${sourceDisplayWidth(track)}px`;
-      const image = control.querySelector("img");
-      if (image) image.style.width = `${sourceImageDisplayWidth(track)}px`;
     }
   }
   updateSourceNavigation();
-  if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
+  if (Number.isFinite(anchorOffset)) setSourceLeftVisibleTime(centerTime - anchorOffset / sourcePixelsPerSecond);
+  else if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
   else setSourceLeftVisibleTime(centerTime - sourceViewportDuration / 2);
   updateSourceZoomRange();
   updatePlayheads();
+}
+
+function setProcessorZoomAt(value, anchorTime, anchorOffset) {
+  disengageSourceFollow();
+  setSourceZoom(value, anchorTime, anchorOffset);
+}
+
+function applyProcessorTrackHeight() {
+  const workspace = document.getElementById("announcement-processor-card");
+  workspace.style.setProperty("--track-height", `${sourceTrackHeight}px`);
+  workspace.classList.toggle("has-compact-tracks", sourceTrackHeight < 200);
+  byId("source-scale-value").textContent = sourceScaleMode === "height" ? `${sourceTrackHeight} px` : `${sourcePixelsPerSecond.toFixed(sourcePixelsPerSecond < 10 ? 1 : 0)} px/s`;
+  redrawSourceDetails();
+}
+
+function setProcessorScaleMode(mode) {
+  const range = byId("source-zoom-range");
+  if (mode === sourceScaleMode) return;
+  if (sourceScaleMode === "time") sourceTimeZoomValue = Number(range.value); else sourceTrackHeight = Number(range.value);
+  sourceScaleMode = mode; const height = mode === "height";
+  byId("source-scale-mode").setAttribute("aria-pressed", String(height));
+  byId("source-scale-mode").setAttribute("aria-label", height ? "Переключить на масштаб времени" : "Переключить на высоту дорожек");
+  byId("source-scale-mode").querySelector("span").textContent = height ? "Высота" : "Время";
+  if (height) { range.min = "148"; range.max = "300"; range.step = "4"; range.value = String(sourceTrackHeight); applyProcessorTrackHeight(); }
+  else { range.min = "0"; range.max = "100"; range.step = "1"; range.value = String(sourceTimeZoomValue); const ratio = sourceTimeZoomValue / 100; sourceZoomBounds(); setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio); }
 }
 
 function initializeSourceZoom() {
@@ -785,12 +1002,18 @@ function initializeSourceZoom() {
 }
 
 byId("source-zoom-range").addEventListener("input", (event) => {
+  if (sourceScaleMode === "height") { sourceTrackHeight = Number(event.currentTarget.value); applyProcessorTrackHeight(); return; }
+  sourceZoomBounds();
   const ratio = Number(event.currentTarget.value) / 100;
-  setSourceZoom(sourceZoomMinimum + (sourceZoomMaximum - sourceZoomMinimum) * ratio);
+  setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio);
 });
+byId("source-scale-mode").addEventListener("click", () => setProcessorScaleMode(sourceScaleMode === "time" ? "height" : "time"));
 byId("source-zoom-out").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond / 1.5));
 byId("source-zoom-in").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond * 1.5));
-byId("source-zoom-fit").addEventListener("click", () => setSourceZoom(sourceZoomMinimum, 0));
+byId("source-zoom-fit").addEventListener("click", () => {
+  sourceZoomBounds();
+  setSourceZoom(sourceZoomMinimum, 0);
+});
 byId("source-follow").addEventListener("click", () => setSourceFollow(!sourceFollowEnabled));
 
 const sourceScrollbar = byId("source-scrollbar");
@@ -858,16 +1081,15 @@ function syncInputFiles() {
 }
 
 function revokeTrackURLs(track) {
+  sourceDetail.clear();
   if (track.sourceURL) URL.revokeObjectURL(track.sourceURL);
-  if (track.waveformURL) URL.revokeObjectURL(track.waveformURL);
   track.sourceURL = null;
-  track.waveformURL = null;
+  track.samples = null;
 }
 
 function clearTracks(resetInput = true) {
+  sourceSelection = null; sourceSelectionEpoch++;
   cancelAnimationFrame(playheadFrame);
-  cancelAnimationFrame(sourceScrollReleaseFrame);
-  sourceScrollLock = false;
   clearPreviewAudios(true);
   for (const track of tracks) revokeTrackURLs(track);
   tracks = [];
@@ -1002,8 +1224,6 @@ function readTrackDuration(track, operation) {
 }
 
 async function buildWaveform(track, currentEngine, operation) {
-  const inputPath = `processor-waveform-input-${track.id}`;
-  const outputPath = `processor-waveform-${track.id}.png`;
   track.loading = true;
   track.waveformFailed = false;
   renderTracks();
@@ -1011,26 +1231,15 @@ async function buildWaveform(track, currentEngine, operation) {
     try { track.duration = await readTrackDuration(track, operation); } catch { /* Native playback may still be usable. */ }
     track.waveformWidth = waveformWidth(track.duration);
     renderTracks();
-    const bytes = new Uint8Array(await operation.wait(track.file.arrayBuffer()));
-    await operation.wait(currentEngine.writeFile(inputPath, bytes));
-    const filter = `[0:a:0]aformat=channel_layouts=mono,showwavespic=s=${track.waveformWidth}x${WAVEFORM_HEIGHT}:colors=#74b2e6[v]`;
-    const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", inputPath,
-      "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", outputPath]));
-    if (code !== 0) throw new Error("waveform");
-    const image = await operation.wait(currentEngine.readFile(outputPath));
-    if (!image.byteLength) throw new Error("waveform");
-    if (track.waveformURL) URL.revokeObjectURL(track.waveformURL);
-    track.waveformURL = URL.createObjectURL(new Blob([image], { type: "image/png" }));
+    const reader = createWaveformReader(undefined, currentEngine);
+    try { track.samples = await operation.wait(reader.read(track.file, track.duration)); }
+    finally { reader.dispose(); }
+    track.waveformWidth = track.samples.length;
   } catch (failure) {
     if (active !== operation) throw failure;
     track.waveformFailed = true;
   } finally {
     track.loading = false;
-    if (currentEngine?.loaded && engine === currentEngine) {
-      for (const path of [inputPath, outputPath]) {
-        try { await operation.wait(currentEngine.deleteFile(path)); } catch { /* Absent or terminated. */ }
-      }
-    }
     if (tracks.includes(track)) renderTracks();
   }
 }
@@ -1047,7 +1256,7 @@ async function generateWaveforms(candidates = tracks) {
     if (active === operation) status.textContent = selectionStatus();
   } catch {
     if (active === operation) {
-      for (const track of candidates.filter((item) => !item.waveformURL)) {
+      for (const track of candidates.filter((item) => !item.samples)) {
         track.loading = false;
         track.waveformFailed = true;
       }
@@ -1065,6 +1274,7 @@ async function generateWaveforms(candidates = tracks) {
         setupPreviewAudios(sourceAudio.currentTime, !sourceAudio.paused && !sourceAudio.ended);
       }
       initializeSourceZoom();
+      if (!sourceSelection && sourceTimelineDuration > 0) updateSourceSelection({ startSeconds: 0, endSeconds: sourceTimelineDuration });
     }
   }
 }
@@ -1078,9 +1288,9 @@ function selectProcessorFiles(candidates, provenance = [], context = null) {
   status.textContent = error || "Выберите файлы и нажмите «Обработать».";
   if (files.length && !error && supported) {
     tracks = files.map((file, index) => ({
-      id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), waveformURL: null,
+      id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), samples: null,
       waveformWidth: WAVEFORM_MIN_WIDTH, waveformFailed: false, loading: false, duration: NaN, ordinal: 0,
-      solo: false, muted: false, previewAudio: null, provenance: provenance[index] ? structuredClone(provenance[index]) : null
+      solo: false, muted: false, previewAudio: null, color: defaultTrackColor(index), provenance: provenance[index] ? structuredClone(provenance[index]) : null
     }));
     selectedFiles = files;
     syncSelectedProvenance();
@@ -1141,7 +1351,7 @@ function updateResultZoomRange() {
 }
 
 function setResultZoom(value, anchorTime) {
-  if (!resultWaveformURL) return;
+  if (!resultWaveformSamples) return;
   const viewport = byId("result-waveform-scroll");
   resultZoomBounds();
   const centerTime = Number.isFinite(anchorTime) ? anchorTime :
@@ -1151,6 +1361,13 @@ function setResultZoom(value, anchorTime) {
   viewport.scrollLeft = Math.max(0, centerTime * resultPixelsPerSecond - viewport.clientWidth / 2);
   updateResultZoomRange();
   updateResultPlayhead();
+  redrawResultWave();
+}
+
+function redrawResultWave() {
+  const scroll = byId("result-waveform-scroll"), canvas = byId("result-waveform-control").querySelector("canvas");
+  if (canvas && resultWaveformSamples) drawWaveformViewport(canvas, resultWaveformSamples, resultDuration,
+    resultPixelsPerSecond, scroll.scrollLeft, scroll.clientWidth, scroll.clientHeight || WAVEFORM_HEIGHT);
 }
 
 function updateResultPlayhead() {
@@ -1179,6 +1396,7 @@ function seekResult(seconds) {
 const resultScroll = byId("result-waveform-scroll");
 const resultControl = byId("result-waveform-control");
 installPan(resultScroll);
+resultScroll.addEventListener("scroll", redrawResultWave);
 resultScroll.addEventListener("click", (event) => {
   if (Date.now() - Number(resultScroll.dataset.dragEnded || 0) < 150) return;
   const box = resultScroll.getBoundingClientRect();
@@ -1206,18 +1424,11 @@ async function buildResultWaveform(currentEngine, operation, duration) {
   try {
     resultDuration = duration;
     resultWaveformWidth = waveformWidth(duration);
-    const filter = `[0:a:0]aformat=channel_layouts=mono,showwavespic=s=${resultWaveformWidth}x${WAVEFORM_HEIGHT}:colors=#74b2e6[v]`;
-    const code = await operation.wait(currentEngine.exec(["-hide_banner", "-nostats", "-xerror", "-protocol_whitelist", "file", "-i", OUTPUT_PATH,
-      "-filter_complex", filter, "-map", "[v]", "-frames:v", "1", "-an", RESULT_WAVEFORM_PATH]));
-    if (code !== 0) throw new Error("waveform");
-    const image = await operation.wait(currentEngine.readFile(RESULT_WAVEFORM_PATH));
-    if (!image.byteLength) throw new Error("waveform");
-    resultWaveformURL = URL.createObjectURL(new Blob([image], { type: "image/png" }));
-    const element = document.createElement("img");
-    element.src = resultWaveformURL;
-    element.alt = "";
-    element.width = resultWaveformWidth;
-    element.height = WAVEFORM_HEIGHT;
+    const reader = createWaveformReader(undefined, currentEngine);
+    try { resultWaveformSamples = await operation.wait(reader.read(resultWaveformFile, duration)); }
+    finally { reader.dispose(); }
+    const element = document.createElement("canvas");
+    element.className = "processor-waveform-detail";
     const playhead = document.createElement("span");
     playhead.className = "processor-waveform-playhead";
     playhead.setAttribute("aria-hidden", "true");
@@ -1231,15 +1442,12 @@ async function buildResultWaveform(currentEngine, operation, duration) {
     resultScroll.hidden = true;
     waveformStatus.textContent = "Не удалось построить форму сигнала.";
     waveformStatus.hidden = false;
-  } finally {
-    if (currentEngine?.loaded && engine === currentEngine) {
-      try { await operation.wait(currentEngine.deleteFile(RESULT_WAVEFORM_PATH)); } catch { /* Absent or terminated. */ }
-    }
   }
 }
 
 async function presentResult({ blob, mediaType, filename, originalDuration, intervals, ranges, multiple, mode }, currentEngine, operation) {
   resultURL = URL.createObjectURL(blob);
+  resultWaveformFile = new File([blob], "result.mp3", { type: "audio/mpeg" });
   resultAudio.src = resultURL;
   const processedDuration = await waitForMetadata(resultAudio, operation);
   result.hidden = false;
@@ -1384,7 +1592,7 @@ window.addEventListener("pageshow", (event) => {
   if (event.persisted && tracks.length) {
     for (const track of tracks) {
       track.sourceURL = URL.createObjectURL(track.file);
-      track.waveformURL = null;
+      track.samples = null;
       track.waveformFailed = false;
       track.previewAudio = null;
     }
@@ -1395,7 +1603,17 @@ window.addEventListener("pageshow", (event) => {
 });
 window.addEventListener("resize", () => {
   if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
-  if (resultWaveformURL) setResultZoom(resultPixelsPerSecond);
+  if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond);
+});
+const processorWorkspace = document.getElementById("announcement-processor-card");
+installSpaceTransport({ workspace: processorWorkspace, sourceAudio, resultAudio, sourceButton: byId("source-audio-play"), canHandle: () => !active && tracks.length > 0 && tracks.every(track => Number.isFinite(track.duration)) });
+installEditorExpansion({ workspace: processorWorkspace, button: byId("expand"),
+  captureAnchor: () => sourceLeftVisibleTime + sourceViewportDuration / 2,
+  onGeometryChange: anchor => { if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond, anchor); if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond); },
+  isGestureActive: () => Boolean(processorLoopDrag || sourceScrollbarDrag) });
+window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
+  if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
+  if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond);
 });
 status.textContent = supported ? "Выберите файлы и нажмите «Обработать»." : UNSUPPORTED;
 setBusy(false);

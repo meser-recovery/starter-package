@@ -1,3 +1,4 @@
+import { contextActions } from "./audio-actions.mjs";
 import { RECONNECT_MESSAGE, projectProjection } from "./audio-project.mjs";
 import { AudioArchiveGateway, validateSessionManifest, validateAnnouncementOutput, validateSpeakerOutput,
   reconstructAnnouncementOutput, reconstructSpeakerOutput } from './audio-archive-client.mjs';
@@ -37,7 +38,7 @@ function clearPlayback() {
 }
 function clearSession() {
   for (const generation of Object.values(generations)) generation.next();
-  clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.target = null;
+  clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.target = null; state.projects.clear();
   $('detail').hidden = true; $('detail-body').replaceChildren(); $('delete-dialog').close();
   updateControls(); render();
 }
@@ -64,11 +65,11 @@ function renderProjects() {
   const list = $('project-list'); list.replaceChildren();
   if (!state.sessions) { list.append(element('p', 'Проекты не загружены.')); return; }
   for (const session of state.sessions.filter(s => s.workflows.speaker.currentDraft)) {
-    const data = state.projects.get(session.id), card = element('article', undefined, 'archive-card');
+    const data = state.projects.get(session.id), card = element('article', undefined, 'archive-card project-row');
     card.append(element('h3', 'Проект обработки спикерской'), element('p', session.title));
     if (data?.projection) card.append(element('p', `${data.projection.trackCount} дорожек · Последнее сохранение ${dateLabel(data.projection.savedAt)}`), projectLink(session));
     else card.append(element('p', data ? 'Сохранённые данные недоступны или имеют неподдерживаемый формат.' : 'Проверка сохранённого проекта…'));
-    card.append(button('Открыть исходную запись', () => openDetail(session.id))); list.append(card);
+    card.append(contextActions(session.title, button('Открыть исходную запись', () => openDetail(session.id)))); list.append(card);
   }
   if (!list.childElementCount) list.append(element('p', 'Сохранённых проектов пока нет.'));
 }
@@ -91,24 +92,29 @@ function renderRecords() {
   $('matching').textContent = !state.sessions.length ? 'Архив пока пуст.' : `Найдено: ${sessions.length}.` + (!sessions.length ? ' Нет записей с такими условиями.' : '');
   for (const session of sessions) {
     const card = element('article', undefined, 'archive-card');
-    card.append(element('h3', session.title), element('p', `Записано: ${dateLabel(session.recordedAt)}`), element('p', `${lifecycleLabel(session)} · ${sourceLabel(session)} · дорожек: ${session.sourceTracks.length}`));
-    card.append(element('p', `${session.workflows.speaker.currentDraft ? 'Сохранён проект спикерской' : 'Проект спикерской отсутствует'} · готовых версий: ${session.workflows.announcement.outputs.length + session.workflows.speaker.outputs.length}`));
-    card.append(element('p', `Обновлено: ${dateLabel(session.updatedAt)}`), element('p', !state.maintenance ? 'Сведения о внимании не загружены' :
-      state.maintenance.transactions.some(t => t.sessionId === session.id) ? 'Требуется внимание' : 'Незавершённых операций не обнаружено'), button('Сведения о записи', () => openDetail(session.id)));
+    card.classList.add('source-row');
+    const info = element('div', undefined, 'record-info'), badges = element('div', undefined, 'status-badges');
+    const project = state.projects.get(session.id);
+    const projectState = project?.projection ? 'Сохранён проект спикерской' : session.workflows.speaker.currentDraft ? 'Проект не проверен' : 'Проект спикерской отсутствует';
+    info.append(element('h3', session.title), element('p', `Записано: ${dateLabel(session.recordedAt)} · дорожек: ${session.sourceTracks.length} · готовых версий: ${session.workflows.announcement.outputs.length + session.workflows.speaker.outputs.length}`));
+    badges.append(element('span', lifecycleLabel(session), `status-badge ${eligible(session) ? 'is-ready' : ''}`), element('span', sourceLabel(session), 'status-badge'), element('span', projectState, `status-badge ${project?.projection ? 'is-ready' : session.workflows.speaker.currentDraft ? 'is-warning' : ''}`));
+    info.append(badges); card.append(info);
+    const actions = [button('Сведения о записи', () => openDetail(session.id))];
     if (eligible(session)) {
-      const link = element('a', 'Редактировать для анонс-мейкера'); link.href = editorUrl(session, 'announcement'); link.target = '_blank'; link.rel = 'noopener'; card.append(link, projectLink(session, 'Открыть финальную обработку спикерской'));
-    }
+      const link = element('a', 'Редактировать для анонс-мейкера'); link.href = editorUrl(session, 'announcement'); link.target = '_blank'; link.rel = 'noopener'; actions.push(link, projectLink(session, 'Открыть финальную обработку спикерской'));
+    } else if (session.lifecycle.state === 'archived') actions.push(button('Вернуть для обработки', () => mutate(() => writeSession(session, () => gateway.setLifecycle(session.id, 'restore', session.revision)))));
+    card.append(contextActions(session.title, ...actions));
     contextualRecovery(session, card);
     $('session-list').append(card);
   }
 }
 function resultCard(session, output, workflow) {
-  const card = element('article', undefined, 'archive-card');
+  const card = element('article', undefined, 'archive-card result-row');
   card.append(element('h3', `Версия ${output.version} · ${session.title}`), element('p', `Сохранено: ${dateLabel(output.createdAt)} · ${bytesLabel(output.sizeBytes)}`));
   const actions = element('div', undefined, 'toolbar');
   actions.append(button('Прослушать', () => loadOutput(session, output, workflow)),
     button('Скачать', () => loadOutput(session, output, workflow, true)),
-    button('Удалить версию', () => openDeletion(session.id, { kind: 'output-version', workflow, version: output.version }), 'danger'));
+    contextActions(`${session.title}, версия ${output.version}`, button('Удалить версию', () => openDeletion(session.id, { kind: 'output-version', workflow, version: output.version }), 'danger')));
   card.append(actions); return card;
 }
 function renderResults() {
@@ -180,12 +186,19 @@ async function refresh() {
 async function openDetail(id) {
   if (state.busy) return;
   const sequence = generations.detail.next(), auth = generations.auth.value;
-  state.detail = null; $('detail').hidden = false; $('detail-body').replaceChildren(element('p', 'Загрузка актуальных сведений…'));
+  state.detail = null; state.projects.delete(id); $('detail').hidden = false; $('detail-body').replaceChildren(element('p', 'Загрузка актуальных сведений…'));
   try {
     const session = await gateway.getSession(id);
     if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
     if (!validateSessionManifest(session) || session.id !== id) throw new Error('Invalid session');
-    state.detail = session; renderDetail(); $('detail-title').focus();
+    let project = null;
+    if (session.workflows.speaker.currentDraft) {
+      try { const result = await gateway.loadDraft(id, 'speaker'); project = { draft: result.draft, projection: projectProjection(session, result.draft) }; }
+      catch (error) { if ([401, 403].includes(error.status)) throw error; project = { error: true }; }
+    }
+    if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
+    if (project) state.projects.set(id, project); else state.projects.delete(id);
+    state.detail = session; renderDetail(); renderRecords(); renderProjects(); $('detail-title').focus();
   } catch (error) { if (generations.detail.current(sequence) && generations.auth.current(auth)) { $('detail-body').replaceChildren(element('p', message(error))); report(error); } }
 }
 function renderDetail() {
@@ -197,7 +210,7 @@ function renderDetail() {
   const dateInputLabel = element('label', 'Дата и время записи (UTC; пусто — дата не указана)'), date = element('input');
   date.type = 'datetime-local'; date.step = '0.001'; date.id = 'metadata-date';
   const initialDate = session.recordedAt ? new Date(session.recordedAt).toISOString().slice(0, -1) : ''; date.value = initialDate; const initialControlValue = date.value;
-  dateInputLabel.append(date); const save = element('button', 'Сохранить метаданные'); save.type = 'submit';
+  dateInputLabel.append(date); const save = element('button', 'Сохранить название и дату'); save.type = 'submit';
   const feedback = element('p'); feedback.id = 'metadata-status'; feedback.setAttribute('role', 'status');
   const reload = button('Загрузить актуальные сведения', () => openDetail(session.id));
   form.append(titleLabel, dateInputLabel, save, feedback, reload);
@@ -283,6 +296,7 @@ async function mutate(action, success = () => {}, failure = null) {
     state.busy = false; await success();
   } catch (error) {
     if (!generations.auth.current(auth)) return;
+    if ([401, 403].includes(error.status)) { report(error); return; }
     await refresh();
     if (!generations.auth.current(auth)) return;
     if (state.detail) {
@@ -304,7 +318,7 @@ async function openDeletion(id, selection) {
     state.returnFocus = document.activeElement;
     const impact = deletionImpact(preview, selection);
     $('delete-name').textContent = session.title; $('delete-removed').textContent = impact.removed; $('delete-retained').textContent = impact.retained;
-    const pendingDeletion = maintenance.transactions.some(t => t.sessionId === id && t.kind === 'pending_delete');
+    const pendingDeletion = maintenance.transactions.some(t => t.sessionId === id && (t.kind === 'pending_delete' || ['finalizing', 'discarding'].includes(t.state)));
     const pending = preview.pendingAnnouncementPublications + preview.pendingSpeakerSaves;
     $('delete-pending').textContent = pendingDeletion ? 'Удаление уже начато. Продолжите его в разделе восстановления; новая цель недоступна.' : pending ? `Незавершённых сохранений: ${pending}. Сначала завершите их или удалите в разделе восстановления.` : 'Подтверждение относится только к выбранной записи и её текущему состоянию.';
     $('purge-label').hidden = selection.kind !== 'purge'; $('purge-id').textContent = selection.kind === 'purge' ? id : '';
@@ -318,8 +332,12 @@ $('delete-form').addEventListener('submit', async event => {
   const body = { expectedRevision: target.preview.revision, idempotencyKey: target.idempotencyKey,
     confirmation: target.kind === 'purge' ? $('purge-confirmation').value : target.kind === 'sources' ? 'Удалить исходники, сохранить результаты' : '' };
   $('delete-submit').disabled = true;
-  await mutate(() => writeSession(target.session, () => target.kind === 'purge' ? gateway.purgeSession(target.session.id, body) : target.kind === 'sources' ? gateway.deleteSources(target.session.id, body) :
-    target.kind === 'output-series' ? gateway.deleteOutputSeries(target.session.id, target.workflow, body) : gateway.deleteOutputVersion(target.session.id, target.workflow, target.version, body)),
+  await mutate(() => writeSession(target.session, async () => {
+    const preview = await gateway.dependencyPreview(target.session.id);
+    if (state.target !== target || preview.sessionId !== target.session.id || preview.revision !== target.preview.revision ||
+        JSON.stringify(preview) !== JSON.stringify(target.preview)) throw Object.assign(new Error('Dependencies changed'), { status: 409 });
+    return target.kind === 'purge' ? gateway.purgeSession(target.session.id, body) : target.kind === 'sources' ? gateway.deleteSources(target.session.id, body) :
+    target.kind === 'output-series' ? gateway.deleteOutputSeries(target.session.id, target.workflow, body) : gateway.deleteOutputVersion(target.session.id, target.workflow, target.version, body); }),
   async () => { $('delete-dialog').close(); state.target = null; if (target.kind === 'purge') { $('detail').hidden = true; state.detail = null; } else if (state.detail?.id === target.session.id) await openDetail(target.session.id); },
   error => { $('delete-status').textContent = message(error) + ' Результат не подтверждён этим запросом. Состояние списков и операций повторно запрошено. Дождитесь успешного обновления, затем закройте окно и получите новый предварительный просмотр. При незавершённом удалении используйте раздел восстановления.'; state.target = null; });
 });

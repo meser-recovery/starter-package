@@ -1,6 +1,7 @@
+import { contextActions } from "./audio-actions.mjs";
 import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
-import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, ProjectSave } from "./audio-project.mjs";
-import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy } from './audio-archive-core.mjs';
+import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ProjectSave } from "./audio-project.mjs";
+import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
 import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
@@ -10,9 +11,11 @@ const speakerId = (id) => document.getElementById(`speaker-editor-${id}`);
 const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ ||
   document.querySelector('meta[name="audio-archive-gateway"]')?.content.trim().replace(/\/$/, "") || "";
 const gateway = new AudioArchiveGateway(baseUrl);
+const productionGatewayOrigin = "https://meserproject.duckdns.org";
 const state = {
   localContext: null, localProject: null, editorMode: null,
   authenticated: false, authSequence: 0, retryAction: null, reconnectNeeded: false,
+  listsLoaded: false, projects: new Map(), deleteSequence: 0, deleteBusy: false,
   sessions: [],
   allSessions: [],
   resultArchive: "announcement",
@@ -78,7 +81,16 @@ function userError(error, fallback) {
   if (error?.status === 413) return "Объём данных превышает допустимый предел.";
   if (error?.status === 422) return "Проверка целостности данных не пройдена. Операция остановлена без изменений.";
   if (error?.status >= 500) return "Архив временно недоступен. Повторите действие позже.";
-  if (error instanceof TypeError) return "Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.";
+  if (error instanceof TypeError) {
+    let localPreview = false;
+    try {
+      localPreview = ["127.0.0.1", "localhost", "::1"].includes(location.hostname) &&
+        new URL(baseUrl).origin === productionGatewayOrigin;
+    } catch { /* an invalid gateway URL is reported by the regular connection message */ }
+    return localPreview ?
+      "Production-архив недоступен из локального preview из-за ограничения origin. Локальная обработка доступна; для передачи откройте опубликованный сайт." :
+      "Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.";
+  }
   return fallback;
 }
 
@@ -107,7 +119,7 @@ function setMode(mode) {
   document.getElementById("processor-device-ingest-actions").hidden = archive;
   byId("mode-archive").setAttribute("aria-pressed", String(archive));
   byId("mode-device").setAttribute("aria-pressed", String(!archive));
-  document.getElementById("processor-save-incoming").disabled = archive || !getProcessorFiles().length;
+  updateSourceSaveState();
 
   updatePublishState();
 }
@@ -154,7 +166,8 @@ function activateMode(mode) {
   document.getElementById("announcement-processor-card").hidden = mode !== "announcement";
   byId("announcement-workspace").hidden = mode !== "announcement";
   document.getElementById("active-editor-mode").textContent = `Сейчас открыто: ${mode === "speaker" ? "Финальная обработка спикерской" : "Редактирование для анонс-мейкера"}`;
-  if (mode === "speaker") document.getElementById("processor-source-audio").pause();
+  const inactiveEditor = document.getElementById(mode === "speaker" ? "announcement-processor-card" : "speaker-editor");
+  for (const audio of inactiveEditor.querySelectorAll("audio")) audio.pause();
   renderAnnouncementWorkspace(); renderImportFiles();
 }
 
@@ -187,7 +200,8 @@ function button(label, action, className = "") {
 
 function onGatewayError(error, fallback, retry = null) {
   if ([401, 403].includes(error?.status)) {
-    state.authenticated = false; state.reconnectNeeded = true; state.retryAction = retry;
+    state.authenticated = false; ++state.authSequence; state.reconnectNeeded = true; state.retryAction = retry;
+    state.listsLoaded = false; state.projects.clear(); state.sessions = []; state.allSessions = []; renderSessions(); renderResultArchive();
     updateSessionStatus();
     setArchiveStatus("Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.");
     return;
@@ -197,6 +211,7 @@ function onGatewayError(error, fallback, retry = null) {
 
 async function refreshSessions() {
   const sequence = ++state.refreshSequence, auth = state.authSequence;
+  state.listsLoaded = false; state.projects.clear(); state.sessions = []; state.allSessions = []; renderSessions(); renderResultArchive();
   if (!baseUrl) {
     state.sessions = [];
     state.allSessions = [];
@@ -218,7 +233,15 @@ async function refreshSessions() {
     const [incoming, archived] = await Promise.all([gateway.listSessions("incoming"), gateway.listSessions("archived")]);
     if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
     state.allSessions = mergeSessions(incoming.sessions, archived.sessions);
-    state.sessions = state.allSessions;
+    const projects = await Promise.allSettled(state.allSessions.filter(session => session.workflows.speaker.currentDraft).map(async session => {
+      const result = await gateway.loadDraft(session.id, "speaker");
+      return [session.id, projectProjection(session, result.draft)];
+    }));
+    if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
+    const failure = projects.find(result => result.status === 'rejected' && [401, 403].includes(result.reason?.status));
+    if (failure) throw failure.reason;
+    for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
+    state.sessions = state.allSessions; state.listsLoaded = true;
     renderSessions();
     renderResultArchive();
     await showIncomplete();
@@ -345,11 +368,17 @@ async function loadSpeakerSession(session) {
     const files = await reconstructSessionTracks(complete, gateway.sourcePartFetch(complete));
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     const project = new ProjectSave(gateway);
+    // A revision refresh of this exact loaded batch is not a competing source intent.
+    const ownsSources = () => {
+      const work = getSpeakerSaveState();
+      return work.session?.id === complete.id && work.files.length === files.length &&
+        work.files.every((file, index) => file === files[index]);
+    };
     const opened = await openSpeakerEditor({
       session: complete,
       files,
       draft,
-      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && !newerSpeakerSession(complete),
+      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && (!newerSpeakerSession(complete) || ownsSources()),
       saveDraft: ({ session, draft, payload, signal }) => withReconnect(() => project.save(session, draft, payload, signal)),
       onSaved: ({ session: updated }) => {
         state.activeSession = updated; state.activeManifest = updated;
@@ -362,10 +391,10 @@ async function loadSpeakerSession(session) {
     });
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     const newer = newerSpeakerSession(complete);
-    if (!opened && newer) return loadSpeakerSession(newer);
+    if (!opened && newer && !ownsSources()) return loadSpeakerSession(newer);
     if (opened) {
       closeAnnouncementWorkspace(false);
-      state.activeManifest = complete;
+      state.activeManifest = getSpeakerSaveState().session;
       activateMode("speaker");
     }
     setArchiveStatus(opened ? `Открыта работа «Спикерская»: ${complete.title}. Исходники проверены и не изменены.` : "Не удалось подготовить исходники для «Спикерская».");
@@ -398,6 +427,7 @@ function speakerSaveReason(snapshot = getSpeakerSaveState()) {
 }
 
 function updateSpeakerSaveState(snapshot = getSpeakerSaveState()) {
+  updateSourceSaveState();
   const save = speakerId("archive-save");
   const reason = speakerId("archive-unavailable");
   if (!save || !reason) return;
@@ -641,12 +671,12 @@ function renderResultArchive() {
   for (const name of Object.keys(membership)) {
     const unique = new Map(membership[name].map((entry) => [`${entry.session.id}:${entry.output.outputId}`, entry]));
     membership[name] = [...unique.values()].sort((left, right) => String(right.output.createdAt).localeCompare(String(left.output.createdAt)));
-    byId(`results-${name}-count`).textContent = String(membership[name].length);
+    byId(`results-${name}-count`).textContent = state.listsLoaded ? String(membership[name].length) : "—";
     const list = byId(`results-${name}-list`);
     list.replaceChildren();
     if (!membership[name].length) {
       const empty = document.createElement("p");
-      empty.textContent = "Сохранённых результатов пока нет.";
+      empty.textContent = state.listsLoaded ? "Сохранённых результатов пока нет." : "Результаты не загружены.";
       list.append(empty);
     } else {
       for (const { session, output } of membership[name]) list.append(resultArchiveItem(session, name, output));
@@ -680,7 +710,7 @@ function renderSessions() {
       const badge = document.createElement("span");
       const workflow = session.workflows?.[name];
       const validWorkflow = workflow?.workflow === name && Array.isArray(workflow.outputs);
-      badge.textContent = validWorkflow ? `${workflowLabel(name)} · готовых версий: ${workflow.outputs.length}${name === "speaker" && workflow.currentDraft ? " · сохранён проект" : ""}` : `${workflowLabel(name)}: данные недоступны`;
+      badge.textContent = validWorkflow ? `${workflowLabel(name)} · готовых версий: ${workflow.outputs.length}${name === "speaker" && workflow.currentDraft ? (state.projects.get(session.id) ? " · сохранён проект" : " · проект не проверен") : ""}` : `${workflowLabel(name)}: данные недоступны`;
       workflows.append(badge);
     }
     const actions = document.createElement("div");
@@ -695,7 +725,15 @@ function renderSessions() {
       mutateSession(() => gateway.setLifecycle(session.id, "archive", session.revision));
     }));
     else actions.append(button("Вернуть для обработки", () => mutateSession(() => gateway.setLifecycle(session.id, "restore", session.revision))));
-    actions.append(button("Удаление…", () => openDeleteDialog(session), "source-session-danger"));
+    const deletions = contextActions(session.title,
+      button("Удалить исходники", () => openDeleteDialog(session, { kind: "sources" }), "source-session-danger"));
+    deletions.querySelector("button").disabled = session.sourceState !== "available";
+    for (const workflow of ["announcement", "speaker"]) if (session.workflows[workflow].outputs.length) {
+      deletions.lastElementChild.append(button(`Удалить всю серию «${workflowLabel(workflow)}»`, () => openDeleteDialog(session, { kind: "output-series", workflow }), "source-session-danger"));
+    }
+    const danger = document.createElement("details"), dangerTitle = document.createElement("summary"); dangerTitle.textContent = "Опасная зона";
+    danger.append(dangerTitle, button("Удалить запись полностью", () => openDeleteDialog(session, { kind: "purge" }), "source-session-danger"));
+    deletions.lastElementChild.append(danger); actions.append(deletions);
     summary.append(heading, metadata, workflows);
     body.append(summary, actions);
     card.append(body);
@@ -757,9 +795,10 @@ async function openLocalAnnouncement() {
   if (!getProcessorFiles().length) { setArchiveStatus("Выберите исходные дорожки в разделе Импорт."); return; }
   activateMode("announcement");
 }
-function workingFiles() { return state.editorMode === "speaker" && getSpeakerSaveState().ready ? getSpeakerSaveState().files : getProcessorFiles(); }
+function workingFiles() { return state.editorMode === "speaker" && getSpeakerSaveState().session ? getSpeakerSaveState().files : getProcessorFiles(); }
 function updateSourceSaveState() {
-  document.getElementById("processor-save-incoming").disabled = !workingFiles().length || Boolean(state.activeManifest || state.localProject?.finalized);
+  const speaker = getSpeakerSaveState();
+  document.getElementById("processor-save-incoming").disabled = !workingFiles().length || Boolean(state.activeManifest || state.localProject?.finalized) || Boolean(speaker.session && !speaker.ready);
 }
 function renderImportFiles() {
   updateSourceSaveState();
@@ -777,6 +816,8 @@ function renderImportFiles() {
 }
 
 function openIngestDialog(files = []) {
+  const speaker = getSpeakerSaveState();
+  if (speaker.session && !speaker.ready) { updateSourceSaveState(); return; }
   if (state.localProject?.finalized || state.activeManifest) { updateSourceSaveState(); return; }
   const sameFiles = state.pendingFiles.length === files.length && state.pendingFiles.every((file, i) => file === files[i]);
   state.pendingFiles = Array.from(files);
@@ -972,82 +1013,97 @@ async function cancelPublicationDialog() {
   byId("publication-dialog").close();
 }
 
-async function openDeleteDialog(session, selection = null) {
-  if (getSpeakerSaveState().saving && session.id === speakerEditorSessionId()) {
-    setArchiveStatus("Сначала отмените или завершите передачу результата Спикерской.");
-    return;
-  }
+function destructiveSourceTarget(selection) { return ["sources", "purge"].includes(selection.kind); }
+function speakerIdentity() {
+  const work = getSpeakerSaveState();
+  return { id: work.session?.id, epoch: work.sourceEpoch, payload: JSON.stringify(work.payload) };
+}
+function sameSpeaker(work) {
+  const now = speakerIdentity(); return now.id === work.id && now.epoch === work.epoch && now.payload === work.payload;
+}
+async function freshDeletion(id, selection, expectedRevision = null) {
+  const [session, preview, incomplete] = await Promise.all([gateway.getSession(id), gateway.dependencyPreview(id), gateway.listIncomplete()]);
+  if (!validateSessionManifest(session) || session.id !== id || preview.sessionId !== id || preview.revision !== session.revision ||
+      (expectedRevision !== null && session.revision !== expectedRevision) || !Array.isArray(incomplete.transactions)) throw Object.assign(new Error("Данные изменились"), { status: 409 });
+  if (incomplete.transactions.some(t => t.sessionId === id && (t.kind === "pending_delete" || ["finalizing", "discarding"].includes(t.state))) ||
+      preview.pendingAnnouncementPublications + preview.pendingSpeakerSaves > 0) throw Object.assign(new Error("Требуется завершить незавершённые операции"), { status: 409 });
+  if (selection.kind === "output-version" && !session.workflows[selection.workflow].outputs.some(output => output.version === selection.version)) throw Object.assign(new Error("Версия недоступна"), { status: 404 });
+  return { session, preview };
+}
+async function openDeleteDialog(session, selection) {
+  if (state.deleteBusy || byId("delete-dialog").open) return;
+  const sequence = ++state.deleteSequence, auth = state.authSequence, focus = document.activeElement;
+  const current = () => sequence === state.deleteSequence && auth === state.authSequence;
   try {
-    const preview = await gateway.dependencyPreview(session.id);
-    state.deleteTarget = { session, selection, preview };
-    byId("delete-summary").textContent = `${session.title}: исходников ${preview.sourceTracks}; версий «Анонс-мейкер» ${preview.announcementVersions}; версий «Спикерская» ${preview.speakerVersions}; сохранённых настроек обработки ${preview.drafts}; незавершённых сохранений ${preview.pendingAnnouncementPublications + (preview.pendingSpeakerSaves || 0)}. Другие уровни автоматически удалены не будут.`;
+    if (session.id === speakerEditorSessionId()) {
+      if (getSpeakerSaveState().saving) throw new Error("Сохранение ещё выполняется");
+      if (destructiveSourceTarget(selection) && !await protectSpeakerTransition()) return;
+    }
+    if (!current()) return;
+    const work = speakerIdentity();
+    const fresh = await freshDeletion(session.id, selection);
+    if (!current() || (destructiveSourceTarget(selection) && !sameSpeaker(work))) return;
+    state.deleteTarget = { ...fresh, selection, work, focus, sequence, auth, idempotencyKey: crypto.randomUUID() };
+    const impact = deletionImpact(fresh.preview, selection);
+    byId("delete-summary").textContent = `${fresh.session.title}. ${impact.removed} Останется: ${impact.retained}`;
     byId("delete-technical").textContent = `Точный идентификатор записи: ${session.id}`;
     byId("delete-confirmation").value = "";
-    byId("delete-status").textContent = "";
-    for (const radio of byId("delete-form").elements["delete-level"]) radio.checked = false;
-    if (selection?.kind === "output-version") {
-      byId("delete-status").textContent = `Выбрана только версия ${selection.version} из раздела «${workflowLabel(selection.workflow)}».`;
-    }
-    byId("delete-dialog").showModal();
-  } catch (error) {
-    onGatewayError(error, "Не удалось получить зависимости.");
-  }
+    byId("delete-confirmation-field").hidden = !destructiveSourceTarget(selection);
+    byId("delete-confirmation-label").textContent = selection.kind === "purge" ? `Введите точный ID записи: ${session.id}` : "Введите «Удалить исходники, сохранить результаты»";
+    byId("delete-status").textContent = "Подтверждение относится только к этой цели и её текущему состоянию.";
+    byId("delete-submit").disabled = false; byId("delete-dialog").showModal();
+  } catch (error) { if (current()) onGatewayError(error, "Не удалось подготовить удаление. Обновите запись и проверьте незавершённые операции."); }
 }
-
 async function submitDeletion(event) {
   event.preventDefault();
   const target = state.deleteTarget;
-  if (!target) return;
-  if (getSpeakerSaveState().saving && target.session.id === speakerEditorSessionId()) {
-    byId("delete-status").textContent = "Сначала отмените или завершите передачу результата Спикерской.";
-    return;
+  if (!target || state.deleteBusy) return;
+  const { selection } = target;
+  const current = () => state.deleteTarget === target && state.deleteSequence === target.sequence && state.authSequence === target.auth;
+  const confirmation = byId("delete-confirmation").value;
+  if ((selection.kind === "purge" && confirmation !== target.session.id) || (selection.kind === "sources" && confirmation !== "Удалить исходники, сохранить результаты")) {
+    byId("delete-status").textContent = "Введите подтверждение точно, без изменений."; return;
   }
-  const selected = target.selection?.kind === "output-version" ? target.selection :
-    { kind: byId("delete-form").elements["delete-level"].value };
-  if (!selected.kind) {
-    byId("delete-status").textContent = "Выберите уровень удаления.";
-    return;
-  }
-  const body = { expectedRevision: target.session.revision, idempotencyKey: crypto.randomUUID(), confirmation: byId("delete-confirmation").value };
+  state.deleteBusy = true; byId("delete-submit").disabled = true;
   try {
-    byId("delete-submit").disabled = true;
-    let result;
-    if (selected.kind === "output-version") result = await gateway.deleteOutputVersion(target.session.id, selected.workflow, selected.version, body);
-    else if (selected.kind === "announcement-series") result = await gateway.deleteOutputSeries(target.session.id, "announcement", body);
-    else if (selected.kind === "speaker-series") result = await gateway.deleteOutputSeries(target.session.id, "speaker", body);
-    else if (selected.kind === "sources") result = await gateway.deleteSources(target.session.id, body);
-    else if (selected.kind === "purge") result = await gateway.purgeSession(target.session.id, body);
-    else throw new Error("Неизвестный уровень удаления.");
-    if (target.session.id === speakerEditorSessionId()) closeSpeakerEditor(true);
+    const fresh = await freshDeletion(target.session.id, selection, target.session.revision);
+    if (!current()) return;
+    if (JSON.stringify(fresh.preview) !== JSON.stringify(target.preview) || (destructiveSourceTarget(selection) && !sameSpeaker(target.work))) throw Object.assign(new Error("Цель или работа изменились"), { status: 409 });
+    if (target.session.id === speakerEditorSessionId() && getSpeakerSaveState().saving) throw new Error("Сохранение ещё выполняется");
+    const body = { expectedRevision: fresh.session.revision, idempotencyKey: target.idempotencyKey, confirmation };
+    const result = selection.kind === "output-version" ? await gateway.deleteOutputVersion(target.session.id, selection.workflow, selection.version, body) :
+      selection.kind === "output-series" ? await gateway.deleteOutputSeries(target.session.id, selection.workflow, body) :
+      selection.kind === "sources" ? await gateway.deleteSources(target.session.id, body) : await gateway.purgeSession(target.session.id, body);
+    if (!current()) return;
+    // Output deletion never tears down an editor. A late destructive response
+    // cannot close newer work, even if the same source has since been reopened.
+    const matchingWork = sameSpeaker(target.work);
+    if (!destructiveSourceTarget(selection) && result?.session && matchingWork) updateSpeakerSession(result.session);
+    if (destructiveSourceTarget(selection) && target.session.id === speakerEditorSessionId() && matchingWork) await closeSpeakerEditor(true);
     clearOutputPlayback();
-    if (state.activeManifest?.id === target.session.id) {
+    if (state.activeManifest?.id === target.session.id && matchingWork) {
       if (result?.session) {
-        state.activeManifest = result.session;
-        state.activeSession = result.session;
-        if (result.session.sourceState === "available") {
-          updateProcessorProvenanceContext({ sessionId: result.session.id, sourceSessionRevision: result.session.revision });
-        } else {
-          clearProcessorFiles();
-          state.processorProvenance = [];
-        }
+        state.activeManifest = result.session; state.activeSession = result.session;
+        if (result.session.sourceState === "available") updateProcessorProvenanceContext({ sessionId: result.session.id, sourceSessionRevision: result.session.revision });
+        else if (destructiveSourceTarget(selection)) { clearProcessorFiles(); state.processorProvenance = []; }
         renderAnnouncementWorkspace();
-      } else if (result?.tombstone) closeAnnouncementWorkspace(true);
+      } else if (result?.tombstone && destructiveSourceTarget(selection)) closeAnnouncementWorkspace(true);
     }
-    byId("delete-dialog").close();
-    await refreshSessions();
+    byId("delete-dialog").close(); await refreshSessions();
   } catch (error) {
-    byId("delete-status").textContent = userError(error, "Не удалось выполнить удаление. Обновите архив и повторите действие.");
-  } finally {
-    byId("delete-submit").disabled = false;
-  }
+    if (!current()) return;
+    state.deleteTarget = null;
+    byId("delete-status").textContent = userError(error, "Удаление не подтверждено. Обновите данные и получите новый предварительный просмотр.");
+    if ([401, 403].includes(error.status)) onGatewayError(error, "", null);
+  } finally { state.deleteBusy = false; }
 }
 
 async function showIncomplete() {
-  const sequence = ++state.incompleteSequence;
+  const sequence = ++state.incompleteSequence, auth = state.authSequence;
   const container = byId("recovery-list");
   try {
     const result = await gateway.listIncomplete();
-    if (sequence !== state.incompleteSequence) return;
+    if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
     if (state.speakerResumeController) {
       renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
       return;
@@ -1069,13 +1125,13 @@ async function showIncomplete() {
           ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length) {
         row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
       }
-      for (const [action, label] of policy.actions) row.append(button(label, () => recover(transaction.transactionId, action), action === "discard" ? "source-session-danger" : ""));
+      for (const [action, label] of policy.actions) row.append(button(label, () => recover(transaction, action), action === "discard" ? "source-session-danger" : ""));
       target.append(row);
     }
     if (!associated) container.textContent = "Незавершённых сохранений для этих записей не найдено.";
 
   } catch (error) {
-    if (sequence !== state.incompleteSequence) return;
+    if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
     if (state.speakerResumeController) {
       renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
       return;
@@ -1084,16 +1140,26 @@ async function showIncomplete() {
   }
 }
 
-async function recover(transactionId, action) {
-  if (action === "discard" && !globalThis.confirm("Удалить только это незавершённое сохранение? Зарезервированный номер версии останется использованным.")) return;
+async function recover(operation, action) {
+  const auth = state.authSequence;
   try {
-    const latest = await gateway.listIncomplete(); const current = latest.transactions.find(t => t.transactionId === transactionId);
-    if (!current || !recoveryPolicy(current).actions.some(([allowed]) => allowed === action)) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
-    await gateway.recoverIncomplete(transactionId, action);
-    await showIncomplete();
+    const latest = await gateway.listIncomplete();
+    if (auth !== state.authSequence) return;
+    const current = latest.transactions.find(t => t.transactionId === operation.transactionId);
+    const same = value => value && value.kind === operation.kind && value.sessionId === operation.sessionId && value.workflow === operation.workflow &&
+      value.state === operation.state && recoveryPolicy(value).actions.some(([allowed]) => allowed === action);
+    if (!same(current)) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
+    if ((action === "discard" || current.kind === "pending_delete") && !globalThis.confirm(action === "discard" ? "Удалить только это незавершённое сохранение? Зарезервированный номер версии останется использованным." : "Продолжить уже начатое необратимое удаление этой записи?")) return;
+    const rechecked = await gateway.listIncomplete();
+    if (auth !== state.authSequence) return;
+    if (!same(rechecked.transactions.find(t => t.transactionId === operation.transactionId))) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
+    await gateway.recoverIncomplete(operation.transactionId, action);
+    if (auth !== state.authSequence) return;
     await refreshSessions();
   } catch (error) {
+    if (auth !== state.authSequence) return;
     byId("recovery-list").textContent = userError(error, "Не удалось восстановить незавершённую операцию.");
+    if ([401, 403].includes(error.status)) onGatewayError(error, "", null);
   }
 }
 
@@ -1104,7 +1170,7 @@ async function resumeSpeakerIncomplete(transaction) {
   }
   const candidate = getSpeakerSaveState().candidate;
   if (!candidate) {
-    byId("recovery-list").textContent = "Для продолжения передачи откройте эту запись в Спикерской и соберите точно тот же локальный результат.";
+    byId("recovery-list").textContent = "Локальный результат незавершённого сохранения отсутствует в этой вкладке. Его нельзя заменить новой обработкой. Проверьте доступные действия у этой записи в аудиоархиве.";
     return;
   }
   if (candidate.sessionId !== transaction.sessionId) {
@@ -1259,6 +1325,7 @@ window.addEventListener("audio-processor-result", (event) => {
   updatePublishState();
 });
 window.addEventListener("speaker-editor-state", (event) => updateSpeakerSaveState(event.detail));
+window.addEventListener("speaker-editor-opened", () => activateMode("speaker"));
 speakerId("archive-save").addEventListener("click", openSpeakerSaveDialog);
 speakerId("save-form").addEventListener("submit", submitSpeakerSave);
 speakerId("save-cancel").addEventListener("click", cancelSpeakerSaveDialog);
@@ -1294,6 +1361,8 @@ byId("login-form").addEventListener("submit", async (event) => {
     updateSessionStatus();
     const action = state.afterLogin;
     state.afterLogin = null;
+    await refreshSessions();
+    if (auth !== state.authSequence || !state.authenticated) { action?.(false); return; }
     if (action) action(true);
     await consumeEditorIntent();
   } catch (error) {
@@ -1314,7 +1383,12 @@ byId("ingest-cancel").addEventListener("click", () => {
   else byId("ingest-dialog").close();
 });
 byId("delete-form").addEventListener("submit", submitDeletion);
-byId("delete-cancel").addEventListener("click", () => byId("delete-dialog").close());
+byId("delete-cancel").addEventListener("click", () => { if (!state.deleteBusy) byId("delete-dialog").close(); });
+byId("delete-dialog").addEventListener("cancel", event => { if (state.deleteBusy) event.preventDefault(); });
+byId("delete-dialog").addEventListener("close", () => {
+  const focus = state.deleteTarget?.focus; state.deleteTarget = null; ++state.deleteSequence;
+  if (focus?.isConnected) focus.focus(); else byId("refresh").focus();
+});
 window.addEventListener("pagehide", clearOutputPlayback);
 
 globalThis.meserAudioArchiveDrafts = Object.freeze({

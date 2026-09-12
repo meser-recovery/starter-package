@@ -1,0 +1,30 @@
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:52547
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:52547/starter-package/
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
+S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.
+Acceptance P1: new edits/Blob protected; close/newer intent fence delayed Speaker loads.
+Acceptance P1: Announcement session/draft/part 401+403 preserve work through cancel/reconnect and explicit retry.
+Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 1: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 2: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Design A: PASS; DSP viewport/DOM/audio identity, real per-track silence/restoration, global cut skip, bounds stop, light/dark responsive.
+Digital meters: PASS; both editors, stereo anti-phase, summed master/clip, mute, stop/reset, four widths, stable tools, thin edges.
+S09A real media signal: PASS; 20 tone/RMS cases, both editors, mute/solo/volume/reorder/exclusion/result isolation.
+BROWSER SMOKE FAILED: 
+Traceback (most recent call last):
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3653, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3622, in main
+    check_timeline_controls(browser, base_url, args.screenshot_dir)
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/s09a_timeline_smoke.py", line 54, in check_timeline_controls
+    assert rows.first.locator('canvas').evaluate('c=>{const p=c.getContext("2d").getImageData(0,0,c.width,c.height).data;return p.some((v,i)=>i%4===0&&v===116)}')
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

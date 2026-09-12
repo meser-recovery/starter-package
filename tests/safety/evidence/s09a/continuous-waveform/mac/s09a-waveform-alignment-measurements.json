@@ -1,0 +1,263 @@
+[
+  {
+    "duration": 41.3,
+    "decoder": [
+      {
+        "kind": "overview",
+        "values": [
+          {
+            "expected": 10.5,
+            "level": 0.25,
+            "onset": 10.499562072753905,
+            "peak": 0.2500053346157074,
+            "bin": 0.00063018798828125
+          },
+          {
+            "expected": 24.75,
+            "level": 0.7,
+            "onset": 24.75000305175781,
+            "peak": 0.7000045776367188,
+            "bin": 0.00063018798828125
+          },
+          {
+            "expected": 40.949999999999996,
+            "level": 0.4,
+            "onset": 40.94961547851562,
+            "peak": 0.39999961853027344,
+            "bin": 0.00063018798828125
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "start": 8,
+        "span": 32,
+        "values": [
+          {
+            "expected": 10.5,
+            "level": 0.25,
+            "onset": 10.5,
+            "peak": 0.25999999046325684,
+            "bin": 0.0005
+          },
+          {
+            "expected": 24.75,
+            "level": 0.7,
+            "onset": 24.75,
+            "peak": 0.699999988079071,
+            "bin": 0.0005
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "start": 24,
+        "span": 17.299999999999997,
+        "values": [
+          {
+            "expected": 24.75,
+            "level": 0.7,
+            "onset": 24.75,
+            "peak": 0.699999988079071,
+            "bin": 0.0005
+          },
+          {
+            "expected": 40.949999999999996,
+            "level": 0.4,
+            "onset": 40.95,
+            "peak": 0.4000000059604645,
+            "bin": 0.0005
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "start": 40,
+        "span": 1.2999999999999972,
+        "values": [
+          {
+            "expected": 40.949999999999996,
+            "level": 0.4,
+            "onset": 40.95,
+            "peak": 0.4000000059604645,
+            "bin": 0.0005
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "duration": 129.37,
+    "decoder": [
+      {
+        "kind": "overview",
+        "values": [
+          {
+            "expected": 10.5,
+            "level": 0.25,
+            "onset": 10.499479166666667,
+            "peak": 0.25999999046325684,
+            "bin": 0.001979166666666667
+          },
+          {
+            "expected": 24.75,
+            "level": 0.7,
+            "onset": 24.749479166666667,
+            "peak": 0.699999988079071,
+            "bin": 0.001979166666666667
+          },
+          {
+            "expected": 129.02,
+            "level": 0.4,
+            "onset": 129.01989583333335,
+            "peak": 0.4000000059604645,
+            "bin": 0.001979166666666667
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "start": 8,
+        "span": 32,
+        "values": [
+          {
+            "expected": 10.5,
+            "level": 0.25,
+            "onset": 10.5,
+            "peak": 0.25999999046325684,
+            "bin": 0.0005
+          },
+          {
+            "expected": 24.75,
+            "level": 0.7,
+            "onset": 24.75,
+            "peak": 0.699999988079071,
+            "bin": 0.0005
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "start": 24,
+        "span": 32,
+        "values": [
+          {
+            "expected": 24.75,
+            "level": 0.7,
+            "onset": 24.75,
+            "peak": 0.699999988079071,
+            "bin": 0.0005
+          }
+        ]
+      },
+      {
+        "kind": "detail",
+        "start": 128,
+        "span": 1.3700000000000045,
+        "values": [
+          {
+            "expected": 129.02,
+            "level": 0.4,
+            "onset": 129.02,
+            "peak": 0.4000000059604645,
+            "bin": 0.0005
+          }
+        ]
+      }
+    ]
+  },
+  {
+    "editor": "speaker",
+    "setting": "fit",
+    "onset": 10.465116279069768,
+    "peak": 0.2466555183946488,
+    "pps": 21.5,
+    "detail": false,
+    "left": 0
+  },
+  {
+    "editor": "speaker",
+    "setting": "max",
+    "onset": 10.5,
+    "peak": 0.2591973244147157,
+    "pps": 1000,
+    "detail": true,
+    "left": 9792
+  },
+  {
+    "editor": "speaker",
+    "setting": "fit",
+    "onset": 10.465116279069768,
+    "peak": 0.2466555183946488,
+    "pps": 21.5,
+    "detail": false,
+    "left": 0
+  },
+  {
+    "editor": "speaker",
+    "setting": "max",
+    "onset": 10.5,
+    "peak": 0.2591973244147157,
+    "pps": 1000,
+    "detail": true,
+    "left": 9792
+  },
+  {
+    "editor": "speaker",
+    "silentBefore": {
+      "t": 10.132761,
+      "rms": 0
+    },
+    "audibleOnset": {
+      "t": 10.513473,
+      "rms": 0.09072378931877242
+    }
+  },
+  {
+    "editor": "announcement",
+    "setting": "fit",
+    "onset": 10.488148984198645,
+    "peak": 0.2503983610289096,
+    "pps": 21.452784503631964,
+    "detail": false,
+    "left": 0
+  },
+  {
+    "editor": "announcement",
+    "setting": "max",
+    "onset": 10.499999999999998,
+    "peak": 0.25608923287047575,
+    "pps": 1000.0000000000001,
+    "detail": true,
+    "left": 9792
+  },
+  {
+    "editor": "announcement",
+    "setting": "fit",
+    "onset": 10.488148984198645,
+    "peak": 0.2503983610289096,
+    "pps": 21.452784503631964,
+    "detail": false,
+    "left": 0
+  },
+  {
+    "editor": "announcement",
+    "setting": "max",
+    "onset": 10.499999999999998,
+    "peak": 0.25608923287047575,
+    "pps": 1000.0000000000001,
+    "detail": true,
+    "left": 9792
+  },
+  {
+    "editor": "announcement",
+    "silentBefore": {
+      "t": 10.115926,
+      "rms": 0
+    },
+    "audibleOnset": {
+      "t": 10.509272,
+      "rms": 0.08750473185680686
+    }
+  }
+]

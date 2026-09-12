@@ -1,0 +1,35 @@
+✔ play/pause and stop preserve per-track mute; controls follow media events (7.651375ms)
+✔ unready/locked sources cannot start playback or seek (1.602583ms)
+✔ source and result cannot play over each other; track mute remains unchanged (0.902916ms)
+✔ master listening volume does not alter any track mute flag (0.34525ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (1.302791ms)
+✔ loop starts at selection and wraps at its right edge without changing mute or volume (2.120084ms)
+✔ stop pauses loop; clearing selection, locking and replacing media disable it (1.155917ms)
+✔ loop handles an end-of-file range and never restarts after result playback takes over (0.559209ms)
+✔ recording bounds govern play, replay, stop and an external playing seek (0.982625ms)
+✔ loop intersects recording bounds and disables for an outside selection (1.424709ms)
+✔ moving bounds during playback takes effect immediately without changing monitor controls (0.848417ms)
+✔ digital meters measure silence without NaN (0.13975ms)
+✔ RMS and peak retain independent meaning and do not clamp clipping (1.334542ms)
+✔ both polarities contribute equally to level (0.054666ms)
+✔ cuts skip their union, preserve monitoring, and stop at recording end (0.650792ms)
+✔ loop skips cuts including its start and rejects a fully cut selection (0.667292ms)
+✔ edit envelope handles overlapping cut/silence and partial restoration (0.153542ms)
+✔ edit gate reanchors on seek and restores unity without modifying mute (0.191958ms)
+✔ detail decoding uses a bounded source window and reuses it across panning (443.866458ms)
+✔ late decode cannot paint a changed viewport or a replaced File session (442.580917ms)
+✔ zooming out during a decode does not replace the overview with stale detail (441.959208ms)
+✔ FFmpeg columns retain their actual sample clock, including padded final windows (4.19525ms)
+✔ visible bitmap is Retina sharp and bounded by viewport, not full recording width (0.6845ms)
+✔ zoomed-out bins retain narrow peaks rather than subsampling them away (0.463ms)
+✔ panning and zoom use source time; shorter tracks do not stretch to longest track (0.083292ms)
+✔ detail window keeps absolute source time after seek, including a short final window (1.139375ms)
+✔ airy overview preserves a transient in the visual gap; word zoom remains pixel detailed (0.592125ms)
+ℹ tests 27
+ℹ suites 0
+ℹ pass 27
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1404.498

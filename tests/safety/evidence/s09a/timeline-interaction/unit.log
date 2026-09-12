@@ -1,0 +1,19 @@
+✔ play/pause and stop preserve per-track mute; controls follow media events (9.321709ms)
+✔ unready/locked sources cannot start playback or seek (15.716625ms)
+✔ source and result cannot play over each other; track mute remains unchanged (4.719875ms)
+✔ master listening volume does not alter any track mute flag (1.050083ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (4.477667ms)
+✔ loop starts at selection and wraps at its right edge without changing mute or volume (3.434417ms)
+✔ stop pauses loop; clearing selection, locking and replacing media disable it (9.910584ms)
+✔ loop handles an end-of-file range and never restarts after result playback takes over (2.919291ms)
+✔ visible bitmap is Retina sharp and bounded by viewport, not full recording width (6.3945ms)
+✔ zoomed-out bins retain narrow peaks rather than subsampling them away (2.307291ms)
+✔ panning and zoom use source time; shorter tracks do not stretch to longest track (1.061709ms)
+ℹ tests 11
+ℹ suites 0
+ℹ pass 11
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 214.812458

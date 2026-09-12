@@ -1,0 +1,17 @@
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:61455
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:61455/starter-package/
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
+BROWSER SMOKE FAILED: ([0.906, 0.956], [0.7669300225733635, 0.8092550790067721])
+Traceback (most recent call last):
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3641, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3591, in main
+    check_s09a(browser, base_url, args.screenshot_dir)
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/s09a_smoke.py", line 131, in check_s09a
+    assert all(abs(a-b)<.000002 for a,b in zip(actual,expected)), (actual,expected)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError: ([0.906, 0.956], [0.7669300225733635, 0.8092550790067721])

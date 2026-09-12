@@ -160,6 +160,15 @@ Do not claim a test or validation was performed unless it was actually run.
 
 If a useful check cannot be run, state that explicitly.
 
+Every interface change must have a working preview before merge. Start the
+repository's preview server, open the actual interface, and leave it running for
+user review. Report the preview URL, checked commit SHA (and any uncommitted
+changes), and the scenarios actually validated.
+
+Keep the preview available and current during follow-up interface changes.
+Tell the user when the updated version is ready and they can refresh the page.
+Never automatically reload a page containing the user's unsaved work.
+
 ---
 
 ## Preservation rules

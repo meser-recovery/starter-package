@@ -14,6 +14,8 @@ import sys
 import time
 import traceback
 import wave
+from s09a_edit_modes_smoke import apply_selection
+
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
@@ -1450,8 +1452,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             session["workflows"]["speaker"]["currentDraft"] = {"path": f"drafts/{session_id}/speaker.json", "revision": draft_revision}
             fulfill_json(route, {"draft": mock["speaker_draft"], "session": session})
         elif parsed.path == f"/v1/source-sessions/{session_id}/deletion-preview" and request.method == "GET":
-            fulfill_json(route, {"sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
-                "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0})
+            fulfill_json(route, {"sessionId": session_id, "revision": session["revision"], "sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
+                "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0, "pendingSpeakerSaves": 0})
         elif parsed.path in {f"/v1/source-sessions/{session_id}/blobs/{blob_id}/parts/1/content" for blob_id in blob_ids} and request.method == "GET":
             source_index = blob_ids.index(parsed.path.split("/blobs/")[1].split("/")[0])
             route.fulfill(status=200, content_type="application/octet-stream", headers={
@@ -1628,10 +1630,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         delete_button = page.locator("#source-session-results-speaker-panel").get_by_role("button", name="Удалить версию", exact=True)
         delete_button.click()
         page.locator("#source-session-delete-dialog").wait_for(state="visible")
-        assert "Спикерская" in page.locator("#source-session-delete-summary").inner_text()
+        assert "Финальные версии спикерских" in page.locator("#source-session-delete-summary").inner_text()
         assert session_id not in page.locator("#source-session-delete-summary").inner_text()
         assert session_id in page.locator("#source-session-delete-technical").text_content()
-        assert "раздела «Спикерская»" in page.locator("#source-session-delete-status").inner_text()
+        assert "версия 1" in page.locator("#source-session-delete-summary").inner_text()
+        assert page.locator("#source-session-delete-dialog input[type=radio]").count() == 0
         assert page.locator("#source-session-delete-dialog").evaluate("dialog => dialog.contains(document.activeElement)")
         page.keyboard.press("Escape")
         page.locator("#source-session-delete-dialog").wait_for(state="hidden")
@@ -1646,7 +1649,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 page.screenshot(path=str(screenshot_dir / f"s08b-archive-overview-{width}.png"), full_page=True)
             page.set_viewport_size({"width": 390, "height": 900})
         # A decoded duration mismatch fails closed after the common duration is known: no editable partial workspace,
-        # save request, render operation, or retained source URL survives.
+        # save request or render operation is allowed; source files remain available for retry.
         mismatch_wav = wav_payload(names[2], ((3.75, True),), frequency=550, sample_rate=8000)["buffer"]
         served_wavs[2] = mismatch_wav
         session["sourceTracks"][2]["sizeBytes"] = len(mismatch_wav)
@@ -1656,9 +1659,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         speaker_puts_before = len([call for call in gateway_calls if call[0] == "PUT" and call[1].endswith("/drafts/speaker")])
         if page.locator("#import-zone").get_attribute("open") is None: page.locator("#import-zone > summary").click()
         page.locator("#source-session-list").get_by_role("button", name="Открыть финальную обработку спикерской", exact=True).click()
-        page.get_by_text("Длительность дорожек различается больше чем на 0,5 секунды.", exact=True).wait_for(timeout=30000)
+        page.get_by_text("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.", exact=True).wait_for(timeout=30000)
         assert page.locator("#speaker-editor-save").is_disabled() and page.locator("#speaker-editor-render").is_disabled()
-        assert page.locator("#speaker-editor-add-cut").is_disabled() and page.locator("#speaker-editor-tracks").locator("li").count() == 0
+        assert page.locator("#speaker-editor-add-cut").is_disabled() and page.locator("#speaker-editor-tracks").locator("li").count() == 3
+        assert page.locator("#speaker-editor-source-retry").is_visible()
+        assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files.every(file => file instanceof File)")
         assert page.locator("#speaker-editor-cancel").is_hidden() and page.locator("#speaker-editor-result").is_hidden()
         assert page.evaluate("""async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerCandidate() === null""")
         assert len([call for call in gateway_calls if call[0] == "PUT" and call[1].endswith("/drafts/speaker")]) == speaker_puts_before
@@ -1670,6 +1675,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         session["sourceTracks"][2]["parts"][0]["sha256"] = digests[2]
         if page.locator("#import-zone").get_attribute("open") is None: page.locator("#import-zone > summary").click()
         page.locator("#source-session-list").get_by_role("button", name="Открыть финальную обработку спикерской", exact=True).click()
+        page.locator("#speaker-unsaved-discard").click()  # Explicitly replace the retained, unprepared source set.
+        page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
         page.locator("#speaker-editor .speaker-track").nth(2).wait_for(timeout=30000)
         assert page.locator("#speaker-editor").is_visible()
         assert page.locator("#source-session-announcement-workspace").is_hidden()
@@ -1710,12 +1717,12 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#speaker-regions-heading").click()
         page.locator("#speaker-editor-selection-start").fill("0.5")
         page.locator("#speaker-editor-selection-end").fill("1")
-        page.locator("#speaker-editor-add-cut").click()
+        apply_selection(page, 'cut')
         assert page.locator(".speaker-region-overlay--cut").count() == 3
         assert page.locator("#speaker-editor-undo").is_enabled() and page.locator("#speaker-editor-redo").is_disabled()
         page.locator("#speaker-editor-selection-start").fill("1.5")
         page.locator("#speaker-editor-selection-end").fill("2")
-        page.locator("#speaker-editor-add-silence").click()
+        apply_selection(page, 'silence')
         assert page.locator(".speaker-region-overlay--silence").count() == 1
         assert page.locator(".speaker-region-row--cut").count() == 1 and page.locator(".speaker-region-row--silence").count() == 1
         if screenshot_dir:
@@ -1724,8 +1731,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         second = page.locator(".speaker-track").nth(1)
         second.get_by_role("button", name="Исключить из микса", exact=True).click()
         assert "Не в финальном миксе" in page.locator(".speaker-track").nth(1).inner_text()
-        page.locator(".speaker-dsp select").nth(0).select_option("gentle")
-        page.locator(".speaker-dsp select").nth(2).select_option("medium")
+        if not page.locator(".speaker-dsp input").first.is_visible():
+            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        page.locator(".speaker-dsp input").nth(0).check()
+        page.locator(".speaker-dsp input").nth(2).fill("2"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         if screenshot_dir:
             page.evaluate("document.activeElement?.blur()")
             page.set_viewport_size({"width": 768, "height": 900})
@@ -1741,9 +1750,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor-redo").is_enabled()
         page.keyboard.press("Control+Shift+z")
         assert page.locator("#speaker-editor-redo").is_enabled()
-        page.locator(".speaker-dsp select").nth(2).select_option("strong")
+        page.locator(".speaker-dsp input").nth(2).fill("3"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         assert page.locator("#speaker-editor-redo").is_disabled()
-        page.locator(".speaker-dsp select").nth(2).select_option("medium")
+        page.locator(".speaker-dsp input").nth(2).fill("2"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         if screenshot_dir:
             page.evaluate("document.activeElement?.blur()")
             page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-undo-redo-390.png"))
@@ -1765,11 +1774,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#speaker-editor-render").click()
         page.locator("#speaker-editor-cancel").wait_for(state="visible")
         assert page.locator("#speaker-editor-add-cut").is_disabled()
-        assert page.locator(".speaker-dsp select").first.is_disabled()
-        assert page.locator('.speaker-track button').filter(has_text="Исключить из микса").first.is_disabled()
+        assert page.locator(".speaker-dsp input").first.is_disabled()
+        assert page.locator('.speaker-track').get_by_role('button', name="Исключить из микса", exact=True).first.is_disabled()
         # Even a synthetic event cannot alter the captured render snapshot while the operation is active.
-        page.locator(".speaker-dsp select").first.evaluate("""select => {
-            select.value = 'off'; select.dispatchEvent(new Event('change', {bubbles: true}));
+        page.locator(".speaker-dsp input").first.evaluate("""select => {
+            select.checked = false; select.dispatchEvent(new Event('change', {bubbles: true}));
         }""")
         page.get_by_text("Финальная версия готова. В архив ничего не передавалось.", exact=True).wait_for(timeout=180000)
         page.locator("#speaker-editor-result").wait_for(state="visible")
@@ -1814,7 +1823,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert candidate["excluded"]["tone"] < candidate["included"]["tone"] * .02, candidate
         assert candidate["included"]["tone"] > 1e-5 and candidate["firstLater"]["tone"] > 1e-5, candidate
         result_canvas = page.locator("#speaker-editor-result-waveform canvas")
-        assert result_canvas.get_attribute("data-used-width") == str(result_canvas.evaluate("canvas => canvas.width"))
+        # The bitmap includes bounded offscreen guard tiles; source duration
+        # maps to the CSS timeline, not to those extra physical pixels.
+        assert result_canvas.evaluate("""c => Math.abs(Number(c.dataset.usedWidth) - c.parentElement.getBoundingClientRect().width) < 1 &&
+            Math.abs(c.width - c.getBoundingClientRect().width * devicePixelRatio) < 2 &&
+            c.width <= (c.parentElement.parentElement.clientWidth + 640) * devicePixelRatio""")
         assert abs(float(result_canvas.get_attribute("data-timeline-duration")) - candidate["duration"]) < .08
         # An unchanged canonical save only rebinds revisions and retains the exact local bytes/result.
         page.locator("#speaker-editor-save").click()
@@ -1852,7 +1865,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         # Monitoring does not invalidate; a render-affecting DSP edit does.
         page.locator('.speaker-track button[data-action="solo"]').first.click()
         assert page.locator("#speaker-editor-result").is_visible()
-        page.locator(".speaker-dsp select").nth(0).select_option("off")
+        if not page.locator(".speaker-dsp input").first.is_visible():
+            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        page.locator(".speaker-dsp input").nth(0).uncheck()
         assert page.locator("#speaker-editor-result").is_hidden()
         page.locator("#speaker-editor-undo").click()
         page.locator("#speaker-editor-render").click()
@@ -1865,9 +1880,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-390.png"))
         page.locator(".skip-link").evaluate("element => element.style.removeProperty('display')")
         # Exercise measured two-pass loudnorm in the real browser engine.
-        page.locator(".speaker-dsp select").nth(0).select_option("off")
-        page.locator(".speaker-dsp select").nth(1).select_option("on")
-        page.locator(".speaker-dsp select").nth(2).select_option("off")
+        if not page.locator(".speaker-dsp input").first.is_visible():
+            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        page.locator(".speaker-dsp input").nth(0).uncheck()
+        page.locator(".speaker-dsp input").nth(1).check()
+        page.locator(".speaker-dsp input").nth(2).fill("0"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         page.locator("#speaker-editor-save").click()
         page.wait_for_function("document.getElementById(\'speaker-editor-status\').textContent === \'Все изменения сохранены\'")
         assert mock["speaker_draft"]["draftRevision"] == 3
@@ -2299,7 +2316,7 @@ def wait_waveforms(page, count: int, failures: int = 0) -> None:
         return
     page.wait_for_function(
         """values => document.querySelectorAll('.processor-track').length === values.count &&
-            document.querySelectorAll('.processor-track .processor-waveform img').length === values.count - values.failures &&
+            document.querySelectorAll('.processor-track .processor-waveform canvas:not([hidden])').length === values.count - values.failures &&
             document.querySelectorAll('.processor-track .processor-waveform-status').length === values.failures""",
         arg={"count": count, "failures": failures}, timeout=30000,
     )
@@ -2352,7 +2369,7 @@ def check_processor_helpers(page) -> None:
     assert result["totalBoundary"] == "" and result["intersection"] == [[5, 7]] and result["tailIntersection"] == [[8, 10]], result
     assert result["tolerance"] == 10 and result["mismatch"] == "Дорожки имеют разную длительность. Проверьте, что они относятся к одной записи Zoom.", result
     assert "gte(t,3.175000)*lt(t,5.825000)" in result["filter"], result
-    assert result["waveformWidths"] == [640, 14400, 16384], result
+    assert result["waveformWidths"] == [4096, 65536, 65536], result
 
 
 def processor_mix_audio_metrics(page, windows: dict[str, tuple[float, float]]) -> dict:
@@ -2400,7 +2417,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         for width in (390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth"), (label, width)
-            for selector in ("#processor-file-info", "#processor-selection-summary", "#processor-source-audio", "#processor-run"):
+            assert page.locator("#processor-source-audio").is_hidden()
+            for selector in ("#processor-file-info", "#processor-selection-summary", "#processor-source-audio-play", "#processor-source-audio-stop", "#announcement-processor-card .daw-monitor-volume", "#processor-run"):
                 box = page.locator(selector).bounding_box()
                 assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (label, width, selector, box)
                 assert not page.locator(selector).evaluate("el => el.scrollWidth > el.clientWidth + 1"), (label, width, selector)
@@ -2423,8 +2441,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
             assert card.locator(".processor-track__number").inner_text() == f"Дорожка {index + 1}"
             assert card.locator(".processor-track__name").inner_text() == file["name"]
             assert card.locator(".processor-track__meta").inner_text().startswith(expected_size_prefix)
-            assert card.get_by_role("button", name="Соло", exact=True).count() == 1
-            assert card.get_by_role("button", name="Заглушить", exact=True).count() == 1
+            assert card.get_by_role("button", name="S · Solo", exact=True).count() == 1
+            assert card.get_by_role("button", name="M · Mute", exact=True).count() == 1
             assert card.get_by_role("button", name=re.compile("Удалить дорожку")).count() == 1
             assert card.locator(".processor-waveform").count() == 1
             assert card.locator("details, summary").count() == 0
@@ -2446,32 +2464,29 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         assert page.locator("#processor-pause-label").inner_text() == "Сокращено общих длинных пауз"
         assert page.locator("#processor-mixed-count").inner_text() == f"Дорожек сведено: {tracks}"
         assert page.locator("#processor-result-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
-        assert page.locator("#processor-result-waveform-control img").count() == 1
+        assert page.locator("#processor-result-waveform-control canvas").count() == 1
 
     select_tracks([track_a])
     capture_state("mix-one-selected")
     select_tracks([track_a, track_b])
-    assert page.locator(".processor-track .processor-waveform img").count() == 2
-    assert page.locator("#processor-track-switcher, .processor-waveform-detail, #processor-file-info details").count() == 0
-    assert page.get_by_text("Соло и «Заглушить» влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
+    assert page.locator(".processor-track .processor-waveform canvas:not([hidden])").count() == 2
+    assert page.locator("#processor-track-switcher, .processor-waveform-detail:not(canvas), #processor-file-info details").count() == 0
+    assert page.get_by_text("Solo и Mute влияют только на прослушивание и не исключают дорожки из обработки.", exact=True).count() == 1
     assert page.locator("#processor-preview-audios .processor-preview-audio").count() == 1
-    waveform_urls = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.src)")
-    assert len(set(waveform_urls)) == 2 and all(source.startswith("blob:") for source in waveform_urls), waveform_urls
-    waveform_blobs = page.evaluate("""async urls => Promise.all(urls.map(async source => {
-        const blob = await (await fetch(source)).blob(); return {size: blob.size, type: blob.type};
-    }))""", waveform_urls)
-    assert all(item["size"] > 0 and item["type"] == "image/png" for item in waveform_blobs), waveform_blobs
+    assert page.locator(".processor-track canvas.processor-waveform-detail").count() == 2
+    waveforms = page.locator(".processor-track .processor-waveform canvas:not([hidden])")
+    assert waveforms.evaluate_all("cs => cs.every(c => c.width > 0 && c.height > 0 && c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0))")
     page.set_viewport_size({"width": 390, "height": 900})
     scrolls = page.locator(".processor-track .processor-waveform-scroll")
     assert scrolls.count() == 2
     follow = page.locator("#processor-source-follow")
     shared_navigation = page.locator("#processor-source-navigation")
     shared_scrollbar = page.locator("#processor-source-scrollbar")
-    assert follow.inner_text() == "Следовать за воспроизведением"
+    assert follow.get_attribute("aria-label") == "Следовать за воспроизведением"
+    assert follow.locator('svg[aria-hidden="true"]').count() == 1
     assert follow.get_attribute("aria-pressed") == "false"
     assert page.locator("#processor-source-scrollbar").count() == 1
     shared_thumb = page.locator("#processor-source-scrollbar-thumb")
-    native_widths = page.locator(".processor-track .processor-waveform img").evaluate_all("images => images.map(image => image.naturalWidth)")
     page.locator("#processor-source-zoom-fit").click()
     assert shared_navigation.is_visible()
     assert shared_scrollbar.get_attribute("role") == "scrollbar"
@@ -2486,7 +2501,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert shared_thumb.bounding_box()["width"] < shared_scrollbar.bounding_box()["width"] - 2
     after_widths = page.locator(".processor-track .processor-waveform").evaluate_all("items => items.map(item => item.offsetWidth)")
     assert after_widths[0] > before_widths[0] and abs(after_widths[0] - after_widths[1]) <= 1, (before_widths, after_widths)
-    assert all(width <= native + 1 for width, native in zip(after_widths, native_widths)), (after_widths, native_widths)
+    assert waveforms.evaluate_all("cs => cs.every(c => c.width <= (c.parentElement.parentElement.clientWidth + 640)*devicePixelRatio)")
     page.locator("#processor-source-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
     assert scrolls.nth(0).evaluate("element => element.scrollWidth > element.clientWidth")
     page.wait_for_timeout(50)
@@ -2544,7 +2559,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.wait_for_timeout(50)
     page.wait_for_function("!document.getElementById('processor-source-navigation').hidden")
 
-    # Drag pans without seeking; a click seeks every preview on the common timeline.
+    # Alt-drag pans without seeking; plain drag selects, and click seeks.
     first_scroll = scrolls.nth(0)
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 1")
     page.wait_for_timeout(50)
@@ -2553,12 +2568,15 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     page.wait_for_function("Math.abs(document.querySelector('.processor-track .processor-waveform-scroll').scrollLeft - 120) < 2")
     page.wait_for_timeout(50)
     scroll_before_drag = first_scroll.evaluate("element => element.scrollLeft")
+    first_scroll.scroll_into_view_if_needed()
     scroll_box = first_scroll.bounding_box()
     assert scroll_box
     first_scroll.hover(position={"x": scroll_box["width"] * .7, "y": 50})
+    page.keyboard.down("Alt")
     page.mouse.down()
     page.mouse.move(scroll_box["x"] + scroll_box["width"] * .35, scroll_box["y"] + 50, steps=5)
     page.mouse.up()
+    page.keyboard.up("Alt")
     scroll_after_drag = first_scroll.evaluate("element => element.scrollLeft")
     assert abs(scroll_after_drag - scroll_before_drag) > 20, (
         scroll_before_drag, scroll_after_drag, scroll_box,
@@ -2581,8 +2599,13 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert page.locator("#processor-source-audio").evaluate("audio => audio.currentTime < .1")
     first_waveform.press("ArrowRight")
     assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 5) < .1")
+    first_waveform.press("Shift+ArrowRight")
+    assert "5.000–5.100" in page.locator("#processor-loop-selection-summary").inner_text()
+    assert page.locator("#processor-source-audio-loop").is_enabled()
     first_waveform.press("Shift+ArrowLeft")
-    assert page.locator("#processor-source-audio").evaluate("audio => audio.currentTime < .1")
+    assert "5.000–5.000" in page.locator("#processor-loop-selection-summary").inner_text()
+    assert page.locator("#processor-source-audio-loop").is_disabled()
+    assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 5) < .1")
     first_waveform.press("End")
     assert page.locator("#processor-source-audio").evaluate("audio => Math.abs(audio.currentTime - 8) < .1")
 
@@ -2598,9 +2621,15 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
         const playhead = scroll.querySelector('.processor-waveform-playhead');
         return Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
     page.evaluate("document.getElementById('processor-source-audio').currentTime = 4")
+    # The old centered position can satisfy geometry before native seeking
+    # starts. Require the requested clock and rendered position as well.
     page.wait_for_function("""() => { const scroll = document.querySelector('.processor-track .processor-waveform-scroll');
+        const audio = document.getElementById('processor-source-audio');
         const playhead = scroll.querySelector('.processor-waveform-playhead');
-        return Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
+        const pps = scroll.querySelector('.processor-waveform').offsetWidth / 8;
+        return !audio.seeking && Math.abs(audio.currentTime - 4) < .01 &&
+            Math.abs(parseFloat(playhead.style.left) - 4 * pps) < 2 &&
+            Math.abs((playhead.getBoundingClientRect().left - scroll.getBoundingClientRect().left) - scroll.clientWidth / 2) < 8; }""")
     followed_middle = page.evaluate("""() => {
         const scrolls = [...document.querySelectorAll('.processor-track .processor-waveform-scroll')];
         const shared = document.getElementById('processor-source-scrollbar');
@@ -2643,13 +2672,16 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
                            arg=paused_left, timeout=5000)
     page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
 
-    # Intentional waveform panning turns follow off; enabling it again recenters immediately.
+    # Alt + waveform panning turns follow off; enabling it again recenters immediately.
+    first_scroll.scroll_into_view_if_needed()
     scroll_box = first_scroll.bounding_box()
     assert scroll_box
     first_scroll.hover(position={"x": scroll_box["width"] * .55, "y": 50})
+    page.keyboard.down("Alt")
     page.mouse.down()
     page.mouse.move(scroll_box["x"] + scroll_box["width"] * .25, scroll_box["y"] + 50, steps=5)
     page.mouse.up()
+    page.keyboard.up("Alt")
     assert follow.get_attribute("aria-pressed") == "false"
     follow.click()
     assert follow.get_attribute("aria-pressed") == "true"
@@ -2659,8 +2691,8 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert abs(recentered[0] - recentered[1]) < 8, recentered
 
     # Persistent custom thumb dragging and keyboard navigation are explicit manual intent.
-    thumb_box = shared_thumb.bounding_box()
     shared_scrollbar.scroll_into_view_if_needed()
+    thumb_box = shared_thumb.bounding_box()
     rail_box = shared_scrollbar.bounding_box()
     assert thumb_box and rail_box
     page.mouse.move(thumb_box["x"] + thumb_box["width"] / 2, thumb_box["y"] + thumb_box["height"] / 2)
@@ -2702,26 +2734,26 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
 
     # Solo/Mute are monitoring-only, support multiple solos, and are mutually clearing per track.
     cards = page.locator(".processor-track")
-    cards.nth(0).get_by_role("button", name="Соло", exact=True).click()
+    cards.nth(0).get_by_role("button", name="S · Solo", exact=True).click()
     assert page.evaluate("""() => [document.getElementById('processor-source-audio').muted,
         document.querySelector('.processor-preview-audio').muted]""") == [False, True]
     if screenshot_dir:
         capture_state("monitoring-solo")
-    cards.nth(1).get_by_role("button", name="Соло", exact=True).click()
+    cards.nth(1).get_by_role("button", name="S · Solo", exact=True).click()
     assert page.evaluate("""() => [document.getElementById('processor-source-audio').muted,
         document.querySelector('.processor-preview-audio').muted]""") == [False, False]
-    cards.nth(1).get_by_role("button", name="Заглушить", exact=True).click()
-    assert cards.nth(1).get_by_role("button", name="Соло", exact=True).get_attribute("aria-pressed") == "false"
-    assert cards.nth(1).get_by_role("button", name="Заглушить", exact=True).get_attribute("aria-pressed") == "true"
+    cards.nth(1).get_by_role("button", name="M · Mute", exact=True).click()
+    assert cards.nth(1).get_by_role("button", name="S · Solo", exact=True).get_attribute("aria-pressed") == "false"
+    assert cards.nth(1).get_by_role("button", name="M · Mute", exact=True).get_attribute("aria-pressed") == "true"
     if screenshot_dir:
         capture_state("monitoring-solo-track-1-mute-track-2")
-    cards.nth(0).get_by_role("button", name="Соло", exact=True).click()
-    cards.nth(1).get_by_role("button", name="Заглушить", exact=True).click()
-    cards.nth(0).get_by_role("button", name="Заглушить", exact=True).click()
-    cards.nth(0).get_by_role("button", name="Соло", exact=True).click()
-    assert cards.nth(0).get_by_role("button", name="Заглушить", exact=True).get_attribute("aria-pressed") == "false"
-    cards.nth(0).get_by_role("button", name="Заглушить", exact=True).click()
-    assert cards.nth(0).get_by_role("button", name="Соло", exact=True).get_attribute("aria-pressed") == "false"
+    cards.nth(0).get_by_role("button", name="S · Solo", exact=True).click()
+    cards.nth(1).get_by_role("button", name="M · Mute", exact=True).click()
+    cards.nth(0).get_by_role("button", name="M · Mute", exact=True).click()
+    cards.nth(0).get_by_role("button", name="S · Solo", exact=True).click()
+    assert cards.nth(0).get_by_role("button", name="M · Mute", exact=True).get_attribute("aria-pressed") == "false"
+    cards.nth(0).get_by_role("button", name="M · Mute", exact=True).click()
+    assert cards.nth(0).get_by_role("button", name="S · Solo", exact=True).get_attribute("aria-pressed") == "false"
     assert page.locator("#processor-file").evaluate("input => input.files.length") == 2
 
     # Native hidden players follow master play/pause and periodically correct meaningful drift.
@@ -2737,14 +2769,14 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert page.locator(".processor-preview-audio").evaluate("audio => audio.paused")
     print("Synchronized preview passed: compact tracks, shared zoom/scroll/playheads, drag-vs-click seeking, native transport sync, drift correction and Solo/Mute precedence.")
 
-    # Removing a track revokes both of its URLs and leaves a real single-track processor.
+    # Removing a track revokes its media URL; waveform peaks have no Blob URL.
     revoked_before = set(page.evaluate("window.processorProbe.revoked"))
     page.locator(".processor-track").nth(1).get_by_role("button", name=re.compile("Удалить дорожку")).click()
     assert page.locator(".processor-track").count() == 1
     assert page.locator("#processor-selection-summary").inner_text().startswith("Выбрано дорожек: 1 ·")
     assert page.locator("#processor-file").evaluate("input => input.files.length") == 1
     newly_revoked = set(page.evaluate("window.processorProbe.revoked")) - revoked_before
-    assert len(newly_revoked) == 2, newly_revoked
+    assert len(newly_revoked) == 1, newly_revoked
     if screenshot_dir:
         capture_state("track-removed")
     run_selected()
@@ -2759,7 +2791,7 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
 
     select_tracks([track_a, track_b])
     capture_state("mix-two-selected")
-    page.locator(".processor-track").nth(0).get_by_role("button", name="Соло", exact=True).click()
+    page.locator(".processor-track").nth(0).get_by_role("button", name="S · Solo", exact=True).click()
     messages_before_monitoring_run = len(page.evaluate("window.processorProbe.messages"))
     run_selected()
     assert_result(1, 5.35, 2)
@@ -2849,40 +2881,54 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert_result(1, 5.35, 2)
     assert page.evaluate("window.processorProbe.workers") == probe_before["workers"] + 1
 
-    # Local visual evidence uses a long, low-rate real waveform so the shared scrollbar is useful even at 1280px.
-    if screenshot_dir:
-        visual_a = wav_payload("Навигация-A.wav", ((150, True), (150, False)), sample_rate=8000)
-        visual_b = wav_payload("Навигация-B.wav", ((150, False), (150, True)), frequency=660, sample_rate=8000)
-        select_tracks([visual_a, visual_b], expected_size_prefix="4,")
-        for width in (390, 768, 1280):
-            page.set_viewport_size({"width": width, "height": 900})
-            if page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true":
-                page.locator("#processor-source-follow").click()
-            page.locator("#processor-source-zoom-fit").click()
-            assert page.locator("#processor-source-navigation").is_visible()
-            assert page.locator("#processor-source-scrollbar-thumb").is_visible()
-            assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] >= page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
-            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-            page.screenshot(path=str(screenshot_dir / f"source-fit-{width}.png"), full_page=True)
-            page.locator("#processor-source-zoom-range").evaluate(
-                "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-            assert page.locator("#processor-source-navigation").is_visible()
-            assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] < page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
-            assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-            page.wait_for_timeout(50)
-            rail_box = page.locator("#processor-source-scrollbar").bounding_box()
-            page.mouse.click(rail_box["x"] + rail_box["width"] / 2, rail_box["y"] + rail_box["height"] / 2)
-            page.screenshot(path=str(screenshot_dir / f"source-scrollbar-middle-{width}.png"), full_page=True)
+    # Long-source navigation is required in CI too, independently of PNG capture.
+    visual_a = wav_payload("Навигация-A.wav", ((150, True), (150, False)), sample_rate=8000)
+    visual_b = wav_payload("Навигация-B.wav", ((150, False), (150, True)), frequency=660, sample_rate=8000)
+    select_tracks([visual_a, visual_b], expected_size_prefix="4,")
+    for width in (390, 768, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        if page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true":
             page.locator("#processor-source-follow").click()
-            page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
-                audio.currentTime = 150; await audio.play(); }""")
-            page.wait_for_timeout(250)
-            assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true"
-            page.screenshot(path=str(screenshot_dir / f"source-follow-playing-{width}.png"), full_page=True)
-            page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
-            page.evaluate("document.getElementById('processor-source-audio').currentTime = 299.8")
-            page.wait_for_timeout(50)
-            page.screenshot(path=str(screenshot_dir / f"source-follow-end-{width}.png"), full_page=True)
+        page.locator("#processor-source-zoom-fit").click()
+        assert page.locator("#processor-source-navigation").is_visible()
+        assert page.locator("#processor-source-scrollbar-thumb").is_visible()
+        assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] >= page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-fit-{width}.png"), full_page=True)
+        page.locator("#processor-source-zoom-range").evaluate(
+            "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
+        assert page.locator("#processor-source-navigation").is_visible()
+        assert page.locator("#processor-source-scrollbar-thumb").bounding_box()["width"] < page.locator("#processor-source-scrollbar").bounding_box()["width"] - 2
+        assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
+        page.wait_for_timeout(50)
+        page.locator("#processor-source-scrollbar").scroll_into_view_if_needed()
+        rail_box = page.locator("#processor-source-scrollbar").bounding_box()
+        page.mouse.click(rail_box["x"] + rail_box["width"] / 2, rail_box["y"] + rail_box["height"] / 2)
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-scrollbar-middle-{width}.png"), full_page=True)
+        page.locator("#processor-source-follow").click()
+        page.evaluate("""async () => { const audio = document.getElementById('processor-source-audio');
+            audio.currentTime = 150; await audio.play(); }""")
+        page.wait_for_timeout(250)
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-follow-playing-{width}.png"), full_page=True)
+        page.locator("#processor-source-audio").evaluate("audio => audio.pause()")
+        # A fractional target at 1000px/s is rounded by the browser. Its own
+        # scroll notification must not be interpreted as a manual pan.
+        page.evaluate("document.getElementById('processor-source-audio').currentTime = 150.0005")
+        page.wait_for_timeout(100)
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        page.evaluate("document.getElementById('processor-source-audio').currentTime = 299.8")
+        page.wait_for_timeout(50)
+        if screenshot_dir: page.screenshot(path=str(screenshot_dir / f"source-follow-end-{width}.png"), full_page=True)
+        # A delayed scroll notification for the position we assigned must be
+        # idempotent even after rendering/decoding has outlived two frames.
+        page.evaluate("()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(()=>requestAnimationFrame(r))))")
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        before = page.locator(".processor-waveform-scroll").evaluate_all("es=>es.map(e=>e.scrollLeft)")
+        page.locator(".processor-waveform-scroll").first.dispatch_event("scroll")
+        assert page.locator("#processor-source-follow").get_attribute("aria-pressed") == "true", width
+        assert page.locator(".processor-waveform-scroll").evaluate_all("es=>es.map(e=>e.scrollLeft)") == before
+    print("Long-source Follow passed: 1000px/s, playback/paused end seek and delayed synchronized scroll at three widths.", flush=True)
 
     long_name = "Очень-длинное-название-спикерского-" * 6 + ".wav"
     long_track = dict(track_a, name=long_name)
@@ -2897,15 +2943,38 @@ def check_multi_track_processor(page, screenshot_dir: Path | None) -> None:
     assert probe["files"] == {}, probe["files"]
     live_urls = set(probe["urls"]) - set(probe["revoked"])
     visible_urls = set(page.evaluate("""() => Array.from(document.querySelectorAll(
-        '#processor-source-audio, #processor-result-audio, .processor-preview-audio, .processor-track .processor-waveform img, #processor-result-waveform-control img'))
+        '#processor-source-audio, #processor-result-audio, .processor-preview-audio'))
         .map(element => element.src)"""))
-    assert visible_urls.issubset(live_urls) and len(live_urls) == 6, live_urls
+    assert visible_urls.issubset(live_urls) and len(live_urls) == 3, live_urls
     select_tracks([])
     assert page.locator("#processor-run").is_disabled()
     probe = page.evaluate("window.processorProbe")
     assert set(probe["urls"]) == set(probe["revoked"]), probe
     assert page.locator(".archive-item").count() == 0
     print("Multi-track cancellation/retry, virtual-FS cleanup, URL revocation, filenames and 390/768/1280 responsive states passed.")
+
+
+def check_local_preview_archive_hint(browser, base_url: str) -> None:
+    """A production gateway failure from localhost explains the known origin boundary."""
+    context = browser.new_context()
+    context.add_init_script(f"sessionStorage.setItem('{SERVICE_SESSION_KEY}', 'granted')")
+    local_host = urlparse(base_url).netloc
+    context.route("**/*", lambda route: route.continue_()
+                  if urlparse(route.request.url).netloc == local_host else route.abort())
+    page = context.new_page()
+    try:
+        goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
+        page.locator("#source-session-authenticate").click()
+        page.locator("#source-session-password").fill("browser-smoke-only")
+        page.locator('#source-session-login-form button[type="submit"]').click()
+        page.get_by_text(
+            "Production-архив недоступен из локального preview из-за ограничения origin. "
+            "Локальная обработка доступна; для передачи откройте опубликованный сайт.",
+            exact=True,
+        ).wait_for(timeout=10000)
+        print("Local preview archive origin hint passed.")
+    finally:
+        context.close()
 
 
 def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -> None:
@@ -2933,7 +3002,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
     context.route("**/*", isolate_processor_gateway)
     # Observe native workers and object URLs without replacing the engine or its work.
     context.add_init_script("""(() => {
-        window.processorProbe = {workers: 0, terminated: 0, messages: [], urls: [], revoked: [], phases: [], files: {}, logs: []};
+        window.processorProbe = {workers: 0, terminated: 0, terminatedIds: [], messages: [], urls: [], revoked: [], phases: [], files: {}, logs: []};
         const NativeWorker = window.Worker;
         window.Worker = class extends NativeWorker {
             constructor(...args) {
@@ -2951,11 +3020,12 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             }
             postMessage(message, ...args) {
                 this.pending.set(message.id, message.data);
-                window.processorProbe.messages.push({type: message.type, path: message.data?.path, args: message.data?.args});
+                window.processorProbe.messages.push({worker: this.probeId, type: message.type, path: message.data?.path, args: message.data?.args});
                 return super.postMessage(message, ...args);
             }
             terminate() {
                 window.processorProbe.terminated++;
+                window.processorProbe.terminatedIds.push(this.probeId);
                 for (const key of Object.keys(window.processorProbe.files)) if (key.startsWith(this.probeId + ':')) delete window.processorProbe.files[key];
                 return super.terminate();
             }
@@ -3050,27 +3120,18 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
 
         page.locator("#processor-file").set_input_files(primary)
         wait_waveforms(page, 1)
-        waveform = page.locator(".processor-track .processor-waveform img")
-        waveform_info = waveform.evaluate("""async image => {
-            await image.decode();
-            const blob = await (await fetch(image.src)).blob();
-            const bytes = new Uint8Array(await blob.arrayBuffer());
-            return {size: blob.size, type: blob.type, width: image.naturalWidth, height: image.naturalHeight,
-                signature: Array.from(bytes.slice(0, 8))};
-        }""")
-        assert waveform_info["size"] > 0 and waveform_info["type"] == "image/png", waveform_info
-        assert waveform_info["width"] == 640 and waveform_info["height"] == 100, waveform_info
-        assert waveform_info["signature"] == [137, 80, 78, 71, 13, 10, 26, 10], waveform_info
+        waveform = page.locator(".processor-track .processor-waveform canvas:not([hidden])")
+        waveform_info = waveform.evaluate("""c => ({width:c.width,height:c.height,
+            css:c.getBoundingClientRect().width,dpr:devicePixelRatio,
+            painted:c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)})""")
+        assert waveform_info['painted'] and abs(waveform_info['width']-waveform_info['css']*waveform_info['dpr'])<=2, waveform_info
         assert page.locator(".processor-track .processor-waveform").count() == 1
         assert page.locator('.processor-track button[data-track-action="solo"]').get_attribute("aria-pressed") == "false"
         assert page.locator('.processor-track button[data-track-action="mute"]').get_attribute("aria-pressed") == "false"
+        assert page.evaluate("window.processorProbe.workers") == 2
         waveform_messages = page.evaluate("window.processorProbe.messages")
-        assert any(message["type"] == "EXEC" and any("showwavespic=" in arg for arg in message["args"]) for message in waveform_messages), waveform_messages
-        waveform_deletes = [message["path"] for message in waveform_messages if message["type"] == "DELETE_FILE"]
-        assert any(path.startswith("processor-waveform-input-") for path in waveform_deletes), waveform_deletes
-        assert any(path.startswith("processor-waveform-") and path.endswith(".png") for path in waveform_deletes), waveform_deletes
         assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
-        print(f"Real waveform passed: WAV -> {waveform_info['width']}x{waveform_info['height']} PNG ({waveform_info['size']} bytes); Blob rendered and waveform FS files deleted.")
+        print("Real source waveform passed: shared native peak reader, Retina canvas and empty waveform FS.")
 
         page.locator("#processor-save-incoming").click()
         assert page.locator("#source-session-login-dialog").is_visible()
@@ -3092,21 +3153,23 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert abs(source_duration - 7) < .05 and abs(output_duration - 4.35) < .12 and count == 1
         assert abs(float(page.locator("#processor-removed-duration").get_attribute("data-value")) - 2.65) < .12
         assert page.locator("#processor-result-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
-        assert page.locator("#processor-result-waveform-control img").count() == 1
-        result_waveform_info = page.locator("#processor-result-waveform-control img").evaluate("""async image => {
-            await image.decode(); const blob = await (await fetch(image.src)).blob();
-            return {size: blob.size, type: blob.type, width: image.naturalWidth, height: image.naturalHeight};
-        }""")
-        assert result_waveform_info["size"] > 0 and result_waveform_info["type"] == "image/png", result_waveform_info
-        assert result_waveform_info["width"] == 640 and result_waveform_info["height"] == 100, result_waveform_info
+        assert page.locator("#processor-result-waveform-control canvas").count() == 1
+        result_waveform_info = page.locator("#processor-result-waveform-control canvas").evaluate("""c => ({width:c.width,height:c.height,
+            painted:c.getContext('2d').getImageData(0,0,c.width,c.height).data.some((v,i)=>i%4===3&&v>0)})""")
+        assert result_waveform_info['width']>0 and result_waveform_info['height']>0 and result_waveform_info['painted'], result_waveform_info
         source_time_before_result = page.locator("#processor-source-audio").evaluate("audio => { audio.currentTime = 1; return audio.currentTime; }")
         source_width_before_result_zoom = page.locator(".processor-track .processor-waveform").evaluate("item => item.offsetWidth")
         page.locator("#processor-result-zoom-range").evaluate("input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-        assert page.locator("#processor-result-waveform-control").evaluate("item => item.offsetWidth <= item.querySelector('img').naturalWidth")
+        assert page.locator("#processor-result-waveform-control").evaluate("item => item.querySelector('canvas').width <= (item.parentElement.clientWidth+640)*devicePixelRatio")
         assert page.locator(".processor-track .processor-waveform").evaluate("item => item.offsetWidth") == source_width_before_result_zoom
         result_waveform = page.locator("#processor-result-waveform-control")
-        result_waveform.click(position={"x": 90, "y": 50})
+        # At the new 4096px native envelope, 90px is less than 0.2s.
+        # Keep a meaningful visible seek and check its exact scaled time too.
+        result_click_x = 300
+        result_waveform.click(position={"x": result_click_x, "y": 50})
         result_click_time = page.locator("#processor-result-audio").evaluate("audio => audio.currentTime")
+        expected_result_time = result_waveform.evaluate('(e,x)=>x/e.offsetWidth*document.getElementById("processor-result-audio").duration', result_click_x)
+        assert abs(result_click_time - expected_result_time) < .02, (result_click_time, expected_result_time)
         assert result_click_time > .2, page.evaluate("""() => ({time: document.getElementById('processor-result-audio').currentTime,
             duration: document.getElementById('processor-result-audio').duration,
             width: document.getElementById('processor-result-waveform-control').offsetWidth,
@@ -3136,7 +3199,9 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-source-follow").click()
         page.locator("#processor-source-zoom-range").evaluate(
             "input => { input.value = 100; input.dispatchEvent(new Event('input', {bubbles: true})); }")
-        page.wait_for_timeout(50)
+        # The shared 65536-bin overview already exceeds the pixel rate of this
+        # seven-second file. Zoom must retain it without spawning a detail worker.
+        page.wait_for_function("document.querySelector('.processor-waveform-detail').dataset.waveDetail === 'overview'", timeout=60000)
         source_rail = page.locator("#processor-source-scrollbar").bounding_box()
         page.mouse.click(source_rail["x"] + source_rail["width"] * .65, source_rail["y"] + source_rail["height"] / 2)
         result_independent_after = page.evaluate("""() => ({
@@ -3178,11 +3243,15 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert download.suggested_filename == "fixture-edited.mp3" and download.failure() is None
         assert page.locator(".archive-item").count() == 0
         probe = page.evaluate("window.processorProbe")
-        assert probe["workers"] == 2, probe
+        processing_workers = {message["worker"] for message in probe["messages"]
+                              if message["type"] == "WRITE_FILE" and message["path"].startswith("processor-input-")}
+        assert len(processing_workers) == 1, processing_workers
+        processing_worker = next(iter(processing_workers))
+        assert processing_worker not in probe["terminatedIds"], probe
         for phase in ("Подготовка формы сигнала…", "Подготовка обработчика…", "Поиск длинных пауз…", "Сокращение пауз и создание MP3…", "Готово."):
             assert phase in probe["phases"], probe
         assert any("/core/ffmpeg-core.wasm" in request_url for method, request_url, _ in requests if method == "GET")
-        for path in ("processor-input-0", "processor-output.mp3", "processor-result-waveform.png", "processor-analysis.txt", "processor-filter.txt"):
+        for path in ("processor-input-0", "processor-output.mp3", "processor-analysis.txt", "processor-filter.txt"):
             assert any(message["type"] == "DELETE_FILE" and message["path"] == path for message in probe["messages"]), probe
         print(f"Real FFmpeg fixture passed: input={source_duration:.6f}s output={output_duration:.6f}s shortened={count}; MP3={result_info['size']} bytes; short pause preserved.")
         page.evaluate("document.activeElement.blur(); window.scrollTo(0, 0)")
@@ -3190,20 +3259,21 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         for width in (390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             assert not page.evaluate("document.documentElement.scrollWidth > innerWidth")
-            for selector in ("#processor-source-audio", "#processor-result-audio", "#processor-download"):
+            assert page.locator("#processor-source-audio").is_hidden()
+            for selector in ("#processor-source-audio-play", "#processor-source-audio-stop", "#announcement-processor-card .daw-monitor-volume", "#processor-result-audio", "#processor-download"):
                 box = page.locator(selector).bounding_box()
                 assert box and box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (selector, box)
             if screenshot_dir:
                 page.screenshot(path=str(screenshot_dir / f"processor-result-{width}.png"), full_page=True)
-        # Fail only waveform Blob publication after real FFmpeg generation; processing must remain available.
+        # Fail both shared waveform reader paths once; source/result audio must remain usable.
         page.evaluate("""() => {
-            const original = URL.createObjectURL;
-            URL.createObjectURL = blob => {
-                if (blob.type === 'image/png') {
-                    URL.createObjectURL = original;
-                    throw new Error('one-shot waveform preview failure');
+            const original=File.prototype.arrayBuffer;let failures=0;
+            File.prototype.arrayBuffer=function(){
+                if(this.name==='fixture.wav'){
+                    if(++failures===2)File.prototype.arrayBuffer=original;
+                    return Promise.reject(new Error('one-shot waveform read failure'));
                 }
-                return original(blob);
+                return original.call(this);
             };
         }""")
         page.locator("#processor-file").set_input_files(primary)
@@ -3211,13 +3281,13 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.get_by_text("Не удалось построить форму сигнала.", exact=True).count() == 1
         assert page.locator("#processor-source-audio").evaluate("audio => audio.paused && audio.src.startsWith('blob:')")
         page.evaluate("""() => {
-            const original = URL.createObjectURL;
-            URL.createObjectURL = blob => {
-                if (blob.type === 'image/png') {
-                    URL.createObjectURL = original;
-                    throw new Error('one-shot result waveform preview failure');
+            const original=File.prototype.arrayBuffer;let failures=0;
+            File.prototype.arrayBuffer=function(){
+                if(this.name==='result.mp3'){
+                    if(++failures===2)File.prototype.arrayBuffer=original;
+                    return Promise.reject(new Error('one-shot waveform read failure'));
                 }
-                return original(blob);
+                return original.call(this);
             };
         }""")
         page.locator("#processor-run").click()
@@ -3233,7 +3303,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         no_pause = wav_payload("no-pauses.WAV", ((1, True), (1, False), (1, True)), comment="silence_start: 0")
         page.locator("#processor-file").set_input_files(no_pause)
         wait_waveforms(page, 1)
-        exec_before = len([message for message in page.evaluate("window.processorProbe.messages") if message["type"] == "EXEC"])
+        exec_before = len([message for message in page.evaluate("window.processorProbe.messages") if message["type"] == "EXEC" and message["worker"] == processing_worker])
         assert_processor_no_result(page)
         revoked = page.evaluate("window.processorProbe.revoked")
         assert all(value in revoked for value in prior_urls), (prior_urls, revoked)
@@ -3246,7 +3316,10 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
             await (await fetch(document.getElementById('processor-download').href)).arrayBuffer()))""")
         assert bytes(passthrough_bytes) == no_pause["buffer"]
         probe = page.evaluate("window.processorProbe")
-        assert probe["workers"] == 2 and len([message for message in probe["messages"] if message["type"] == "EXEC"]) >= exec_before + 1
+        assert {message["worker"] for message in probe["messages"]
+                if message["type"] == "WRITE_FILE" and message["path"].startswith("processor-input-")} == {processing_worker}, probe
+        assert processing_worker not in probe["terminatedIds"], probe
+        assert len([message for message in probe["messages"] if message["type"] == "EXEC" and message["worker"] == processing_worker]) >= exec_before + 1
         assert "processor-output.mp3" not in probe["files"]
         print("No-long-pause fixture passed: exact-byte passthrough result/download, no output encode; loaded engine reused; metadata cannot spoof detector output.")
 
@@ -3265,11 +3338,15 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#processor-run").click()
         wait_processor_status(page, "Обработка отменена.")
         assert_processor_no_result(page)
-        assert page.evaluate("window.processorProbe.terminated") == 2
+        assert page.evaluate("window.processorProbe.terminatedIds").count(processing_worker) == 1
         assert page.locator("#processor-source-audio").get_attribute("src").startswith("blob:")
         page.locator("#processor-run").click()
         wait_processor_status(page, "Готово.")
-        assert page.evaluate("window.processorProbe.workers") == 3
+        retried = page.evaluate("window.processorProbe")
+        replacement_workers = {message["worker"] for message in retried["messages"]
+                               if message["type"] == "WRITE_FILE" and message["path"].startswith("processor-input-")} - {processing_worker}
+        assert len(replacement_workers) == 1, retried
+        assert not replacement_workers.intersection(retried["terminatedIds"]), retried
 
         # Real leading/trailing EOF handling and stereo preservation, plus a Unicode filename.
         page.locator("#processor-file").set_input_files(wav_payload("Спикерское.wav", ((3, False), (1, True), (3, False)), channels=2))
@@ -3541,8 +3618,37 @@ def main() -> int:
         check_s09a(browser, base_url, args.screenshot_dir)
         from s09a_acceptance_smoke import check_s09a_acceptance
         check_s09a_acceptance(browser, base_url, args.screenshot_dir)
+        from s09a_editor_corrective_smoke import check_s09a_editor_corrective
+        check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
+        check_s09a_editor_corrective(browser, base_url, args.screenshot_dir, device_scale_factor=2)
+        from s09a_design_a_smoke import check_design_a
+        check_design_a(browser, base_url, args.screenshot_dir)
+        from s09a_waveform_alignment_smoke import check_waveform_alignment
+        check_waveform_alignment(browser, base_url, args.screenshot_dir)
+        from s09a_waveform_consistency_smoke import check_waveform_consistency
+        check_waveform_consistency(browser, base_url, args.screenshot_dir)
+        from s09a_waveform_motion_smoke import check_waveform_motion
+        check_waveform_motion(browser, base_url, args.screenshot_dir)
+        from s09a_meters_smoke import check_audio_meters
+        check_audio_meters(browser, base_url, args.screenshot_dir)
+        from s09a_playback_signal_smoke import check_playback_signal
+        check_playback_signal(browser, base_url, args.screenshot_dir)
+        from s09a_timeline_smoke import check_timeline_controls
+        check_timeline_controls(browser, base_url, args.screenshot_dir)
+        from s09a_approved_timeline_ux_smoke import check_approved_timeline_ux
+        check_approved_timeline_ux(browser, base_url, args.screenshot_dir)
+        from s09a_input_focus_smoke import check_input_focus
+        check_input_focus(browser, base_url)
+        from s09a_speaker_render_performance_smoke import check_speaker_parallel_equivalence, check_speaker_render_performance
+        check_speaker_render_performance(browser, base_url)
+        check_speaker_parallel_equivalence(browser, base_url)
+        from s09a_compression_scale_smoke import check_compression_scale
+        check_compression_scale(browser, base_url, args.screenshot_dir)
+        from s09a_corrective_management_smoke import check_s09a_corrective_management
+        check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)
         check_source_session_archive(browser, base_url, args.screenshot_dir)
+        check_local_preview_archive_hint(browser, base_url)
         check_audio_processor(browser, base_url, args.screenshot_dir)
         if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
             raise AssertionError("Calendar and Drive regression checks must run without an admin marker")

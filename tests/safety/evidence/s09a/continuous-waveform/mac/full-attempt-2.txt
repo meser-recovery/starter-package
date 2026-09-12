@@ -1,0 +1,56 @@
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:62847
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:62847/starter-package/
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
+S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.
+Acceptance P1: new edits/Blob protected; close/newer intent fence delayed Speaker loads.
+Acceptance P1: Announcement session/draft/part 401+403 preserve work through cancel/reconnect and explicit retry.
+Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 1: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 2: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Design A: PASS; DSP viewport/DOM/audio identity, real per-track silence/restoration, global cut skip, bounds stop, light/dark responsive.
+Design A result: PASS; real Announcement render, readable light/dark result text and transport at 320/390/768/1440.
+Waveform decoder alignment: 41.3s overview/detail/tail peaks PASS.
+Waveform decoder alignment: 129.37s overview/detail/tail peaks PASS.
+Waveform alignment PASS: native/WASM, short/long/tail windows, right-only/anti-phase peaks, both editors repeated fit/detail zoom, actual pixels and audible onset.
+Waveform parity PASS: same file in both editors at 80/159/160/300/1000 px/s, normalized visible contours.
+Waveform motion speaker/fit: 60.1 RAF fps, 0/91 scroll updates, 0/158400 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/overview: 60.1 RAF fps, 91/91 scroll updates, 0/158166 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/medium: 60.1 RAF fps, 91/91 scroll updates, 0/157504 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/detail: 60.0 RAF fps, 678/679 scroll updates, 0/1102888 changed source pixels, detail windows=['0', '16', '32', '40', '56'] PASS.
+Waveform live zoom speaker: 80→1000→300→80 px/s, uninterrupted audio and stable source pixels PASS.
+Speaker rendered result: 60.3 RAF fps, 91/91 playhead updates, unchanged waveform PASS.
+Waveform motion announcement/fit: 60.1 RAF fps, 0/91 scroll updates, 0/158400 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/overview: 60.1 RAF fps, 91/91 scroll updates, 0/158158 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/medium: 60.2 RAF fps, 91/91 scroll updates, 0/157488 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/detail: 60.0 RAF fps, 678/679 scroll updates, 0/1102786 changed source pixels, detail windows=['0', '16', '32', '40', '56'] PASS.
+Waveform live zoom announcement: 80→1000→300→80 px/s, uninterrupted audio and stable source pixels PASS.
+Digital meters: PASS; both editors, stereo anti-phase, summed master/clip, mute, stop/reset, four widths, stable tools, thin edges.
+S09A real media signal: PASS; 20 tone/RMS cases, both editors, mute/solo/volume/reorder/exclusion/result isolation.
+Timeline flags/DSP: DPR 1, start/end drag cancellation, keyboard steps, focus, switches and four compression presets passed.
+Timeline controls: DPR 1, both editors, four widths, zoom+scroll seek, three real loop cycles and independent Mute passed.
+Timeline flags/DSP: DPR 2, start/end drag cancellation, keyboard steps, focus, switches and four compression presets passed.
+Timeline controls: DPR 2, both editors, four widths, zoom+scroll seek, three real loop cycles and independent Mute passed.
+PR36 preparation/version: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.
+PR36 preparation/series: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.
+PR36 preparation/decoder-failure: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.
+Corrective library: fresh supported draft only, honest failure states, compact rows, keyboard/touch menus, fresh deletion dependencies and auth consent at four widths passed.
+Corrective deletion: concrete target, retained montage/File/Blob after version removal, source unsaved protection, stale revision and expired-consent rejection passed.
+Corrective epochs: delayed source deletion cannot close a newer local project; no outbound archive access.
+BROWSER SMOKE FAILED: 
+Traceback (most recent call last):
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3641, in <module>
+    raise SystemExit(main())
+                     ^^^^^^
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 3614, in main
+    check_source_session_archive(browser, base_url, args.screenshot_dir)
+  File "/Users/furman/Desktop/git/starter-kit/tests/safety/browser_smoke.py", line 1826, in check_source_session_archive
+    assert result_canvas.get_attribute("data-used-width") == str(result_canvas.evaluate("canvas => canvas.width"))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+AssertionError

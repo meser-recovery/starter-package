@@ -743,7 +743,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared footer is missing")
         styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
-        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css"]:
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css", "styles/audio-studio.css"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
         if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),
@@ -929,13 +929,12 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         '"-filter_complex_script"', '"-map", "[mixed]"', "`processor-input-${index}`",
         "files.reduce((sum, file) => sum + file.size, 0)", "[...inputPaths, ...TEMP_PATHS]",
         "Выбрано дорожек:", "Дорожек сведено:", "Сокращено общих длинных пауз",
-        "const WAVEFORM_PIXELS_PER_SECOND = 4;", "const WAVEFORM_MAX_WIDTH = 16384;",
-        "showwavespic=s=", "aformat=channel_layouts=mono", 'new Blob([image], { type: "image/png" })',
-        "processor-waveform-input-${track.id}", "processor-waveform-${track.id}.png",
+        "const WAVEFORM_PIXELS_PER_SECOND = 64;", "const WAVEFORM_MAX_WIDTH = 65536;",
+        "drawWaveformViewport(", "reader.read(track.file, track.duration)",
         "Не удалось построить форму сигнала.", "Подготовка формы сигнала…",
         "requestAnimationFrame", "ArrowLeft", "ArrowRight", 'event.key === "Home"', 'event.key === "End"',
-        "URL.revokeObjectURL(track.waveformURL)", "Соло", "Заглушить", "Удалить",
-        "processor-result-waveform.png", "resultWaveformURL", "processor-preview-audio",
+        "track.samples = null", "S · Solo", "M · Mute", "Удалить",
+        "resultWaveformSamples", "processor-preview-audio",
         "let sourceLeftVisibleTime = 0;", "let sourceViewportDuration = 0;",
         "sourceFollowEnabled", "source-scrollbar-thumb", "updateSourceScrollbar",
         "Обработка аудио не поддерживается в этом браузере.", "Обработка отменена.",
@@ -947,7 +946,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
             errors.append(f"Processor runtime contract missing: {token}")
     if "navigation.hidden = displayWidth" in source or "navigation.hidden ? 0" in source:
         errors.append("Processor source scrollbar must remain visible while tracks are selected")
-    if re.search(r'^import\s+(?!\{\s*sha256Hex\s*\}\s+from\s+"\./audio-archive-client\.mjs";)', source, re.M):
+    if re.search(r'^import\s+(?!\{\s*(?:(?:sha256Hex|renderSourceTimeline|createAudioTransport|createAudioMeters|createWaveformDetail|createWaveformReader|drawWaveformViewport)|(?:defaultTrackColor, installEditorExpansion, installSpaceTransport, installTimelineZoomGestures))\s*\}\s+from\s+"\./(?:audio-archive-client|audio-timeline|audio-transport|audio-meters|audio-waveform-detail|speaker-waveform|audio-waveform-view|audio-timeline-ux)\.mjs";)', source, re.M):
         errors.append("Processor must import FFmpeg lazily after valid source selection")
     page_source = page.read_text(encoding="utf-8")
     processor_markup = re.split(r'<section[^>]+id="announcement-processor-card"[^>]*>', page_source, maxsplit=1)[-1].split('</section>', 1)[0]

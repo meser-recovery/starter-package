@@ -1,0 +1,177 @@
+<div id="meser-concepts">
+  <style>
+    #meser-concepts { --daw-bg:light-dark(#f6f8fa,#111720);--daw-panel:light-dark(#e8eef3,#1d2734);--daw-edge:light-dark(#c7d2de,#344152);--daw-text:light-dark(#21374a,#e4edf6);--daw-muted:light-dark(#52667a,#a8b8c9);--daw-accent:light-dark(#126b80,#83d8e7);--daw-wave:light-dark(#3280af,#78b9df);--daw-wave2:light-dark(#278c7c,#74c8b7);--daw-cut:light-dark(#b5563650,#d9765245);--daw-silence:light-dark(#3a8c7d40,#68c3ae35);color:var(--daw-text);font:14px/1.45 system-ui,sans-serif; }
+    #meser-concepts * { box-sizing:border-box; }
+    #meser-concepts button,#meser-concepts input { font:inherit; }
+    #meser-concepts button { cursor:pointer; color:var(--daw-text);background:transparent;border:1px solid var(--daw-edge);border-radius:7px;min-height:36px;padding:6px 10px;display:inline-flex;align-items:center;justify-content:center;gap:7px; }
+    #meser-concepts button:hover { background:var(--daw-panel); }
+    #meser-concepts button[aria-pressed="true"] { color:var(--daw-bg);background:var(--daw-accent);border-color:var(--daw-accent); }
+    #meser-concepts .variants { display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px; }
+    #meser-concepts .variant-label { display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:8px 0;color:var(--daw-muted);font-size:12px; }
+    #meser-concepts .app { display:flex;flex-direction:column;overflow:hidden;border:1px solid var(--daw-edge);border-radius:12px;background:var(--daw-bg); }
+    #meser-concepts .app-header { order:0;display:flex;align-items:center;justify-content:space-between;gap:14px;padding:14px 18px;border-bottom:1px solid var(--daw-edge); }
+    #meser-concepts .app-header small { display:block;color:var(--daw-muted);margin-top:3px;font-size:12px; }
+    #meser-concepts .transport { order:1;display:flex;align-items:center;gap:18px;flex-wrap:wrap;padding:16px 18px;background:var(--daw-panel);border-bottom:1px solid var(--daw-edge); }
+    #meser-concepts .playback { display:flex;gap:6px;align-items:center; }
+    #meser-concepts .play { min-height:44px;min-width:48px;background:var(--daw-accent);border-color:var(--daw-accent);color:var(--daw-bg); }
+    #meser-concepts .clock { font:500 23px/1.2 ui-monospace,monospace;font-variant-numeric:tabular-nums;min-width:155px; }
+    #meser-concepts .clock small { font:12px/1.5 system-ui,sans-serif;color:var(--daw-muted);display:block;margin-top:3px; }
+    #meser-concepts .wide-meter { flex:1;min-width:220px; }
+    #meser-concepts .meter-heading { display:flex;justify-content:space-between;color:var(--daw-muted);font-size:11px;margin-bottom:5px;gap:8px; }
+    #meser-concepts .meter-line { display:grid;grid-template-columns:12px 1fr;gap:6px;align-items:center;font:11px/1.4 ui-monospace,monospace;margin:3px 0; }
+    #meser-concepts .rail { height:9px;background:var(--daw-edge);position:relative;border-radius:2px;overflow:hidden; }
+    #meser-concepts .fill { width:70%;height:100%;background:linear-gradient(90deg,#31927b 0%,#67be86 72%,#dec263 90%,#e66b69 100%); }
+    #meser-concepts .ticks { display:flex;justify-content:space-between;color:var(--daw-muted);font:11px/1.4 ui-monospace,monospace;margin-left:18px; }
+    #meser-concepts .tools { order:2;padding:10px 18px;display:flex;align-items:center;gap:7px;flex-wrap:wrap;border-bottom:1px solid var(--daw-edge); }
+    #meser-concepts .tools .context-tool { width:144px;min-height:38px; }
+    #meser-concepts .tools .selection { flex:1;min-width:130px;font-size:12px;color:var(--daw-muted); }
+    #meser-concepts .zoom { display:flex;align-items:center;gap:6px; }
+    #meser-concepts .zoom span { width:36px;text-align:center;font-variant-numeric:tabular-nums; }
+    #meser-concepts .scene { order:3;display:grid;grid-template-columns:minmax(0,1fr); }
+    #meser-concepts .lanes { min-width:0; }
+    #meser-concepts .ruler-row,#meser-concepts .track { display:grid;grid-template-columns:216px minmax(0,1fr); }
+    #meser-concepts .ruler-row { min-height:34px;background:var(--daw-panel);font:11px/1.5 ui-monospace,monospace;color:var(--daw-muted); }
+    #meser-concepts .ruler-caption { padding:8px 12px;border-right:1px solid var(--daw-edge); }
+    #meser-concepts .ruler { display:flex;justify-content:space-between;align-items:center;padding:0 8px; }
+    #meser-concepts .track { border-top:1px solid var(--daw-edge); }
+    #meser-concepts .info { padding:12px;border-right:1px solid var(--daw-edge);background:var(--daw-panel);min-width:0; }
+    #meser-concepts .identity { display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px; }
+    #meser-concepts .identity span { overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-weight:500; }
+    #meser-concepts .monitor { display:flex;gap:5px; }
+    #meser-concepts .monitor button { min-width:30px;min-height:30px;padding:3px 6px;font-size:12px; }
+    #meser-concepts .settings { display:grid;gap:6px;margin-top:9px; }
+    #meser-concepts .setting { display:flex;align-items:center;justify-content:space-between;gap:6px;font-size:11px;color:var(--daw-muted); }
+    #meser-concepts .setting input[type=checkbox] { appearance:none;width:27px;height:16px;border-radius:10px;background:var(--daw-edge);position:relative;margin:0;flex-shrink:0;cursor:pointer; }
+    #meser-concepts .setting input[type=checkbox]::after { content:'';position:absolute;top:3px;left:3px;width:10px;height:10px;background:var(--daw-bg);border-radius:50%; }
+    #meser-concepts .setting input:checked { background:var(--daw-accent); }
+    #meser-concepts .setting input:checked::after { left:14px; }
+    #meser-concepts input[type=range] { width:80px;accent-color:var(--daw-accent);margin:0; }
+    #meser-concepts .wave { position:relative;min-width:0;overflow:hidden;min-height:183px;color:var(--daw-wave); }
+    #meser-concepts .track[data-track="1"] .wave { color:var(--daw-wave2); }
+    #meser-concepts .wave svg { display:block;width:100%;height:183px; }
+    #meser-concepts .region { position:absolute;top:0;bottom:0;background:var(--daw-cut);border-inline:1px solid light-dark(#af5b3f,#e89a80);border-radius:0;min-height:0;padding:0;align-items:flex-start;font-size:11px;color:var(--daw-text);overflow:hidden; }
+    #meser-concepts .region:hover { background:var(--daw-cut); }
+    #meser-concepts .region.silence { background:var(--daw-silence);border-color:var(--daw-wave2); }
+    #meser-concepts .region span { padding-top:8px; }
+    #meser-concepts .cursor { position:absolute;top:0;bottom:0;width:1px;background:var(--daw-accent);pointer-events:none; }
+    #meser-concepts .cursor::before { content:'';position:absolute;top:0;left:-3px;width:7px;height:7px;background:var(--daw-accent); }
+    #meser-concepts .scroll { height:15px;background:var(--daw-panel);padding:5px 8px; }
+    #meser-concepts .scroll span { display:block;background:var(--daw-muted);height:5px;border-radius:4px;width:58%;margin-left:15%;opacity:.5; }
+    #meser-concepts .master-dock { display:none;border-left:1px solid var(--daw-edge);background:var(--daw-panel);padding:14px 12px;text-align:center; }
+    #meser-concepts .verticals { display:flex;gap:9px;justify-content:center;height:230px;margin:18px 0 10px; }
+    #meser-concepts .vertical { width:19px;background:var(--daw-edge);position:relative;overflow:hidden;border-radius:2px; }
+    #meser-concepts .vertical .vfill { position:absolute;bottom:0;width:100%;height:72%;background:linear-gradient(0deg,#31927b,#67be86 72%,#dec263 92%,#e66b69); }
+    #meser-concepts .scale { display:flex;flex-direction:column;justify-content:space-between;font:11px/1 ui-monospace,monospace;color:var(--daw-muted); }
+    #meser-concepts .master-dock small { display:block;color:var(--daw-muted);font-size:11px; }
+    #meser-concepts .app[data-layout=b] .scene { grid-template-columns:minmax(0,1fr) 116px; }
+    #meser-concepts .app[data-layout=b] .master-dock { display:block; }
+    #meser-concepts .app[data-layout=b] .wide-meter { display:none; }
+    #meser-concepts .app[data-layout=b] .transport { justify-content:center; }
+    #meser-concepts .app[data-layout=c] .transport { order:4;border-bottom:0;border-top:1px solid var(--daw-edge); }
+    #meser-concepts .app[data-layout=c] .tools { order:1; }
+    #meser-concepts .status { order:5;display:flex;justify-content:space-between;flex-wrap:wrap;gap:8px;padding:9px 14px;font-size:11px;color:var(--daw-muted);border-top:1px solid var(--daw-edge); }
+    @media(max-width:650px) {
+      #meser-concepts .transport { gap:12px;padding:12px; }
+      #meser-concepts .wide-meter { flex-basis:100%; }
+      #meser-concepts .ruler-row,#meser-concepts .track { grid-template-columns:145px minmax(0,1fr); }
+      #meser-concepts .info { padding:9px; }
+      #meser-concepts .identity { flex-wrap:wrap; }
+      #meser-concepts .setting { flex-wrap:wrap; }
+      #meser-concepts .wave,#meser-concepts .wave svg { min-height:235px;height:235px; }
+      #meser-concepts .app[data-layout=b] .scene { grid-template-columns:minmax(0,1fr); }
+      #meser-concepts .app[data-layout=b] .master-dock { display:none; }
+      #meser-concepts .app[data-layout=b] .wide-meter { display:block; }
+      #meser-concepts .app-header { padding:12px; }
+      #meser-concepts .tools { padding:10px;gap:6px; }
+      #meser-concepts .tools .context-tool { width:132px; }
+    }
+    @media(pointer:coarse) { #meser-concepts button { min-height:44px; } #meser-concepts .monitor button { min-height:44px;min-width:44px; } #meser-concepts .setting { min-height:36px; } }
+  </style>
+  <div class="variants" role="group" aria-label="Варианты компоновки">
+    <button type="button" data-layout="a" aria-pressed="true">A · Единая верхняя панель</button>
+    <button type="button" data-layout="b" aria-pressed="false">B · Мастер-канал справа</button>
+    <button type="button" data-layout="c" aria-pressed="false">C · Transport снизу</button>
+  </div>
+  <div class="variant-label"><span class="layout-name">A · Общий уровень встроен в transport</span><span>Макет · демонстрационные уровни · без аудио</span></div>
+  <div class="app" data-layout="a">
+    <div class="app-header"><div><strong>Спикерская</strong><small>Запись встречи · 2 дорожки</small></div><span>Монтаж</span></div>
+    <div class="transport">
+      <div class="playback">
+        <button type="button" class="stop" aria-label="Вернуться к началу"><i data-lucide="skip-back" aria-hidden="true"></i></button>
+        <button type="button" class="play" aria-label="Демонстрация воспроизведения"><i data-lucide="play" aria-hidden="true"></i></button>
+        <button type="button" class="loop" aria-pressed="false"><i data-lucide="repeat-2" aria-hidden="true"></i>Loop</button>
+      </div>
+      <div class="clock"><span class="time">00:16.000</span><small>Время исходной записи</small></div>
+      <div class="wide-meter" aria-label="Общий индикатор L/R, демонстрационные значения">
+        <div class="meter-heading"><span>MASTER · L/R</span><span class="reading">RMS −18.4 · Peak −6.2 dBFS</span></div>
+        <div class="meter-line">L<span class="rail"><span class="fill" style="display:block;width:78%"></span></span></div>
+        <div class="meter-line">R<span class="rail"><span class="fill" style="display:block;width:72%"></span></span></div>
+        <div class="ticks"><span>−60</span><span>−36</span><span>−24</span><span>−12</span><span>0 dBFS</span></div>
+      </div>
+    </div>
+    <div class="tools">
+      <button type="button" class="context-tool" data-tool="cut"><i data-lucide="scissors" aria-hidden="true"></i><span>Вырезать</span></button>
+      <button type="button" class="context-tool" data-tool="silence"><i data-lucide="volume-x" aria-hidden="true"></i><span>Тишина</span></button>
+      <span class="selection">Вырез 20–23 с · Тишина 31–35 с</span>
+      <div class="zoom"><button type="button" data-zoom="-1" aria-label="Уменьшить масштаб"><i data-lucide="minus" aria-hidden="true"></i></button><span class="zoom-value">1×</span><button type="button" data-zoom="1" aria-label="Увеличить масштаб"><i data-lucide="plus" aria-hidden="true"></i></button></div>
+    </div>
+    <div class="scene">
+      <div class="lanes">
+        <div class="ruler-row"><span class="ruler-caption">ИСХОДНАЯ ШКАЛА</span><div class="ruler"></div></div>
+        <div class="track" data-track="0">
+          <div class="info"><div class="identity"><span>01 · Женя</span><div class="monitor"><button type="button" data-monitor="solo" aria-pressed="false" aria-label="Solo дорожки Женя">S</button><button type="button" data-monitor="mute" aria-pressed="false" aria-label="Mute дорожки Женя">M</button></div></div>
+            <div class="meter-line">L<span class="rail"><span class="fill" style="display:block;width:65%"></span></span></div><div class="meter-line">R<span class="rail"><span class="fill" style="display:block;width:61%"></span></span></div>
+            <div class="settings"><label class="setting">Улучшение<input type="checkbox" aria-label="Улучшение дорожки Женя"></label><label class="setting">Выравнивание<input type="checkbox" aria-label="Выравнивание дорожки Женя"></label><label class="setting">Компрессия<input type="range" min="0" max="3" step="1" value="1" aria-label="Компрессия дорожки Женя"></label></div>
+          </div><div class="wave"><svg role="img" aria-label="Условная форма сигнала первой дорожки"></svg><button type="button" class="region cut" data-region="cut" aria-label="Выбрать вырез 20–23 секунды"><span>Вырез</span></button><span class="cursor"></span></div>
+        </div>
+        <div class="track" data-track="1">
+          <div class="info"><div class="identity"><span>02 · Яков</span><div class="monitor"><button type="button" data-monitor="solo" aria-pressed="false" aria-label="Solo дорожки Яков">S</button><button type="button" data-monitor="mute" aria-pressed="false" aria-label="Mute дорожки Яков">M</button></div></div>
+            <div class="meter-line">L<span class="rail"><span class="fill" style="display:block;width:58%"></span></span></div><div class="meter-line">R<span class="rail"><span class="fill" style="display:block;width:54%"></span></span></div>
+            <div class="settings"><label class="setting">Улучшение<input type="checkbox" checked aria-label="Улучшение дорожки Яков"></label><label class="setting">Выравнивание<input type="checkbox" aria-label="Выравнивание дорожки Яков"></label><label class="setting">Компрессия<input type="range" min="0" max="3" step="1" value="0" aria-label="Компрессия дорожки Яков"></label></div>
+          </div><div class="wave"><svg role="img" aria-label="Условная форма сигнала второй дорожки"></svg><button type="button" class="region cut" data-region="cut" aria-label="Выбрать вырез 20–23 секунды"><span>Вырез</span></button><button type="button" class="region silence" data-region="silence" aria-label="Выбрать тишину 31–35 секунды второй дорожки"><span>Тишина</span></button><span class="cursor"></span></div>
+        </div>
+        <div class="scroll" aria-hidden="true"><span></span></div>
+      </div>
+      <div class="master-dock" aria-label="Вертикальный общий индикатор микса"><strong>MASTER</strong><small>L / R</small><div class="verticals"><div class="vertical"><span class="vfill"></span></div><div class="vertical"><span class="vfill" style="height:67%"></span></div><div class="scale"><span>0</span><span>−12</span><span>−24</span><span>−36</span><span>−60</span></div></div><small>Peak −6.2 dBFS</small><small>RMS −18.4 dBFS</small></div>
+    </div>
+    <div class="status"><span class="state">Прослушивание монтажа</span><span>Вырез — все дорожки · Тишина — дорожка 02</span></div>
+  </div>
+  <script>
+    (function(){
+      const root=document.getElementById('meser-concepts'),app=root.querySelector('.app');
+      const labels={a:'A · Общий уровень встроен в transport',b:'B · Общий уровень в отдельном мастер-канале',c:'C · Воспроизведение и общий уровень под дорожками'};
+      let cursor=16, left=12, span=36, zoom=0, playing=false, looping=false, last=0, selected=null, cut=true, silence=true;
+      const fmt=t=>String(Math.floor(t/60)).padStart(2,'0')+':'+String(Math.floor(t%60)).padStart(2,'0')+'.'+String(Math.floor(t*1000)%1000).padStart(3,'0');
+      function paint(){
+        const count=root.clientWidth<650?3:5;
+        root.querySelector('.ruler').replaceChildren(...Array.from({length:count},(_,i)=>{const el=document.createElement('span');el.textContent=fmt(left+span*i/(count-1)).slice(0,5);return el}));
+        root.querySelectorAll('.wave').forEach((wave,track)=>{
+          const svg=wave.querySelector('svg'),w=wave.clientWidth,h=wave.clientHeight;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);
+          let d='';for(let x=0;x<w;x+=3){const t=left+span*x/w;const pulse=Math.max(.025,Math.sin(t*2.2+track*2)*Math.cos(t*.63+track));const a=4+pulse*(19+Math.abs(Math.sin(t*53))*h*.3);d+=`M${x},${h/2-a}v${2*a}`;}
+          svg.innerHTML=`<path d="${d}" stroke="currentColor" stroke-width="1.5" fill="none"/>`;
+          wave.querySelectorAll('.region').forEach(r=>{const isCut=r.dataset.region==='cut',start=isCut?20:31,end=isCut?23:35;r.style.left=(start-left)/span*100+'%';r.style.width=(end-start)/span*100+'%';r.hidden=isCut?!cut:!silence;});
+        });
+        tickView();
+      }
+      function tickView(){
+        root.querySelector('.time').textContent=fmt(cursor);
+        root.querySelectorAll('.cursor').forEach(e=>e.style.left=(cursor-left)/span*100+'%');
+        const tracks=[...root.querySelectorAll('.track')],anySolo=tracks.some(t=>t.querySelector('[data-monitor=solo]').getAttribute('aria-pressed')==='true');
+        let total=0;
+        tracks.forEach((t,i)=>{const audible=anySolo?t.querySelector('[data-monitor=solo]').getAttribute('aria-pressed')==='true':t.querySelector('[data-monitor=mute]').getAttribute('aria-pressed')!=='true';const active=audible && !(i===1&&silence&&cursor>=31&&cursor<35);const value=active?(playing?57+12*Math.sin(cursor*7+i):60-i*5):0;total+=value;t.querySelectorAll('.fill').forEach((e,j)=>e.style.width=Math.max(0,value-j*4)+'%');});
+        root.querySelectorAll('.wide-meter .fill').forEach((e,j)=>e.style.width=Math.max(0,Math.min(92,total*.6-j*3))+'%');
+        root.querySelectorAll('.vfill').forEach((e,j)=>e.style.height=Math.max(0,Math.min(92,total*.6-j*3))+'%');
+      }
+      root.querySelectorAll('.variants button').forEach(b=>b.onclick=()=>{root.querySelectorAll('.variants button').forEach(e=>e.setAttribute('aria-pressed',String(e===b)));app.dataset.layout=b.dataset.layout;root.querySelector('.layout-name').textContent=labels[b.dataset.layout];paint();});
+      root.querySelectorAll('[data-region]').forEach(b=>b.onclick=()=>{selected=b.dataset.region;root.querySelectorAll('[data-tool]').forEach(e=>{const matching=e.dataset.tool===selected;e.querySelector('span').textContent=matching?(selected==='cut'?'Снять вырез':'Снять тишину'):(e.dataset.tool==='cut'?'Вырезать':'Тишина');});root.querySelector('.selection').textContent=selected==='cut'?'Все дорожки · 20–23 с':'Дорожка 02 · 31–35 с';});
+      root.querySelectorAll('[data-tool]').forEach(b=>b.onclick=()=>{const tool=b.dataset.tool;if(selected===tool){if(tool==='cut')cut=false;else silence=false;selected=null;}else{if(tool==='cut')cut=true;else silence=true;}root.querySelectorAll('[data-tool]').forEach(e=>e.querySelector('span').textContent=e.dataset.tool==='cut'?'Вырезать':'Тишина');paint();});
+      root.querySelectorAll('[data-monitor]').forEach(b=>b.onclick=()=>{b.setAttribute('aria-pressed',String(b.getAttribute('aria-pressed')!=='true'));tickView();});
+      root.querySelectorAll('[data-zoom]').forEach(b=>b.onclick=()=>{const next=Math.max(0,Math.min(3,zoom+Number(b.dataset.zoom)));if(next===zoom)return;const anchor=(cursor-left)/span;zoom=next;span=36/2**zoom;left=Math.max(0,Math.min(60-span,cursor-anchor*span));root.querySelector('.zoom-value').textContent=2**zoom+'×';paint();});
+      root.querySelector('.loop').onclick=()=>{looping=!looping;root.querySelector('.loop').setAttribute('aria-pressed',String(looping));root.querySelector('.state').textContent=looping?'Loop · 16–38 с':'Прослушивание монтажа';};
+      root.querySelector('.stop').onclick=()=>{playing=false;cursor=16;root.querySelector('.play').innerHTML='<i data-lucide="play" aria-hidden="true"></i>';if(globalThis.lucide)lucide.createIcons();tickView();};
+      function frame(now){if(!playing)return;if(last)cursor+=(now-last)/1000;last=now;if(cut&&cursor>=20&&cursor<23)cursor=23;if(cursor>=38){if(looping)cursor=16;else{root.querySelector('.stop').click();return;}}tickView();requestAnimationFrame(frame);}
+      root.querySelector('.play').onclick=()=>{playing=!playing;last=0;root.querySelector('.play').innerHTML=`<i data-lucide="${playing?'pause':'play'}" aria-hidden="true"></i>`;if(globalThis.lucide)lucide.createIcons();if(playing)requestAnimationFrame(frame);};
+      new ResizeObserver(paint).observe(root.querySelector('.lanes'));paint();
+    })();
+  </script>
+</div>

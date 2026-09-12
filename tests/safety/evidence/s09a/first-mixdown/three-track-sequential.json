@@ -1,0 +1,266 @@
+{
+  "label": "three-track-sequential",
+  "browser": "151.0.7922.34",
+  "baseUrl": "http://127.0.0.1:56893",
+  "forcedAnalysisConcurrency": 1,
+  "inputs": [
+    {
+      "name": "hour-330-44k-mono.m4a",
+      "sizeBytes": 29556739
+    },
+    {
+      "name": "hour-440-48k-stereo.m4a",
+      "sizeBytes": 29621585
+    },
+    {
+      "name": "hour-550-48k-mono.m4a",
+      "sizeBytes": 29766204
+    }
+  ],
+  "runs": [
+    {
+      "temperature": "cold",
+      "wallMs": 516856.9,
+      "usedJsHeapBytesBefore": 10000000,
+      "usedJsHeapBytesAfter": 10000000,
+      "workerOperations": {
+        "engineLoadMs": [
+          88.7
+        ],
+        "inputWriteMs": [
+          6.4,
+          3,
+          6.3
+        ],
+        "auxiliaryInputWriteMs": [],
+        "analysisExecMs": [
+          61203.5,
+          118334.8,
+          60458
+        ],
+        "finalExecMs": [
+          272449.1
+        ],
+        "waveformExecMs": [
+          3772.7
+        ],
+        "resultReadMs": [
+          11.4
+        ]
+      },
+      "stages": [
+        {
+          "label": "Подготовка аудио…",
+          "firstAtMs": 0.0,
+          "lastAtMs": 0.0
+        },
+        {
+          "label": "Измерение громкости: готовы 0 из 3; обрабатывается дорожка 1.",
+          "firstAtMs": 94.6,
+          "lastAtMs": 61296.8
+        },
+        {
+          "label": "Измерение громкости: готовы 1 из 3; обрабатывается дорожка 2.",
+          "firstAtMs": 61325.5,
+          "lastAtMs": 179295.8
+        },
+        {
+          "label": "Измерение громкости: готовы 2 из 3; обрабатывается дорожка 3.",
+          "firstAtMs": 179688.7,
+          "lastAtMs": 240096.3
+        },
+        {
+          "label": "Измерение громкости: готовы 3 из 3.",
+          "firstAtMs": 240181.0,
+          "lastAtMs": 240181.0
+        },
+        {
+          "label": "Подготовка аудио: дорожка 1 из 3…",
+          "firstAtMs": 240181.2,
+          "lastAtMs": 240181.2
+        },
+        {
+          "label": "Подготовка аудио: дорожка 2 из 3…",
+          "firstAtMs": 240181.3,
+          "lastAtMs": 240181.3
+        },
+        {
+          "label": "Подготовка аудио: дорожка 3 из 3…",
+          "firstAtMs": 240181.3,
+          "lastAtMs": 240181.3
+        },
+        {
+          "label": "Монтаж, обработка и кодирование…",
+          "firstAtMs": 240184.3,
+          "lastAtMs": 512585.4
+        },
+        {
+          "label": "Проверка результата…",
+          "firstAtMs": 512633.7,
+          "lastAtMs": 512633.7
+        },
+        {
+          "label": "Подготовка формы волны…",
+          "firstAtMs": 512704.6,
+          "lastAtMs": 516305.4
+        },
+        {
+          "label": "Финальная версия готова. В архив ничего не передавалось.",
+          "firstAtMs": 516533.2,
+          "lastAtMs": 516533.2
+        }
+      ],
+      "applicationProfile": {
+        "schemaVersion": 2,
+        "engineBuild": "ffmpeg-wasm-0.12.15/core-0.12.10/ffmpeg-n5.1.4-single-thread",
+        "browser": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) HeadlessChrome/151.0.7922.34 Safari/537.36",
+        "coldEngine": true,
+        "sourceDurationSeconds": 3600,
+        "resultDurationSeconds": 3600,
+        "sourceCount": 3,
+        "includedTrackCount": 3,
+        "includedSources": [
+          {
+            "trackId": "32331b91-4a56-4d5f-bacd-1e73efc27686",
+            "mediaType": "audio/x-m4a",
+            "sizeBytes": 29556739,
+            "durationSeconds": 3600
+          },
+          {
+            "trackId": "c5a34700-45a4-4439-ab4e-053d5efece04",
+            "mediaType": "audio/x-m4a",
+            "sizeBytes": 29621585,
+            "durationSeconds": 3600
+          },
+          {
+            "trackId": "25371ad9-515d-4445-96b9-b9cde65db05f",
+            "mediaType": "audio/x-m4a",
+            "sizeBytes": 29766204,
+            "durationSeconds": 3600
+          }
+        ],
+        "settings": [
+          {
+            "trackId": "32331b91-4a56-4d5f-bacd-1e73efc27686",
+            "enhancement": "gentle",
+            "leveling": "on",
+            "compression": "light"
+          },
+          {
+            "trackId": "c5a34700-45a4-4439-ab4e-053d5efece04",
+            "enhancement": "gentle",
+            "leveling": "on",
+            "compression": "light"
+          },
+          {
+            "trackId": "25371ad9-515d-4445-96b9-b9cde65db05f",
+            "enhancement": "gentle",
+            "leveling": "on",
+            "compression": "light"
+          }
+        ],
+        "globalCutCount": 0,
+        "trackSilenceCount": 0,
+        "outputSampleRate": 48000,
+        "cacheEntriesBefore": 0,
+        "cacheEntriesAfter": 3,
+        "usedJsHeapBytesBefore": 10000000,
+        "usedJsHeapBytesAfter": 10000000,
+        "analysisExecCount": 3,
+        "analysisConcurrencyRequested": 1,
+        "analysisConcurrency": 1,
+        "analysisEngineCount": 1,
+        "analysisEnginesCreated": 1,
+        "analysisEnginesTerminated": 0,
+        "analysisTaskCountCompleted": 3,
+        "analysisFallbackReason": null,
+        "auxiliaryLoadMs": 0,
+        "cacheHits": 0,
+        "cacheMisses": 3,
+        "inputTransfers": [
+          {
+            "trackId": "32331b91-4a56-4d5f-bacd-1e73efc27686",
+            "engine": "main",
+            "sizeBytes": 29556739,
+            "readMs": 19.1,
+            "writeMs": 6.5
+          },
+          {
+            "trackId": "c5a34700-45a4-4439-ab4e-053d5efece04",
+            "engine": "main",
+            "sizeBytes": 29621585,
+            "readMs": 24.9,
+            "writeMs": 3.1
+          },
+          {
+            "trackId": "25371ad9-515d-4445-96b9-b9cde65db05f",
+            "engine": "main",
+            "sizeBytes": 29766204,
+            "readMs": 27.6,
+            "writeMs": 6.5
+          }
+        ],
+        "analyses": [
+          {
+            "trackId": "32331b91-4a56-4d5f-bacd-1e73efc27686",
+            "cacheHit": false,
+            "worker": "main",
+            "startedAtMs": 109,
+            "endedAtMs": 61339.8,
+            "durationMs": 61230.8
+          },
+          {
+            "trackId": "c5a34700-45a4-4439-ab4e-053d5efece04",
+            "cacheHit": false,
+            "worker": "main",
+            "startedAtMs": 61340,
+            "endedAtMs": 179703,
+            "durationMs": 118363
+          },
+          {
+            "trackId": "25371ad9-515d-4445-96b9-b9cde65db05f",
+            "cacheHit": false,
+            "worker": "main",
+            "startedAtMs": 179703.1,
+            "endedAtMs": 240195.6,
+            "durationMs": 60492.5
+          }
+        ],
+        "phases": {
+          "engineInitializationMs": 92.8,
+          "analysisWallMs": 240087.2,
+          "inputReadAndWriteMs": 0.1,
+          "finalRenderMs": 272449.3,
+          "resultReadMs": 11.4,
+          "resultValidationMs": 70.7,
+          "waveformPreparationMs": 3828.8,
+          "totalMs": 516558.4
+        },
+        "outcome": "success",
+        "finalLoudnormLog": [
+          "Output Integrated:   -19.1 LUFS",
+          "Output True Peak:    -11.4 dBTP",
+          "Output LRA:            0.0 LU",
+          "Output Threshold:    -29.1 LUFS",
+          "Normalization Type:   Dynamic",
+          "Output Integrated:   -18.9 LUFS",
+          "Output True Peak:    -14.3 dBTP",
+          "Output LRA:            0.0 LU",
+          "Output Threshold:    -28.9 LUFS",
+          "Normalization Type:   Dynamic",
+          "Output Integrated:   -19.0 LUFS",
+          "Output True Peak:    -11.1 dBTP",
+          "Output LRA:            0.0 LU",
+          "Output Threshold:    -29.0 LUFS",
+          "Normalization Type:   Dynamic"
+        ]
+      },
+      "result": {
+        "sizeBytes": 57600912,
+        "sha256": "6e25aebf3cdf089c9d89eb08eb39ef0601d94f877a628eacb486b41e3011fad9",
+        "durationSeconds": 3600
+      }
+    }
+  ],
+  "pageErrors": []
+}

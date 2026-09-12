@@ -1,0 +1,62 @@
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:49686
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS regression: http://127.0.0.1:49686/starter-package/
+S09 browser: PASS; 320/390/768/1280; 254 local gateway requests; no outbound archive access.
+S09 CORS root/subpath regression passed (default Chromium web security).
+S09A browser: local processing, exact project save/retry/reconnect, result save/reopen, 4 widths passed.
+Acceptance P1: new edits/Blob protected; close/newer intent fence delayed Speaker loads.
+Acceptance P1: Announcement session/draft/part 401+403 preserve work through cancel/reconnect and explicit retry.
+Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 1: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+S09A corrective DPR 2: M4A native failure fallback, retained files/retry, two hour-long tracks, editing and compact lanes at four widths passed.
+Design A: PASS; DSP viewport/DOM/audio identity, real per-track silence/restoration, global cut skip, bounds stop, light/dark responsive.
+Design A result: PASS; real Announcement render, readable light/dark result text and transport at 320/390/768/1440.
+Waveform decoder alignment: 41.3s overview/detail/tail peaks PASS.
+Waveform decoder alignment: 129.37s overview/detail/tail peaks PASS.
+Waveform alignment PASS: native/WASM, short/long/tail windows, right-only/anti-phase peaks, both editors repeated fit/detail zoom, actual pixels and audible onset.
+Waveform parity PASS: same file in both editors at 80/159/160/300/1000 px/s, normalized visible contours.
+Waveform motion speaker/fit: 60.1 RAF fps, 0/91 scroll updates, 0/158400 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/overview: 60.2 RAF fps, 91/91 scroll updates, 0/158166 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/medium: 60.1 RAF fps, 91/91 scroll updates, 0/157504 changed source pixels, detail windows=[] PASS.
+Waveform motion speaker/detail: 59.9 RAF fps, 677/678 scroll updates, 0/1101130 changed source pixels, detail windows=['0', '16', '32', '40', '56'] PASS.
+Waveform live zoom speaker: 80→1000→300→80 px/s, uninterrupted audio and stable source pixels PASS.
+Speaker rendered result: 60.5 RAF fps, 91/91 playhead updates, unchanged waveform PASS.
+Waveform motion announcement/fit: 60.2 RAF fps, 0/91 scroll updates, 0/158400 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/overview: 60.2 RAF fps, 91/91 scroll updates, 0/158158 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/medium: 60.1 RAF fps, 91/91 scroll updates, 0/157488 changed source pixels, detail windows=[] PASS.
+Waveform motion announcement/detail: 60.0 RAF fps, 679/679 scroll updates, 0/1102866 changed source pixels, detail windows=['0', '16', '32', '40', '56'] PASS.
+Waveform live zoom announcement: 80→1000→300→80 px/s, uninterrupted audio and stable source pixels PASS.
+Digital meters: PASS; both editors, stereo anti-phase, summed master/clip, mute, stop/reset, four widths, stable tools, thin edges.
+S09A real media signal: PASS; 20 tone/RMS cases, both editors, mute/solo/volume/reorder/exclusion/result isolation.
+Timeline flags/DSP: DPR 1, start/end drag cancellation, keyboard steps, focus, switches and four compression presets passed.
+Timeline controls: DPR 1, both editors, four widths, zoom+scroll seek, three real loop cycles and independent Mute passed.
+Timeline flags/DSP: DPR 2, start/end drag cancellation, keyboard steps, focus, switches and four compression presets passed.
+Timeline controls: DPR 2, both editors, four widths, zoom+scroll seek, three real loop cycles and independent Mute passed.
+PR36 preparation/version: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.
+PR36 preparation/series: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.
+PR36 preparation/decoder-failure: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.
+Corrective library: fresh supported draft only, honest failure states, compact rows, keyboard/touch menus, fresh deletion dependencies and auth consent at four widths passed.
+Corrective deletion: concrete target, retained montage/File/Blob after version removal, source unsaved protection, stale revision and expired-consent rejection passed.
+Corrective epochs: delayed source deletion cannot close a newer local project; no outbound archive access.
+Source Session mock gateway passed: archive list/status, byte reconstruction, local adapter, manual ingestion and 320/390/768/1280 layout.
+Real source waveform passed: shared native peak reader, Retina canvas and empty waveform FS.
+Gateway-unavailable persistence fallback passed: local S07 source state remained intact.
+Real FFmpeg fixture passed: input=7.000000s output=4.347120s shortened=1; MP3=70679 bytes; short pause preserved.
+Waveform failure fallbacks passed: source and result preview failures retained native playback and a valid processed MP3.
+No-long-pause fixture passed: exact-byte passthrough result/download, no output encode; loaded engine reused; metadata cannot spoof detector output.
+Real boundary fixture passed: leading/trailing silence, output=1.700862s, shortened=2; cancel/retry passed.
+Shared source scrollbar/follow passed: fit visibility, bidirectional time sync, centered playback, pause/resume, zoom, boundary clamps and manual disengage.
+Synchronized preview passed: compact tracks, shared zoom/scroll/playheads, drag-vs-click seeking, native transport sync, drift correction and Solo/Mute precedence.
+Real two-track mix passed: 8s -> 5.349333s, common pauses=1, MP3=128kbps; A/B solo and overlapping speech retained, peak=0.902806, clipped fraction=0.000000.
+Real three-track intersection passed: 8s -> 6.346667s, common pauses=1; C protects 3-4s and all three simultaneous tones survive.
+Real no-common-silence mix passed: MP3 produced, exact mixed-without-cuts status, pause count=0, removed duration near zero.
+Duration safety passed: >0.5s rejected after independent analyses with no final encode; exactly 0.5s accepted, longest timeline preserved, missing tail counted as silence.
+Long-source Follow passed: 1000px/s, playback/paused end seek and delayed synchronized scroll at three widths.
+Multi-track cancellation/retry, virtual-FS cleanup, URL revocation, filenames and 390/768/1280 responsive states passed.
+Unsupported-browser processor fallback passed; archive remains functional.
+Browser smoke suite passed.

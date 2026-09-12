@@ -1,0 +1,6 @@
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+Original control captures DPR 1: real WAV fixtures; document origin for fixed-position screenshot geometry; region assertions passed.
+Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.
+Region handles, contextual restore, live flags and bounded playback: PASS
+Original control captures DPR 2: real WAV fixtures; document origin for fixed-position screenshot geometry; region assertions passed.

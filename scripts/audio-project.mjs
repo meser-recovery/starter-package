@@ -44,8 +44,8 @@ export function setRecordingBoundary(payload, duration, kind, value) {
   bounds[kind] = value;
   if (bounds.start < 0 || bounds.end > duration || bounds.end <= bounds.start) throw new Error('Начало должно быть раньше конца записи.');
   next.globalCuts = next.globalCuts.filter(c => kind === 'start' ? c.startSeconds !== 0 : c.endSeconds !== duration);
-  if (kind === 'start' && value > 0) next.globalCuts.push({ regionId: crypto.randomUUID(), startSeconds: 0, endSeconds: value });
-  if (kind === 'end' && value < duration) next.globalCuts.push({ regionId: crypto.randomUUID(), startSeconds: value, endSeconds: duration });
+  if (kind === 'start' && value > 0) next.globalCuts.push({ regionId: payload.globalCuts.find(c => c.startSeconds === 0)?.regionId || crypto.randomUUID(), startSeconds: 0, endSeconds: value });
+  if (kind === 'end' && value < duration) next.globalCuts.push({ regionId: payload.globalCuts.find(c => c.endSeconds === duration)?.regionId || crypto.randomUUID(), startSeconds: value, endSeconds: duration });
   const normalized = normalizeSpeakerPayload(next, next.trackIds, duration);
   if (resultDuration(duration, normalized.globalCuts) <= 0) throw new Error('В записи должен остаться звук.');
   return normalized;

@@ -1,0 +1,39 @@
+✔ play/pause and stop preserve per-track mute; controls follow media events (10.294292ms)
+✔ unready/locked sources cannot start playback or seek (1.368ms)
+✔ source and result cannot play over each other; track mute remains unchanged (0.787458ms)
+✔ master listening volume does not alter any track mute flag (0.228917ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (0.804041ms)
+✔ loop starts at selection and wraps at its right edge without changing mute or volume (1.011333ms)
+✔ stop pauses loop; clearing selection, locking and replacing media disable it (0.716167ms)
+✔ loop handles an end-of-file range and never restarts after result playback takes over (0.533125ms)
+✔ recording bounds govern play, replay, stop and an external playing seek (0.546792ms)
+✔ loop intersects recording bounds and disables for an outside selection (0.960834ms)
+✔ moving bounds during playback takes effect immediately without changing monitor controls (0.486708ms)
+✔ digital meters measure silence without NaN (0.142958ms)
+✔ RMS and peak retain independent meaning and do not clamp clipping (1.560625ms)
+✔ both polarities contribute equally to level (0.223083ms)
+✔ cuts skip their union, preserve monitoring, and stop at recording end (0.847333ms)
+✔ loop skips cuts including its start and rejects a fully cut selection (0.738ms)
+✔ edit envelope handles overlapping cut/silence and partial restoration (0.178667ms)
+✔ edit gate reanchors on seek and restores unity without modifying mute (0.191875ms)
+✔ detail decoding uses a bounded source window and reuses it across panning (446.886167ms)
+✔ late decode cannot paint a changed viewport or a replaced File session (443.948375ms)
+✔ zooming out during a decode does not replace the overview with stale detail (442.255458ms)
+✔ continuous Follow does not starve decoding and retains detail through prefetch (366.788333ms)
+✔ prefetch failure retains the covering detail and applies retry backoff (252.692125ms)
+✔ FFmpeg columns retain their actual sample clock, including padded final windows (3.865291ms)
+✔ visible bitmap is Retina sharp and bounded by viewport, not full recording width (1.017042ms)
+✔ zoomed-out bins retain narrow peaks rather than subsampling them away (0.655417ms)
+✔ panning and zoom use source time; shorter tracks do not stretch to longest track (0.265459ms)
+✔ detail window keeps absolute source time after seek, including a short final window (0.28925ms)
+✔ airy overview preserves a transient in the visual gap; word zoom remains pixel detailed (0.168167ms)
+✔ source columns and peaks stay identical through pixel and fractional panning (25.907833ms)
+✔ stationary frames retain the bitmap; changing theme repaints it (0.331667ms)
+ℹ tests 31
+ℹ suites 0
+ℹ pass 31
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 2035.739416

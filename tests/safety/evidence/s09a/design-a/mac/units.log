@@ -1,0 +1,34 @@
+✔ play/pause and stop preserve per-track mute; controls follow media events (10.9115ms)
+✔ unready/locked sources cannot start playback or seek (0.919458ms)
+✔ source and result cannot play over each other; track mute remains unchanged (0.733875ms)
+✔ master listening volume does not alter any track mute flag (0.153167ms)
+✔ failed playback can retry; stale failures cannot overwrite a new source status (0.748375ms)
+✔ loop starts at selection and wraps at its right edge without changing mute or volume (0.655ms)
+✔ stop pauses loop; clearing selection, locking and replacing media disable it (0.532ms)
+✔ loop handles an end-of-file range and never restarts after result playback takes over (0.301583ms)
+✔ recording bounds govern play, replay, stop and an external playing seek (0.364541ms)
+✔ loop intersects recording bounds and disables for an outside selection (0.504667ms)
+✔ moving bounds during playback takes effect immediately without changing monitor controls (0.321834ms)
+✔ digital meters measure silence without NaN (0.155583ms)
+✔ RMS and peak retain independent meaning and do not clamp clipping (1.186916ms)
+✔ both polarities contribute equally to level (0.062708ms)
+✔ cuts skip their union, preserve monitoring, and stop at recording end (0.718667ms)
+✔ loop skips cuts including its start and rejects a fully cut selection (0.528458ms)
+✔ edit envelope handles overlapping cut/silence and partial restoration (0.131ms)
+✔ edit gate reanchors on seek and restores unity without modifying mute (0.189125ms)
+✔ detail decoding uses a bounded source window and reuses it across panning (443.028542ms)
+✔ late decode cannot paint a changed viewport or a replaced File session (443.202541ms)
+✔ zooming out during a decode does not replace the overview with stale detail (441.917875ms)
+✔ visible bitmap is Retina sharp and bounded by viewport, not full recording width (3.574125ms)
+✔ zoomed-out bins retain narrow peaks rather than subsampling them away (0.533417ms)
+✔ panning and zoom use source time; shorter tracks do not stretch to longest track (0.471125ms)
+✔ detail window keeps absolute source time after seek, including a short final window (0.310834ms)
+✔ airy overview preserves a transient in the visual gap; word zoom remains pixel detailed (0.185334ms)
+ℹ tests 26
+ℹ suites 0
+ℹ pass 26
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1398.982375

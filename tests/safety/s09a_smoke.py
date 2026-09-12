@@ -6,6 +6,8 @@ import math
 import struct
 import subprocess
 import wave
+from s09a_edit_modes_smoke import apply_selection
+
 from pathlib import Path
 from urllib.parse import urlparse
 
@@ -66,10 +68,17 @@ def check_s09a(browser, base_url, screenshot_dir=None):
                 page.screenshot(path=str(output/(name+'-viewport.png')))
             elif 'reconnect' in name or 'unsaved' in name:
                 page.screenshot(path=str(output/(name+'-viewport.png')))
+            if any(part in name for part in ('reconnect', 'unsaved', 'failed', '403')):
+                previous=page.viewport_size
+                for width in (320,390,768,1280):
+                    page.set_viewport_size({'width':width,'height':900})
+                    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
+                    page.screenshot(path=str(output/(name+f'-{width}-viewport.png')))
+                page.set_viewport_size(previous)
     def snapshot():
         return page.evaluate("async()=>{const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();return {session:s.session,payload:s.payload,draft:s.draft,files:s.files.map(f=>[f.name,f.size]),epoch:s.sourceEpoch,candidate:s.candidate?.candidateType}}")
     def unchanged(before):
-        after=snapshot(); assert after['payload']==before['payload']; assert after['files']==before['files']; assert after['epoch']==before['epoch']
+        after=snapshot(); assert after['payload']==before['payload'], (before['payload'],after['payload']); assert after['files']==before['files']; assert after['epoch']==before['epoch']
     def overflow(): assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.viewport_size
     try:
         page.goto(base_url+'/Audio-Editor.html'); page.wait_for_function("document.getElementById('source-session-session-status').textContent.includes('активен')")
@@ -94,11 +103,11 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         original=snapshot(); assert original['session'].get('id') is None
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Вверх',exact=True).click()
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
-        page.locator('.speaker-dsp select').nth(0).select_option('gentle')
+        page.locator('.speaker-dsp input').nth(0).check()
         page.get_by_text('Точное редактирование',exact=True).click()
-        page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-set-start').click()
+        page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-selection-end').fill('2.8');page.locator('#speaker-editor-set-end').click()
-        page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');page.locator('#speaker-editor-add-silence').click()
+        page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');apply_selection(page, 'silence')
         edited=snapshot();
         page.locator('#source-session-results-speaker').click();page.locator('#source-session-results-announcement').click()
         assert page.locator('#speaker-editor').is_visible();unchanged(edited)
@@ -110,10 +119,20 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         wave_control=page.locator('.speaker-track .speaker-waveform').first
         scroll=page.locator('.speaker-track .speaker-waveform-scroll').first
         scroll.evaluate('e=>e.scrollLeft=e.clientWidth')
-        box=scroll.bounding_box();page.mouse.move(box['x']+20,box['y']+40);page.mouse.down();page.mouse.move(box['x']+70,box['y']+40);page.mouse.up()
-        assert float(page.locator('#speaker-editor-selection-end').input_value())>float(page.locator('#speaker-editor-selection-start').input_value())
+        # The sticky toolbar grows with meters. Target the visible waveform,
+        # not the toolbar covering its old document position.
+        scroll.evaluate("e=>e.scrollIntoView({block:'center',inline:'nearest',behavior:'instant'})")
+        box=scroll.bounding_box(); y=box['y']+box['height']*.7
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+20,r.y+r.height*.7))}'), 'Sticky toolbar covers the mouse selection target'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+20,r.y+r.height*.7).closest(".speaker-region-handle,.speaker-boundary")}')
+        expected=scroll.evaluate('(e)=>{const pps=Math.min(1000,e.clientWidth/3*4);return [(e.scrollLeft+20)/pps,(e.scrollLeft+70)/pps]}')
+        page.mouse.move(box['x']+20,y);page.mouse.down();page.mouse.move(box['x']+70,y);page.mouse.up()
+        actual=[float(page.locator('#speaker-editor-selection-'+edge).input_value()) for edge in ('start','end')]
+        assert all(abs(a-b)<.000002 for a,b in zip(actual,expected)), (actual,expected)
+        assert page.locator('#speaker-editor-selection-start').is_visible()
+        unchanged(edited)
         wave_control.focus();page.keyboard.press('Shift+ArrowRight')
-        assert page.locator('.speaker-selection-overlay').count()==1
+        assert page.locator('.speaker-selection-overlay[data-scope=all]').count()==page.locator('.speaker-track').count()
         page.locator('#speaker-editor-zoom-fit').click()
         page.set_viewport_size({'width':320,'height':900})
         help_summary=page.get_by_text('Как работают Solo, Mute и обработка звука',exact=True)
@@ -131,12 +150,18 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-selection-start').fill('0')
         page.locator('#speaker-editor-selection-end').fill('0')
         scroll.scroll_into_view_if_needed();box=scroll.bounding_box()
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return e.contains(document.elementFromPoint(r.x+60,r.y+r.height*.7))}'), 'Sticky transport covers the touch selection target'
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+60,r.y+r.height*.7).closest(".speaker-boundary")}'), 'Select the waveform body, below the draggable flags'
+        # Stay clear of touch-expanded edge handles: this fixture tests plain
+        # selection, while the region helper exercises intentional edge drags.
+        unchanged(edited)
+        assert scroll.evaluate('(e)=>{const r=e.getBoundingClientRect();return !document.elementFromPoint(r.x+60,r.y+r.height*.7).closest(".speaker-region-handle")}')
         touch=context.new_cdp_session(page)
-        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+20,'y':box['y']+30}]})
-        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+70,'y':box['y']+30}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchStart','touchPoints':[{'x':box['x']+60,'y':box['y']+box['height']*.7}]})
+        touch.send('Input.dispatchTouchEvent',{'type':'touchMove','touchPoints':[{'x':box['x']+110,'y':box['y']+box['height']*.7}]})
         touch.send('Input.dispatchTouchEvent',{'type':'touchEnd','touchPoints':[]})
         assert float(page.locator('#speaker-editor-selection-end').input_value())>float(page.locator('#speaker-editor-selection-start').input_value())
-        touch.detach()
+        touch.detach();unchanged(edited)
         page.locator('.speaker-track').first.get_by_role('button',name='S · Solo').click();unchanged(edited)
         assert page.locator('.speaker-track.is-solo').count()==1
         for width in (320,390,768,1280):
@@ -203,14 +228,14 @@ def check_s09a(browser, base_url, screenshot_dir=None):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'project-reopened-{width}')
         # Save-and-continue waits for the confirmed project; explicit discard and close cancellation are distinct.
         page.get_by_text('Точное редактирование',exact=True).click()
-        page.locator('#speaker-editor-selection-start').fill('.3');page.locator('#speaker-editor-set-start').click()
+        page.locator('#speaker-editor-selection-start').fill('.3');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#open-local-announcement').click();page.locator('#speaker-unsaved-save').click()
         page.wait_for_function("!document.getElementById('announcement-processor-card').hidden")
         assert page.locator('#speaker-editor').is_hidden()
         assert command('snapshot')['sessions'][-1] is not None
         page.goto(base_url+f'/Audio-Editor.html?session={source["id"]}&workflow=speaker')
         page.wait_for_function("document.getElementById('speaker-editor-status').textContent==='Все изменения сохранены'")
-        page.get_by_text('Точное редактирование',exact=True).click();page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-set-start').click()
+        page.get_by_text('Точное редактирование',exact=True).click();page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-cancel').click();assert page.locator('#speaker-editor').is_visible()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-discard').click();assert page.locator('#speaker-editor').is_hidden()
         page.goto(base_url+'/Audio-Archive.html');page.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
