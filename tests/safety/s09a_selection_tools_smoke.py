@@ -7,7 +7,7 @@ def check_selection_tools(page, output=None):
     tools = page.locator('.speaker-selection__actions button')
     assert tools.count() == 4
     for button in tools.all():
-        assert button.is_enabled() if button.get_attribute('id') in ('speaker-editor-add-cut','speaker-editor-add-silence') else button.is_disabled()
+        assert button.is_enabled()
         assert button.locator('svg[aria-hidden=true]').count() == 1
     rows = page.locator('.speaker-track')
     ids = rows.evaluate_all('rows => rows.map(row => row.dataset.trackId)')
@@ -47,19 +47,18 @@ def check_selection_tools(page, output=None):
     assert_audio(False, True)
     rows.nth(1).locator('[data-action=mute]').click()
 
-    # The range appears during dragging, before pointerup. A one-track silence
-    # must retain the target's stable ID; a global cut must stay global.
+    # The ordinary shared range appears on every row during dragging. Arming
+    # Silence then narrows the same interval to its stable target identity.
     wave = rows.nth(1).locator('.speaker-waveform')
     wave.scroll_into_view_if_needed()
     box = wave.bounding_box()
     page.mouse.move(box['x'] + box['width'] * .2, box['y'] + box['height'] * .5)
     page.mouse.down()
     page.mouse.move(box['x'] + box['width'] * .4, box['y'] + box['height'] * .5, steps=5)
-    assert rows.nth(1).locator('.speaker-selection-overlay').count() == 1
-    assert rows.nth(0).locator('.speaker-selection-overlay').count() == 0
+    assert page.locator('.speaker-selection-overlay[data-scope=all]').count() == rows.count()
     page.mouse.up()
     assert page.locator('#speaker-editor-selection-track').input_value() == ids[1]
-    assert 'Дорожка 2' in page.locator('#speaker-selection-summary').inner_text()
+    assert 'Все дорожки' in page.locator('#speaker-selection-summary').inner_text()
     assert tools.locator('svg').count() == 4
     apply_selection(page, 'silence')
     payload = page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload")

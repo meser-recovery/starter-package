@@ -3,6 +3,7 @@ import { createAudioMeters, setPlaybackRegions } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
 import { createWaveformDetail } from "./audio-waveform-detail.mjs";
 import { drawWaveformViewport } from "./audio-waveform-view.mjs";
+import { defaultTrackColor, installEditorExpansion, installSpaceTransport, installTimelineZoomGestures } from "./audio-timeline-ux.mjs";
 import { createWaveformReader } from "./speaker-waveform.mjs";
 import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
@@ -20,7 +21,8 @@ const state = {
   session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
-  selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "track", cancelSelection: null, pixelsPerSecond: 2, follow: false, resultDuration: NaN, resultPixelsPerSecond: 2
+  selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
+  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2
 };
 
 const fingerprint = (value) => JSON.stringify(value);
@@ -30,6 +32,7 @@ const sourceTransport = createAudioTransport({
   getCuts: () => (state.dragPayload || state.payload)?.globalCuts || [],
   getBounds: () => state.ready ? recordingBoundaries(state.dragPayload || state.payload, state.originalDuration) : null,
   getSelection: () => { if (!state.ready) return null; try { return readSelection(); } catch { return null; } },
+  onLoopChange: ({ enabled, range }) => { state.loopEnabled = enabled; state.loopRange = range; renderGlobalRegions(); },
   reportError: message => { byId("status").textContent = message; }
 });
 const meters = createAudioMeters({ root: workspace, resultAudio: byId("result-audio") });
@@ -94,7 +97,7 @@ function notifyState() {
   window.dispatchEvent(new CustomEvent("speaker-editor-state", { detail: getSpeakerSaveState() }));
 }
 
-function setSelection(start, end, trackId = null, scope = state.editTool === "cut" ? "all" : "track", region = null) {
+function setSelection(start, end, trackId = null, scope = state.editTool === "silence" ? "track" : "all", region = null) {
   state.selectedRegion = region;
   state.selectionScope = scope;
   byId("selection-start").value = Number.isFinite(start) ? String(microseconds(start)) : "";
@@ -324,7 +327,8 @@ function paintEditGeometry(payload) {
   const bounds = recordingBoundaries(payload, state.originalDuration);
   for (const wave of byId("tracks").querySelectorAll(".speaker-waveform")) {
     wave.querySelectorAll("[data-gesture-preview]").forEach(n => n.remove());
-    const regions = [...payload.globalCuts, ...payload.trackSilenceRegions.filter(r => r.trackId === wave.dataset.trackId)];
+    paintOutsideZones(wave, bounds, Boolean(state.dragPayload));
+    const regions = [...payload.globalCuts.filter(r => r.startSeconds !== 0 && r.endSeconds !== state.originalDuration), ...payload.trackSilenceRegions.filter(r => r.trackId === wave.dataset.trackId)];
     const regionMap = new Map(regions.map(r => [r.regionId, r]));
     const painted = new Set();
     for (const overlay of wave.querySelectorAll("[data-region-id]")) {
@@ -334,7 +338,8 @@ function paintEditGeometry(payload) {
       if (region) paintRegion(overlay, region);
     }
     for (const region of regions) if (!painted.has(region.regionId)) {
-      const overlay = element("span", "speaker-region-overlay speaker-region-overlay--cut");
+      const silence = "trackId" in region;
+      const overlay = element("span", `speaker-region-overlay speaker-region-overlay--${silence ? "silence" : "cut"}`);
       overlay.dataset.gesturePreview = "true"; paintRegion(overlay, region); wave.append(overlay);
     }
     for (const [kind, time] of Object.entries(bounds)) {
@@ -346,6 +351,20 @@ function paintEditGeometry(payload) {
     }
   }
   sourceTransport.refresh();
+}
+
+function paintOutsideZones(control, bounds, preview = false) {
+  control.querySelectorAll(".timeline-outside-region").forEach(node => node.remove());
+  const committed = recordingBoundaries(state.payload, state.originalDuration);
+  for (const [kind, startSeconds, endSeconds] of [["start", 0, bounds.start], ["end", bounds.end, state.originalDuration]]) {
+    if (!(endSeconds > startSeconds)) continue;
+    const outside = element("span", "timeline-outside-region");
+    outside.style.left = `${startSeconds / state.originalDuration * 100}%`;
+    outside.style.width = `${(endSeconds - startSeconds) / state.originalDuration * 100}%`;
+    outside.title = `Вне записи · ${startSeconds.toFixed(3)}–${endSeconds.toFixed(3)} с`;
+    if (preview && bounds[kind] !== committed[kind]) outside.dataset.gesturePreview = "true";
+    outside.append(element("span", "timeline-region-label", "Вне записи")); control.append(outside);
+  }
 }
 function paintRegion(overlay, region) {
   overlay.style.left = `${region.startSeconds / state.originalDuration * 100}%`;
@@ -452,7 +471,16 @@ function waveform(track) {
   const control = element("div", "speaker-waveform"); control.setAttribute("role", "group"); control.tabIndex = 0; control.dataset.trackId = track.trackId;
   control.setAttribute("aria-label", `Форма сигнала ${track.file.name}. Клик ставит позицию; протягивание выделяет фрагмент; клик по правке выбирает её для снятия. Стрелки перемещают позицию; Shift со стрелками изменяет конец выделения.`);
   const canvas = document.createElement("canvas"); canvas.height = 100; drawCanvas(canvas, track); control.append(canvas);
-  for (const cut of state.payload.globalCuts) {
+  const bounds = recordingBoundaries(state.dragPayload || state.payload, state.originalDuration);
+  paintOutsideZones(control, bounds);
+  if (state.loopEnabled && state.loopRange) {
+    const loop = element("span", "timeline-loop-region");
+    loop.style.left = `${state.loopRange.startSeconds / state.originalDuration * 100}%`;
+    loop.style.width = `${(state.loopRange.endSeconds - state.loopRange.startSeconds) / state.originalDuration * 100}%`;
+    loop.title = `Loop · ${state.loopRange.startSeconds.toFixed(3)}–${state.loopRange.endSeconds.toFixed(3)} с`;
+    control.append(loop);
+  }
+  for (const cut of state.payload.globalCuts.filter(r => r.startSeconds !== 0 && r.endSeconds !== state.originalDuration)) {
     const overlay = element("span", "speaker-region-overlay speaker-region-overlay--cut");
     overlay.style.left = `${cut.startSeconds / state.originalDuration * 100}%`; overlay.style.width = `${(cut.endSeconds - cut.startSeconds) / state.originalDuration * 100}%`;
     overlay.title = `Глобальный вырез ${cut.startSeconds.toFixed(6)}–${cut.endSeconds.toFixed(6)} с`; markEditableRegion(overlay, cut, track.trackId, scroll); control.append(overlay);
@@ -460,9 +488,8 @@ function waveform(track) {
   for (const region of state.payload.trackSilenceRegions.filter((item) => item.trackId === track.trackId)) {
     const overlay = element("span", "speaker-region-overlay speaker-region-overlay--silence");
     overlay.style.left = `${region.startSeconds / state.originalDuration * 100}%`; overlay.style.width = `${(region.endSeconds - region.startSeconds) / state.originalDuration * 100}%`;
-    overlay.title = `Тишина ${region.startSeconds.toFixed(6)}–${region.endSeconds.toFixed(6)} с`; markEditableRegion(overlay, region, track.trackId, scroll); control.append(overlay);
+    overlay.title = `Тишина ${region.startSeconds.toFixed(6)}–${region.endSeconds.toFixed(6)} с`; overlay.append(element("span", "timeline-region-label", "Тишина")); markEditableRegion(overlay, region, track.trackId, scroll); control.append(overlay);
   }
-  const bounds = recordingBoundaries(state.payload, state.originalDuration);
   for (const [kind, time] of Object.entries(bounds)) control.append(boundaryMarker(kind, time, scroll));
   const playhead = element("span", "speaker-playhead"); playhead.setAttribute("aria-hidden", "true"); control.append(playhead);
   let pointerStart = null;
@@ -511,7 +538,9 @@ function waveform(track) {
     const current = byId("source-audio").currentTime || 0; const step = 5;
     seekSource(event.key === "Home" ? 0 : event.key === "End" ? state.originalDuration : current + (event.key === "ArrowLeft" ? -step : step));
   });
-  scroll.addEventListener("scroll", () => syncScroll(scroll), { passive: true }); scroll.append(control); return scroll;
+  scroll.addEventListener("scroll", () => syncScroll(scroll), { passive: true });
+  installTimelineZoomGestures(scroll, { getZoom: () => state.pixelsPerSecond, setZoomAt: setSpeakerZoomAt });
+  scroll.append(control); return scroll;
 }
 
 function pointerTime(event, scroll) {
@@ -583,8 +612,14 @@ function renderTracks() {
   state.payload.trackIds.forEach((trackId, index) => {
     const track = state.tracks.find((item) => item.trackId === trackId); const setting = state.payload.trackProcessing.find((item) => item.trackId === trackId);
     const item = element("li", `speaker-track${excluded.has(trackId) ? " is-excluded" : ""}`); item.dataset.trackId = trackId;
+    item.style.setProperty("--track-wave", track.color || defaultTrackColor(index));
     const header = element("div", "speaker-track__header"); const heading = element("div", "speaker-track__identity");
-    heading.append(element("span", "speaker-track__number", `Дорожка ${index + 1}`), element("h4", "", track.file.name),
+    const colorLabel = element("label", "track-color-control");
+    const color = document.createElement("input"); color.type = "color"; color.value = track.color || defaultTrackColor(index);
+    color.setAttribute("aria-label", `Цвет дорожки ${index + 1}: ${track.file.name}`); color.title = color.getAttribute("aria-label");
+    color.addEventListener("input", () => { track.color = color.value; item.style.setProperty("--track-wave", track.color); redrawSourceWaves(); });
+    colorLabel.append(color);
+    heading.append(colorLabel, element("span", "speaker-track__number", `Дорожка ${index + 1}`), element("h4", "", track.file.name),
       element("span", "", `${durationText(track.duration)} · ${excluded.has(trackId) ? "Не в финальном миксе" : "в финальном миксе"}`));
     const monitor = element("div", "speaker-track__buttons");
     const solo = makeButton("S · Solo", () => toggleMonitoring(trackId, "solo"), trackId, !state.ready); solo.dataset.action = "solo"; solo.setAttribute("aria-pressed", String(track.solo));
@@ -622,6 +657,7 @@ function renderTracks() {
     item.append(controls, preview); list.append(item);
   });
   meters.sync(state.tracks.map(track => ({ id: track.trackId, audio: track.audio, container: [...list.children].find(row => row.dataset.trackId === track.trackId)?.querySelector(".speaker-track-controls") })));
+  applyTrackHeight();
   updateWaveWidths();
   for (const scroll of list.querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = scrollLeft;
   redrawSourceWaves(); updateScrollbar(); applyMonitoring(); updateSelectionDuration();
@@ -712,9 +748,97 @@ function maximumScroll() {
   const first = byId("tracks").querySelector(".speaker-waveform-scroll"); return first ? Math.max(0, first.scrollWidth - first.clientWidth) : 0;
 }
 
+function paintLoopStrip(strip, range) {
+  if (!strip || !range || !(state.originalDuration > 0)) return;
+  strip.style.left = `${range.startSeconds / state.originalDuration * 100}%`;
+  strip.style.width = `${(range.endSeconds - range.startSeconds) / state.originalDuration * 100}%`;
+  strip.title = `Loop · ${range.startSeconds.toFixed(3)}–${range.endSeconds.toFixed(3)} с`;
+  for (const handle of strip.querySelectorAll("[data-loop-edge]")) {
+    const value = range[handle.dataset.loopEdge === "start" ? "startSeconds" : "endSeconds"];
+    handle.setAttribute("aria-valuenow", String(value)); handle.setAttribute("aria-valuetext", `${value.toFixed(3)} с`);
+  }
+}
+
+function bindLoopHandle(handle, edge) {
+  let drag = null;
+  const cancel = () => {
+    if (!drag) return;
+    const old = drag; drag = null; state.loopHandleDrag = false; state.cancelSelection = null;
+    if (handle.hasPointerCapture(old.id)) handle.releasePointerCapture(old.id);
+    setSelection(old.range.startSeconds, old.range.endSeconds, old.trackId, "all");
+  };
+  const update = event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    const bounds = recordingBoundaries(state.payload, state.originalDuration);
+    const delta = (event.clientX - drag.x) / state.pixelsPerSecond;
+    let start = drag.range.startSeconds, end = drag.range.endSeconds;
+    if (edge === "start") start = Math.max(bounds.start, Math.min(end - .000001, start + delta));
+    else end = Math.min(bounds.end, Math.max(start + .000001, end + delta));
+    setSelection(microseconds(start), microseconds(end), drag.trackId, "all");
+  };
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || !state.loopEnabled || editorBusy()) return;
+    event.preventDefault(); event.stopPropagation();
+    const range = state.loopRange; if (!range) return;
+    drag = { id: event.pointerId, x: event.clientX, range: { ...range }, trackId: byId("selection-track").value };
+    state.loopHandleDrag = true; state.cancelSelection = cancel; handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", update);
+  handle.addEventListener("pointerup", event => {
+    if (!drag || event.pointerId !== drag.id) return;
+    update(event); drag = null; state.loopHandleDrag = false; state.cancelSelection = null;
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    renderGlobalRegions();
+  });
+  handle.addEventListener("pointercancel", cancel); handle.addEventListener("lostpointercapture", cancel);
+  handle.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.stopPropagation(); cancel(); return; }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !state.loopRange) return;
+    event.preventDefault(); event.stopPropagation();
+    const bounds = recordingBoundaries(state.payload, state.originalDuration); const step = event.shiftKey ? 1 : .01;
+    let start = state.loopRange.startSeconds, end = state.loopRange.endSeconds;
+    const value = event.key === "Home" ? bounds.start : event.key === "End" ? bounds.end : (edge === "start" ? start : end) + (event.key === "ArrowLeft" ? -step : step);
+    if (edge === "start") start = Math.max(bounds.start, Math.min(end - .000001, value)); else end = Math.min(bounds.end, Math.max(start + .000001, value));
+    setSelection(microseconds(start), microseconds(end), byId("selection-track").value, "all");
+  });
+}
+
+function renderGlobalRegions() {
+  const layer = byId("global-regions"); const first = byId("tracks")?.querySelector(".speaker-waveform-scroll");
+  for (const wave of byId("tracks")?.querySelectorAll(".speaker-waveform") || []) {
+    wave.querySelector(".timeline-loop-region")?.remove();
+    if (state.loopEnabled && state.loopRange && state.originalDuration > 0) {
+      const loop = element("span", "timeline-loop-region");
+      loop.style.left = `${state.loopRange.startSeconds / state.originalDuration * 100}%`;
+      loop.style.width = `${(state.loopRange.endSeconds - state.loopRange.startSeconds) / state.originalDuration * 100}%`;
+      loop.title = `Loop · ${state.loopRange.startSeconds.toFixed(3)}–${state.loopRange.endSeconds.toFixed(3)} с`; wave.append(loop);
+    }
+  }
+  if (!layer || !first || !(state.originalDuration > 0)) { layer?.replaceChildren(); return; }
+  layer.style.width = `${Math.max(first.clientWidth, Math.ceil(state.originalDuration * state.pixelsPerSecond))}px`;
+  layer.style.transform = `translateX(${-first.scrollLeft}px)`;
+  if (state.loopHandleDrag) { paintLoopStrip(layer.querySelector(".timeline-loop-strip"), state.loopRange); return; }
+  layer.replaceChildren();
+  for (const cut of (state.dragPayload || state.payload).globalCuts.filter(r => r.startSeconds !== 0 && r.endSeconds !== state.originalDuration)) {
+    const label = element("span", "timeline-cut-label", "Вырез");
+    label.style.left = `${cut.startSeconds / state.originalDuration * 100}%`;
+    label.style.width = `${(cut.endSeconds - cut.startSeconds) / state.originalDuration * 100}%`;
+    label.title = `Вырез · ${cut.startSeconds.toFixed(3)}–${cut.endSeconds.toFixed(3)} с`; layer.append(label);
+  }
+  if (state.loopEnabled && state.loopRange) {
+    const strip = element("span", "timeline-loop-strip"); strip.append(element("span", "timeline-region-label", "Loop"));
+    for (const edge of ["start", "end"]) {
+      const handle = element("span", `timeline-loop-handle timeline-loop-handle--${edge}`); handle.dataset.loopEdge = edge;
+      handle.tabIndex = 0; handle.setAttribute("role", "slider"); handle.setAttribute("aria-valuemin", "0"); handle.setAttribute("aria-valuemax", String(state.originalDuration));
+      handle.setAttribute("aria-label", `Loop: ${edge === "start" ? "левая" : "правая"} граница`); bindLoopHandle(handle, edge); strip.append(handle);
+    }
+    paintLoopStrip(strip, state.loopRange); layer.append(strip);
+  }
+}
+
 function updateScrollbar() {
   const rail = byId("source-scrollbar"); const thumb = rail.firstElementChild; const first = byId("tracks").querySelector(".speaker-waveform-scroll");
-  if (!first) return; renderSourceTimeline("speaker-source-timeline", state.originalDuration, state.pixelsPerSecond, first.scrollLeft); const fraction = Math.min(1, first.clientWidth / first.scrollWidth); const width = Math.max(36, rail.clientWidth * fraction);
+  if (!first) return; renderSourceTimeline("speaker-source-timeline", state.originalDuration, state.pixelsPerSecond, first.scrollLeft); renderGlobalRegions(); const fraction = Math.min(1, first.clientWidth / first.scrollWidth); const width = Math.max(36, rail.clientWidth * fraction);
   const max = maximumScroll(); const travel = Math.max(0, rail.clientWidth - width); thumb.style.width = `${width}px`; thumb.style.transform = `translateX(${max ? first.scrollLeft / max * travel : 0}px)`;
   rail.setAttribute("aria-valuemax", String(max)); rail.setAttribute("aria-valuenow", String(Math.round(first.scrollLeft)));
 }
@@ -729,23 +853,60 @@ function syncScroll(origin) {
   redrawSourceWaves(); updateScrollbar();
 }
 
-function updateWaveWidths(anchor = false) {
+function updateWaveWidths(anchor = false, explicitTime = NaN, explicitOffset = NaN) {
   const first = byId("tracks").querySelector(".speaker-waveform-scroll"); if (!first?.clientWidth || !Number.isFinite(state.originalDuration) || state.originalDuration <= 0) return;
   const base = first.clientWidth / state.originalDuration;
   const center = (first.scrollLeft + first.clientWidth / 2) / state.pixelsPerSecond;
   const playhead = byId("source-audio").currentTime || 0;
   const selected = Number(byId("selection-start").value);
-  const anchorTime = byId("selection-start").value ? selected : playhead > 0 ? playhead : center;
-  byId("zoom").max = String(Math.max(8, Math.ceil(1000 / base)));
-  state.pixelsPerSecond = Math.max(.01, Math.min(1000, base * Number(byId("zoom").value)));
+  const anchorTime = Number.isFinite(explicitTime) ? explicitTime : byId("selection-start").value ? selected : playhead > 0 ? playhead : center;
+  state.timeZoomMax = Math.max(8, Math.ceil(1000 / base));
+  if (state.scaleMode === "time") byId("zoom").max = String(state.timeZoomMax);
+  const factor = state.scaleMode === "time" ? Number(byId("zoom").value) : state.timeZoomValue;
+  state.timeZoomValue = factor;
+  state.pixelsPerSecond = Math.max(.01, Math.min(1000, base * factor));
   byId("zoom").setAttribute("aria-valuetext", `${state.pixelsPerSecond.toFixed(1)} пикселей в секунду`);
+  if (state.scaleMode === "time") byId("scale-value").textContent = `${state.pixelsPerSecond.toFixed(state.pixelsPerSecond < 10 ? 1 : 0)} px/s`;
   const width = Math.max(first.clientWidth, Math.ceil(state.originalDuration * state.pixelsPerSecond));
   for (const control of byId("tracks").querySelectorAll(".speaker-waveform")) control.style.width = `${width}px`;
   if (anchor) {
-    first.scrollLeft = Math.max(0, anchorTime * state.pixelsPerSecond - first.clientWidth / 2);
+    const offset = Number.isFinite(explicitOffset) ? explicitOffset : first.clientWidth / 2;
+    first.scrollLeft = Math.max(0, anchorTime * state.pixelsPerSecond - offset);
     for (const scroll of byId("tracks").querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = first.scrollLeft;
   }
   redrawSourceWaves(); updatePlayheads(); updateScrollbar();
+}
+
+function setSpeakerZoomAt(pixelsPerSecond, anchorTime, anchorOffset) {
+  const first = byId("tracks").querySelector(".speaker-waveform-scroll");
+  if (!first || !(state.originalDuration > 0)) return;
+  const base = first.clientWidth / state.originalDuration;
+  state.follow = false; byId("follow").setAttribute("aria-pressed", "false");
+  state.timeZoomValue = Math.max(1, Math.min(state.timeZoomMax, pixelsPerSecond / base));
+  if (state.scaleMode === "time") byId("zoom").value = String(state.timeZoomValue);
+  updateWaveWidths(true, anchorTime, anchorOffset);
+}
+
+function applyTrackHeight() {
+  workspace.style.setProperty("--track-height", `${state.trackHeight}px`);
+  workspace.classList.toggle("has-compact-tracks", state.trackHeight < 200);
+  byId("scale-value").textContent = state.scaleMode === "height" ? `${state.trackHeight} px` : `${state.pixelsPerSecond.toFixed(state.pixelsPerSecond < 10 ? 1 : 0)} px/s`;
+  redrawSourceWaves();
+}
+
+function setScaleMode(mode) {
+  const range = byId("zoom");
+  if (mode === state.scaleMode) return;
+  if (state.scaleMode === "time") state.timeZoomValue = Number(range.value);
+  else state.trackHeight = Number(range.value);
+  state.scaleMode = mode;
+  const height = mode === "height";
+  byId("scale-mode").setAttribute("aria-pressed", String(height));
+  byId("scale-mode").setAttribute("aria-label", height ? "Переключить на масштаб времени" : "Переключить на высоту дорожек");
+  byId("scale-mode").querySelector("span").textContent = height ? "Высота" : "Время";
+  byId("scale-mode").querySelector("path").setAttribute("d", height ? "M12 4v16M9 7l3-3 3 3m-6 10 3 3 3-3" : "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
+  if (height) { range.min = "148"; range.max = "300"; range.step = "4"; range.value = String(state.trackHeight); range.setAttribute("aria-label", "Высота всех дорожек Спикерской"); applyTrackHeight(); }
+  else { range.min = "1"; range.max = String(state.timeZoomMax); range.step = ".25"; range.value = String(state.timeZoomValue); range.setAttribute("aria-label", "Масштаб времени исходников Спикерской"); updateWaveWidths(true); }
 }
 
 function seekSource(seconds) {
@@ -850,7 +1011,9 @@ async function prepareSources(epoch) {
     const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
     state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
     state.savedFingerprint = draft ? fingerprint(normalized) : "";
-    setupPlayback(); state.ready = true; render();
+    setupPlayback(); state.ready = true;
+    setSelection(0, originalDuration, state.payload.trackIds[0], "all");
+    render();
   } catch (error) {
     if (!current()) throw new DOMException("cancelled", "AbortError");
     const detail = userMessage(error, "Не удалось декодировать аудио для формы сигнала.");
@@ -1078,14 +1241,17 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   if (!await closeSpeakerEditor(false, isCurrent) || !isCurrent()) return false;
   const epoch = ++state.sourceEpoch;
   state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
-  state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null }));
+  state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null, color: defaultTrackColor(index) }));
   state.payload = draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
   state.history = new SpeakerHistory(state.payload); state.savedFingerprint = draft ? fingerprint(state.payload) : ""; state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;
   document.getElementById("announcement-processor-card").hidden = true;
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
-  setSelection(0, ""); clearCandidate();
+  state.selectionScope = "all"; state.scaleMode = "time"; state.timeZoomValue = 1; state.timeZoomMax = 8; state.trackHeight = 196;
+  byId("zoom").min = "1"; byId("zoom").step = ".25"; byId("zoom").value = "1";
+  byId("scale-mode").setAttribute("aria-pressed", "false"); byId("scale-mode").querySelector("span").textContent = "Время";
+  setSelection(0, "", orderedManifest[0]?.trackId, "all"); clearCandidate();
   state.originalDuration = NaN; render();
   window.dispatchEvent(new Event("speaker-editor-opened"));
   try { await prepareSources(epoch); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
@@ -1096,7 +1262,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   }
 }
 
-byId("selection-track").addEventListener("change", () => { state.selectedRegion = null; state.selectionScope = state.editTool === "cut" ? "all" : "track"; updateSelectionDuration(); });
+byId("selection-track").addEventListener("change", () => { state.selectedRegion = null; state.selectionScope = state.editTool === "silence" ? "track" : "all"; updateSelectionDuration(); });
 for (const id of ["selection-start", "selection-end"]) byId(id).addEventListener("input", () => { state.selectedRegion = null; updateSelectionDuration(); });
 function selectEditTool(tool) {
   state.cancelSelection?.();
@@ -1104,7 +1270,7 @@ function selectEditTool(tool) {
   if (selectedEdits(key).length) { restoreSelected(key); return; }
   state.selectedRegion = null;
   state.editTool = state.editTool === tool ? null : tool;
-  state.selectionScope = state.editTool === "cut" ? "all" : "track";
+  state.selectionScope = state.editTool === "silence" ? "track" : "all";
   updateSelectionDuration();
 }
 byId("add-cut").addEventListener("click", () => selectEditTool("cut")); byId("add-silence").addEventListener("click", () => selectEditTool("silence"));
@@ -1119,8 +1285,10 @@ document.addEventListener("keydown", event => {
 });
 byId("undo").addEventListener("click", undo); byId("redo").addEventListener("click", redo); byId("save").addEventListener("click", saveSpeakerProject);
 byId("close").addEventListener("click", () => closeSpeakerEditor(false)); byId("render").addEventListener("click", renderSpeaker); byId("cancel").addEventListener("click", cancelRender);
-byId("zoom").addEventListener("input", () => updateWaveWidths(true)); byId("zoom-out").addEventListener("click", () => { byId("zoom").value = Math.max(1, Number(byId("zoom").value) / 2); updateWaveWidths(true); });
-byId("zoom-in").addEventListener("click", () => { byId("zoom").value = Math.min(Number(byId("zoom").max), Number(byId("zoom").value) * 2); updateWaveWidths(true); }); byId("zoom-fit").addEventListener("click", () => { byId("zoom").value = 1; updateWaveWidths(); });
+byId("zoom").addEventListener("input", () => { if (state.scaleMode === "height") { state.trackHeight = Number(byId("zoom").value); applyTrackHeight(); } else { state.timeZoomValue = Number(byId("zoom").value); updateWaveWidths(true); } });
+byId("scale-mode").addEventListener("click", () => setScaleMode(state.scaleMode === "time" ? "height" : "time"));
+byId("zoom-out").addEventListener("click", () => { state.timeZoomValue = Math.max(1, state.timeZoomValue / 2); if (state.scaleMode === "time") byId("zoom").value = String(state.timeZoomValue); updateWaveWidths(true); });
+byId("zoom-in").addEventListener("click", () => { state.timeZoomValue = Math.min(state.timeZoomMax, state.timeZoomValue * 2); if (state.scaleMode === "time") byId("zoom").value = String(state.timeZoomValue); updateWaveWidths(true); }); byId("zoom-fit").addEventListener("click", () => { state.timeZoomValue = 1; if (state.scaleMode === "time") byId("zoom").value = "1"; updateWaveWidths(); });
 byId("follow").addEventListener("click", () => { state.follow = !state.follow; byId("follow").setAttribute("aria-pressed", String(state.follow)); });
 byId("source-audio").addEventListener("pause", stopOtherPlayback);
 byId("source-audio").addEventListener("ended", stopOtherPlayback);
@@ -1156,6 +1324,10 @@ window.addEventListener("resize", () => {
   }
   updateWaveWidths(); updateResultWidth();
 });
+installSpaceTransport({ workspace, sourceAudio: byId("source-audio"), resultAudio: byId("result-audio"), sourceButton: byId("source-audio-play"), canHandle: () => Boolean(state.session) && state.ready && !editorBusy() });
+installEditorExpansion({ workspace, button: byId("expand"),
+  captureAnchor: () => { const first = byId("tracks").querySelector(".speaker-waveform-scroll"); return first ? (first.scrollLeft + first.clientWidth / 2) / state.pixelsPerSecond : NaN; },
+  onGeometryChange: anchor => { updateWaveWidths(true, anchor); updateResultWidth(); }, isGestureActive: () => Boolean(state.cancelSelection || state.editTool || state.selectedRegion) });
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
 window.addEventListener("pagehide", () => teardown());
 

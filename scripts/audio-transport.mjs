@@ -1,7 +1,7 @@
 import { nextAudibleTime } from "./audio-edit-preview.mjs";
 // One source transport for either editor. The media element remains the clock;
 // its muted flag belongs to a track and is never used as a master mute control.
-export function createAudioTransport({ audio, resultAudio, canPlay, seek, reportError, getSelection, getBounds, getCuts }) {
+export function createAudioTransport({ audio, resultAudio, canPlay, seek, reportError, getSelection, getBounds, getCuts, onLoopChange }) {
   const doc = audio.ownerDocument;
   const workspace = audio.closest('.speaker-editor, .processor-card');
   workspace?.classList.add('daw-workspace');
@@ -138,6 +138,7 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
     play.dataset.playing = String(playing);
     play.querySelector('path').setAttribute('d', playing ? 'M6 5h4v14H6zM14 5h4v14h-4z' : 'M8 5v14l11-7z');
     volume.value = String(audio.volume);
+    onLoopChange?.({ enabled: loopEnabled, range });
   }
   for (const event of ['play', 'pause', 'ended', 'emptied', 'loadedmetadata', 'volumechange']) audio.addEventListener(event, refresh);
   if (resultAudio) {
@@ -146,7 +147,7 @@ export function createAudioTransport({ audio, resultAudio, canPlay, seek, report
   }
   refresh();
   if (workspace) decorateTransportButtons(workspace);
-  return { refresh };
+  return { refresh, togglePlay: () => play.click(), isLoopEnabled: () => loopEnabled, loopRange };
 }
 
 function decorateTransportButtons(workspace) {

@@ -3612,6 +3612,8 @@ def main() -> int:
         check_playback_signal(browser, base_url, args.screenshot_dir)
         from s09a_timeline_smoke import check_timeline_controls
         check_timeline_controls(browser, base_url, args.screenshot_dir)
+        from s09a_approved_timeline_ux_smoke import check_approved_timeline_ux
+        check_approved_timeline_ux(browser, base_url, args.screenshot_dir)
         from s09a_corrective_management_smoke import check_s09a_corrective_management
         check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
         check_audio_editor(page, base_url)

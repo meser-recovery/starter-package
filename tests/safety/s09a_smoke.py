@@ -132,7 +132,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         assert page.locator('#speaker-editor-selection-start').is_visible()
         unchanged(edited)
         wave_control.focus();page.keyboard.press('Shift+ArrowRight')
-        assert page.locator('.speaker-selection-overlay').count()==1
+        assert page.locator('.speaker-selection-overlay[data-scope=all]').count()==page.locator('.speaker-track').count()
         page.locator('#speaker-editor-zoom-fit').click()
         page.set_viewport_size({'width':320,'height':900})
         help_summary=page.get_by_text('Как работают Solo, Mute и обработка звука',exact=True)

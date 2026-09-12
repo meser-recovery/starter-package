@@ -70,6 +70,7 @@
 <div><h3>Редактирование для анонс-мейкера</h3><p>Автоматически сокращает длинные паузы в записи. Если выбрано несколько дорожек, пауза сокращается только там, где одновременно молчат все участники.</p><p>Паузы от 2 секунд сокращаются примерно до 0,35 секунды.</p><button id="open-local-announcement" type="button">Открыть редактор анонс-мейкера</button></div>
 <div><h3>Финальная обработка спикерской</h3><p>Подготовьте финальную версию спикерской вручную: задайте начало и конец записи, вырежьте ненужные фрагменты, замените фрагменты отдельных дорожек тишиной или исключите дорожки из финального микса.</p><button id="open-local-speaker" type="button">Открыть финальную обработку спикерской</button></div></div><p id="active-editor-mode" role="status">Выберите исходники и режим редактирования.</p></section><section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
           <div class="archive-card__heading">
+            <button id="speaker-editor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
             <p class="archive-eyebrow">Сейчас открыто: Финальная обработка спикерской</p>
             <h2 id="speaker-editor-heading">Проект обработки спикерской</h2>
             <p id="speaker-editor-identity"></p>
@@ -103,9 +104,10 @@
                 <button id="speaker-editor-add-silence" class="edit-tool edit-tool--silence" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h4l5-5v14l-5-5H3zM16 9l6 6m0-6-6 6"/></svg><span>Тишина<small>Выбранная дорожка</small></span></button>
               </div>
             <div class="processor-zoom" role="group" aria-label="Масштаб исходников Спикерской">
-              <button id="speaker-editor-undo" type="button" disabled>Отменить</button><button id="speaker-editor-redo" type="button" disabled>Повторить</button><span>Масштаб</span>
+              <button id="speaker-editor-undo" type="button" disabled>Отменить</button><button id="speaker-editor-redo" type="button" disabled>Повторить</button><button id="speaker-editor-scale-mode" class="scale-mode" type="button" aria-pressed="false" aria-label="Переключить на высоту дорожек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3"/></svg><span>Время</span></button>
               <button id="speaker-editor-zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
               <input id="speaker-editor-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Масштаб исходников">
+              <output id="speaker-editor-scale-value" class="scale-value">—</output>
               <button id="speaker-editor-zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
               <button id="speaker-editor-zoom-fit" type="button">Вписать</button>
               <button id="speaker-editor-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
@@ -120,7 +122,7 @@
               <p id="speaker-editor-selection-error" class="speaker-error" role="status"></p>
             </section>
             </div>
-<div class="audio-timeline-row"><span>Исходная шкала</span><div id="speaker-source-timeline" class="audio-timeline" aria-hidden="true"></div></div><ol id="speaker-editor-tracks" class="speaker-tracks"></ol><div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>            <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
+<div class="audio-timeline-row"><span>Исходная шкала</span><div class="timeline-ruler-stack"><div id="speaker-source-timeline" class="audio-timeline" aria-hidden="true"></div><div id="speaker-editor-global-regions" class="timeline-global-regions" aria-label="Общие интервалы шкалы"></div></div></div><ol id="speaker-editor-tracks" class="speaker-tracks"></ol><div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>            <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
 <p><strong>Solo.</strong> Слушать эту дорожку отдельно. На финальный результат не влияет.</p>
 <p><strong>Mute.</strong> Временно отключить эту дорожку при прослушивании. На финальный результат не влияет.</p>
 <p><strong>Исключить из микса.</strong> Дорожка останется в проекте, но не попадёт в создаваемую финальную версию.</p>
@@ -166,6 +168,7 @@
         </section>
         <section hidden id="announcement-processor-card" class="archive-card processor-card" aria-labelledby="processor-heading">
           <div class="archive-card__heading">
+            <button id="processor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
             <p class="archive-eyebrow">Сейчас открыто: Редактирование для анонс-мейкера</p>
             <h2 id="processor-heading">Редактирование для анонс-мейкера</h2>
             <details class="daw-workflow-help"><summary>Как работает обработка пауз</summary>
@@ -183,16 +186,17 @@
               <p id="processor-source-time" class="processor-source-time" aria-live="off">0:00 / 0:00</p>
               <p class="processor-monitoring-note">Solo и Mute влияют только на прослушивание и не исключают дорожки из обработки.</p>
               <div class="processor-zoom" role="group" aria-label="Масштаб исходных дорожек">
-                <span>Масштаб</span>
+                <button id="processor-source-scale-mode" class="scale-mode" type="button" aria-pressed="false" aria-label="Переключить на высоту дорожек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3"/></svg><span>Время</span></button>
                 <button id="processor-source-zoom-out" type="button" aria-label="Уменьшить масштаб исходных дорожек">−</button>
                 <input id="processor-source-zoom-range" type="range" min="0" max="100" value="50" aria-label="Масштаб исходных дорожек">
+                <output id="processor-source-scale-value" class="scale-value">—</output>
                 <button id="processor-source-zoom-in" type="button" aria-label="Увеличить масштаб исходных дорожек">+</button>
                 <button id="processor-source-zoom-fit" type="button">Вписать</button>
                 <button id="processor-source-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
               </div>
               <div id="processor-preview-audios" hidden></div>
 
-            </div><div class="audio-timeline-row"><span>Исходная шкала</span><div id="announcement-source-timeline" class="audio-timeline" aria-hidden="true"></div></div><ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul><div id="processor-source-navigation" class="processor-source-navigation" hidden>
+            </div><div class="audio-timeline-row"><span>Исходная шкала</span><div class="timeline-ruler-stack"><div id="announcement-source-timeline" class="audio-timeline" aria-hidden="true"></div><div id="processor-global-regions" class="timeline-global-regions" aria-label="Общий интервал повтора"></div></div></div><ul id="processor-file-info" class="processor-track-list" aria-label="Выбранные исходные дорожки"></ul><div id="processor-source-navigation" class="processor-source-navigation" hidden>
               <span id="processor-source-navigation-label">Навигация по исходным дорожкам</span>
               <div id="processor-source-scrollbar" class="processor-source-scrollbar" tabindex="0" role="scrollbar" aria-label="Навигация по исходным дорожкам" aria-orientation="horizontal" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0">
                 <div id="processor-source-scrollbar-thumb" class="processor-source-scrollbar__thumb" aria-hidden="true"></div>

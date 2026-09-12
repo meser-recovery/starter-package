@@ -128,7 +128,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         assert page.locator('#speaker-editor-add-cut').is_enabled()
         page.locator('#speaker-editor-selection-end').fill('1')
         page.locator('#speaker-editor-selection-track').select_option(index=1)
-        assert 'Дорожка 2 · second.m4a' in page.locator('#speaker-selection-summary').inner_text()
+        assert 'Все дорожки' in page.locator('#speaker-selection-summary').inner_text()
         apply_selection(page, 'silence')
         assert page.locator('.speaker-region-overlay--silence').count()==1
         assert page.locator('.speaker-track').nth(1).locator('.speaker-region-overlay--silence').count()==1

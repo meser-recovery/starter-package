@@ -88,6 +88,8 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
 .daw-workspace .speaker-track-controls, .daw-workspace .processor-track__top { grid-column: 1; grid-row: 1; min-width: 0; background: #e8eff4; border-right: 1px solid #91a8ba; }
 .daw-workspace .processor-track__top { grid-template-columns: minmax(0, 1fr); }
 .daw-workspace .speaker-track > .speaker-waveform-scroll, .daw-workspace .processor-track > .processor-waveform-scroll { grid-column: 2; grid-row: 1; min-height: 112px; }
+.daw-workspace :is(.speaker-track-controls,.processor-track__top,.speaker-waveform-scroll,.processor-waveform-scroll,.speaker-waveform,.processor-waveform) { height: var(--track-height, 196px); min-height: var(--track-height, 196px); box-sizing: border-box; }
+.daw-workspace :is(.speaker-track-controls,.processor-track__top) { overflow: auto; scrollbar-width: thin; }
 .daw-workspace .speaker-track.is-selected .speaker-track-controls { background: #cce4f5; box-shadow: inset 4px 0 #167dbd; }
 .daw-workspace .speaker-track.is-solo .speaker-track-controls, .daw-workspace .processor-track.is-solo .processor-track__top { border-top: 2px solid #c59928; }
 .daw-workspace .speaker-track.is-muted .speaker-track-controls, .daw-workspace .processor-track.is-muted .processor-track__top { background: #dbe0e4; }
@@ -190,6 +192,42 @@ body[data-editing] .mode-options button { border-radius: 5px 5px 0 0; min-height
 .daw-workspace[data-edit-tool="silence"] .speaker-selection-overlay { background: #268d8955; border-color: #167d78; }
 
 .daw-workspace .processor-waveform-detail { position: absolute; top: 0; pointer-events: none; max-width: none; }
+
+/* Approved shared timeline controls and semantic regions. */
+.daw-workspace .archive-card__heading { position: relative; padding-right: 9.5rem; }
+.daw-workspace .editor-expand { position: absolute; top: .65rem; right: .8rem; display: inline-flex; align-items: center; gap: .35rem; min-height: 34px; }
+.daw-workspace .editor-expand svg,.daw-workspace .scale-mode svg { width: 18px; height: 18px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; }
+.daw-workspace .processor-zoom .scale-mode { width: 92px; justify-content: flex-start; gap: .3rem; }
+.daw-workspace .scale-value { min-width: 58px; color: inherit; font: 600 10px/1.2 ui-monospace, monospace; text-align: right; }
+.daw-workspace .track-color-control { display: inline-grid; grid-row: 1 / span 2; align-self: center; place-items: center; width: 28px; height: 28px; cursor: pointer; }
+.daw-workspace .track-color-control input[type=color] { appearance: none; width: 22px; height: 22px; min-height: 22px; padding: 0; border: 2px solid #fff; border-radius: 50%; background: var(--track-wave); box-shadow: 0 0 0 1px #7890a2; overflow: hidden; cursor: pointer; }
+.daw-workspace .track-color-control input[type=color]::-webkit-color-swatch-wrapper { padding: 0; }
+.daw-workspace .track-color-control input[type=color]::-webkit-color-swatch { border: 0; border-radius: 50%; }
+.daw-workspace .track-color-control input[type=color]::-moz-color-swatch { border: 0; border-radius: 50%; }
+.daw-workspace .speaker-track__identity,.daw-workspace .processor-track__heading { grid-template-columns: 28px minmax(0,1fr); }
+.daw-workspace .speaker-track__identity > :not(.track-color-control),.daw-workspace .processor-track__heading > :not(.track-color-control) { grid-column: 2; }
+.daw-workspace .timeline-ruler-stack { position: relative; min-width: 0; overflow: hidden; padding-bottom: 20px; }
+.daw-workspace .timeline-global-regions { position: absolute; left: 0; bottom: 0; height: 20px; pointer-events: none; will-change: transform; }
+.daw-workspace :is(.timeline-cut-label,.timeline-loop-strip) { position: absolute; top: 0; height: 20px; overflow: hidden; white-space: nowrap; font: 600 10px/20px system-ui,sans-serif; text-align: center; box-sizing: border-box; }
+.daw-workspace .timeline-cut-label { color: #9f1f29; border-inline: 1px solid #dd424b; background: rgba(221,66,75,.27); pointer-events: none; }
+.daw-workspace .timeline-loop-strip { z-index: 3; color: #216b3c; border-inline: 1px solid #359f5e; background: rgba(53,159,94,.10); pointer-events: auto; overflow: visible; }
+.daw-workspace .timeline-loop-strip > .timeline-region-label { display: block; overflow: hidden; }
+.daw-workspace .timeline-loop-handle { position: absolute; top: 0; bottom: 0; width: 16px; cursor: ew-resize; touch-action: none; }
+.daw-workspace .timeline-loop-handle::after { content: ''; position: absolute; top: 0; bottom: 0; left: calc(50% - .5px); width: 1px; background: #359f5e; }
+.daw-workspace .timeline-loop-handle--start { left: -8px; }.daw-workspace .timeline-loop-handle--end { right: -8px; }
+.daw-workspace .timeline-outside-region,.daw-workspace .timeline-loop-region { position: absolute; inset-block: 0; pointer-events: none; box-sizing: border-box; overflow: hidden; }
+.daw-workspace .timeline-outside-region { z-index: 1; color: #fff; background: rgba(75,86,100,.64); backdrop-filter: grayscale(.85) saturate(.35); }
+.daw-workspace .timeline-loop-region { z-index: 2; border-inline: 1px solid rgba(53,159,94,.75); background: rgba(53,159,94,.10); }
+.daw-workspace .timeline-outside-region .timeline-region-label { position: absolute; top: 3px; left: 5px; max-width: calc(100% - 10px); overflow: hidden; white-space: nowrap; font: 600 10px/1.2 system-ui,sans-serif; }
+.daw-workspace .speaker-region-overlay--cut { z-index: 3; background: rgba(221,66,75,.27) !important; border-color: #dd424b !important; }
+.daw-workspace .speaker-region-overlay--silence { z-index: 3; background: rgba(234,184,47,.36) !important; border-color: #d39b10 !important; }
+.daw-workspace .speaker-region-overlay--silence > .timeline-region-label { position: absolute; top: 3px; left: 5px; right: 5px; overflow: hidden; white-space: nowrap; color: #765600; font: 600 10px/1.2 system-ui,sans-serif; text-align: center; pointer-events: none; }
+.daw-workspace .speaker-selection-overlay,.daw-workspace .processor-selection-overlay { z-index: 4; }
+.daw-workspace.has-compact-tracks .speaker-dsp-disclosure:not([open]) + .speaker-track__summary { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+body.has-expanded-editor { overflow: hidden; }
+body.has-expanded-editor .daw-workspace.is-expanded { position: fixed; inset: 0; z-index: 1000; width: 100%; height: 100dvh; max-height: none; margin: 0; border: 0; border-radius: 0; overflow: auto; overscroll-behavior: contain; }
+body.has-expanded-editor .daw-workspace.is-expanded .speaker-transport,body.has-expanded-editor .daw-workspace.is-expanded .processor-source-player { top: 0; }
+@media(max-width:767px) { .daw-workspace .archive-card__heading { padding-right: .8rem; padding-top: 3.2rem; }.daw-workspace .editor-expand { left: .8rem; right: auto; top: .45rem; }.daw-workspace .processor-zoom .scale-mode { width: 88px; } }
 
 /* Region handles sit above selection tint; bounds repaint the shaded area live. */
 .daw-workspace .speaker-region-handle { position: absolute; top: 28px; bottom: 4px; width: 10px; z-index: 6; cursor: ew-resize; touch-action: none; border-radius: 3px; background: #fff9; border: 1px solid #18354c; }

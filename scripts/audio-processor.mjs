@@ -4,6 +4,7 @@ import { drawWaveformViewport } from "./audio-waveform-view.mjs";
 import { renderSourceTimeline } from "./audio-timeline.mjs";
 import { createAudioMeters } from "./audio-meters.mjs";
 import { createAudioTransport } from "./audio-transport.mjs";
+import { defaultTrackColor, installEditorExpansion, installSpaceTransport, installTimelineZoomGestures } from "./audio-timeline-ux.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 const sourceDetail = createWaveformDetail();
 
@@ -187,6 +188,11 @@ let sourceFollowEnabled = false;
 let sourceZoomMinimum = 2;
 let sourceZoomMaximum = 2;
 let sourceZoomInitialized = false;
+let sourceScaleMode = "time";
+let sourceTimeZoomValue = 50;
+let sourceTrackHeight = 196;
+let sourceLoopEnabled = false;
+let sourceLoopRange = null;
 let resultPixelsPerSecond = 2;
 let resultDuration = NaN;
 let resultWaveformWidth = WAVEFORM_MIN_WIDTH;
@@ -195,7 +201,8 @@ let resultZoomMaximum = 2;
 const sourceTransport = createAudioTransport({
   audio: sourceAudio, resultAudio, canPlay: () => !active && tracks.length > 0 && tracks.every(track => Number.isFinite(track.duration)),
   getSelection: () => sourceSelection,
-  seek: seekSources, reportError: message => { status.textContent = message; }
+  seek: seekSources, reportError: message => { status.textContent = message; },
+  onLoopChange: ({ enabled, range }) => { sourceLoopEnabled = enabled; sourceLoopRange = range; renderProcessorGlobalRegions(); }
 });
 
 const meters = createAudioMeters({ root: sourceAudio.closest(".processor-card"), resultAudio });
@@ -391,6 +398,7 @@ function updateSourceScrollbar() {
   rail.setAttribute("aria-valuemax", String(Math.round(maxLeft * 1000) / 1000));
   rail.setAttribute("aria-valuenow", String(Math.round(sourceLeftVisibleTime * 1000) / 1000));
   renderSourceTimeline("announcement-source-timeline", sourceTimelineDuration, sourcePixelsPerSecond, sourceLeftVisibleTime * sourcePixelsPerSecond);
+  renderProcessorGlobalRegions();
   rail.setAttribute("aria-valuetext", `${clockDuration(sourceLeftVisibleTime)} из ${clockDuration(Number.isFinite(sourceTimelineDuration) ? sourceTimelineDuration : 0)}`);
 }
 
@@ -475,6 +483,85 @@ function updateSourceSelection(range) {
   if (!summary) { summary = document.createElement("span"); summary.id = "processor-loop-selection-summary"; sourceAudio.before(summary); }
   summary.textContent = range ? `Выделение: ${range.startSeconds.toFixed(3)}–${range.endSeconds.toFixed(3)} с` : "Клик — позиция; протянуть — выделить для повтора; Alt + протянуть — прокрутка.";
   sourceTransport.refresh();
+}
+
+let processorLoopDrag = null;
+function paintProcessorLoopStrip(strip) {
+  if (!strip || !sourceLoopRange || !(sourceTimelineDuration > 0)) return;
+  strip.style.left = `${sourceLoopRange.startSeconds / sourceTimelineDuration * 100}%`;
+  strip.style.width = `${(sourceLoopRange.endSeconds - sourceLoopRange.startSeconds) / sourceTimelineDuration * 100}%`;
+  strip.title = `Loop · ${sourceLoopRange.startSeconds.toFixed(3)}–${sourceLoopRange.endSeconds.toFixed(3)} с`;
+  for (const handle of strip.querySelectorAll("[data-loop-edge]")) {
+    const value = sourceLoopRange[handle.dataset.loopEdge === "start" ? "startSeconds" : "endSeconds"];
+    handle.setAttribute("aria-valuenow", String(value)); handle.setAttribute("aria-valuetext", `${value.toFixed(3)} с`);
+  }
+}
+
+function bindProcessorLoopHandle(handle, edge) {
+  let drag = null;
+  const cancelDrag = () => {
+    if (!drag) return;
+    const old = drag; drag = null; processorLoopDrag = null;
+    if (handle.hasPointerCapture(old.id)) handle.releasePointerCapture(old.id);
+    updateSourceSelection(old.range);
+  };
+  const update = event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    const delta = (event.clientX - drag.x) / sourcePixelsPerSecond;
+    let start = drag.range.startSeconds, end = drag.range.endSeconds;
+    if (edge === "start") start = Math.max(0, Math.min(end - .000001, start + delta));
+    else end = Math.min(sourceTimelineDuration, Math.max(start + .000001, end + delta));
+    updateSourceSelection({ startSeconds: start, endSeconds: end });
+  };
+  handle.addEventListener("pointerdown", event => {
+    if (event.button !== 0 || !sourceLoopEnabled || active || !sourceLoopRange) return;
+    event.preventDefault(); event.stopPropagation(); drag = { id: event.pointerId, x: event.clientX, range: { ...sourceLoopRange } };
+    processorLoopDrag = drag; handle.setPointerCapture(event.pointerId);
+  });
+  handle.addEventListener("pointermove", update);
+  handle.addEventListener("pointerup", event => {
+    if (!drag || drag.id !== event.pointerId) return;
+    update(event); drag = null; processorLoopDrag = null;
+    if (handle.hasPointerCapture(event.pointerId)) handle.releasePointerCapture(event.pointerId);
+    renderProcessorGlobalRegions();
+  });
+  handle.addEventListener("pointercancel", cancelDrag); handle.addEventListener("lostpointercapture", cancelDrag);
+  handle.addEventListener("keydown", event => {
+    if (event.key === "Escape") { event.stopPropagation(); cancelDrag(); return; }
+    if (!["ArrowLeft", "ArrowRight", "Home", "End"].includes(event.key) || !sourceLoopRange) return;
+    event.preventDefault(); event.stopPropagation(); const step = event.shiftKey ? 1 : .01;
+    let start = sourceLoopRange.startSeconds, end = sourceLoopRange.endSeconds;
+    const value = event.key === "Home" ? 0 : event.key === "End" ? sourceTimelineDuration : (edge === "start" ? start : end) + (event.key === "ArrowLeft" ? -step : step);
+    if (edge === "start") start = Math.max(0, Math.min(end - .000001, value)); else end = Math.min(sourceTimelineDuration, Math.max(start + .000001, value));
+    updateSourceSelection({ startSeconds: start, endSeconds: end });
+  });
+}
+
+function renderProcessorGlobalRegions() {
+  const layer = byId("global-regions"); const first = byId("file-info")?.querySelector(".processor-waveform-scroll");
+  for (const wave of byId("file-info")?.querySelectorAll(".processor-waveform") || []) {
+    wave.querySelector(".timeline-loop-region")?.remove();
+    if (sourceLoopEnabled && sourceLoopRange && sourceTimelineDuration > 0) {
+      const loop = document.createElement("span"); loop.className = "timeline-loop-region";
+      loop.style.left = `${sourceLoopRange.startSeconds / sourceTimelineDuration * 100}%`;
+      loop.style.width = `${(sourceLoopRange.endSeconds - sourceLoopRange.startSeconds) / sourceTimelineDuration * 100}%`;
+      loop.title = `Loop · ${sourceLoopRange.startSeconds.toFixed(3)}–${sourceLoopRange.endSeconds.toFixed(3)} с`; wave.append(loop);
+    }
+  }
+  if (!layer || !first || !(sourceTimelineDuration > 0)) { layer?.replaceChildren(); return; }
+  layer.style.width = `${Math.max(first.clientWidth, Math.ceil(sourceTimelineDuration * sourcePixelsPerSecond))}px`;
+  layer.style.transform = `translateX(${-first.scrollLeft}px)`;
+  if (processorLoopDrag) { paintProcessorLoopStrip(layer.querySelector(".timeline-loop-strip")); return; }
+  layer.replaceChildren();
+  if (!sourceLoopEnabled || !sourceLoopRange) return;
+  const strip = document.createElement("span"); strip.className = "timeline-loop-strip";
+  const label = document.createElement("span"); label.className = "timeline-region-label"; label.textContent = "Loop"; strip.append(label);
+  for (const edge of ["start", "end"]) {
+    const handle = document.createElement("span"); handle.className = `timeline-loop-handle timeline-loop-handle--${edge}`; handle.dataset.loopEdge = edge;
+    handle.tabIndex = 0; handle.setAttribute("role", "slider"); handle.setAttribute("aria-valuemin", "0"); handle.setAttribute("aria-valuemax", String(sourceTimelineDuration));
+    handle.setAttribute("aria-label", `Loop: ${edge === "start" ? "левая" : "правая"} граница`); bindProcessorLoopHandle(handle, edge); strip.append(handle);
+  }
+  paintProcessorLoopStrip(strip); layer.append(strip);
 }
 
 function installSourceSelection(scroll) {
@@ -598,6 +685,17 @@ function waveformControl(track) {
   }
   const detailCanvas = document.createElement("canvas"); detailCanvas.hidden = true;
   detailCanvas.className = "processor-waveform-detail"; control.append(detailCanvas);
+  if (sourceTimelineDuration > 0 && Number.isFinite(track.duration) && track.duration < sourceTimelineDuration) {
+    const outside = document.createElement("span"); outside.className = "timeline-outside-region";
+    outside.style.left = `${track.duration / sourceTimelineDuration * 100}%`; outside.style.width = `${(sourceTimelineDuration - track.duration) / sourceTimelineDuration * 100}%`;
+    outside.title = `Вне записи · ${track.duration.toFixed(3)}–${sourceTimelineDuration.toFixed(3)} с`;
+    const label = document.createElement("span"); label.className = "timeline-region-label"; label.textContent = "Вне записи"; outside.append(label); control.append(outside);
+  }
+  if (sourceLoopEnabled && sourceLoopRange && sourceTimelineDuration > 0) {
+    const loop = document.createElement("span"); loop.className = "timeline-loop-region";
+    loop.style.left = `${sourceLoopRange.startSeconds / sourceTimelineDuration * 100}%`; loop.style.width = `${(sourceLoopRange.endSeconds - sourceLoopRange.startSeconds) / sourceTimelineDuration * 100}%`;
+    loop.title = `Loop · ${sourceLoopRange.startSeconds.toFixed(3)}–${sourceLoopRange.endSeconds.toFixed(3)} с`; control.append(loop);
+  }
   const playhead = document.createElement("span");
   playhead.className = "processor-waveform-playhead";
   playhead.setAttribute("aria-hidden", "true");
@@ -613,6 +711,7 @@ function renderTracks() {
     const item = document.createElement("li");
     item.className = "processor-track";
     item.dataset.trackId = String(track.id);
+    item.style.setProperty("--track-wave", track.color || defaultTrackColor(index));
     const top = document.createElement("div");
     top.className = "processor-track__top";
     const heading = document.createElement("div");
@@ -626,7 +725,11 @@ function renderTracks() {
     const meta = document.createElement("span");
     meta.className = "processor-track__meta";
     meta.textContent = `${fileSize(track.file.size)} МБ · ${clockDuration(track.duration)}`;
-    heading.append(number, name, meta);
+    const colorLabel = document.createElement("label"); colorLabel.className = "track-color-control";
+    const color = document.createElement("input"); color.type = "color"; color.value = track.color || defaultTrackColor(index);
+    color.setAttribute("aria-label", `Цвет дорожки ${track.ordinal}: ${track.file.name}`); color.title = color.getAttribute("aria-label");
+    color.addEventListener("input", () => { track.color = color.value; item.style.setProperty("--track-wave", track.color); redrawSourceDetails(); });
+    colorLabel.append(color); heading.append(colorLabel, number, name, meta);
     const scroll = document.createElement("div");
     scroll.className = "processor-waveform-scroll";
     scroll.dataset.trackId = String(track.id);
@@ -636,6 +739,7 @@ function renderTracks() {
     scroll.addEventListener("wheel", (event) => {
       if (Math.abs(event.deltaX) > Math.abs(event.deltaY) || event.shiftKey) disengageSourceFollow();
     }, { passive: true });
+    installTimelineZoomGestures(scroll, { getZoom: () => sourcePixelsPerSecond, setZoomAt: setProcessorZoomAt });
     installSourceSelection(scroll);
     installPan(scroll, disengageSourceFollow, true);
     const actions = document.createElement("div");
@@ -692,6 +796,7 @@ function renderTracks() {
     scroll.scrollLeft = sourceLeftVisibleTime * sourcePixelsPerSecond;
   });
   syncMeters();
+  applyProcessorTrackHeight();
   updateSelectionSummary();
   setBusy(Boolean(active));
   applyMonitoring();
@@ -839,12 +944,14 @@ function sourceZoomBounds() {
 function updateSourceZoomRange() {
   const range = byId("source-zoom-range");
   const span = Math.log(sourceZoomMaximum / sourceZoomMinimum);
-  range.value = String(span > 0 ? Math.round(Math.log(sourcePixelsPerSecond / sourceZoomMinimum) / span * 100) : 0);
+  sourceTimeZoomValue = span > 0 ? Math.round(Math.log(sourcePixelsPerSecond / sourceZoomMinimum) / span * 100) : 0;
+  if (sourceScaleMode === "time") range.value = String(sourceTimeZoomValue);
+  byId("source-scale-value").textContent = sourceScaleMode === "height" ? `${sourceTrackHeight} px` : `${sourcePixelsPerSecond.toFixed(sourcePixelsPerSecond < 10 ? 1 : 0)} px/s`;
   byId("source-zoom-out").disabled = Boolean(active) || sourcePixelsPerSecond <= sourceZoomMinimum + .001;
   byId("source-zoom-in").disabled = Boolean(active) || sourcePixelsPerSecond >= sourceZoomMaximum - .001;
 }
 
-function setSourceZoom(value, anchorTime) {
+function setSourceZoom(value, anchorTime, anchorOffset) {
   sourceZoomBounds();
   const centerTime = Number.isFinite(anchorTime) ? anchorTime : sourceFollowEnabled ?
     (sourceAudio.currentTime || 0) : sourceLeftVisibleTime + sourceViewportDuration / 2;
@@ -857,10 +964,36 @@ function setSourceZoom(value, anchorTime) {
     }
   }
   updateSourceNavigation();
-  if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
+  if (Number.isFinite(anchorOffset)) setSourceLeftVisibleTime(centerTime - anchorOffset / sourcePixelsPerSecond);
+  else if (sourceFollowEnabled) followSourcePlayhead(sourceAudio.currentTime || 0);
   else setSourceLeftVisibleTime(centerTime - sourceViewportDuration / 2);
   updateSourceZoomRange();
   updatePlayheads();
+}
+
+function setProcessorZoomAt(value, anchorTime, anchorOffset) {
+  disengageSourceFollow();
+  setSourceZoom(value, anchorTime, anchorOffset);
+}
+
+function applyProcessorTrackHeight() {
+  const workspace = document.getElementById("announcement-processor-card");
+  workspace.style.setProperty("--track-height", `${sourceTrackHeight}px`);
+  workspace.classList.toggle("has-compact-tracks", sourceTrackHeight < 200);
+  byId("source-scale-value").textContent = sourceScaleMode === "height" ? `${sourceTrackHeight} px` : `${sourcePixelsPerSecond.toFixed(sourcePixelsPerSecond < 10 ? 1 : 0)} px/s`;
+  redrawSourceDetails();
+}
+
+function setProcessorScaleMode(mode) {
+  const range = byId("source-zoom-range");
+  if (mode === sourceScaleMode) return;
+  if (sourceScaleMode === "time") sourceTimeZoomValue = Number(range.value); else sourceTrackHeight = Number(range.value);
+  sourceScaleMode = mode; const height = mode === "height";
+  byId("source-scale-mode").setAttribute("aria-pressed", String(height));
+  byId("source-scale-mode").setAttribute("aria-label", height ? "Переключить на масштаб времени" : "Переключить на высоту дорожек");
+  byId("source-scale-mode").querySelector("span").textContent = height ? "Высота" : "Время";
+  if (height) { range.min = "148"; range.max = "300"; range.step = "4"; range.value = String(sourceTrackHeight); applyProcessorTrackHeight(); }
+  else { range.min = "0"; range.max = "100"; range.step = "1"; range.value = String(sourceTimeZoomValue); const ratio = sourceTimeZoomValue / 100; sourceZoomBounds(); setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio); }
 }
 
 function initializeSourceZoom() {
@@ -869,10 +1002,12 @@ function initializeSourceZoom() {
 }
 
 byId("source-zoom-range").addEventListener("input", (event) => {
+  if (sourceScaleMode === "height") { sourceTrackHeight = Number(event.currentTarget.value); applyProcessorTrackHeight(); return; }
   sourceZoomBounds();
   const ratio = Number(event.currentTarget.value) / 100;
   setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio);
 });
+byId("source-scale-mode").addEventListener("click", () => setProcessorScaleMode(sourceScaleMode === "time" ? "height" : "time"));
 byId("source-zoom-out").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond / 1.5));
 byId("source-zoom-in").addEventListener("click", () => setSourceZoom(sourcePixelsPerSecond * 1.5));
 byId("source-zoom-fit").addEventListener("click", () => {
@@ -1139,6 +1274,7 @@ async function generateWaveforms(candidates = tracks) {
         setupPreviewAudios(sourceAudio.currentTime, !sourceAudio.paused && !sourceAudio.ended);
       }
       initializeSourceZoom();
+      if (!sourceSelection && sourceTimelineDuration > 0) updateSourceSelection({ startSeconds: 0, endSeconds: sourceTimelineDuration });
     }
   }
 }
@@ -1154,7 +1290,7 @@ function selectProcessorFiles(candidates, provenance = [], context = null) {
     tracks = files.map((file, index) => ({
       id: nextTrackId++, file, sourceURL: URL.createObjectURL(file), samples: null,
       waveformWidth: WAVEFORM_MIN_WIDTH, waveformFailed: false, loading: false, duration: NaN, ordinal: 0,
-      solo: false, muted: false, previewAudio: null, provenance: provenance[index] ? structuredClone(provenance[index]) : null
+      solo: false, muted: false, previewAudio: null, color: defaultTrackColor(index), provenance: provenance[index] ? structuredClone(provenance[index]) : null
     }));
     selectedFiles = files;
     syncSelectedProvenance();
@@ -1469,6 +1605,12 @@ window.addEventListener("resize", () => {
   if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
   if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond);
 });
+const processorWorkspace = document.getElementById("announcement-processor-card");
+installSpaceTransport({ workspace: processorWorkspace, sourceAudio, resultAudio, sourceButton: byId("source-audio-play"), canHandle: () => !active && tracks.length > 0 && tracks.every(track => Number.isFinite(track.duration)) });
+installEditorExpansion({ workspace: processorWorkspace, button: byId("expand"),
+  captureAnchor: () => sourceLeftVisibleTime + sourceViewportDuration / 2,
+  onGeometryChange: anchor => { if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond, anchor); if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond); },
+  isGestureActive: () => Boolean(processorLoopDrag || sourceScrollbarDrag) });
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => {
   if (tracks.length && sourceZoomInitialized) setSourceZoom(sourcePixelsPerSecond);
   if (resultWaveformSamples) setResultZoom(resultPixelsPerSecond);
