@@ -912,6 +912,8 @@ SERVICE_SESSION_KEY = "meser_service_access_v1"
 
 
 def check_admin_hash_functions(page, base_url: str) -> None:
+    goto_ready(page, url(base_url, "/"))
+    page.evaluate("sessionStorage.clear()")
     goto_ready(page, url(base_url, "/Admin-panel.html"))
     inputs = ("", "abc", "\x00\xffA\u0101")
     observed = page.evaluate("""async values => {
@@ -971,8 +973,9 @@ def check_admin_without_subtle_crypto(browser, base_url: str) -> None:
 
 def check_admin_login(page, base_url: str, width: int) -> None:
     page.set_viewport_size({"width": width, "height": 900})
-    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    goto_ready(page, url(base_url, "/"))
     page.evaluate("sessionStorage.clear()")
+    goto_ready(page, url(base_url, "/Admin-panel.html"))
     if page.locator("html").get_attribute("lang") != "ru" or page.locator("body.site-page").count() != 1:
         raise AssertionError(f"Admin login semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Для служащих":
@@ -1092,7 +1095,7 @@ def check_service_landing(page, base_url: str, width: int) -> None:
 
 
 def check_service_access_journeys(page, base_url: str) -> None:
-    goto_ready(page, url(base_url, "/Admin-panel.html"))
+    goto_ready(page, url(base_url, "/"))
     page.evaluate("sessionStorage.clear()")
     page.goto(url(base_url, SERVICE_LANDING_PATH), wait_until="domcontentloaded")
     page.wait_for_url("**/Admin-panel.html")
@@ -1101,6 +1104,14 @@ def check_service_access_journeys(page, base_url: str) -> None:
         raise AssertionError("Unauthorized service landing did not redirect to the login page")
 
     seed_service_access(page, base_url)
+    goto_ready(page, url(base_url, "/Audio-Editor.html"))
+    if page.get_by_role("link", name="К служебной странице", exact=True).count():
+        raise AssertionError("Redundant editor back link is still present")
+    page.get_by_role("link", name="Для служащих", exact=True).click()
+    page.wait_for_url("**" + SERVICE_LANDING_PATH)
+    wait_for_page_ready(page)
+    if page.locator("#admin-password").count():
+        raise AssertionError("Existing service session prompted for a password")
     goto_ready(page, url(base_url, SERVICE_LANDING_PATH))
     page.get_by_role("button", name="Выйти", exact=True).click()
     page.wait_for_url("**/Admin-panel.html")
@@ -1168,8 +1179,11 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
     if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1:
         raise AssertionError(f"Audio editor shared header is missing at {width}px")
-    if page.locator(f'a[href="{SERVICE_LANDING_PATH.lstrip("/")}"]').count() != 1:
-        raise AssertionError(f"Audio editor exact back link is missing at {width}px")
+    if page.get_by_role("link", name="К служебной странице", exact=True).count():
+        raise AssertionError(f"Audio editor redundant service back link is present at {width}px")
+    service_link = page.get_by_role("link", name="Для служащих", exact=True)
+    if service_link.count() != 1 or service_link.get_attribute("href") != "Admin-panel.html":
+        raise AssertionError(f"Audio editor shared service navigation is missing at {width}px")
     logout = page.get_by_role("button", name="Выйти", exact=True)
     if not logout.is_visible():
         raise AssertionError(f"Audio editor logout is missing at {width}px")

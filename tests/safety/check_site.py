@@ -736,8 +736,10 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./")):
             if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
                 errors.append(f"Audio-Editor.html: shared {class_name} link is missing")
-        if not any(tag == "a" and attrs.get("href") == "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html" for tag, attrs in parser.start_tags):
-            errors.append("Audio-Editor.html: exact service landing back link is missing")
+        if any(tag == "a" and "archive-back-link" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: redundant service back link must be absent")
+        if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+            errors.append("Audio-Editor.html: shared service navigation is missing")
         if not any(tag == "button" and attrs.get("id") == "service-logout" for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: service logout is missing")
         if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
