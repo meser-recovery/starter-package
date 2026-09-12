@@ -883,6 +883,12 @@ function updateWaveWidths(anchor = false, explicitTime = NaN, explicitOffset = N
     first.scrollLeft = Math.max(0, anchorTime * state.pixelsPerSecond - offset);
     for (const scroll of byId("tracks").querySelectorAll(".speaker-waveform-scroll")) scroll.scrollLeft = first.scrollLeft;
   }
+  // A queued scroll event from the programmatic zoom can arrive after the next
+  // user scroll. Store the browser-rounded position now so that next scroll is
+  // never mistaken for the previously synchronized viewport.
+  for (const scroll of byId("tracks").querySelectorAll(".speaker-waveform-scroll")) {
+    synchronizedScroll.set(scroll, scroll.scrollLeft);
+  }
   redrawSourceWaves(); updatePlayheads(); updateScrollbar();
 }
 

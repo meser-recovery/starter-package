@@ -25,6 +25,10 @@ acceptance or closure record. The comparison base is
 - The UI reports the active render stage and elapsed time at 2.5 updates per
   second without rebuilding the timeline. Cancellation remains tied to the
   operation and source epochs.
+- Speaker zoom records the browser-rounded synchronized scroll position before
+  queued scroll events run. This removes a reproduced race where adjacent
+  slider values resolved to the same `px/s` and an immediate manual scroll
+  could leave the retained waveform canvas outside the viewport.
 - A localhost request to the configured production archive now explains the
   known origin restriction. Gateway CORS, credentials and production settings
   are unchanged.
@@ -110,6 +114,8 @@ once per render rather than retained in another unbounded in-memory cache.
 - One-shot tool coverage exercises pointer and keyboard commits, a second drag
   without a new edit, re-arming, invalid selection, pointer cancel, Escape,
   restoration by region ID and history.
+- The same-file, both-editor 80/159/160/300/1000 px/s parity fixture was run
+  three times consecutively after the zoom/scroll race correction.
 
 No user Zoom recording was used or uploaded. The synthetic benchmark does not
 claim physical listening, Safari/Firefox performance, a physical pinch gesture,
