@@ -215,6 +215,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         # Expired part downloads reconnect without touching the active montage or its local result.
         before_download = snapshot(); fault['part'] = 401
         assert page.locator('#source-session-results').is_visible()
+        if page.locator('#source-session-results').get_attribute('open') is None: page.locator('#source-session-results > summary').click()
         assert page.locator('#source-session-results-speaker-panel').is_visible()
         assert page.locator('#source-session-results-announcement-panel').is_hidden()
         assert page.locator('#source-session-results-status').inner_text() == 'duplicate · Спикерская.'
@@ -251,8 +252,9 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-cancel').click();assert page.locator('#speaker-editor').is_visible()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-discard').click();assert page.locator('#speaker-editor').is_hidden()
         page.goto(base_url+f'/Audio-Archive.html?session={source["id"]}')
-        page.locator('#metadata-title').wait_for()
+        page.locator('#detail-title').wait_for()
         assert page.locator('#detail-title').inner_text() == 'duplicate'
+        page.locator('.project-disclosure > summary').click()
         assert page.locator('#detail .project-section').get_by_text('Проект сохранён', exact=False).count() == 1
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'archive-{width}')

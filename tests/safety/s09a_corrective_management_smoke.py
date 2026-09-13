@@ -88,6 +88,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
 
     def detail():
         archive.goto(base_url.rstrip('/')+f'/Audio-Archive.html?session={primary["id"]}')
+        archive.locator('.record-management > summary').click()
         archive.locator('#metadata-title').wait_for()
 
     def open_editor():
@@ -113,6 +114,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
 
     def output_delete(series=False, workflow='speaker'):
         detail()
+        archive.locator('.version-history > summary').click()
         section = archive.locator(f'#detail .workflow-{workflow}')
         if series:
             section.get_by_text('Управление версиями', exact=True).click()
@@ -138,11 +140,12 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
     def deletion_during_preparation(kind):
         command('reset')
         page.goto(base_url.rstrip('/')+f'/Audio-Editor.html?review={kind}#review-preparation')
-        if not page.locator('#import-zone').evaluate('e=>e.open'):
-            page.locator('#import-zone > summary').click()
         page.locator('#source-session-mode-archive').click()
+        page.locator('#source-session-recent').click()
         row=page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]')
-        row.get_by_role('button', name='Открыть финальную обработку спикерской').click()
+        row.get_by_role('button', name='Выбрать', exact=True).click()
+        page.wait_for_function('(title) => document.getElementById("current-recording-heading").textContent === title', arg=primary['title'])
+        page.locator('#open-local-speaker').click()
         page.wait_for_function('window.reviewPreparationPending === true')
         page.evaluate("""async () => {
           const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
@@ -221,16 +224,19 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
 
         command('reset')
         detail()
+        archive.locator('.project-disclosure > summary').click()
         assert archive.locator('#detail-body').get_by_role('link', name='Продолжить обработку').count() == 1
         for mode in ('failed', 'unsupported'):
             fault['draft'] = mode
             # Detail must read the current draft and must never offer a destructive
             # replacement path when the saved project cannot be validated.
             detail()
+            archive.locator('.project-disclosure > summary').click()
             body = archive.locator('#detail-body')
             assert body.get_by_role('link', name='Продолжить обработку').count() == 0
             assert 'сохранённый проект не прошёл проверку' in body.inner_text()
             archive.goto(base_url.rstrip('/') + '/Audio-Archive.html'); ready()
+            archive.locator('#record-picker-open').click(); archive.locator('#record-picker-recent').click()
             row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
             assert 'Сохранённый проект недоступен' in row.inner_text()
             assert row.get_by_role('button', name='Открыть запись', exact=True).count() == 1
@@ -242,6 +248,8 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         for width in (320, 390, 768, 1280):
             archive.set_viewport_size({'width': width, 'height': 900})
             archive.goto(base_url.rstrip('/') + '/Audio-Archive.html'); ready()
+            archive.locator('#record-picker-open').click()
+            archive.locator('#record-picker-recent').click()
             row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
             assert archive.evaluate('document.documentElement.scrollWidth<=innerWidth')
             if width == 1280:
@@ -250,12 +258,12 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             open_button.focus()
             assert open_button.evaluate('e=>e===document.activeElement')
             open_button.click()
-            archive.locator('#metadata-title').wait_for()
+            archive.locator('#detail-title').wait_for()
             assert archive.locator('#archive-index').is_hidden()
             assert archive.locator('#detail').is_visible()
             assert archive.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            assert archive.locator('#detail-body .workflow-announcement').is_visible()
-            assert archive.locator('#detail-body .workflow-speaker').is_visible()
+            assert archive.locator('#detail-body .ready-results').is_visible()
+            assert archive.locator('#detail-body .version-history').get_attribute('open') is None
             shot(f'record-detail-{width}', '#detail', archive)
             archive.locator('#detail-close').click()
             assert archive.locator('#archive-index').is_visible()
@@ -283,7 +291,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         archive.wait_for_function("document.getElementById('status').textContent.includes('Подключение к аудиоархиву истекло')")
         assert archive.locator('#delete-dialog').is_hidden()
         assert archive.locator('#login').is_visible() and archive.locator('#refresh').is_disabled()
-        assert archive.locator('#matching').inner_text() == 'Список записей не загружен.'
+        assert archive.locator('#matching').inner_text() == 'Список появится после поиска.'
         archive.locator('#login').click()
         archive.locator('#password').fill('local-test-password')
         archive.locator('#login-form button[type=submit]').click()

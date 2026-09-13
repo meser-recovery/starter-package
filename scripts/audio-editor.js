@@ -135,7 +135,10 @@
       controls.hidden = !state.items.length;
       const requestedId = new URLSearchParams(window.location.search).get("id");
       const requestedItem = state.items.find((item) => item.id === requestedId);
-      if (requestedItem) selectItem(requestedItem, false);
+      if (requestedItem) {
+        document.querySelector('.legacy-archive').open = true;
+        selectItem(requestedItem, false);
+      }
       else setNeutralPlayer();
       render();
       if (!state.items.length) count.hidden = true;

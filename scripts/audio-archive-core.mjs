@@ -6,6 +6,29 @@ export const lifecycleLabel = session => session.lifecycle.state === 'incoming' 
 export const sourceLabel = session => session.sourceState === 'available' ? 'Исходники доступны' :
   session.sourceState === 'deleted' ? 'Исходники удалены' : 'Исходники недоступны';
 export const eligible = session => session.lifecycle.state === 'incoming' && session.sourceState === 'available';
+export function processingAvailabilityMessage(session) {
+  if (session.sourceState === 'deleted') return session.lifecycle.state !== 'incoming' ?
+    'Запись убрана из рабочего списка, а исходные дорожки удалены. Возврат в рабочий список не восстановит исходники и обработку. Сохранённые готовые версии остаются доступны.' :
+    'Исходные дорожки удалены. Новая обработка недоступна. Сохранённые готовые версии остаются доступны.';
+  if (session.lifecycle.state !== 'incoming') return 'Запись убрана из рабочего списка. Верните её в рабочий список, чтобы продолжить обработку.';
+  return 'Исходники недоступны. Новая обработка сейчас недоступна. Сохранённые готовые версии остаются доступны.';
+}
+export function pageItems(items, page = 0, pageSize = 10) {
+  if (!Number.isSafeInteger(page) || page < 0 || !Number.isSafeInteger(pageSize) || pageSize < 1) throw new Error('Некорректная страница.');
+  return items.slice(page * pageSize, (page + 1) * pageSize);
+}
+export function latestOutput(session, workflow) {
+  if (!Object.hasOwn(workflows, workflow)) throw new Error('Неизвестный вид работы.');
+  return [...session.workflows[workflow].outputs].sort((a, b) => b.version - a.version || String(a.outputId).localeCompare(String(b.outputId)))[0] || null;
+}
+export function speakerRecoveryBinding(operation, context = {}) {
+  const belongs = Boolean(context.archiveMode && context.workflow === 'speaker' && context.sessionId &&
+    operation?.kind === 'publication' && operation.workflow === 'speaker' && operation.sessionId === context.sessionId);
+  const candidate = context.candidate;
+  const exactCandidate = Boolean(belongs && candidate?.sessionId === operation.sessionId &&
+    (!operation.candidateFingerprint || candidate.candidateFingerprint === operation.candidateFingerprint));
+  return { belongs, exactCandidate };
+}
 const normalized = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
 const compareText = (a, b) => String(a).localeCompare(String(b), 'ru');
 const timestamp = value => value ? Date.parse(value) : NaN;

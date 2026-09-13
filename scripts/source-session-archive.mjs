@@ -1,7 +1,7 @@
 import { contextActions } from "./audio-actions.mjs";
 import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
 import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ProjectSave } from "./audio-project.mjs";
-import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact } from './audio-archive-core.mjs';
+import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
 import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
@@ -18,6 +18,7 @@ const state = {
   listsLoaded: false, projects: new Map(), deleteSequence: 0, deleteBusy: false,
   sessions: [],
   allSessions: [],
+  picker: { requested: false, page: 0, pageSize: 10 },
   resultArchive: "announcement",
   refreshSequence: 0,
   sessionSequence: 0,
@@ -115,18 +116,22 @@ function renderCurrentRecording() {
   const heading = document.getElementById("current-recording-heading");
   const summary = document.getElementById("current-recording-state");
   const link = document.getElementById("current-recording-archive-link");
+  const picker = byId("mode-archive");
   if (manifest) {
     heading.textContent = manifest.title;
     summary.textContent = `${formatDate(manifest.recordedAt)} · ${manifest.sourceTracks.length} дорожек · Сохранена в аудиоархиве`;
     link.href = `Audio-Archive.html?session=${encodeURIComponent(manifest.id)}`; link.hidden = false;
+    picker.textContent = "Сменить запись";
   } else if (local) {
     heading.textContent = "Новая запись Zoom";
     summary.textContent = `${local.sourceTracks.length} дорожек · Только на этом устройстве`;
     link.removeAttribute("href"); link.hidden = true;
+    picker.textContent = "Сменить запись";
   } else {
     heading.textContent = "Запись не выбрана";
     summary.textContent = "Откройте запись из аудиоархива или выберите дорожки на устройстве.";
     link.removeAttribute("href"); link.hidden = true;
+    picker.textContent = "Выбрать запись";
   }
 }
 
@@ -141,7 +146,7 @@ function setMode(mode) {
   byId("mode-archive").setAttribute("aria-pressed", String(archive));
   byId("mode-device").setAttribute("aria-pressed", String(!archive));
   updateSourceSaveState();
-  renderCurrentRecording(); updatePublishState(); renderResultArchive();
+  renderCurrentRecording(); updatePublishState(); renderResultArchive(); void showIncomplete();
 }
 
 function clearOutputPlayback() {
@@ -165,7 +170,7 @@ function closeAnnouncementWorkspace(clearProcessor = false) {
   state.processorProvenance = [];
   state.candidate = null;
   byId("announcement-workspace").hidden = true;
-  updatePublishState(); renderCurrentRecording(); renderResultArchive();
+  updatePublishState(); renderCurrentRecording(); renderResultArchive(); void showIncomplete();
 }
 
 function selectedTrackIds() {
@@ -188,7 +193,7 @@ function activateMode(mode) {
   document.getElementById("active-editor-mode").textContent = `Сейчас открыто: ${mode === "speaker" ? "Финальная обработка спикерской" : "Редактирование для анонс-мейкера"}`;
   const inactiveEditor = document.getElementById(mode === "speaker" ? "announcement-processor-card" : "speaker-editor");
   for (const audio of inactiveEditor.querySelectorAll("audio")) audio.pause();
-  state.resultArchive = mode; renderAnnouncementWorkspace(); renderImportFiles();
+  state.resultArchive = mode; renderAnnouncementWorkspace(); renderImportFiles(); void showIncomplete();
 }
 
 function updatePublishState() {
@@ -305,9 +310,15 @@ function newerSpeakerSession(prepared) {
   const active = getSpeakerSaveState().session;
   return active?.id === prepared.id && active.revision > prepared.revision ? active : null;
 }
+function beginContextSwitch(sessionId) {
+  const current = state.activeManifest?.id || speakerEditorSessionId();
+  if (current === sessionId) return;
+  ++state.incompleteSequence; byId("recovery-list").replaceChildren(); byId("recovery-list").hidden = true;
+}
 
 async function loadSession(session) {
   if (state.publicationController || state.uploadController) return;
+  beginContextSwitch(session.id);
   const sequence = ++state.sessionSequence, auth = state.authSequence;
   const current = () => sequence === state.sessionSequence && auth === state.authSequence;
   setArchiveStatus(session.lifecycle.state === "archived" ? "Открытие записи, убранной из рабочего списка…" : "Загрузка и проверка исходных дорожек…");
@@ -374,6 +385,7 @@ async function loadSession(session) {
 
 async function loadSpeakerSession(session) {
   if (state.publicationController || state.uploadController) return;
+  beginContextSwitch(session.id);
   if (session.lifecycle.state !== "incoming" || session.sourceState !== "available") {
     setArchiveStatus("Спикерская доступна только для исходной записи с доступными исходниками. Сначала верните запись для обработки.");
     return;
@@ -717,9 +729,21 @@ function renderResultArchive() {
 function renderSessions() {
   const list = byId("list");
   list.replaceChildren();
-  byId("count").hidden = !state.sessions.length;
-  byId("count").textContent = `Найдено: ${state.sessions.length}.`;
-  for (const session of state.sessions) {
+  byId("pagination").hidden = true;
+  if (!state.picker.requested) {
+    byId("count").hidden = false; byId("count").textContent = "Список появится после поиска."; return;
+  }
+  const form = byId("filters").elements, query = form.search.value.trim().toLocaleLowerCase("ru");
+  const month = form.month.value;
+  const matches = state.sessions.filter(session => (!query || session.title.toLocaleLowerCase("ru").includes(query) ||
+    session.sourceTracks.some(track => track.originalName.toLocaleLowerCase("ru").includes(query))) &&
+    (!month || String(session.recordedAt || "").slice(0, 7) === month));
+  const pages = Math.max(1, Math.ceil(matches.length / state.picker.pageSize));
+  state.picker.page = Math.min(state.picker.page, pages - 1);
+  const start = state.picker.page * state.picker.pageSize, visible = pageItems(matches, state.picker.page, state.picker.pageSize);
+  byId("count").hidden = false;
+  byId("count").textContent = matches.length ? `Найдено: ${matches.length} · ${start + 1}–${start + visible.length}` : "Ничего не найдено. Измените запрос.";
+  for (const session of visible) {
     const card = document.createElement("article");
     card.className = "source-session-item"; card.dataset.sessionId = session.id;
     const heading = document.createElement("h3");
@@ -733,14 +757,36 @@ function renderSessions() {
     summary.className = "source-session-item__summary";
     const actions = document.createElement("div");
     actions.className = "source-session-actions";
-    const open = button("Редактировать для анонс-мейкера", () => loadSession(session), "action-primary");
+    const open = button("Выбрать", () => selectSessionContext(session), "action-primary");
     open.disabled = !eligible(session); actions.append(open);
-    actions.append(button("Открыть финальную обработку спикерской", () => loadSpeakerSession(session), "speaker-open-action"));
-    const archive = document.createElement("a"); archive.href = `Audio-Archive.html?session=${encodeURIComponent(session.id)}`; archive.target = "_blank"; archive.rel = "noopener"; archive.textContent = "Сведения в аудиоархиве"; actions.append(archive);
     summary.append(heading, metadata);
     body.append(summary, actions);
     card.append(body);
     list.append(card);
+  }
+  if (matches.length > state.picker.pageSize) {
+    byId("pagination").hidden = false; byId("page").textContent = `${state.picker.page + 1} из ${pages}`;
+    byId("prev").disabled = state.picker.page === 0; byId("next").disabled = state.picker.page + 1 >= pages;
+  }
+}
+
+async function selectSessionContext(session) {
+  if (state.publicationController || state.uploadController || state.speakerSaveController || state.speakerResumeController) return;
+  const sequence = ++state.sessionSequence, auth = state.authSequence;
+  setArchiveStatus("Проверка выбранной записи…");
+  try {
+    const complete = await gateway.getSession(session.id);
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (!validateSessionManifest(complete) || complete.id !== session.id || !eligible(complete)) throw new Error("Запись больше не доступна для редактирования.");
+    if (!await closeSpeakerEditor(false, () => sequence === state.sessionSequence && auth === state.authSequence)) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    closeAnnouncementWorkspace(true);
+    state.activeSession = complete; state.activeManifest = complete; state.editorMode = null; delete document.body.dataset.editing;
+    document.getElementById("import-zone").open = false; clearProcessorFiles(); state.processorProvenance = []; state.candidate = null;
+    renderCurrentRecording(); renderResultArchive(); renderSessions(); await showIncomplete();
+    setArchiveStatus(`Выбрана запись: ${complete.title}. Выберите тип обработки.`);
+  } catch (error) {
+    if (sequence === state.sessionSequence && auth === state.authSequence) onGatewayError(error, "Не удалось выбрать запись.");
   }
 }
 
@@ -1109,19 +1155,25 @@ async function submitDeletion(event) {
 async function showIncomplete() {
   const sequence = ++state.incompleteSequence, auth = state.authSequence;
   const container = byId("recovery-list");
+  const currentSessionId = state.activeManifest?.id || speakerEditorSessionId();
+  const contextual = Boolean(currentSessionId && state.mode === "archive" && state.editorMode === "speaker");
+  if (!contextual && !state.speakerResumeController) {
+    container.replaceChildren(); container.hidden = true; return;
+  }
   try {
     const result = await gateway.listIncomplete();
     if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
     if (state.speakerResumeController) {
+      container.hidden = false;
       renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
       return;
     }
     container.replaceChildren();
-    for (const row of byId("list").querySelectorAll(".source-recovery-item")) row.remove();
     let associated = 0;
     for (const transaction of result.transactions || []) {
-      const target = [...byId("list").querySelectorAll(".source-session-item")].find(row => row.dataset.sessionId === transaction.sessionId);
-      if (!target) continue; // Unassociated operations and diagnostics remain in Archive maintenance.
+      const binding = speakerRecoveryBinding(transaction, { sessionId: currentSessionId, workflow: state.editorMode,
+        archiveMode: state.mode === "archive", candidate: getSpeakerSaveState().candidate });
+      if (!binding.belongs) continue;
       associated++;
       const row = document.createElement("div"); row.className = "source-recovery-item";
       const title = document.createElement("strong"); title.textContent = "Требуется внимание"; row.append(title);
@@ -1129,14 +1181,13 @@ async function showIncomplete() {
       row.append(document.createTextNode(transaction.kind === "pending_delete" ? " Удаление не завершено. " :
         transaction.kind === "publication" ? ` Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${workflowLabel(transaction.workflow)}». ` : " Сохранение записи Zoom не завершено. "));
       row.append(document.createTextNode(policy.local));
-      if (transaction.kind === "publication" && transaction.workflow === "speaker" && !transaction.canFinalize &&
-          ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length) {
+      if (!transaction.canFinalize && ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length && binding.exactCandidate) {
         row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
       }
       for (const [action, label] of policy.actions) row.append(button(label, () => recover(transaction, action), action === "discard" ? "source-session-danger" : ""));
-      target.append(row);
+      container.append(row);
     }
-    if (!associated) container.textContent = "Незавершённых сохранений для этих записей не найдено.";
+    container.hidden = !associated;
 
   } catch (error) {
     if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
@@ -1144,7 +1195,7 @@ async function showIncomplete() {
       renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
       return;
     }
-    container.textContent = userError(error, "Не удалось проверить незавершённые операции.");
+    container.hidden = false; container.textContent = userError(error, "Не удалось проверить незавершённые операции.");
   }
 }
 
@@ -1239,6 +1290,7 @@ function renderSpeakerResumeStatus(message, cancellable = false) {
   state.speakerResumeStatus = message;
   state.speakerResumeCancellable = Boolean(cancellable);
   const container = byId("recovery-list");
+  container.hidden = false;
   container.replaceChildren(document.createTextNode(message));
   if (cancellable) container.append(document.createTextNode(" "), button("Отменить продолжение", cancelSpeakerResume));
 }
@@ -1303,8 +1355,14 @@ async function initialize() {
   await consumeEditorIntent();
 }
 
-byId("mode-archive").addEventListener("click", () => setMode("archive"));
-byId("mode-device").addEventListener("click", () => setMode("device"));
+byId("mode-archive").addEventListener("click", () => { setMode("archive"); document.getElementById("import-zone").open = true; byId("mode-archive").setAttribute("aria-expanded", "true"); byId("filters").elements.search.focus(); });
+byId("mode-device").addEventListener("click", () => { setMode("device"); document.getElementById("import-zone").open = true; byId("mode-device").focus(); });
+byId("picker-close").addEventListener("click", () => { document.getElementById("import-zone").open = false; byId("mode-archive").setAttribute("aria-expanded", "false"); byId("mode-archive").focus(); });
+document.getElementById("import-zone").addEventListener("toggle", event => byId("mode-archive").setAttribute("aria-expanded", String(event.currentTarget.open)));
+byId("filters").addEventListener("submit", event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderSessions(); });
+byId("recent").addEventListener("click", () => { byId("filters").elements.search.value = ""; byId("filters").elements.month.value = ""; state.picker.requested = true; state.picker.page = 0; renderSessions(); });
+byId("prev").addEventListener("click", () => { state.picker.page--; renderSessions(); });
+byId("next").addEventListener("click", () => { state.picker.page++; renderSessions(); });
 byId("results-announcement").addEventListener("click", () => setResultArchive("announcement"));
 byId("results-speaker").addEventListener("click", () => setResultArchive("speaker"));
 byId("refresh").addEventListener("click", refreshSessions);

@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
     <link rel="stylesheet" href="styles/audio-workspace.css">
-  <link rel="stylesheet" href="styles/audio-studio.css">
+  <link rel="stylesheet" href="styles/audio-studio.css?v=s09b-progressive">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -29,26 +29,28 @@
     </header>
     <main id="main-content" class="audio-editor-main">
       <div class="container audio-editor-content">
-        <h1>Редактирование аудио</h1><div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
-        <details open id="import-zone" class="archive-card source-session-card"><summary><h2 id="source-session-heading">Выберите запись Zoom</h2><span id="import-summary">Запись не выбрана</span></summary>
+        <div class="editor-page-heading"><h1>Редактирование аудио</h1><a href="Audio-Archive.html">Аудиоархив ↗</a></div><div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
+        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading">
+          <div><p class="archive-eyebrow">Текущая запись</p><h2 id="current-recording-heading">Запись не выбрана</h2><p id="current-recording-state">Откройте запись из аудиоархива или выберите дорожки на устройстве.</p></div>
+          <div class="current-recording__actions"><button id="source-session-mode-archive" type="button" aria-pressed="true" aria-expanded="false" aria-controls="import-zone">Выбрать запись</button><button id="source-session-mode-device" type="button" aria-pressed="false">С устройства</button><a id="current-recording-archive-link" href="Audio-Archive.html" hidden>Открыть в аудиоархиве</a></div>
+        </section>
+        <div id="source-session-recovery-list" class="contextual-recovery" aria-live="polite" hidden></div>
+        <details id="import-zone" class="archive-card source-session-card"><summary><h2 id="source-session-heading">Выбрать запись</h2><span id="import-summary">Запись не выбрана</span></summary>
           <div class="archive-card__heading">
             <p>Откройте сохранённую запись или создайте новую из файлов на этом устройстве.</p><p><strong>Важно:</strong> все выбранные дорожки должны относиться к одной и той же записи Zoom.</p>
-          </div>
-          <div class="source-entry-modes" role="group" aria-label="Источник записи Zoom">
-            <button id="source-session-mode-archive" type="button" aria-pressed="true">Открыть запись из аудиоархива</button>
-            <button id="source-session-mode-device" type="button" aria-pressed="false">Новая запись с устройства</button>
           </div>
           <p id="source-session-status" class="archive-status" role="status">Подключение к архиву исходников…</p>
           <div id="source-session-archive-panel">
             <div class="source-session-toolbar">
-              <h3>Записи, доступные для обработки</h3>
+              <h3>Записи, доступные для обработки</h3><button id="source-session-picker-close" type="button">Закрыть</button>
               <button id="source-session-refresh" type="button">Обновить</button>
 
               <button id="source-session-authenticate" type="button">Подключить архив</button>
             </div>
             <p id="source-session-session-status" class="source-session-session-status">Подключение к архиву проверяется…</p>
+            <form id="source-session-filters" class="source-session-filters" role="search"><label>Название или исходная дорожка<input name="search" type="search" autocomplete="off"></label><label>Месяц<input name="month" type="month"></label><div><button class="action-primary" type="submit">Найти</button><button id="source-session-recent" type="button">Последние записи</button></div></form>
             <p id="source-session-count" class="archive-count" hidden></p>
-            <div id="source-session-list" class="source-session-list" aria-live="polite"></div><div id="source-session-recovery-list" aria-live="polite"></div>
+            <div id="source-session-list" class="source-session-list" aria-live="polite"></div><nav id="source-session-pagination" class="pagination" aria-label="Страницы результатов" hidden><button id="source-session-prev" type="button">← Назад</button><span id="source-session-page"></span><button id="source-session-next" type="button">Дальше →</button></nav>
 
           </div>
           <div id="source-session-device-panel" hidden><h3>Новая запись Zoom</h3><p>Только на этом устройстве, пока вы явно не сохраните её в аудиоархив.</p><div id="processor-device-field" class="processor-field">
@@ -63,12 +65,6 @@
               <button id="processor-save-incoming" type="button" disabled>Сохранить запись Zoom в аудиоархив</button>
             </div></div>
         </details>
-        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading">
-          <div><p class="archive-eyebrow">Текущая запись Zoom</p><h2 id="current-recording-heading">Запись не выбрана</h2><p id="current-recording-state">Откройте запись из аудиоархива или выберите дорожки на устройстве.</p></div>
-          <a id="current-recording-archive-link" href="Audio-Archive.html" hidden>Открыть запись в аудиоархиве</a>
-        </section>
-
-
         <section class="editing-modes" aria-labelledby="editing-heading"><h2 id="editing-heading">Редактирование</h2><div class="mode-options">
 <div><h3>Редактирование для анонс-мейкера</h3><p>Автоматически сокращает длинные паузы в записи. Если выбрано несколько дорожек, пауза сокращается только там, где одновременно молчат все участники.</p><p>Паузы от 2 секунд сокращаются примерно до 0,35 секунды.</p><button id="open-local-announcement" aria-controls="announcement-processor-card" type="button">Открыть редактор анонс-мейкера</button></div>
 <div><h3>Финальная обработка спикерской</h3><p>Подготовьте финальную версию спикерской вручную: задайте начало и конец записи, вырежьте ненужные фрагменты, замените фрагменты отдельных дорожек тишиной или исключите дорожки из финального микса.</p><button id="open-local-speaker" aria-controls="speaker-editor" type="button">Открыть финальную обработку спикерской</button></div></div><p id="active-editor-mode" role="status">Выберите исходники и режим редактирования.</p></section><section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
@@ -250,12 +246,8 @@
             </div>
             <p id="source-session-publish-reason" class="archive-status">Сначала сохраните исходные записи в аудиоархив.</p>
           </div>
-        </section><section id="source-session-results" class="archive-card result-archive-card" aria-labelledby="source-session-results-heading" hidden>
-          <div class="archive-card__heading">
-            <p class="archive-eyebrow">Текущая запись Zoom</p>
-            <h2 id="source-session-results-heading">Сохранённые версии этой записи</h2>
-            <p>Показаны только версии текущей записи и открытого режима обработки. Управление всей историей находится в Аудиоархиве.</p>
-          </div>
+        </section><details id="source-session-results" class="archive-card result-archive-card" aria-labelledby="source-session-results-heading" hidden>
+          <summary><h2 id="source-session-results-heading">Сохранённые версии этой записи</h2><span>Просмотр и скачивание</span></summary>
           <div class="result-archive-navigation" role="group" aria-label="Вид сохранённых версий" hidden>
             <button id="source-session-results-announcement" type="button" aria-pressed="true">
               <span>Для анонс-мейкера</span>
@@ -290,12 +282,11 @@
             <audio id="source-session-announcement-audio" aria-labelledby="source-session-announcement-playback-label" controls preload="metadata"></audio>
             <a id="source-session-announcement-download" class="archive-download">Скачать сохранённый результат</a>
           </div>
-        </section>
-        <section class="archive-card" aria-labelledby="archive-heading">
+        </details>
+        <details class="archive-card legacy-archive" aria-labelledby="archive-heading">
+          <summary id="archive-heading">Прежний архив отредактированных аудио</summary>
           <div class="archive-card__heading">
-            <p class="archive-eyebrow">Прежний раздел сайта</p>
-            <h2 id="archive-heading">Архив отредактированных аудио</h2>
-            <p>Этот список сохранён для совместимости и не является архивом результатов «Анонс-мейкер» или «Спикерская».</p>
+            <p>Этот список сохранён только для совместимости и не является историей результатов текущей записи.</p>
             <p id="archive-status" class="archive-status" role="status">Загрузка архива…</p>
           </div>
           <div id="archive-controls" class="archive-controls" hidden>
@@ -318,7 +309,7 @@
             <audio id="archive-audio" controls preload="none"></audio>
           </div>
           <div id="archive-list" class="archive-list" aria-live="polite"></div>
-        </section>
+        </details>
         <dialog id="source-session-login-dialog" class="source-session-dialog" aria-labelledby="source-session-login-title">
           <form id="source-session-login-form" method="dialog">
             <h2 id="source-session-login-title">Подключить аудиоархив</h2>

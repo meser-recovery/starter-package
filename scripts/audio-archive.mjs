@@ -6,7 +6,8 @@ import {
 } from './audio-archive-client.mjs';
 import {
   workflows, lifecycleLabel, sourceLabel, eligible, dateLabel, bytesLabel, mergeSessions,
-  selectSessions, selectResults, recoveryPolicy, editorUrl, deletionImpact, parseArchiveIntent, RequestGeneration
+  selectSessions, selectResults, recoveryPolicy, editorUrl, deletionImpact, parseArchiveIntent, RequestGeneration,
+  processingAvailabilityMessage, pageItems, latestOutput
 } from './audio-archive-core.mjs';
 
 const $ = id => document.getElementById(id);
@@ -14,8 +15,9 @@ const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY
 const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete'].map(key => [key, new RequestGeneration()]));
 const state = {
   authenticated: false, sessions: null, maintenance: null, detail: null, projects: new Map(), outputMeta: new Map(),
-  url: null, target: null, returnFocus: null, busy: false, intentConsumed: false, detailInput: null,
-  resultSort: { announcement: 'newest', speaker: 'newest' }
+  url: null, target: null, returnFocus: null, busy: false, intentConsumed: false, detailInput: null, detailOpen: new Set(),
+  resultSort: { announcement: 'newest', speaker: 'newest' },
+  picker: { open: false, requested: false, page: 0, pageSize: 10 }
 };
 
 function element(tag, text, className) {
@@ -70,12 +72,12 @@ function clearPlayback() {
   state.url = null; $('player').hidden = true; $('playback-status').textContent = '';
 }
 function closeDetail({ updateUrl = true } = {}) {
-  generations.detail.next(); clearPlayback(); state.detail = null; state.detailInput = null; state.outputMeta.clear();
+  generations.detail.next(); clearPlayback(); state.detail = null; state.detailInput = null; state.detailOpen.clear(); state.outputMeta.clear();
   $('detail').hidden = true; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(); $('archive-index').hidden = false;
   if (updateUrl) {
     const url = new URL(location.href); url.searchParams.delete('session'); history.replaceState(history.state, '', url);
   }
-  $('records-title').focus();
+  openRecordPicker();
 }
 function clearSession() {
   for (const generation of Object.values(generations)) generation.next();
@@ -86,6 +88,14 @@ function clearSession() {
 function updateControls() {
   $('login').hidden = state.authenticated; $('logout').hidden = !state.authenticated;
   $('refresh').disabled = !state.authenticated || state.busy; $('rebuild').disabled = !state.authenticated || state.busy;
+}
+function openRecordPicker() {
+  state.picker.open = true; $('records').hidden = false; $('record-picker-open').setAttribute('aria-expanded', 'true');
+  $('records-title').focus();
+}
+function closeRecordPicker() {
+  state.picker.open = false; $('records').hidden = true; $('record-picker-open').setAttribute('aria-expanded', 'false');
+  $('record-picker-open').focus();
 }
 
 function currentFilters() {
@@ -105,9 +115,7 @@ function projectState(session) {
   return { label: 'Сохранённый проект недоступен', kind: 'is-warning' };
 }
 function processingUnavailable(session) {
-  if (session.lifecycle.state !== 'incoming') return 'Запись убрана из рабочего списка. Верните её в рабочий список, чтобы продолжить обработку.';
-  if (session.sourceState === 'deleted') return 'Исходные дорожки удалены. Новая обработка недоступна. Сохранённые готовые версии остаются доступны.';
-  return 'Исходники недоступны. Новая обработка сейчас недоступна. Сохранённые готовые версии остаются доступны.';
+  return processingAvailabilityMessage(session);
 }
 function editorLink(session, workflow, label) {
   if (!eligible(session)) return null;
@@ -127,14 +135,22 @@ function attentionSummary(session) {
 }
 function renderRecords() {
   $('session-list').replaceChildren();
+  $('record-pagination').hidden = true;
+  if (!state.picker.requested) { $('matching').textContent = 'Список появится после поиска.'; return; }
   if (!state.sessions) { $('matching').textContent = 'Список записей не загружен.'; return; }
   const chosen = currentFilters();
   if (chosen.attention && !state.maintenance) { $('matching').textContent = 'Сведения о незавершённых операциях не загружены. Фильтр внимания пока недоступен.'; return; }
   let sessions;
   try { sessions = selectSessions(state.sessions, chosen, state.maintenance?.transactions); }
   catch (error) { $('matching').textContent = error.message; return; }
-  $('matching').textContent = !state.sessions.length ? 'Аудиоархив пока пуст.' : `Найдено записей: ${sessions.length}.` + (!sessions.length ? ' Нет записей с такими условиями.' : '');
-  for (const session of sessions) {
+  const month = $('filters').elements.month.value;
+  if (month) sessions = sessions.filter(session => String(session.recordedAt || '').slice(0, 7) === month);
+  const pageCount = Math.max(1, Math.ceil(sessions.length / state.picker.pageSize));
+  state.picker.page = Math.min(state.picker.page, pageCount - 1);
+  const start = state.picker.page * state.picker.pageSize;
+  const visible = pageItems(sessions, state.picker.page, state.picker.pageSize);
+  $('matching').textContent = !state.sessions.length ? 'Аудиоархив пока пуст.' : sessions.length ? `Найдено: ${sessions.length} · ${start + 1}–${start + visible.length}` : 'Ничего не найдено. Измените запрос или фильтры.';
+  for (const session of visible) {
     const card = element('article', undefined, 'archive-card source-row'); card.dataset.sessionId = session.id;
     const info = element('div', undefined, 'record-info'), badges = element('div', undefined, 'status-badges');
     const count = trackCount(session), project = projectState(session), attention = attentionSummary(session);
@@ -144,6 +160,10 @@ function renderRecords() {
     if (attention) info.append(element('p', attention, 'attention-summary'));
     card.append(info, button('Открыть запись', () => openDetail(session.id, { updateUrl: true }), 'action-primary'));
     $('session-list').append(card);
+  }
+  if (sessions.length > state.picker.pageSize) {
+    $('record-pagination').hidden = false; $('record-page').textContent = `${state.picker.page + 1} из ${pageCount}`;
+    $('record-prev').disabled = state.picker.page === 0; $('record-next').disabled = state.picker.page + 1 >= pageCount;
   }
 }
 
@@ -185,6 +205,23 @@ function resultCard(session, output, workflow) {
   play.disabled = !meta.valid; download.disabled = !meta.valid;
   actions.append(play, download, contextActions(`Версия ${output.version}`, button('Удалить версию', () => openDeletion(session.id, { kind: 'output-version', workflow, version: output.version }), 'danger')));
   card.append(actions); return card;
+}
+function latestResults(session) {
+  const section = element('details', undefined, 'detail-section ready-results'); section.open = true;
+  section.append(element('summary', 'Готовые записи'));
+  const body = element('div', undefined, 'ready-results__body');
+  for (const workflow of ['speaker', 'announcement']) {
+    const output = latestOutput(session, workflow);
+    const group = element('section', undefined, 'ready-result');
+    group.append(element('h3', workflow === 'speaker' ? 'Спикерская' : 'Анонс-мейкер'));
+    if (output) {
+      const card = resultCard(session, output, workflow);
+      card.querySelector('.audio-actions')?.remove();
+      group.append(card);
+    } else group.append(element('p', 'Готовых версий пока нет.'));
+    body.append(group);
+  }
+  section.append(body); return section;
 }
 function workflowSection(session, workflow) {
   const data = session.workflows[workflow], section = element('section', undefined, `detail-section workflow-section workflow-${workflow}`);
@@ -234,7 +271,10 @@ function workflowChoice(session, workflow) {
   return card;
 }
 function renderDetail() {
-  const session = state.detail, heading = $('detail-heading'), container = $('detail-body'); heading.replaceChildren(); container.replaceChildren();
+  const session = state.detail, heading = $('detail-heading'), container = $('detail-body');
+  const disclosureState = Object.fromEntries(['version-history', 'project-disclosure', 'source-section', 'record-management', 'danger-zone']
+    .map(name => [name, Boolean(container.querySelector(`.${name}`)?.open || state.detailOpen.has(name))]));
+  heading.replaceChildren(); container.replaceChildren();
   const identity = element('div', undefined, 'record-identity');
   identity.append(element('p', 'Запись Zoom', 'eyebrow'));
   const heroTitle = element('h2', session.title); heroTitle.id = 'detail-title'; heroTitle.tabIndex = -1; identity.append(heroTitle);
@@ -242,21 +282,20 @@ function renderDetail() {
   identity.append(element('p', `${dateLabel(session.recordedAt)} · ${trackCountLabel(count)} · ${origin}`, 'record-meta'));
   const badges = element('div', undefined, 'status-badges'); badges.append(element('span', lifecycleLabel(session), 'status-badge'), element('span', sourceLabel(session), `status-badge ${session.sourceState === 'available' ? 'is-ready' : 'is-warning'}`)); identity.append(badges); heading.append(identity);
 
-  const primary = element('section', undefined, 'detail-section primary-workflows');
-  primary.append(element('h3', 'Что сделать с записью?'));
-  const choices = element('div', undefined, 'workflow-choices'); choices.append(workflowChoice(session, 'announcement'), workflowChoice(session, 'speaker')); primary.append(choices); container.append(primary);
-
-  const materials = element('section', undefined, 'detail-section materials-section'); materials.append(element('h3', 'Материалы записи'));
-  const sources = element('section', undefined, 'source-section'); sources.append(element('h4', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
+  container.append(latestResults(session));
+  const history = element('details', undefined, 'detail-section version-history'); history.open = disclosureState['version-history']; history.append(element('summary', 'Все версии и управление'));
+  const historyBody = element('div'); historyBody.append(workflowSection(session, 'announcement'), workflowSection(session, 'speaker')); history.append(historyBody); container.append(history);
+  const project = element('details', undefined, 'detail-section project-disclosure'); project.open = disclosureState['project-disclosure']; project.append(element('summary', 'Проект обработки спикерской'), workflowChoice(session, 'speaker')); container.append(project);
+  const sources = element('details', undefined, 'detail-section source-section'); sources.open = disclosureState['source-section']; sources.append(element('summary', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
   if (session.sourceState === 'available') for (const track of [...session.sourceTracks].sort((a, b) => a.ordinal - b.ordinal)) {
     const row = element('div', undefined, 'source-track'); row.append(element('span', String(track.ordinal), 'track-number'), element('span', track.originalName, 'track-name'), element('span', `${mediaTypeLabel(track.mediaType)} · ${bytesLabel(track.sizeBytes)}`, 'track-meta')); sources.append(row);
   }
   else if (session.sourceState === 'deleted') sources.append(element('p', `Исходники удалены${trackCount(session) === null ? '' : ` · дорожек было: ${trackCount(session)}`}. Имена и форматы удалённых дорожек не сохранены.`));
   else sources.append(element('p', 'Исходники недоступны. Сведения о дорожках нельзя подтвердить.'));
-  materials.append(sources, workflowSection(session, 'announcement'), workflowSection(session, 'speaker')); container.append(materials);
+  container.append(sources);
   contextualRecovery(session, container);
 
-  const management = element('section', undefined, 'detail-section record-management'); management.append(element('h3', 'Управление записью'));
+  const management = element('details', undefined, 'detail-section record-management'); management.open = disclosureState['record-management']; management.append(element('summary', 'Управление записью'));
   const form = element('form'), titleLabel = element('label', 'Название записи'), title = element('input');
   const serverDate = session.recordedAt ? new Date(session.recordedAt).toISOString().slice(0, -1) : '';
   const draft = state.detailInput?.sessionId === session.id ? state.detailInput : null;
@@ -279,7 +318,7 @@ function renderDetail() {
   const reload = button('Загрузить актуальные сведения', () => {
     const input = rememberInput();
     if (input.titleDirty || input.dateDirty) input.notice = 'Актуальные сведения загружены. Введённые значения сохранены в форме.';
-    openDetail(session.id);
+    openDetail(session.id).then(() => { const disclosure = document.querySelector('.record-management'); if (disclosure) disclosure.open = true; });
   });
   form.append(titleLabel, dateLabelNode, save, feedback, reload);
   form.addEventListener('submit', async event => {
@@ -297,7 +336,7 @@ function renderDetail() {
   const lifecycle = button(session.lifecycle.state === 'incoming' ? 'Убрать из рабочего списка' : 'Вернуть в рабочий список', () => mutate(() => writeSession(session, () => gateway.setLifecycle(session.id, session.lifecycle.state === 'incoming' ? 'archive' : 'restore', session.revision)), () => openDetail(session.id)));
   management.append(form, lifecycle); container.append(management);
 
-  const danger = element('details', undefined, 'danger-zone'); danger.append(element('summary', 'Опасная зона'));
+  const danger = element('details', undefined, 'danger-zone'); danger.open = disclosureState['danger-zone']; danger.append(element('summary', 'Опасная зона'));
   const dangerBody = element('div'); dangerBody.append(element('p', 'Необратимые действия требуют свежей проверки состава записи и отдельного подтверждения.'));
   const deleteSources = button('Удалить исходные дорожки', () => openDeletion(session.id, { kind: 'sources' }), 'danger'); deleteSources.disabled = session.sourceState !== 'available';
   dangerBody.append(deleteSources, button('Удалить запись полностью', () => openDeletion(session.id, { kind: 'purge' }), 'danger')); danger.append(dangerBody); container.append(danger);
@@ -324,6 +363,9 @@ async function loadOutputMetadata(session, sequence, auth) {
 async function openDetail(id, { updateUrl = false } = {}) {
   if (state.busy) return;
   if (state.detailInput?.sessionId !== id) state.detailInput = null;
+  if (state.detail?.id === id) state.detailOpen = new Set([...$('detail-body').querySelectorAll(':scope > details[open]')]
+    .flatMap(details => [...details.classList].filter(name => ['version-history', 'project-disclosure', 'source-section', 'record-management', 'danger-zone'].includes(name))));
+  else state.detailOpen.clear();
   const sequence = generations.detail.next(), auth = generations.auth.value; clearPlayback(); state.detail = null; state.outputMeta.clear();
   $('archive-index').hidden = true; $('detail').hidden = false; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(element('p', 'Загрузка актуальных сведений…'));
   try {
@@ -477,10 +519,14 @@ async function consumeArchiveIntent() {
 function applyLegacyAnchor() {
   if (!['#projects', '#results'].includes(location.hash)) return;
   const field = location.hash === '#projects' ? $('filters').elements.speakerProject : $('filters').elements.announcementResult;
-  field.checked = true; history.replaceState(history.state, '', `${location.pathname}${location.search}#records`);
+  field.checked = true; state.picker.requested = true; openRecordPicker(); history.replaceState(history.state, '', `${location.pathname}${location.search}#records`);
 }
 
-$('filters').addEventListener('submit', event => event.preventDefault()); $('filters').addEventListener('input', renderRecords); $('filters').addEventListener('reset', () => requestAnimationFrame(renderRecords));
+$('record-picker-open').addEventListener('click', openRecordPicker); $('record-picker-close').addEventListener('click', closeRecordPicker);
+$('filters').addEventListener('submit', event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderRecords(); });
+$('record-picker-recent').addEventListener('click', () => { $('filters').elements.search.value = ''; $('filters').elements.month.value = ''; $('filters').elements.sort.value = 'newest'; state.picker.requested = true; state.picker.page = 0; renderRecords(); });
+$('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; renderRecords(); }));
+$('record-prev').addEventListener('click', () => { state.picker.page--; renderRecords(); }); $('record-next').addEventListener('click', () => { state.picker.page++; renderRecords(); });
 $('refresh').addEventListener('click', refresh); $('detail-close').addEventListener('click', () => closeDetail()); $('player-close').addEventListener('click', clearPlayback); $('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
 $('login').addEventListener('click', () => { $('login-status').textContent = ''; $('login-dialog').showModal(); }); $('login-cancel').addEventListener('click', () => $('login-dialog').close());
 $('delete-cancel').addEventListener('click', () => { if (!state.busy) $('delete-dialog').close(); }); $('delete-dialog').addEventListener('cancel', event => { if (state.busy) event.preventDefault(); });

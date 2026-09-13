@@ -103,10 +103,11 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
         assert page.locator('#announcement-processor-card').is_hidden()
 
     def choose(session, workflow):
-        if not page.locator('#import-zone').evaluate('e=>e.open'): page.locator('#import-zone > summary').click()
         page.locator('#source-session-mode-archive').click()
-        label = 'Открыть финальную обработку спикерской' if workflow == 'speaker' else 'Редактировать для анонс-мейкера'
-        page.locator(f'.source-session-item[data-session-id="{session["id"]}"]').get_by_role('button', name=label, exact=True).click()
+        page.locator('#source-session-recent').click()
+        page.locator(f'.source-session-item[data-session-id="{session["id"]}"]').get_by_role('button', name='Выбрать', exact=True).click()
+        page.wait_for_function('(title) => document.getElementById("current-recording-heading").textContent === title', arg=session['title'])
+        page.locator('#open-local-speaker' if workflow == 'speaker' else '#open-local-announcement').click()
 
     def login(editor=True):
         if editor:
@@ -126,48 +127,51 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
         if scenario in ('all', 'delayed-speaker'):
             open_primary()
             start = len(trace)
-            fault.update(match=lambda p: p.startswith(f'/v1/source-sessions/{other["id"]}/blobs/'), hold=True)
-            choose(other, 'speaker'); wait_held()
-            assert page.locator('#speaker-editor').is_visible()
             if not page.locator('.speaker-selection details').evaluate('e=>e.open'):
                 page.get_by_text('Точное редактирование', exact=True).click()
             page.locator('#speaker-editor-selection-start').fill('.05'); page.locator('#speaker-editor-selection-end').fill('.2'); page.locator('#speaker-editor-set-start').click()
             page.locator('#speaker-editor-render').click()
             page.wait_for_function("!document.getElementById('speaker-editor-result').hidden", timeout=60000)
             changed = remember()
-            release()
+            # The new chooser changes context before a workflow starts. Dirty work is
+            # therefore protected before any bytes for the other recording are read.
+            page.locator('#source-session-mode-archive').click(); page.locator('#source-session-recent').click()
+            page.locator(f'.source-session-item[data-session-id="{other["id"]}"]').get_by_role('button', name='Выбрать', exact=True).click()
             page.locator('#speaker-unsaved-dialog').wait_for(state='visible')
-            shot('delayed-source-new-edits-protected')
+            shot('chooser-context-new-edits-protected')
             page.locator('#speaker-unsaved-cancel').click(); preserved(changed)
             assert changed['payload']['globalCuts'][0]['endSeconds'] == .05
-            fault['hold'] = True
-            choose(other, 'speaker'); wait_held()
-            page.locator('#speaker-editor-close').click()
+            page.locator('#source-session-mode-archive').click(); page.locator('#source-session-recent').click()
+            page.locator(f'.source-session-item[data-session-id="{other["id"]}"]').get_by_role('button', name='Выбрать', exact=True).click()
             page.locator('#speaker-unsaved-discard').click()
-            page.locator('#speaker-editor').wait_for(state='hidden')
-            release(); page.wait_for_load_state('networkidle')
+            page.wait_for_function('(title) => document.getElementById("current-recording-heading").textContent === title', arg=other['title'])
             assert page.locator('#speaker-editor').is_hidden()
             assert page.evaluate("async()=>!(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().session")
             assert page.locator('#speaker-unsaved-dialog').is_hidden()
-            shot('closed-work-rejects-delayed-source')
-            no_archive_writes(start)
-            # A newer source/mode intent must also win over an earlier held download.
-            open_primary(False)
+            # A later chooser selection fences an earlier held workflow download.
             fault.update(match=lambda p: p.startswith(f'/v1/source-sessions/{other["id"]}/blobs/'), hold=True)
-            choose(other, 'speaker'); wait_held()
-            page.locator('#open-local-announcement').click()
-            page.locator('#announcement-processor-card').wait_for(state='visible')
+            page.locator('#open-local-speaker').click(); wait_held()
+            page.locator('#source-session-mode-archive').click(); page.locator('#source-session-recent').click()
+            page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]').get_by_role('button', name='Выбрать', exact=True).click()
+            page.wait_for_function('(title) => document.getElementById("current-recording-heading").textContent === title', arg=primary['title'])
             release(); page.wait_for_load_state('networkidle')
             assert page.locator('#speaker-editor').is_hidden()
-            assert primary['title'] in page.locator('#source-session-announcement-identity').inner_text()
+            assert primary['title'] in page.locator('#current-recording-heading').inner_text()
+            shot('chooser-rejects-delayed-source')
+            no_archive_writes(start)
             # Saving in the final transition guard advances this same source's lineage.
-            # Reopening must use the newly saved payload, never the previously fetched draft.
-            open_primary(False)
+            page.locator('#open-local-speaker').click()
+            page.wait_for_function("document.getElementById('speaker-editor-status').textContent==='Все изменения сохранены'")
             if not page.locator('.speaker-selection details').evaluate('e=>e.open'):
                 page.get_by_text('Точное редактирование', exact=True).click()
             page.locator('#speaker-editor-selection-start').fill('.05'); page.locator('#speaker-editor-selection-end').fill('.2'); page.locator('#speaker-editor-set-start').click()
-            choose(primary, 'speaker')
+            page.locator('#source-session-mode-archive').click(); page.locator('#source-session-recent').click()
+            page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]').get_by_role('button', name='Выбрать', exact=True).click()
             page.locator('#speaker-unsaved-save').click()
+            page.locator('#speaker-editor').wait_for(state='hidden')
+            page.locator('#open-local-speaker').click()
+            page.locator('#speaker-editor').wait_for(state='visible')
+            page.wait_for_function("async () => Boolean((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)")
             page.wait_for_function("document.getElementById('speaker-editor-status').textContent==='Все изменения сохранены'")
             page.wait_for_load_state('networkidle')
             assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload.globalCuts[0].endSeconds") == .05
@@ -198,25 +202,26 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
                         page.wait_for_function("!document.getElementById('speaker-editor-result').hidden", timeout=60000)
                     before = remember(); start = len(trace)
                     # Exercise both canonical mode switching and contextual source opening.
-                    target = primary if stage == 'session' else other
+                    target = primary if stage == 'session' or dirty else other
                     prefix = f'/v1/source-sessions/{target["id"]}'
                     fault.update(status=status, match=lambda p, prefix=prefix, stage=stage:
                         p == prefix if stage == 'session' else p == prefix+'/drafts/announcement' if stage == 'draft' else p.startswith(prefix+'/blobs/'))
-                    if stage == 'session': page.locator('#open-local-announcement').click()
+                    if target is primary: page.locator('#open-local-announcement').click()
                     else: choose(target, 'announcement')
                     page.wait_for_function("expected => document.getElementById('archive-reconnect-message').textContent===expected", arg=RECONNECT)
                     page.locator('#archive-reconnect').wait_for(state='visible')
-                    preserved(before)
+                    if target is primary: preserved(before)
                     shot(f'announcement-{stage}-{status}-keeps-work')
                     page.locator('#archive-reconnect-login').click(); page.locator('#source-session-login-cancel').click()
-                    preserved(before)
-                    login(); preserved(before)
+                    if target is primary: preserved(before)
+                    login()
+                    if target is primary: preserved(before)
                     page.locator('#archive-reconnect-retry').click()
                     if dirty:
                         page.locator('#speaker-unsaved-dialog').wait_for(state='visible')
                         page.locator('#speaker-unsaved-cancel').click(); preserved(before)
                         assert page.locator('#speaker-editor-status').inner_text() == 'Есть несохранённые изменения'
-                        choose(target, 'announcement'); page.locator('#speaker-unsaved-discard').click()
+                        page.locator('#open-local-announcement').click(); page.locator('#speaker-unsaved-discard').click()
                     page.locator('#announcement-processor-card').wait_for(state='visible')
                     page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Целостность исходников проверена')")
                     assert target['title'] in page.locator('#source-session-announcement-identity').inner_text()
@@ -234,12 +239,13 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
                 assert page.locator('#login').is_visible()
                 assert page.locator('#logout').is_hidden()
                 assert page.locator('#refresh').is_disabled()
-                assert page.locator('#matching').inner_text() == 'Список записей не загружен.'
+                assert page.locator('#matching').inner_text() == 'Список появится после поиска.'
                 assert page.locator('#session-list .archive-card').count() == 0
                 assert 'Данные загружены' not in page.locator('#status').inner_text()
                 shot(f'archive-project-{status}-reconnect')
                 login(False)
                 page.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
+                page.locator('#record-picker-open').click(); page.locator('#record-picker-recent').click()
                 primary_row = page.locator(f'#session-list [data-session-id="{primary["id"]}"]')
                 assert primary['title'] in primary_row.inner_text()
                 assert 'Проект спикерской сохранён' in primary_row.inner_text()

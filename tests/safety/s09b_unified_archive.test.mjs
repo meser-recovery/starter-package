@@ -2,7 +2,8 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { managementFixture } from '../../gateway/audio-archive/test/archive-management-fixture.mjs';
 import {
-  mergeSessions, selectSessions, parseArchiveIntent, lifecycleLabel, sourceLabel, eligible, recoveryPolicy
+  mergeSessions, selectSessions, parseArchiveIntent, lifecycleLabel, sourceLabel, eligible, recoveryPolicy,
+  processingAvailabilityMessage, pageItems, latestOutput, speakerRecoveryBinding
 } from '../../scripts/audio-archive-core.mjs';
 import { projectProjection } from '../../scripts/audio-project.mjs';
 import { validateAnnouncementOutput, validateSpeakerOutput } from '../../scripts/audio-archive-client.mjs';
@@ -66,4 +67,44 @@ test('S09B recovery remains canonical-action-only', () => {
   assert.deepEqual(recoveryPolicy({ transactionId: id, kind: 'pending_delete', state: 'pending_delete' }).actions, [['retry', 'Продолжить удаление']]);
   assert.deepEqual(recoveryPolicy({ transactionId: id, kind: 'publication', workflow: 'speaker', state: 'uploading', totalParts: 2, uploadedParts: 2, canFinalize: true }).actions, [['resume', 'Завершить сохранение']]);
   assert.deepEqual(recoveryPolicy({ transactionId: id, kind: 'publication', workflow: 'speaker', state: 'unknown' }).actions, []);
+});
+
+test('S09B chooser paginates the complete 1,000-record result without gaps or duplicates', () => {
+  const canonical = Array.from({ length: 1000 }, (_, index) => ({ id: index }));
+  const seen = Array.from({ length: 100 }, (_, page) => pageItems(canonical, page, 10)).flat();
+  assert.equal(seen.length, 1000);
+  assert.equal(new Set(seen.map(item => item.id)).size, 1000);
+  assert.deepEqual(seen.map(item => item.id), canonical.map(item => item.id));
+  assert.ok(Array.from({ length: 100 }, (_, page) => pageItems(canonical, page, 10)).every(items => items.length <= 10));
+});
+
+test('S09B ready result uses canonical version number rather than response or date order', async () => {
+  const h = await managementFixture(), session = await h.gateway.getSession(h.primary.id);
+  const outputs = session.workflows.announcement.outputs;
+  session.workflows.announcement.outputs = [
+    { ...outputs[1], version: 7, createdAt: '2020-01-01T00:00:00.000Z' },
+    { ...outputs[0], version: 5, createdAt: '2030-01-01T00:00:00.000Z' }
+  ];
+  assert.equal(latestOutput(session, 'announcement').version, 7);
+});
+
+test('ACCEPT B: archived plus deleted sources never promises that restore recovers processing', async () => {
+  const h = await managementFixture(), session = await h.gateway.getSession(h.archived.id);
+  const unavailable = { ...session, sourceState: 'deleted' };
+  const message = processingAvailabilityMessage(unavailable);
+  assert.match(message, /не восстановит исходники и обработку/);
+  assert.match(message, /Сохранённые готовые версии остаются доступны/);
+  assert.doesNotMatch(message, /чтобы продолжить обработку/);
+  const restored = { ...unavailable, lifecycle: { state: 'incoming' } };
+  assert.match(processingAvailabilityMessage(restored), /Новая обработка недоступна/);
+});
+
+test('ACCEPT A: Editor Speaker recovery is bound to current record, workflow and exact candidate', () => {
+  const operation = { kind: 'publication', workflow: 'speaker', sessionId: 'record-a', candidateFingerprint: 'blob-a' };
+  assert.deepEqual(speakerRecoveryBinding(operation, {}), { belongs: false, exactCandidate: false });
+  assert.deepEqual(speakerRecoveryBinding(operation, { archiveMode: true, workflow: 'speaker', sessionId: 'record-b', candidate: { sessionId: 'record-a', candidateFingerprint: 'blob-a' } }), { belongs: false, exactCandidate: false });
+  assert.deepEqual(speakerRecoveryBinding(operation, { archiveMode: true, workflow: 'announcement', sessionId: 'record-a', candidate: { sessionId: 'record-a', candidateFingerprint: 'blob-a' } }), { belongs: false, exactCandidate: false });
+  assert.deepEqual(speakerRecoveryBinding(operation, { archiveMode: true, workflow: 'speaker', sessionId: 'record-a', candidate: { sessionId: 'record-a', candidateFingerprint: 'blob-b' } }), { belongs: true, exactCandidate: false });
+  assert.deepEqual(speakerRecoveryBinding(operation, { archiveMode: true, workflow: 'speaker', sessionId: 'record-a', candidate: { sessionId: 'record-a', candidateFingerprint: 'blob-a' } }), { belongs: true, exactCandidate: true });
+  assert.equal(speakerRecoveryBinding(operation, { archiveMode: true, workflow: 'speaker', sessionId: 'record-b' }).belongs, false);
 });
