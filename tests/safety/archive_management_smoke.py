@@ -31,6 +31,35 @@ def assert_shared_audio_header(page, width, surface):
     return boxes
 
 
+def assert_archive_visual_shell(page, width, state):
+    boxes = page.evaluate("""() => Object.fromEntries([
+        ['main', document.querySelector('main.archive-main')],
+        ['surface', document.querySelector('main.archive-main > .archive-management')],
+        ['footer', document.querySelector('.site-footer')]
+    ].map(([name, element]) => {
+        const box = element?.getBoundingClientRect();
+        return [name, box && {x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom}];
+    }))""")
+    assert all(boxes.values()), {'state': state, 'width': width, 'boxes': boxes}
+    assert abs(boxes['surface']['x'] + boxes['surface']['width'] / 2 - width / 2) <= 1, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['width'] <= 950.5 and boxes['surface']['right'] <= width + .5, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['y'] > boxes['main']['y'] and boxes['surface']['bottom'] <= boxes['main']['bottom'], {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['footer']['y'] >= boxes['main']['bottom'] - .5, {'state': state, 'width': width, 'boxes': boxes}
+    if state == 'initial':
+        assert boxes['surface']['height'] + 20 < boxes['main']['height'], {'state': state, 'width': width, 'boxes': boxes, 'stretched_surface': True}
+        primary = page.locator('#record-picker-open').bounding_box()
+        maintenance = page.locator('#maintenance').bounding_box()
+        connection = page.locator('.archive-connection').bounding_box()
+        assert primary and maintenance and connection
+        assert primary['y'] + primary['height'] <= maintenance['y'] < connection['y'], {
+            'state': state, 'width': width, 'primary': primary, 'maintenance': maintenance, 'connection': connection
+        }
+        assert connection['height'] < 150, {'state': state, 'width': width, 'connection': connection, 'stretched_connection': True}
+        primary_style = page.locator('#record-picker-open').evaluate("el => ({background:getComputedStyle(el).backgroundColor, color:getComputedStyle(el).color})")
+        assert primary_style == {'background': 'rgb(71, 138, 201)', 'color': 'rgb(255, 255, 255)'}, primary_style
+    return boxes
+
+
 def check_archive_management(browser, base_url, screenshot_dir=None):
     base_url = base_url.rstrip('/')  # Retain the site mount when building page URLs.
     parsed_site = urlparse(base_url)
@@ -173,12 +202,15 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
 
     def no_overflow():
         overflow = page.evaluate("""() => [...document.querySelectorAll('main, main *, dialog[open], dialog[open] *')]
-            .filter(element => {
+            .map(element => {
                 const style = getComputedStyle(element), box = element.getBoundingClientRect();
-                return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0 &&
-                    (box.left < -0.5 || box.right > innerWidth + 0.5);
-            }).map(element => ({tag: element.tagName, id: element.id, className: element.className,
-                left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right}))""")
+                return {tag: element.tagName, id: element.id, className: element.className,
+                    text: (element.textContent || '').trim().slice(0, 120),
+                    left: box.left, right: box.right, width: box.width, height: box.height,
+                    visible: style.display !== 'none' && style.visibility !== 'hidden' &&
+                        (!element.checkVisibility || element.checkVisibility())};
+            }).filter(item => item.visible && item.width > 0 && item.height > 0 &&
+                (item.left < -0.5 || item.right > innerWidth + 0.5))""")
         assert not overflow, {'viewport': page.viewport_size, 'overflow': overflow}
         assert page.locator('main').count() == 1
         for control in page.locator('button, input, select').all():
@@ -193,12 +225,27 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width': width, 'height': 900})
             assert_shared_audio_header(page, width, 'Audio-Archive')
+            assert_archive_visual_shell(page, width, 'initial')
+            no_overflow()
             shot(f'archive-initial-{width}')
+        page.set_viewport_size({'width': 390, 'height': 900})
+        fault['list'] = True
+        page.locator('#refresh').click()
+        page.wait_for_function("document.getElementById('status').textContent.includes('Обновите данные')")
+        assert page.locator('#status').get_attribute('data-tone') == 'error'
+        assert page.locator('#status').evaluate("el => getComputedStyle(el).borderLeftWidth") == '3px'
+        shot('archive-connection-error-390')
+        fault['list'] = False
+        page.locator('#refresh').click()
+        ready()
         page.locator('#record-picker-open').click()
         assert page.locator('#session-list .archive-card').count() == 0
         assert page.locator('#matching').inner_text() == 'Список появится после поиска.'
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width': width, 'height': 900})
+            assert_archive_visual_shell(page, width, 'chooser')
+            no_overflow()
+            shot(f'archive-chooser-full-{width}')
             shot(f'chooser-before-request-{width}', '#records')
 
         fault['scale'] = True
@@ -251,6 +298,12 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             fault['list'] = False
         start = len(trace)
         page.goto(base_url + f"/Audio-Archive.html?session={snapshot['primary']['id']}")
+        page.locator('#detail-title').wait_for()
+        for width in (320, 390, 768, 1280):
+            page.set_viewport_size({'width': width, 'height': 900})
+            assert_archive_visual_shell(page, width, 'selected')
+            no_overflow()
+            shot(f'archive-selected-{width}')
         open_management()
         page.locator('#metadata-title').wait_for()
         assert page.locator('#metadata-title').input_value().startswith('Встреча Й')

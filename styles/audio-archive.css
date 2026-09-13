@@ -21,7 +21,9 @@
 .archive-management button, dialog button { font: inherit; padding: .48rem .75rem; min-height: 38px; border: 1px solid #698099; border-radius: 6px; background: #f2f7fc; color: #173e61; cursor: pointer; white-space: normal; overflow-wrap: anywhere; }
 .archive-management button.action-primary, .archive-management a.action-primary { background: #17659f; border-color: #17659f; color: #fff; text-decoration: none; border-radius: 6px; padding: .58rem .85rem; text-align: center; }
 .archive-management button:disabled, dialog button:disabled { opacity: .6; cursor: default; }
-.archive-management :focus-visible, dialog :focus-visible { outline: 3px solid #17659f; outline-offset: 3px; }
+.archive-management :is(a, button, input, select, summary):focus-visible,
+dialog :is(a, button, input, select):focus-visible { outline: 3px solid #17659f; outline-offset: 3px; }
+.archive-management h2[tabindex="-1"]:focus { outline: none; }
 .archive-management .danger, dialog .danger { background: #fff4f1; border-color: #ad4633; color: #862b1b; }
 .archive-management details { margin-block: .8rem; }
 .archive-management summary { cursor: pointer; padding: .45rem 0; }

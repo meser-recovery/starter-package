@@ -724,6 +724,15 @@ def check_audio_archive_header_contract(errors: list[str]) -> None:
     source = page.read_text(encoding="utf-8", errors="replace")
     if '<a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>' not in source:
         errors.append("Audio-Archive.html: canonical service-link markup is missing")
+    if '<main id="main-content" class="audio-editor-main archive-main">' not in source or '<div class="container archive-management">' not in source:
+        errors.append("Audio-Archive.html: shared page canvas and content surface are missing")
+    primary = source.find('id="record-picker-open"')
+    connection = source.find('class="archive-connection"')
+    if primary < 0 or connection < 0 or primary > connection:
+        errors.append("Audio-Archive.html: record selection must precede connection management")
+    hotline = "Горячая линия АН, где вы можете получить поддержку"
+    if hotline not in source:
+        errors.append("Audio-Archive.html: shared site footer is missing")
 
 
 def check_audio_editor_contract(errors: list[str]) -> None:

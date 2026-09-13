@@ -35,9 +35,13 @@ function message(error) {
   if (error?.status === 404) return 'Запись или результат больше не доступны.';
   return error?.userMessage || 'Не удалось получить подтверждение от архива. Проверьте состояние перед повторным действием.';
 }
+function setArchiveStatus(text, tone = 'neutral') {
+  $('status').textContent = text;
+  $('status').dataset.tone = tone;
+}
 function report(error) {
   if ([401, 403].includes(error?.status)) clearSession();
-  $('status').textContent = message(error);
+  setArchiveStatus(message(error), 'error');
 }
 function technical(data) {
   const details = element('details', undefined, 'technical-details');
@@ -412,7 +416,7 @@ function render() { renderRecords(); renderMaintenance(); }
 
 async function refresh() {
   if (!state.authenticated) return;
-  const sequence = generations.list.next(), auth = generations.auth.value; clearPlayback(); $('status').textContent = 'Загрузка записей и незавершённых операций…';
+  const sequence = generations.list.next(), auth = generations.auth.value; clearPlayback(); setArchiveStatus('Загрузка записей и незавершённых операций…', 'busy');
   state.sessions = null; state.maintenance = null; state.projects.clear(); render();
   const results = await Promise.allSettled([gateway.listSessions('incoming'), gateway.listSessions('archived'), gateway.listIncomplete()]);
   if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
@@ -433,7 +437,7 @@ async function refresh() {
     for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
     for (const session of state.sessions.filter(session => session.workflows.speaker.currentDraft)) if (!state.projects.has(session.id)) state.projects.set(session.id, { error: true });
   }
-  render(); $('status').textContent = errors.length ? `${errors.join(' ')} Обновите данные.` : 'Данные загружены. Просмотр не изменяет аудиоархив.';
+  render(); setArchiveStatus(errors.length ? `${errors.join(' ')} Обновите данные.` : 'Данные загружены. Просмотр не изменяет аудиоархив.', errors.length ? 'error' : 'ready');
   await consumeArchiveIntent();
 }
 
@@ -510,7 +514,7 @@ async function recover(operation, action) {
 async function consumeArchiveIntent() {
   if (state.intentConsumed) return; let intent;
   try { intent = parseArchiveIntent(location.search); }
-  catch (error) { state.intentConsumed = true; $('status').textContent = error.message; return; }
+  catch (error) { state.intentConsumed = true; setArchiveStatus(error.message, 'error'); return; }
   if (!intent || !state.authenticated || !state.sessions) return;
   state.intentConsumed = true;
   if (!state.sessions.some(session => session.id === intent.sessionId)) { $('archive-index').hidden = true; $('detail').hidden = false; const title = element('h2', 'Запись недоступна'); title.id = 'detail-title'; $('detail-heading').replaceChildren(title); $('detail-body').replaceChildren(element('p', 'Запись по ссылке не найдена или уже удалена.')); return; }
@@ -538,9 +542,9 @@ $('login-form').addEventListener('submit', async event => {
   finally { $('password').value = ''; submit.disabled = false; }
 });
 $('logout').addEventListener('click', async () => {
-  clearSession(); $('status').textContent = 'Отключение архива…'; const sequence = generations.auth.value; $('login').disabled = true;
-  try { await gateway.logout(); if (generations.auth.current(sequence)) $('status').textContent = 'Аудиоархив отключён.'; }
-  catch { if (generations.auth.current(sequence)) $('status').textContent = 'Локальные данные очищены, но сервер не подтвердил выход. Повторите отключение.'; $('logout').hidden = false; }
+  clearSession(); setArchiveStatus('Отключение архива…', 'busy'); const sequence = generations.auth.value; $('login').disabled = true;
+  try { await gateway.logout(); if (generations.auth.current(sequence)) setArchiveStatus('Аудиоархив отключён.'); }
+  catch { if (generations.auth.current(sequence)) setArchiveStatus('Локальные данные очищены, но сервер не подтвердил выход. Повторите отключение.', 'error'); $('logout').hidden = false; }
   finally { gateway.csrfToken = null; $('login').disabled = false; }
 });
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
