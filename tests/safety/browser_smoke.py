@@ -1390,13 +1390,23 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         "processorVersion": "speaker-v1",
     }
     session["workflows"]["speaker"].update({"status": "result_ready", "outputs": [speaker_output], "nextVersion": 2})
+    other_session_id = "12121212-1212-4121-8121-121212121212"
+    other_session = json.loads(json.dumps(session))
+    other_session.update({"id": other_session_id, "title": "Другая архивная запись"})
+    other_session["storage"] = {"releaseId": 2, "tag": f"audio-session-{other_session_id}"}
+    other_session["workflows"] = {"announcement": workflow("announcement"), "speaker": workflow("speaker")}
+    other_session["transaction"] = {"state": "finalized", "id": other_session_id}
+    for track in other_session["sourceTracks"]:
+        for part in track["parts"]:
+            part["downloadUrl"] = part["downloadUrl"].replace(session_id, other_session_id)
     gateway_calls = []
     mock = {"draft": None, "speaker_draft": None, "publication": None, "output": None, "output_recipe": None,
             "output_bytes": None, "held_upload": None, "speaker_save": None, "speaker_output": None,
             "speaker_output_recipe": None, "speaker_output_bytes": None, "speaker_held_upload": None,
             "speaker_jobs": {}, "resume_held_upload": None, "resume_uploads": [], "hold_resume": False,
             "speaker_output_corrupt": False, "hold_incomplete": False, "held_incomplete": None,
-            "incomplete": [], "list_failure": None}
+            "hold_recovery_check": False, "held_recovery_check": None,
+            "include_other_session": False, "incomplete": [], "list_failure": None}
     publication_id = "44444444-4444-4444-8444-444444444444"
     speaker_save_id = "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
     site_origin = f"{urlparse(base_url).scheme}://{urlparse(base_url).netloc}"
@@ -1438,7 +1448,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         elif parsed.path == "/v1/session":
             fulfill_json(route, {"authenticated": True, "expiresAt": 2000000000, "csrfToken": "mock-csrf"})
         elif parsed.path == "/v1/maintenance/incomplete" and request.method == "GET":
-            if mock["hold_incomplete"]:
+            if mock["hold_recovery_check"]:
+                mock["hold_recovery_check"] = False
+                mock["held_recovery_check"] = route
+            elif mock["hold_incomplete"]:
                 mock["held_incomplete"] = route
             else:
                 fulfill_json(route, {"transactions": mock["incomplete"], "orphans": []})
@@ -1449,9 +1462,13 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 route.abort("connectionfailed")
             else:
                 lifecycle = parse_qs(parsed.query).get("lifecycle", ["incoming"])[0]
-                fulfill_json(route, {"revision": session["revision"], "sessions": [session] if session["lifecycle"]["state"] == lifecycle else []})
+                candidates = (session, other_session) if mock["include_other_session"] else (session,)
+                listed = [item for item in candidates if item["lifecycle"]["state"] == lifecycle]
+                fulfill_json(route, {"revision": session["revision"], "sessions": listed})
         elif parsed.path == f"/v1/source-sessions/{session_id}" and request.method == "GET":
             fulfill_json(route, session)
+        elif parsed.path == f"/v1/source-sessions/{other_session_id}" and request.method == "GET":
+            fulfill_json(route, other_session)
         elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/announcement" and request.method == "GET":
             fulfill_json(route, {"draft": mock["draft"]})
         elif parsed.path == f"/v1/source-sessions/{session_id}/drafts/announcement" and request.method == "PUT":
@@ -2088,14 +2105,47 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         mismatch_job = recovery_job(mismatch_id, 4, fingerprint="different-candidate-fingerprint")
         mock["speaker_jobs"][mismatch_id] = mismatch_job
         mock["incomplete"] = [mismatch_job]
-        refresh_editor_sources(page)
+        incomplete_gets = len([call for call in gateway_calls if call[0] == "GET" and call[1] == "/v1/maintenance/incomplete"])
+        page.locator("#source-session-refresh").click()
+        for _ in range(200):
+            if len([call for call in gateway_calls if call[0] == "GET" and call[1] == "/v1/maintenance/incomplete"]) > incomplete_gets:
+                break
+            page.wait_for_timeout(20)
+        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 4"), exact=False).wait_for(timeout=30000)
         assert page.get_by_role("button", name="Продолжить передачу", exact=True).count() == 0
         assert mismatch_job["state"] == "cancelled"
-        refresh_editor_sources(page)
+
+        # A delayed recovery check belongs to the Speaker context that started it. Closing Speaker
+        # invalidates the action before the discard mutation can be sent, and no stale error is rendered.
+        discard_path = f"/v1/maintenance/incomplete/{mismatch_id}/discard"
+        discard_posts = len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path])
+        mock["hold_recovery_check"] = True
+        page.get_by_role("button", name="Удалить незавершённое сохранение", exact=True).click()
+        for _ in range(200):
+            if mock["held_recovery_check"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["held_recovery_check"] is not None
+        page.locator("#speaker-editor-close").click()
+        if page.locator("#speaker-unsaved-dialog").is_visible():
+            page.locator("#speaker-unsaved-discard").click()
+        assert page.locator("#speaker-editor").is_hidden()
+        fulfill_json(mock["held_recovery_check"], {"transactions": [mismatch_job], "orphans": []})
+        mock["held_recovery_check"] = None
+        page.wait_for_timeout(100)
+        assert mismatch_job["state"] == "cancelled", {"job": mismatch_job, "calls": gateway_calls[-12:]}
+        assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path]) == discard_posts
+        assert "Не удалось восстановить незавершённую операцию" not in page.locator("#source-session-recovery-list").inner_text()
+
+        # The unchanged A/Speaker context still permits the same discard operation.
+        page.locator("#open-local-speaker").click()
+        page.locator("#speaker-editor").wait_for(state="visible", timeout=30000)
+        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 4"), exact=False).wait_for(timeout=30000)
         page.once("dialog", lambda dialog: dialog.accept())
         page.get_by_role("button", name="Удалить незавершённое сохранение", exact=True).click()
         page.locator("#source-session-recovery-list").wait_for(state="hidden")
         assert mismatch_job["state"] == "discarded"
+        assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path]) == discard_posts + 1
 
         page.once("dialog", lambda dialog: dialog.accept())
         page.locator("#speaker-editor-close").click()
@@ -2105,13 +2155,14 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         complete_job = recovery_job(complete_id, 5, complete=True)
         mock["speaker_jobs"][complete_id] = complete_job
         mock["incomplete"] = [complete_job]
+        mock["include_other_session"] = True
         uploads_before_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
         page.reload(wait_until="domcontentloaded")
         assert page.locator("#source-session-recovery-list").is_hidden()
         assert page.get_by_role("button", name="Завершить сохранение", exact=True).count() == 0
         page.locator("#source-session-mode-archive").click()
         page.locator("#source-session-recent").click()
-        page.locator("#source-session-list").get_by_role("button", name="Выбрать", exact=True).click()
+        page.locator(f'#source-session-list [data-session-id="{session_id}"]').get_by_role("button", name="Выбрать", exact=True).click()
         page.locator("#open-local-speaker").click()
         page.get_by_text(re.compile("Есть незавершённое сохранение Версии 5"), exact=False).wait_for(timeout=30000)
         assert page.get_by_role("button", name="Завершить сохранение", exact=True).count() == 1
@@ -2122,9 +2173,42 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
                 page.screenshot(path=str(screenshot_dir / f"s08d-speaker-recovery-{width}.png"), full_page=True)
             page.set_viewport_size({"width": 390, "height": 900})
+
+        # Switching A -> B while the verification response is delayed invalidates finalization of A.
+        resume_path = f"/v1/maintenance/incomplete/{complete_id}/resume"
+        resume_posts = len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path])
+        assert page.locator(f'#source-session-list [data-session-id="{other_session_id}"]').count() == 1
+        page.get_by_role("button", name="Завершить сохранение", exact=True).wait_for(timeout=30000)
+        mock["hold_recovery_check"] = True
+        page.get_by_role("button", name="Завершить сохранение", exact=True).click()
+        for _ in range(200):
+            if mock["held_recovery_check"]:
+                break
+            page.wait_for_timeout(20)
+        assert mock["held_recovery_check"] is not None
+        page.locator("#source-session-mode-archive").click()
+        page.locator(f'#source-session-list [data-session-id="{other_session_id}"]').get_by_role("button", name="Выбрать", exact=True).click()
+        page.locator("#current-recording-heading").get_by_text("Другая архивная запись", exact=True).wait_for(timeout=30000)
+        fulfill_json(mock["held_recovery_check"], {"transactions": [complete_job], "orphans": []})
+        mock["held_recovery_check"] = None
+        page.wait_for_timeout(100)
+        assert complete_job["state"] == "cancelled"
+        assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path]) == resume_posts
+        assert "Не удалось восстановить незавершённую операцию" not in page.locator("#source-session-recovery-list").inner_text()
+
+        # Return to A/Speaker: without a context change, finalization still succeeds.
+        page.locator("#source-session-mode-archive").click()
+        page.locator("#source-session-recent").click()
+        page.locator(f'#source-session-list [data-session-id="{session_id}"]').get_by_role("button", name="Выбрать", exact=True).click()
+        page.locator("#current-recording-heading").get_by_text("Архивная запись", exact=True).wait_for(timeout=30000)
+        page.locator("#open-local-speaker").click()
+        page.locator("#speaker-editor").wait_for(state="visible", timeout=30000)
+        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 5"), exact=False).wait_for(timeout=30000)
         page.get_by_role("button", name="Завершить сохранение", exact=True).click()
         page.locator("#source-session-recovery-list").wait_for(state="hidden")
         assert complete_job["state"] == "finalized"
+        assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path]) == resume_posts + 1
+        mock["include_other_session"] = False
         uploads_after_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
         assert uploads_after_reload_recovery == uploads_before_reload_recovery
         page.get_by_role("button", name="Открыть редактор анонс-мейкера", exact=True).click()

@@ -1200,23 +1200,32 @@ async function showIncomplete() {
 }
 
 async function recover(operation, action) {
-  const auth = state.authSequence;
+  const context = {
+    auth: state.authSequence,
+    generation: state.sessionSequence,
+    sessionId: state.activeManifest?.id || speakerEditorSessionId(),
+    workflow: state.editorMode
+  };
+  const currentContext = () => context.auth === state.authSequence && context.generation === state.sessionSequence &&
+    context.sessionId === (state.activeManifest?.id || speakerEditorSessionId()) && context.workflow === state.editorMode;
   try {
     const latest = await gateway.listIncomplete();
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     const current = latest.transactions.find(t => t.transactionId === operation.transactionId);
     const same = value => value && value.kind === operation.kind && value.sessionId === operation.sessionId && value.workflow === operation.workflow &&
       value.state === operation.state && recoveryPolicy(value).actions.some(([allowed]) => allowed === action);
     if (!same(current)) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
     if ((action === "discard" || current.kind === "pending_delete") && !globalThis.confirm(action === "discard" ? "Удалить только это незавершённое сохранение? Зарезервированный номер версии останется использованным." : "Продолжить уже начатое необратимое удаление этой записи?")) return;
     const rechecked = await gateway.listIncomplete();
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     if (!same(rechecked.transactions.find(t => t.transactionId === operation.transactionId))) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
+    if (!currentContext()) return;
     await gateway.recoverIncomplete(operation.transactionId, action);
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     await refreshSessions();
+    if (!currentContext()) return;
   } catch (error) {
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     byId("recovery-list").textContent = userError(error, "Не удалось восстановить незавершённую операцию.");
     if ([401, 403].includes(error.status)) onGatewayError(error, "", null);
   }
