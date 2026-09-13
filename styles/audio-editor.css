@@ -116,6 +116,10 @@
 #source-session-announcement-audio { width: 100%; }
 #source-session-publication-progress { width: 100%; accent-color: var(--color-palette-dark-1); }
 
+.current-recording { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); border-left: 4px solid #126b80; }
+.current-recording h2, .current-recording p { margin: 0; }
+.current-recording > div { display: grid; gap: var(--space-1); }
+.current-recording > a { flex: 0 0 auto; }
 .result-archive-card { border-color: #256b45; }
 .result-archive-navigation { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-3); }
 .result-archive-navigation button { display: flex; min-height: 3.5rem; align-items: center; justify-content: space-between; gap: var(--space-3); padding: .7rem 1rem; color: var(--color-text); background: #f1f6fb; border: 2px solid transparent; border-radius: var(--radius-sm); font: inherit; font-weight: 800; cursor: pointer; }
@@ -245,6 +249,8 @@
   .result-archive-item__actions { grid-auto-flow: row; }
   .source-workflows { grid-template-columns: 1fr; }
   .source-entry-modes > *, .source-session-toolbar > button, .source-session-dialog__actions > button { flex: 1 1 100%; }
+  .current-recording { align-items: stretch; flex-direction: column; }
+  .current-recording > a { text-align: center; }
   .source-recovery-item button { width: 100%; }
   .source-session-dialog { width: calc(100% - 1rem); max-height: calc(100% - 1rem); }
   .speaker-toolbar > *, .speaker-selection__actions > *, .speaker-track__buttons > *, .speaker-result__actions > * { flex: 1 1 100%; justify-content: center; }

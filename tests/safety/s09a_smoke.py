@@ -79,7 +79,32 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         return page.evaluate("async()=>{const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();return {session:s.session,payload:s.payload,draft:s.draft,files:s.files.map(f=>[f.name,f.size]),epoch:s.sourceEpoch,candidate:s.candidate?.candidateType}}")
     def unchanged(before):
         after=snapshot(); assert after['payload']==before['payload'], (before['payload'],after['payload']); assert after['files']==before['files']; assert after['epoch']==before['epoch']
-    def overflow(): assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.viewport_size
+    def overflow():
+        layout = page.evaluate("""() => ({
+            scrollWidth: document.documentElement.scrollWidth,
+            innerWidth,
+            offenders: [...document.querySelectorAll('body *')].map(element => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    element,
+                    tag: element.tagName,
+                    id: element.id,
+                    className: typeof element.className === 'string' ? element.className : '',
+                    left: Math.round(rect.left * 10) / 10,
+                    right: Math.round(rect.right * 10) / 10,
+                    width: Math.round(rect.width * 10) / 10,
+                    scrollWidth: element.scrollWidth,
+                    clientWidth: element.clientWidth,
+                };
+            }).filter(item => {
+                if (item.left >= -0.5 && item.right <= innerWidth + 0.5) return false;
+                for (let ancestor = item.element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+                    if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(ancestor).overflowX)) return false;
+                }
+                return true;
+            }).slice(0, 12).map(({element, ...item}) => item),
+        })""")
+        assert not layout['offenders'], {**page.viewport_size, **layout}
     try:
         page.goto(base_url+'/Audio-Editor.html'); page.wait_for_function("document.getElementById('source-session-session-status').textContent.includes('активен')")
         page.locator('#source-session-mode-device').click()
@@ -108,8 +133,13 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-selection-end').fill('2.8');page.locator('#speaker-editor-set-end').click()
         page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');apply_selection(page, 'silence')
-        edited=snapshot();
-        page.locator('#source-session-results-speaker').click();page.locator('#source-session-results-announcement').click()
+        edited=snapshot()
+        # A local-only recording has no canonical versions. The S09B result panel
+        # follows the active workflow after the recording acquires a canonical ID;
+        # the former global result-library toggles are intentionally hidden.
+        assert page.locator('#source-session-results').is_hidden()
+        assert page.locator('#source-session-results-speaker').is_hidden()
+        assert page.locator('#source-session-results-announcement').is_hidden()
         assert page.locator('#speaker-editor').is_visible();unchanged(edited)
         assert edited['payload']['trackIds']==list(reversed(original['payload']['trackIds']))
         assert len(edited['payload']['globalCuts'])==2
@@ -209,8 +239,13 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#speaker-editor-save-dialog').wait_for(state='hidden');shot('final-version-saved')
         # Expired part downloads reconnect without touching the active montage or its local result.
         before_download = snapshot(); fault['part'] = 401
-        page.locator('#source-session-results-speaker').click()
-        output_card = page.locator('#source-session-results-speaker-list .result-archive-item').filter(has_text='duplicate').first
+        assert page.locator('#source-session-results').is_visible()
+        if page.locator('#source-session-results').get_attribute('open') is None: page.locator('#source-session-results > summary').click()
+        assert page.locator('#source-session-results-speaker-panel').is_visible()
+        assert page.locator('#source-session-results-announcement-panel').is_hidden()
+        assert page.locator('#source-session-results-status').inner_text() == 'duplicate · Спикерская.'
+        assert page.locator('#source-session-results-speaker-list .result-archive-item').count() == 1
+        output_card = page.locator('#source-session-results-speaker-list .result-archive-item').first
         output_card.get_by_role('button',name='Прослушать',exact=True).click()
         page.wait_for_function("document.getElementById('source-session-results-status').textContent.includes('Подключение к аудиоархиву истекло')")
         unchanged(before_download);shot('part-download-reconnect-keeps-project')
@@ -219,6 +254,9 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.locator('#source-session-login-dialog').wait_for(state='hidden')
         page.locator('#archive-reconnect-retry').click()
         page.wait_for_function("document.getElementById('source-session-results-status').textContent==='Файл проверен и готов к воспроизведению.'")
+        assert page.locator('#source-session-announcement-playback-label').inner_text() == 'Прослушивание · Спикерская'
+        assert page.locator('#source-session-announcement-download').get_attribute('href').startswith('blob:')
+        assert page.locator('#source-session-announcement-download').get_attribute('download').lower().endswith('.mp3')
         unchanged(before_download)
         # Reopening retrieves canonical files/current project, no mutation or file picker.
         start=len(trace);page.goto(base_url+f'/Audio-Editor.html?session={source["id"]}&workflow=speaker')
@@ -238,8 +276,11 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         page.get_by_text('Точное редактирование',exact=True).click();page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-cancel').click();assert page.locator('#speaker-editor').is_visible()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-discard').click();assert page.locator('#speaker-editor').is_hidden()
-        page.goto(base_url+'/Audio-Archive.html');page.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
-        assert page.locator('#project-list').get_by_text('duplicate',exact=True).count()==1
+        page.goto(base_url+f'/Audio-Archive.html?session={source["id"]}')
+        page.locator('#detail-title').wait_for()
+        assert page.locator('#detail-title').inner_text() == 'duplicate'
+        page.locator('.project-disclosure > summary').click()
+        assert page.locator('#detail .project-section').get_by_text('Проект сохранён', exact=False).count() == 1
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'archive-{width}')
         assert not errors, errors

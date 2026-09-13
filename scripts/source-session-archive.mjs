@@ -1,7 +1,7 @@
 import { contextActions } from "./audio-actions.mjs";
 import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
 import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ProjectSave } from "./audio-project.mjs";
-import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact } from './audio-archive-core.mjs';
+import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
 import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
@@ -18,6 +18,7 @@ const state = {
   listsLoaded: false, projects: new Map(), deleteSequence: 0, deleteBusy: false,
   sessions: [],
   allSessions: [],
+  picker: { requested: false, page: 0, pageSize: 10 },
   resultArchive: "announcement",
   refreshSequence: 0,
   sessionSequence: 0,
@@ -63,7 +64,7 @@ function formatBytes(bytes) {
 
 function formatDate(value) {
   if (!value) return "Дата записи не указана";
-  return new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short" }).format(new Date(value));
+  return new Intl.DateTimeFormat("ru-RU", { dateStyle: "medium", timeStyle: "short", timeZone: "UTC" }).format(new Date(value)) + " UTC";
 }
 
 function formatMediaType(value) {
@@ -109,6 +110,31 @@ function updateSessionStatus() {
 
 }
 
+function renderCurrentRecording() {
+  const manifest = state.activeManifest;
+  const local = !manifest && (state.localContext || workingFiles().length ? state.localContext || localSourceContext(workingFiles()) : null);
+  const heading = document.getElementById("current-recording-heading");
+  const summary = document.getElementById("current-recording-state");
+  const link = document.getElementById("current-recording-archive-link");
+  const picker = byId("mode-archive");
+  if (manifest) {
+    heading.textContent = manifest.title;
+    summary.textContent = `${formatDate(manifest.recordedAt)} · ${manifest.sourceTracks.length} дорожек · Сохранена в аудиоархиве`;
+    link.href = `Audio-Archive.html?session=${encodeURIComponent(manifest.id)}`; link.hidden = false;
+    picker.textContent = "Сменить запись";
+  } else if (local) {
+    heading.textContent = "Новая запись Zoom";
+    summary.textContent = `${local.sourceTracks.length} дорожек · Только на этом устройстве`;
+    link.removeAttribute("href"); link.hidden = true;
+    picker.textContent = "Сменить запись";
+  } else {
+    heading.textContent = "Запись не выбрана";
+    summary.textContent = "Откройте запись из аудиоархива или выберите дорожки на устройстве.";
+    link.removeAttribute("href"); link.hidden = true;
+    picker.textContent = "Выбрать запись";
+  }
+}
+
 function setMode(mode) {
   state.mode = mode;
   if (mode === "device" && !state.editorMode) { activateMode("announcement"); document.getElementById("import-zone").open = true; }
@@ -120,8 +146,7 @@ function setMode(mode) {
   byId("mode-archive").setAttribute("aria-pressed", String(archive));
   byId("mode-device").setAttribute("aria-pressed", String(!archive));
   updateSourceSaveState();
-
-  updatePublishState();
+  renderCurrentRecording(); updatePublishState(); renderResultArchive(); void showIncomplete();
 }
 
 function clearOutputPlayback() {
@@ -145,7 +170,7 @@ function closeAnnouncementWorkspace(clearProcessor = false) {
   state.processorProvenance = [];
   state.candidate = null;
   byId("announcement-workspace").hidden = true;
-  updatePublishState();
+  updatePublishState(); renderCurrentRecording(); renderResultArchive(); void showIncomplete();
 }
 
 function selectedTrackIds() {
@@ -157,7 +182,7 @@ function renderAnnouncementWorkspace() {
   byId("announcement-workspace").hidden = state.editorMode !== "announcement";
   byId("announcement-identity").textContent = session ? `${session.title} · ${formatDate(session.recordedAt)}` : "Дорожки на этом устройстве";
   byId("announcement-status").textContent = "Исходники → Обработать запись → Прослушать → Сохранить / Скачать";
-  updatePublishState();
+  updatePublishState(); renderCurrentRecording(); renderResultArchive();
 }
 function activateMode(mode) {
   state.editorMode = mode;
@@ -168,7 +193,7 @@ function activateMode(mode) {
   document.getElementById("active-editor-mode").textContent = `Сейчас открыто: ${mode === "speaker" ? "Финальная обработка спикерской" : "Редактирование для анонс-мейкера"}`;
   const inactiveEditor = document.getElementById(mode === "speaker" ? "announcement-processor-card" : "speaker-editor");
   for (const audio of inactiveEditor.querySelectorAll("audio")) audio.pause();
-  renderAnnouncementWorkspace(); renderImportFiles();
+  state.resultArchive = mode; renderAnnouncementWorkspace(); renderImportFiles(); void showIncomplete();
 }
 
 function updatePublishState() {
@@ -177,7 +202,7 @@ function updatePublishState() {
   if (!button || !reason) return;
   const session = state.activeManifest;
   let message = "";
-  if (!session) message = "Сначала сохраните исходные записи в аудиоархив, затем обработайте запись заново.";
+  if (!session) message = "Сначала сохраните запись Zoom в аудиоархив, затем создайте результат для сохранённой записи.";
   else if (session.lifecycle.state !== "incoming") message = "Верните запись для обработки перед сохранением нового результата.";
   else if (session.sourceState !== "available") message = "Исходники этой записи недоступны.";
   else if (!state.candidate) message = "Сначала создайте локальный результат обработки.";
@@ -241,12 +266,12 @@ async function refreshSessions() {
     const failure = projects.find(result => result.status === 'rejected' && [401, 403].includes(result.reason?.status));
     if (failure) throw failure.reason;
     for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
-    state.sessions = state.allSessions; state.listsLoaded = true;
+    state.sessions = state.allSessions.filter(eligible); state.listsLoaded = true;
     renderSessions();
     renderResultArchive();
     await showIncomplete();
     if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
-    setArchiveStatus(state.sessions.length ? "" : "Исходных записей пока нет.");
+    setArchiveStatus(state.sessions.length ? "" : "Нет записей, доступных для новой обработки. Все записи и управление ими доступны в Аудиоархиве.");
   } catch (error) {
     if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
     state.sessions = [];
@@ -285,9 +310,15 @@ function newerSpeakerSession(prepared) {
   const active = getSpeakerSaveState().session;
   return active?.id === prepared.id && active.revision > prepared.revision ? active : null;
 }
+function beginContextSwitch(sessionId) {
+  const current = state.activeManifest?.id || speakerEditorSessionId();
+  if (current === sessionId) return;
+  ++state.incompleteSequence; byId("recovery-list").replaceChildren(); byId("recovery-list").hidden = true;
+}
 
 async function loadSession(session) {
   if (state.publicationController || state.uploadController) return;
+  beginContextSwitch(session.id);
   const sequence = ++state.sessionSequence, auth = state.authSequence;
   const current = () => sequence === state.sessionSequence && auth === state.authSequence;
   setArchiveStatus(session.lifecycle.state === "archived" ? "Открытие записи, убранной из рабочего списка…" : "Загрузка и проверка исходных дорожек…");
@@ -322,6 +353,7 @@ async function loadSession(session) {
       return;
     }
     if (!current()) return;
+    ++state.outputSequence; clearOutputPlayback();
     state.activeSession = complete;
     state.activeManifest = complete;
     state.announcementDraft = draft;
@@ -353,6 +385,7 @@ async function loadSession(session) {
 
 async function loadSpeakerSession(session) {
   if (state.publicationController || state.uploadController) return;
+  beginContextSwitch(session.id);
   if (session.lifecycle.state !== "incoming" || session.sourceState !== "available") {
     setArchiveStatus("Спикерская доступна только для исходной записи с доступными исходниками. Сначала верните запись для обработки.");
     return;
@@ -393,6 +426,7 @@ async function loadSpeakerSession(session) {
     const newer = newerSpeakerSession(complete);
     if (!opened && newer && !ownsSources()) return loadSpeakerSession(newer);
     if (opened) {
+      ++state.outputSequence; clearOutputPlayback();
       closeAnnouncementWorkspace(false);
       state.activeManifest = getSpeakerSaveState().session;
       activateMode("speaker");
@@ -427,7 +461,7 @@ function speakerSaveReason(snapshot = getSpeakerSaveState()) {
 }
 
 function updateSpeakerSaveState(snapshot = getSpeakerSaveState()) {
-  updateSourceSaveState();
+  updateSourceSaveState(); renderCurrentRecording(); renderResultArchive();
   const save = speakerId("archive-save");
   const reason = speakerId("archive-unavailable");
   if (!save || !reason) return;
@@ -591,13 +625,13 @@ async function reconcileSpeakerSave(transactionId, sessionId) {
 }
 
 async function openArchivedOutput(session, output, workflow = "announcement", downloadOnly = false) {
-  const sequence = ++state.outputSequence, auth = state.authSequence;
+  const sequence = ++state.outputSequence, auth = state.authSequence, currentSessionId = state.activeManifest?.id;
   try {
     byId("results-status").textContent = "Загрузка и проверка сохранённого результата…";
     const metadata = workflow === "speaker" ? await gateway.getSpeakerOutput(session.id, output.outputId) : await gateway.getAnnouncementOutput(session.id, output.outputId);
     const file = workflow === "speaker" ? await reconstructSpeakerOutput(metadata, gateway.speakerPartFetch(metadata)) :
       await reconstructAnnouncementOutput(metadata, gateway.announcementPartFetch(metadata));
-    if (sequence !== state.outputSequence || auth !== state.authSequence || state.resultArchive !== workflow) return;
+    if (sequence !== state.outputSequence || auth !== state.authSequence || state.resultArchive !== workflow || state.activeManifest?.id !== currentSessionId || currentSessionId !== session.id) return;
     if (state.outputUrl) URL.revokeObjectURL(state.outputUrl);
     state.outputUrl = URL.createObjectURL(file);
     const link = byId("announcement-download");
@@ -612,7 +646,7 @@ async function openArchivedOutput(session, output, workflow = "announcement", do
   } catch (error) {
     if (sequence === state.outputSequence && auth === state.authSequence) {
       if ([401, 403].includes(error.status)) onGatewayError(error, RECONNECT_MESSAGE, async () => {
-        if (sequence !== state.outputSequence || state.resultArchive !== workflow) return;
+        if (sequence !== state.outputSequence || state.resultArchive !== workflow || state.activeManifest?.id !== currentSessionId) return;
         const fresh = await gateway.getSession(session.id);
         const target = fresh.workflows[workflow].outputs.find(item => item.outputId === output.outputId && item.sha256 === output.sha256 && item.version === output.version);
         if (!target) throw Object.assign(new Error("Результат больше не доступен"), { status: 404 });
@@ -642,23 +676,23 @@ function resultArchiveItem(session, workflowName, output) {
   const details = document.createElement("div");
   details.className = "result-archive-item__details";
   const heading = document.createElement("h4");
-  heading.textContent = `${session.title} · Версия ${output.version}`;
+  heading.textContent = `Версия ${output.version}`;
   const metadata = document.createElement("p");
   metadata.className = "result-archive-item__metadata";
-  metadata.textContent = `${formatDate(output.createdAt)} · ${formatBytes(output.sizeBytes)} · ${session.sourceState === "deleted" ? "исходники удалены" : session.lifecycle.state === "archived" ? "Убрана из рабочего списка" : "Готова к обработке"}`;
+  metadata.textContent = `${formatDate(output.createdAt)} · ${formatBytes(output.sizeBytes)}`;
   details.append(heading, metadata);
   const actions = document.createElement("div");
   actions.className = "result-archive-item__actions";
   actions.append(button("Прослушать", () => openArchivedOutput(session, output, workflowName)));
   actions.append(button("Скачать", () => openArchivedOutput(session, output, workflowName, true)));
-  actions.append(button("Удалить версию", () => openDeleteDialog(session, { kind: "output-version", workflow: workflowName, version: output.version }), "source-session-danger"));
   item.append(details, actions);
   return item;
 }
 
 function renderResultArchive() {
   const membership = { announcement: [], speaker: [] };
-  for (const session of state.allSessions) {
+  const current = state.activeManifest && state.allSessions.find(session => session.id === state.activeManifest.id);
+  for (const session of current ? [current] : []) {
     for (const name of Object.keys(membership)) {
       const workflow = session.workflows?.[name];
       if (!workflow || workflow.workflow !== name || !Array.isArray(workflow.outputs)) continue;
@@ -668,6 +702,10 @@ function renderResultArchive() {
       }
     }
   }
+  byId("results").hidden = !current || !state.editorMode;
+  if (state.editorMode && state.resultArchive !== state.editorMode) state.resultArchive = state.editorMode;
+  byId("results-announcement-panel").hidden = state.resultArchive !== "announcement";
+  byId("results-speaker-panel").hidden = state.resultArchive !== "speaker";
   for (const name of Object.keys(membership)) {
     const unique = new Map(membership[name].map((entry) => [`${entry.session.id}:${entry.output.outputId}`, entry]));
     membership[name] = [...unique.values()].sort((left, right) => String(right.output.createdAt).localeCompare(String(left.output.createdAt)));
@@ -684,60 +722,71 @@ function renderResultArchive() {
   }
   if (!baseUrl) byId("results-status").textContent = "Архив результатов ещё не настроен.";
   else if (!state.authenticated) byId("results-status").textContent = "Подключите архив, чтобы увидеть сохранённые результаты.";
-  else byId("results-status").textContent = `Открыт раздел «${workflowLabel(state.resultArchive)}».`;
+  else if (!current) byId("results-status").textContent = "Для локальной записи сохранённых версий нет.";
+  else byId("results-status").textContent = `${current.title} · ${workflowLabel(state.resultArchive)}.`;
 }
 
 function renderSessions() {
   const list = byId("list");
   list.replaceChildren();
-  byId("count").hidden = !state.sessions.length;
-  byId("count").textContent = `Найдено: ${state.sessions.length}.`;
-  for (const session of state.sessions) {
+  byId("pagination").hidden = true;
+  if (!state.picker.requested) {
+    byId("count").hidden = false; byId("count").textContent = "Список появится после поиска."; return;
+  }
+  const form = byId("filters").elements, query = form.search.value.trim().toLocaleLowerCase("ru");
+  const month = form.month.value;
+  const matches = state.sessions.filter(session => (!query || session.title.toLocaleLowerCase("ru").includes(query) ||
+    session.sourceTracks.some(track => track.originalName.toLocaleLowerCase("ru").includes(query))) &&
+    (!month || String(session.recordedAt || "").slice(0, 7) === month));
+  const pages = Math.max(1, Math.ceil(matches.length / state.picker.pageSize));
+  state.picker.page = Math.min(state.picker.page, pages - 1);
+  const start = state.picker.page * state.picker.pageSize, visible = pageItems(matches, state.picker.page, state.picker.pageSize);
+  byId("count").hidden = false;
+  byId("count").textContent = matches.length ? `Найдено: ${matches.length} · ${start + 1}–${start + visible.length}` : "Ничего не найдено. Измените запрос.";
+  for (const session of visible) {
     const card = document.createElement("article");
     card.className = "source-session-item"; card.dataset.sessionId = session.id;
     const heading = document.createElement("h3");
     heading.textContent = session.title;
     const metadata = document.createElement("p");
     metadata.className = "source-session-metadata";
-    metadata.textContent = `${session.lifecycle.state === "incoming" ? "Готова к обработке" : "Убрана из рабочего списка"} · ${formatDate(session.recordedAt)} · ${originText[session.origin.kind] || "Источник не указан"} · ${session.sourceTracks.length} дорожек · ${session.sourceState === "available" ? "исходники доступны" : "исходники удалены"}`;
+    metadata.textContent = `${formatDate(session.recordedAt)} · ${session.sourceTracks.length} дорожек · Исходники доступны`;
     const body = document.createElement("div");
     body.className = "source-session-item__body";
     const summary = document.createElement("div");
     summary.className = "source-session-item__summary";
-    const workflows = document.createElement("p");
-    workflows.className = "source-workflow-summary";
-    for (const name of ["announcement", "speaker"]) {
-      const badge = document.createElement("span");
-      const workflow = session.workflows?.[name];
-      const validWorkflow = workflow?.workflow === name && Array.isArray(workflow.outputs);
-      badge.textContent = validWorkflow ? `${workflowLabel(name)} · готовых версий: ${workflow.outputs.length}${name === "speaker" && workflow.currentDraft ? (state.projects.get(session.id) ? " · сохранён проект" : " · проект не проверен") : ""}` : `${workflowLabel(name)}: данные недоступны`;
-      workflows.append(badge);
-    }
     const actions = document.createElement("div");
     actions.className = "source-session-actions";
-    const open = button("Редактировать для анонс-мейкера", () => loadSession(session), "action-primary");
+    const open = button("Выбрать", () => selectSessionContext(session), "action-primary");
     open.disabled = !eligible(session); actions.append(open);
-    if (session.lifecycle.state === "incoming" && session.sourceState === "available") {
-      actions.append(button("Открыть финальную обработку спикерской", () => loadSpeakerSession(session), "speaker-open-action"));
-    }
-    if (session.lifecycle.state === "incoming") actions.append(button("Убрать из рабочего списка", async () => {
-      if (session.id === speakerEditorSessionId() && !await closeSpeakerEditor(false)) return;
-      mutateSession(() => gateway.setLifecycle(session.id, "archive", session.revision));
-    }));
-    else actions.append(button("Вернуть для обработки", () => mutateSession(() => gateway.setLifecycle(session.id, "restore", session.revision))));
-    const deletions = contextActions(session.title,
-      button("Удалить исходники", () => openDeleteDialog(session, { kind: "sources" }), "source-session-danger"));
-    deletions.querySelector("button").disabled = session.sourceState !== "available";
-    for (const workflow of ["announcement", "speaker"]) if (session.workflows[workflow].outputs.length) {
-      deletions.lastElementChild.append(button(`Удалить всю серию «${workflowLabel(workflow)}»`, () => openDeleteDialog(session, { kind: "output-series", workflow }), "source-session-danger"));
-    }
-    const danger = document.createElement("details"), dangerTitle = document.createElement("summary"); dangerTitle.textContent = "Опасная зона";
-    danger.append(dangerTitle, button("Удалить запись полностью", () => openDeleteDialog(session, { kind: "purge" }), "source-session-danger"));
-    deletions.lastElementChild.append(danger); actions.append(deletions);
-    summary.append(heading, metadata, workflows);
+    summary.append(heading, metadata);
     body.append(summary, actions);
     card.append(body);
     list.append(card);
+  }
+  if (matches.length > state.picker.pageSize) {
+    byId("pagination").hidden = false; byId("page").textContent = `${state.picker.page + 1} из ${pages}`;
+    byId("prev").disabled = state.picker.page === 0; byId("next").disabled = state.picker.page + 1 >= pages;
+  }
+}
+
+async function selectSessionContext(session) {
+  if (state.publicationController || state.uploadController || state.speakerSaveController || state.speakerResumeController) return;
+  const sequence = ++state.sessionSequence, auth = state.authSequence;
+  setArchiveStatus("Проверка выбранной записи…");
+  try {
+    const complete = await gateway.getSession(session.id);
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (!validateSessionManifest(complete) || complete.id !== session.id || !eligible(complete)) throw new Error("Запись больше не доступна для редактирования.");
+    if (!await closeSpeakerEditor(false, () => sequence === state.sessionSequence && auth === state.authSequence)) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    closeAnnouncementWorkspace(true);
+    state.activeSession = complete; state.activeManifest = complete; state.editorMode = null; delete document.body.dataset.editing;
+    document.getElementById("import-zone").open = false; clearProcessorFiles(); state.processorProvenance = []; state.candidate = null;
+    renderCurrentRecording(); renderResultArchive(); renderSessions(); await showIncomplete();
+    setArchiveStatus(`Выбрана запись: ${complete.title}. Выберите тип обработки.`);
+  } catch (error) {
+    if (sequence === state.sessionSequence && auth === state.authSequence) onGatewayError(error, "Не удалось выбрать запись.");
   }
 }
 
@@ -769,6 +818,9 @@ async function saveLocalProject({ session: context, files, draft, payload, durat
   if (!project.finalized && !await confirmLocalProjectSave()) return null;
   return withReconnect(async () => {
     const session = await project.sources(context, files, { signal, onProgress });
+    state.activeManifest = session;
+    renderCurrentRecording();
+    renderResultArchive();
     const bound = bindLocalPayload(context, payload, project.plan, session, duration);
     const result = await project.save(session, null, bound.payload, signal);
     return { ...result, mapping: bound.mapping };
@@ -781,7 +833,7 @@ async function openLocalSpeaker() {
   if (!getProcessorFiles().length) { setArchiveStatus("Выберите исходные дорожки в разделе Импорт."); return; }
   const files = getProcessorFiles();
   state.localContext ||= localSourceContext(files); state.localProject ||= new ProjectSave(gateway);
-  const opened = await openSpeakerEditor({ session: state.localContext, files, saveDraft: saveLocalProject, onSaved: ({ session }) => { state.activeManifest = session; updateSourceSaveState(); } });
+  const opened = await openSpeakerEditor({ session: state.localContext, files, saveDraft: saveLocalProject, onSaved: ({ session }) => { state.activeManifest = session; updateSourceSaveState(); renderCurrentRecording(); renderResultArchive(); } });
   if (opened) activateMode("speaker");
 }
 async function openLocalAnnouncement() {
@@ -803,7 +855,7 @@ function updateSourceSaveState() {
 function renderImportFiles() {
   updateSourceSaveState();
   const list = document.getElementById("import-files"); list.replaceChildren();
-  document.getElementById("import-summary").textContent = `Выбрано дорожек: ${workingFiles().length}`;
+  document.getElementById("import-summary").textContent = workingFiles().length ? `Выбрано дорожек: ${workingFiles().length}` : "Запись не выбрана";
   for (const [index, file] of workingFiles().entries()) {
     const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${file.name.split('.').at(-1).toUpperCase()} · ${formatBytes(file.size)} `));
     row.append(button("Удалить", async () => {
@@ -813,6 +865,7 @@ function renderImportFiles() {
       if (files.length) loadProcessorFiles(files); else clearProcessorFiles();
     })); list.append(row);
   }
+  renderCurrentRecording(); renderResultArchive();
 }
 
 function openIngestDialog(files = []) {
@@ -873,20 +926,21 @@ async function submitIngestion(event) {
     const context = localSourceContext(files);
     bindLocalPayload(context, defaultSpeakerPayload(context.sourceTracks.map(t => t.trackId)), state.ingestionPlan, session);
     if (!validateSessionManifest(session)) throw new Error("Не удалось подтвердить исходники.");
+    state.activeManifest = session;
     if (state.pendingOrigin === "device") {
       state.localProject ||= new ProjectSave(gateway); state.localProject.finalized = session; state.localProject.plan = state.ingestionPlan;
       if (state.editorMode !== "speaker") {
-        state.activeManifest = session;
         state.processorProvenance = state.ingestionPlan.tracks.map(t => ({ trackId: t.trackId, blobId: t.blobId, ordinal: t.ordinal, sizeBytes: t.sizeBytes, sha256: t.sha256, mediaType: t.mediaType }));
         state.loadingArchive = true; await bindProcessorSources(files, state.processorProvenance, { sessionId: session.id, sourceSessionRevision: session.revision }); state.loadingArchive = false;
         renderAnnouncementWorkspace();
       }
     }
     updateSourceSaveState();
-    byId("ingest-status").textContent = "Исходные записи сохранены в аудиоархиве.";
+    renderCurrentRecording(); renderResultArchive();
+    byId("ingest-status").textContent = "Запись Zoom сохранена в аудиоархиве.";
     setTimeout(() => byId("ingest-dialog").close(), 400);
     await refreshSessions();
-    setArchiveStatus("Исходные записи сохранены в аудиоархиве.");
+    setArchiveStatus("Запись Zoom сохранена в аудиоархиве.");
   } catch (error) {
     byId("ingest-status").textContent = error?.name === "AbortError" ?
       "Передача остановлена. Незавершённая операция сохранена для безопасного повтора." : `${userError(error, "Не удалось сохранить исходники.")} Локальные файлы сохранены; можно повторить.`;
@@ -1101,34 +1155,39 @@ async function submitDeletion(event) {
 async function showIncomplete() {
   const sequence = ++state.incompleteSequence, auth = state.authSequence;
   const container = byId("recovery-list");
+  const currentSessionId = state.activeManifest?.id || speakerEditorSessionId();
+  const contextual = Boolean(currentSessionId && state.mode === "archive" && state.editorMode === "speaker");
+  if (!contextual && !state.speakerResumeController) {
+    container.replaceChildren(); container.hidden = true; return;
+  }
   try {
     const result = await gateway.listIncomplete();
     if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
     if (state.speakerResumeController) {
+      container.hidden = false;
       renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
       return;
     }
     container.replaceChildren();
-    for (const row of byId("list").querySelectorAll(".source-recovery-item")) row.remove();
     let associated = 0;
     for (const transaction of result.transactions || []) {
-      const target = [...byId("list").querySelectorAll(".source-session-item")].find(row => row.dataset.sessionId === transaction.sessionId);
-      if (!target) continue; // Unassociated operations and orphan diagnostics remain in Archive maintenance.
+      const binding = speakerRecoveryBinding(transaction, { sessionId: currentSessionId, workflow: state.editorMode,
+        archiveMode: state.mode === "archive", candidate: getSpeakerSaveState().candidate });
+      if (!binding.belongs) continue;
       associated++;
       const row = document.createElement("div"); row.className = "source-recovery-item";
       const title = document.createElement("strong"); title.textContent = "Требуется внимание"; row.append(title);
       const policy = recoveryPolicy(transaction);
       row.append(document.createTextNode(transaction.kind === "pending_delete" ? " Удаление не завершено. " :
-        transaction.kind === "publication" ? ` Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${workflowLabel(transaction.workflow)}». ` : " Сохранение исходных записей не завершено. "));
+        transaction.kind === "publication" ? ` Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${workflowLabel(transaction.workflow)}». ` : " Сохранение записи Zoom не завершено. "));
       row.append(document.createTextNode(policy.local));
-      if (transaction.kind === "publication" && transaction.workflow === "speaker" && !transaction.canFinalize &&
-          ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length) {
+      if (!transaction.canFinalize && ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length && binding.exactCandidate) {
         row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
       }
       for (const [action, label] of policy.actions) row.append(button(label, () => recover(transaction, action), action === "discard" ? "source-session-danger" : ""));
-      target.append(row);
+      container.append(row);
     }
-    if (!associated) container.textContent = "Незавершённых сохранений для этих записей не найдено.";
+    container.hidden = !associated;
 
   } catch (error) {
     if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
@@ -1136,28 +1195,37 @@ async function showIncomplete() {
       renderSpeakerResumeStatus(state.speakerResumeStatus || "Продолжение передачи выполняется…", state.speakerResumeCancellable);
       return;
     }
-    container.textContent = userError(error, "Не удалось проверить незавершённые операции.");
+    container.hidden = false; container.textContent = userError(error, "Не удалось проверить незавершённые операции.");
   }
 }
 
 async function recover(operation, action) {
-  const auth = state.authSequence;
+  const context = {
+    auth: state.authSequence,
+    generation: state.sessionSequence,
+    sessionId: state.activeManifest?.id || speakerEditorSessionId(),
+    workflow: state.editorMode
+  };
+  const currentContext = () => context.auth === state.authSequence && context.generation === state.sessionSequence &&
+    context.sessionId === (state.activeManifest?.id || speakerEditorSessionId()) && context.workflow === state.editorMode;
   try {
     const latest = await gateway.listIncomplete();
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     const current = latest.transactions.find(t => t.transactionId === operation.transactionId);
     const same = value => value && value.kind === operation.kind && value.sessionId === operation.sessionId && value.workflow === operation.workflow &&
       value.state === operation.state && recoveryPolicy(value).actions.some(([allowed]) => allowed === action);
     if (!same(current)) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
     if ((action === "discard" || current.kind === "pending_delete") && !globalThis.confirm(action === "discard" ? "Удалить только это незавершённое сохранение? Зарезервированный номер версии останется использованным." : "Продолжить уже начатое необратимое удаление этой записи?")) return;
     const rechecked = await gateway.listIncomplete();
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     if (!same(rechecked.transactions.find(t => t.transactionId === operation.transactionId))) throw Object.assign(new Error("Состояние операции изменилось"), { status: 409 });
+    if (!currentContext()) return;
     await gateway.recoverIncomplete(operation.transactionId, action);
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     await refreshSessions();
+    if (!currentContext()) return;
   } catch (error) {
-    if (auth !== state.authSequence) return;
+    if (!currentContext()) return;
     byId("recovery-list").textContent = userError(error, "Не удалось восстановить незавершённую операцию.");
     if ([401, 403].includes(error.status)) onGatewayError(error, "", null);
   }
@@ -1231,6 +1299,7 @@ function renderSpeakerResumeStatus(message, cancellable = false) {
   state.speakerResumeStatus = message;
   state.speakerResumeCancellable = Boolean(cancellable);
   const container = byId("recovery-list");
+  container.hidden = false;
   container.replaceChildren(document.createTextNode(message));
   if (cancellable) container.append(document.createTextNode(" "), button("Отменить продолжение", cancelSpeakerResume));
 }
@@ -1295,8 +1364,14 @@ async function initialize() {
   await consumeEditorIntent();
 }
 
-byId("mode-archive").addEventListener("click", () => setMode("archive"));
-byId("mode-device").addEventListener("click", () => setMode("device"));
+byId("mode-archive").addEventListener("click", () => { setMode("archive"); document.getElementById("import-zone").open = true; byId("mode-archive").setAttribute("aria-expanded", "true"); byId("filters").elements.search.focus(); });
+byId("mode-device").addEventListener("click", () => { setMode("device"); document.getElementById("import-zone").open = true; byId("mode-device").focus(); });
+byId("picker-close").addEventListener("click", () => { document.getElementById("import-zone").open = false; byId("mode-archive").setAttribute("aria-expanded", "false"); byId("mode-archive").focus(); });
+document.getElementById("import-zone").addEventListener("toggle", event => byId("mode-archive").setAttribute("aria-expanded", String(event.currentTarget.open)));
+byId("filters").addEventListener("submit", event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderSessions(); });
+byId("recent").addEventListener("click", () => { byId("filters").elements.search.value = ""; byId("filters").elements.month.value = ""; state.picker.requested = true; state.picker.page = 0; renderSessions(); });
+byId("prev").addEventListener("click", () => { state.picker.page--; renderSessions(); });
+byId("next").addEventListener("click", () => { state.picker.page++; renderSessions(); });
 byId("results-announcement").addEventListener("click", () => setResultArchive("announcement"));
 byId("results-speaker").addEventListener("click", () => setResultArchive("speaker"));
 byId("refresh").addEventListener("click", refreshSessions);

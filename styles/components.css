@@ -24,6 +24,6 @@
 }
 
 @media (max-width: 22rem) {
-  .site-header__title { font-size: 1.25rem; }
+  .site-header__title { font-size: 1.1rem; }
   .service-link { font-size: .6rem; }
 }

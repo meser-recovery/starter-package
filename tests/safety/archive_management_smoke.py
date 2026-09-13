@@ -1,11 +1,63 @@
 """S09 browser checks against the real in-memory gateway through a local JSON-lines bridge."""
 import base64
 import json
+import mimetypes
 import subprocess
 from pathlib import Path
 from urllib.parse import urlparse
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def assert_shared_audio_header(page, width, surface):
+    header = page.locator('.site-header__content')
+    logo = header.locator('a.site-header__logo[href="./"]')
+    identity = header.locator('a.site-header__identity[href="./"]')
+    service = header.locator('a.service-link[href="Admin-panel.html"]')
+    assert logo.count() == identity.count() == service.count() == 1, f'{surface}: canonical header links missing'
+    assert service.locator(':scope > span').all_text_contents() == ['Для', 'служащих'], f'{surface}: service-link markup differs'
+    boxes = {name: locator.bounding_box() for name, locator in [('header', header), ('logo', logo), ('identity', identity), ('service', service)]}
+    assert all(boxes.values()), {surface: boxes, 'width': width}
+    assert abs((boxes['identity']['x'] + boxes['identity']['width'] / 2) - width / 2) <= 1, {surface: boxes, 'width': width}
+    assert boxes['header']['x'] >= -0.5 and boxes['header']['x'] + boxes['header']['width'] <= width + 0.5, {surface: boxes, 'width': width}
+    minimum_gap = 4
+    for left, right in (('logo', 'identity'), ('identity', 'service')):
+        assert boxes[left]['x'] + boxes[left]['width'] + minimum_gap <= boxes[right]['x'], {
+            surface: boxes, 'width': width, 'collision_or_sticking': [left, right], 'minimum_gap': minimum_gap
+        }
+    for name in ('logo', 'identity', 'service'):
+        box = boxes[name]
+        assert box['x'] >= boxes['header']['x'] - 0.5 and box['x'] + box['width'] <= boxes['header']['x'] + boxes['header']['width'] + 0.5, {surface: boxes, 'width': width, 'outside': name}
+    return boxes
+
+
+def assert_archive_visual_shell(page, width, state):
+    boxes = page.evaluate("""() => Object.fromEntries([
+        ['main', document.querySelector('main.archive-main')],
+        ['surface', document.querySelector('main.archive-main > .archive-management')],
+        ['footer', document.querySelector('.site-footer')]
+    ].map(([name, element]) => {
+        const box = element?.getBoundingClientRect();
+        return [name, box && {x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom}];
+    }))""")
+    assert all(boxes.values()), {'state': state, 'width': width, 'boxes': boxes}
+    assert abs(boxes['surface']['x'] + boxes['surface']['width'] / 2 - width / 2) <= 1, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['width'] <= 950.5 and boxes['surface']['right'] <= width + .5, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['y'] > boxes['main']['y'] and boxes['surface']['bottom'] <= boxes['main']['bottom'], {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['footer']['y'] >= boxes['main']['bottom'] - .5, {'state': state, 'width': width, 'boxes': boxes}
+    if state == 'initial':
+        assert boxes['surface']['height'] + 20 < boxes['main']['height'], {'state': state, 'width': width, 'boxes': boxes, 'stretched_surface': True}
+        primary = page.locator('#record-picker-open').bounding_box()
+        maintenance = page.locator('#maintenance').bounding_box()
+        connection = page.locator('.archive-connection').bounding_box()
+        assert primary and maintenance and connection
+        assert primary['y'] + primary['height'] <= maintenance['y'] < connection['y'], {
+            'state': state, 'width': width, 'primary': primary, 'maintenance': maintenance, 'connection': connection
+        }
+        assert connection['height'] < 150, {'state': state, 'width': width, 'connection': connection, 'stretched_connection': True}
+        primary_style = page.locator('#record-picker-open').evaluate("el => ({background:getComputedStyle(el).backgroundColor, color:getComputedStyle(el).color})")
+        assert primary_style == {'background': 'rgb(71, 138, 201)', 'color': 'rgb(255, 255, 255)'}, primary_style
+    return boxes
 
 
 def check_archive_management(browser, base_url, screenshot_dir=None):
@@ -16,6 +68,23 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     bridge = subprocess.Popen(['node', str(ROOT / 'tests/safety/archive_management_bridge.mjs')], cwd=ROOT,
                               stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
     snapshot = json.loads(bridge.stdout.readline())
+    scale_sessions = []
+    for index in range(1000):
+        fixture = json.loads(json.dumps(snapshot['primary']))
+        fixture['id'] = f'00000000-0000-4000-8000-{index:012d}'
+        fixture['title'] = f'Fixture {index:04d}'
+        fixture['revision'] = 1
+        fixture['storage']['tag'] = f'audio-session-{fixture["id"]}'
+        fixture['lifecycle'] = {'state': 'incoming'}
+        deleted = fixture['sourceTracks'][0]
+        fixture['sourceState'] = 'deleted'
+        fixture['sourceTracks'] = []
+        fixture['deletedSources'] = {'deletedAt': fixture['updatedAt'], 'tracks': [{
+            'trackId': deleted['trackId'], 'blobId': deleted['blobId'], 'sizeBytes': deleted['sizeBytes'], 'sha256': deleted['sha256']
+        }]}
+        fixture['workflows']['announcement'].update({'status': 'new', 'currentDraft': None, 'outputs': [], 'deletedVersions': [], 'nextVersion': 1})
+        fixture['workflows']['speaker'].update({'status': 'new', 'currentDraft': None, 'outputs': [], 'deletedVersions': [], 'nextVersion': 1})
+        scale_sessions.append(fixture)
 
     def command(action, **data):
         bridge.stdin.write(json.dumps({'action': action, **data}) + '\n')
@@ -27,7 +96,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     context = browser.new_context(viewport={'width': 390, 'height': 900})
     context.add_init_script("sessionStorage.setItem('meser_service_access_v1', 'granted'); window.__MESER_AUDIO_ARCHIVE_GATEWAY__ = 'https://gateway.test';")
     errors, trace, blocked, held = [], [], [], []
-    fault = {'list': False, 'hold': None, 'corrupt': False, 'ambiguous': False}
+    fault = {'list': False, 'hold': None, 'corrupt': False, 'ambiguous': False, 'scale': False}
 
     def fulfill(route, result):
         data = base64.b64decode(result['body']) if result.get('base64') else result['body']
@@ -41,7 +110,16 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         request = route.request
         parsed = urlparse(request.url)
         if parsed.netloc == site_authority:
-            route.continue_()
+            if parsed.hostname == 'site.test':
+                relative = parsed.path.lstrip('/') or 'index.html'
+                target = (ROOT / relative).resolve()
+                if ROOT not in target.parents or not target.is_file():
+                    route.fulfill(status=404, body='Not found')
+                else:
+                    content_type = mimetypes.guess_type(target.name)[0] or ('text/javascript' if target.suffix == '.mjs' else 'application/octet-stream')
+                    route.fulfill(status=200, content_type=content_type, body=target.read_bytes())
+            else:
+                route.continue_()
             return
         if parsed.netloc != 'gateway.test':
             blocked.append(request.url)
@@ -52,6 +130,10 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             return
         path = parsed.path + ('?' + parsed.query if parsed.query else '')
         trace.append((request.method, path, request.post_data))
+        if fault['scale'] and parsed.path == '/v1/source-sessions':
+            sessions = scale_sessions if 'lifecycle=incoming' in parsed.query else []
+            fulfill(route, {'status': 200, 'body': json.dumps({'revision': 1, 'sessions': sessions}), 'type': 'application/json'})
+            return
         if fault['list'] and parsed.path == '/v1/source-sessions':
             fulfill(route, {'status': 503, 'body': '{"error":"Fixture listing unavailable"}', 'type': 'application/json'})
             return
@@ -68,7 +150,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     context.route('**/*', route_request)
     page = context.new_page()
     page.on('pageerror', lambda error: errors.append(str(error)))
-    output = Path(screenshot_dir) / 's09' if screenshot_dir else None
+    output = Path(screenshot_dir) / 's09b' if screenshot_dir else None
     if output:
         output.mkdir(parents=True, exist_ok=True)
 
@@ -87,6 +169,8 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     def load():
         page.goto(base_url + '/Audio-Archive.html')
         ready()
+        page.locator('#record-picker-open').click()
+        page.locator('#record-picker-recent').click()
 
     def readonly(start):
         assert all(method == 'GET' for method, _, _ in trace[start:]), trace[start:]
@@ -95,21 +179,104 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         return page.locator('#session-list .archive-card').filter(has_text='Встреча Й')
 
     def details_for(card):
-        card.locator('.audio-actions > summary').click()
-        card.get_by_role('button', name='Сведения о записи').click()
+        if page.locator('#detail').is_visible():
+            page.get_by_role('button', name='Сменить запись').click()
+        card.get_by_role('button', name='Открыть запись').click()
+
+    def open_management():
+        details = page.locator('.record-management')
+        if details.get_attribute('open') is None: details.locator(':scope > summary').click()
+
+    def open_history():
+        details = page.locator('.version-history')
+        if details.get_attribute('open') is None: details.locator(':scope > summary').click()
 
     def open_primary():
         details_for(primary_card())
+        open_management()
         page.locator('#metadata-title').wait_for()
+        assert page.locator('#archive-index').is_hidden()
+        assert page.locator('#detail-title').inner_text().startswith('Встреча Й')
+        assert page.locator('.ready-results .ready-result').count() == 2
+        assert page.locator('.version-history').get_attribute('open') is None
 
     def no_overflow():
-        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.viewport_size
+        overflow = page.evaluate("""() => [...document.querySelectorAll('main, main *, dialog[open], dialog[open] *')]
+            .map(element => {
+                const style = getComputedStyle(element), box = element.getBoundingClientRect();
+                return {tag: element.tagName, id: element.id, className: element.className,
+                    text: (element.textContent || '').trim().slice(0, 120),
+                    left: box.left, right: box.right, width: box.width, height: box.height,
+                    visible: style.display !== 'none' && style.visibility !== 'hidden' &&
+                        (!element.checkVisibility || element.checkVisibility())};
+            }).filter(item => item.visible && item.width > 0 && item.height > 0 &&
+                (item.left < -0.5 || item.right > innerWidth + 0.5))""")
+        assert not overflow, {'viewport': page.viewport_size, 'overflow': overflow}
         assert page.locator('main').count() == 1
         for control in page.locator('button, input, select').all():
             if control.is_visible():
                 assert control.evaluate('el => el.getBoundingClientRect().width > 0')
 
     try:
+        page.goto(base_url + '/Audio-Archive.html')
+        ready()
+        assert page.locator('#records').is_hidden()
+        assert page.locator('#session-list .archive-card').count() == 0
+        for width in (320, 390, 768, 1280):
+            page.set_viewport_size({'width': width, 'height': 900})
+            assert_shared_audio_header(page, width, 'Audio-Archive')
+            assert_archive_visual_shell(page, width, 'initial')
+            no_overflow()
+            shot(f'archive-initial-{width}')
+        page.set_viewport_size({'width': 390, 'height': 900})
+        fault['list'] = True
+        page.locator('#refresh').click()
+        page.wait_for_function("document.getElementById('status').textContent.includes('Обновите данные')")
+        assert page.locator('#status').get_attribute('data-tone') == 'error'
+        assert page.locator('#status').evaluate("el => getComputedStyle(el).borderLeftWidth") == '3px'
+        shot('archive-connection-error-390')
+        fault['list'] = False
+        page.locator('#refresh').click()
+        ready()
+        page.locator('#record-picker-open').click()
+        assert page.locator('#session-list .archive-card').count() == 0
+        assert page.locator('#matching').inner_text() == 'Список появится после поиска.'
+        for width in (320, 390, 768, 1280):
+            page.set_viewport_size({'width': width, 'height': 900})
+            assert_archive_visual_shell(page, width, 'chooser')
+            no_overflow()
+            shot(f'archive-chooser-full-{width}')
+            shot(f'chooser-before-request-{width}', '#records')
+
+        fault['scale'] = True
+        page.locator('#refresh').click()
+        ready()
+        page.locator('[name="search"]').fill('Fixture 0999')
+        page.locator('#record-picker-search').click()
+        assert page.locator('#session-list .archive-card').count() == 1
+        assert page.locator('#session-list .archive-card').get_attribute('data-session-id') == scale_sessions[999]['id']
+        page.locator('[name="search"]').fill('fixture')
+        page.locator('#record-picker-search').click()
+        assert page.locator('#record-page').inner_text() == '1 из 100'
+        assert page.locator('#session-list .archive-card').count() == 10
+        for width in (390, 1280):
+            page.set_viewport_size({'width': width, 'height': 900})
+            shot(f'chooser-results-1000-{width}', '#records')
+        seen = []
+        while True:
+            rows = page.locator('#session-list .archive-card')
+            assert 0 < rows.count() <= 10
+            seen.extend(rows.evaluate_all("items => items.map(item => item.dataset.sessionId)"))
+            assert page.locator('[name="search"]').input_value() == 'fixture'
+            if page.locator('#record-next').is_disabled():
+                break
+            page.locator('#record-next').click()
+        assert len(seen) == 1000 and len(set(seen)) == 1000
+        page.locator('#record-picker-close').click()
+        assert page.locator('#records').is_hidden()
+        assert page.locator('#record-picker-open').evaluate('el => el === document.activeElement')
+        fault['scale'] = False
+
         load()
         # Browser-visible statuses prove that credentialed success, OPTIONS and
         # error responses all pass CORS through the mock's shared fulfill path.
@@ -129,11 +296,27 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             assert unavailable == 503, unavailable
         finally:
             fault['list'] = False
-        assert page.locator('#session-list .archive-card').count() == 2
-        page.get_by_text('Фильтры', exact=True).click()
-        page.locator('[name=showRemoved]').check()
+        start = len(trace)
+        page.goto(base_url + f"/Audio-Archive.html?session={snapshot['primary']['id']}")
+        page.locator('#detail-title').wait_for()
+        for width in (320, 390, 768, 1280):
+            page.set_viewport_size({'width': width, 'height': 900})
+            assert_archive_visual_shell(page, width, 'selected')
+            no_overflow()
+            shot(f'archive-selected-{width}')
+        open_management()
+        page.locator('#metadata-title').wait_for()
+        assert page.locator('#metadata-title').input_value().startswith('Встреча Й')
+        readonly(start)
+        shot('archive-intent-detail-390', '#detail')
+        page.goto(base_url + f"/Audio-Archive.html?session={snapshot['primary']['id']}&session={snapshot['empty']['id']}")
+        page.wait_for_function("document.getElementById('status').textContent.includes('Некорректная ссылка')")
+        assert page.locator('#detail').is_hidden()
+        load()
         assert page.locator('#session-list .archive-card').count() == 3
-        assert page.locator('#project-list .archive-card').count() >= 1
+        assert page.locator('main h1').inner_text() == 'Аудиоархив'
+        assert page.locator('#projects').count() == 0 and page.locator('#results').count() == 0
+        page.get_by_text('Уточнить поиск', exact=True).click()
         assert not any('ffmpeg' in url.lower() or 'audio-processor' in url for url in page.evaluate('performance.getEntriesByType("resource").map(r => r.name)'))
         start = len(trace)
         for width in (320, 390, 768, 1280):
@@ -141,24 +324,42 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             page.locator('#records').scroll_into_view_if_needed()
             shot(f'overview-{width}', '#records')
             page.locator('[name="search"]').fill('ИСХОДНИК И\u0306.WAV')
-            page.locator('[name=showRemoved]').uncheck()
+            page.locator('[name=quick][value=incoming]').check()
             page.locator('[name=availableOnly]').check()
+            page.locator('#record-picker-search').click()
             assert page.locator('#session-list .archive-card').count() == 2  # Both matching available sources; workflow status filters were removed by S09A.
             shot(f'combined-filters-{width}', '#records')
             for sort in ('oldest', 'newest', 'title'):
                 page.locator('[name="sort"]').select_option(sort)
             page.locator('[name="search"]').fill('совпадений нет')
-            assert 'Нет записей' in page.locator('#matching').inner_text()
+            page.locator('#record-picker-search').click()
+            assert 'Ничего не найдено' in page.locator('#matching').inner_text()
             shot(f'no-matches-{width}', '#records')
             page.get_by_role('button', name='Сбросить поиск и фильтры').click()
+            page.locator('#record-picker-recent').click()
             open_primary()
+            open_history()
             assert 'deletedVersions' not in page.locator('#detail').inner_text()
-            assert '"deletedVersions": [\n    2' in page.locator('#detail').text_content()
             assert 'Версия 3' in page.locator('#detail').inner_text()
+            assert 'Версия 2 удалена. Номера версий не переиспользуются.' in page.locator('#detail').inner_text()
+            assert 'Анонс.wav · WAV' in page.locator('#detail').inner_text()
+            assert 'Спикерская.mp3 · MP3' in page.locator('#detail').inner_text()
             assert page.locator('#metadata-date').input_value().startswith('2026-09-09T19:30')
-            assert page.locator('#detail details').first.get_attribute('open') is None
+            announcement_sort = page.locator('#version-sort-announcement')
+            speaker_sort = page.locator('#version-sort-speaker')
+            assert announcement_sort.input_value() == 'newest'
+            assert speaker_sort.input_value() == 'newest'
+            announcement_sort.select_option('version')
+            assert page.locator('.workflow-announcement .result-row h4').all_text_contents() == ['Версия 1', 'Версия 3']
+            assert speaker_sort.input_value() == 'newest'
+            speaker_sort.select_option('oldest')
+            assert announcement_sort.input_value() == 'version'
+            announcement_sort.select_option('newest')
+            speaker_sort.select_option('newest')
+            assert page.locator('.project-disclosure').get_attribute('open') is None
             shot(f'detail-{width}', '#detail')
-            page.locator('#detail').get_by_role('button', name='Удалить всю серию «Для анонс-мейкера»').click()
+            page.locator('#detail .workflow-announcement').get_by_text('Управление версиями', exact=True).click()
+            page.locator('#detail').get_by_role('button', name='Удалить все версии для анонс-мейкера').click()
             page.locator('#delete-dialog').wait_for(state='visible')
             assert 'сохранённые настройки обработки (2)' in page.locator('#delete-retained').inner_text()
             assert 'Спикерская' not in page.locator('#delete-removed').inner_text()
@@ -166,9 +367,12 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             no_overflow()
             page.keyboard.press('Escape')
             assert not page.locator('#delete-dialog').is_visible()
-            assert page.locator('#detail').get_by_role('button', name='Удалить всю серию «Для анонс-мейкера»').evaluate('el => el === document.activeElement')
+            assert page.locator('#detail').get_by_role('button', name='Удалить все версии для анонс-мейкера').evaluate('el => el === document.activeElement')
+            page.get_by_role('button', name='Сменить запись').click()
+            assert page.locator('#detail').is_hidden()
+            assert page.locator('#archive-index').is_visible()
         readonly(start)
-        assert not any('/outputs/' in path or path.endswith('/content') for _, path, _ in trace[:])
+        assert not any(path.endswith('/content') for _, path, _ in trace[:])
 
         # A late detail response must not replace a more recently selected session.
         fault['hold'] = '/v1/source-sessions/' + snapshot['primary']['id']
@@ -176,7 +380,9 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.wait_for_timeout(150)
         assert held
         fault['hold'] = None
+        page.get_by_role('button', name='Сменить запись').click()
         details_for(page.locator('#session-list .archive-card').filter(has_text='Новая запись'))
+        open_management()
         page.wait_for_function("document.getElementById('metadata-title')?.value === 'Новая запись'")
         while held:
             fulfill(*held.pop(0))
@@ -184,29 +390,57 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         assert page.locator('#metadata-title').input_value() == 'Новая запись'
         open_primary()
 
-        # Metadata conflict: preserve entered fields, canonical newer title and original timestamp.
+        # Output metadata completes after the form is already usable. Its final render
+        # must preserve edits made while the result descriptions were still loading.
+        page.set_viewport_size({'width': 390, 'height': 900})
+        page.get_by_role('button', name='Сменить запись').click()
+        fault['hold'] = f'/v1/source-sessions/{snapshot["primary"]["id"]}/outputs/announcement/'
+        details_for(primary_card())
+        open_management()
+        open_history()
+        page.locator('#metadata-title').wait_for()
+        page.locator('#metadata-title').fill('Черновик во время загрузки')
+        page.locator('#metadata-date').fill('2026-09-10T10:20')
+        page.wait_for_timeout(150)
+        assert held
+        fault['hold'] = None
+        while held:
+            fulfill(*held.pop(0))
+        page.wait_for_function("document.querySelector('.workflow-announcement .result-row button').disabled === false")
+        assert page.locator('#metadata-title').input_value() == 'Черновик во время загрузки'
+        assert page.locator('#metadata-date').input_value() == '2026-09-10T10:20'
+        shot('metadata-rerender-draft-390', '#detail')
+        page.get_by_role('button', name='Сменить запись').click()
+        open_primary()
+
+        # Metadata conflict and explicit canonical reload preserve both entered fields.
         page.set_viewport_size({'width': 390, 'height': 900})
         page.locator('#metadata-title').fill('Моё исправление')
+        page.locator('#metadata-date').fill('2026-09-11T08:15')
         command('conflict', id=snapshot['primary']['id'])
         page.get_by_role('button', name='Сохранить название и дату').click()
         page.wait_for_function("document.getElementById('metadata-status').textContent.includes('Введённые значения')")
         assert page.locator('#metadata-title').input_value() == 'Моё исправление'
+        assert page.locator('#metadata-date').input_value() == '2026-09-11T08:15'
         assert command('snapshot')['primary']['title'] == 'Изменено в другом окне'
         shot('metadata-conflict-390', '#detail')
         page.get_by_role('button', name='Загрузить актуальные сведения').click()
-        page.wait_for_function("document.getElementById('metadata-title')?.value === 'Изменено в другом окне'")
-        page.locator('#metadata-title').fill('Исправленная запись')
+        page.wait_for_function("document.getElementById('metadata-status')?.textContent.includes('Актуальные сведения загружены')")
+        assert page.locator('#metadata-title').input_value() == 'Моё исправление'
+        assert page.locator('#metadata-date').input_value() == '2026-09-11T08:15'
+        shot('metadata-conflict-reloaded-390', '#detail')
         page.get_by_role('button', name='Сохранить название и дату').click()
-        page.wait_for_function("document.getElementById('metadata-title')?.value === 'Исправленная запись' && !document.querySelector('#detail form button').disabled")
+        page.wait_for_function("document.getElementById('metadata-title')?.value === 'Моё исправление' && !document.querySelector('#detail form button').disabled")
         saved = command('snapshot')['primary']
-        assert saved['recordedAt'] == snapshot['primary']['recordedAt']
+        assert saved['recordedAt'] == '2026-09-11T08:15:00.000Z'
         patches = [json.loads(body) for method, _, body in trace if method == 'PATCH']
         assert all(set(body['patch']) == {'title', 'recordedAt'} for body in patches)
+        open_history()
 
         # A canonical result is lazily verified; browser decodes real tiny WAV/MP3 fixtures.
         start = len(trace)
         for workflow in ('announcement', 'speaker'):
-            page.locator(f'#results-{workflow}').get_by_role('button', name='Прослушать').first.click()
+            page.locator(f'.workflow-{workflow}').get_by_role('button', name='Прослушать').first.click()
             page.wait_for_function("document.getElementById('audio').src.startsWith('blob:')")
             page.wait_for_function("document.getElementById('audio').readyState >= 1")
             assert page.locator('#download').get_attribute('download') in ('Анонс.wav', 'Спикерская.mp3')
@@ -218,12 +452,12 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         readonly(start)
         # Replacing selection fences a delayed result's bytes and object URL.
         fault['hold'] = '/content'
-        page.locator('#results-announcement').get_by_role('button', name='Прослушать').first.click()
+        page.locator('.workflow-announcement').get_by_role('button', name='Прослушать').first.click()
         page.wait_for_timeout(150)
         assert held
         fault['hold'] = None
-        page.locator('#results-speaker').get_by_role('button', name='Прослушать').first.click()
-        page.wait_for_function("!document.getElementById('player').hidden && document.getElementById('player-title').textContent.startsWith('Финальные версии спикерских')")
+        page.locator('.workflow-speaker').get_by_role('button', name='Прослушать').first.click()
+        page.wait_for_function("!document.getElementById('player').hidden && document.getElementById('player-title').textContent.startsWith('Финальные версии спикерской')")
         selected_url = page.locator('#audio').get_attribute('src')
         while held:
             fulfill(*held.pop(0))
@@ -232,11 +466,12 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
 
         # Hold an old response, replace selection, then logout; late bytes cannot revive playback.
         fault['hold'] = '/content'
-        page.locator('#results-announcement').get_by_role('button', name='Прослушать').first.click()
+        page.locator('.workflow-announcement').get_by_role('button', name='Прослушать').first.click()
         page.wait_for_timeout(200)
         assert held
+        page.get_by_role('button', name='Сменить запись').click()
         page.locator('#logout').click()
-        page.wait_for_function("document.getElementById('status').textContent === 'Архив отключён.'")
+        page.wait_for_function("document.getElementById('status').textContent === 'Аудиоархив отключён.'")
         fault['hold'] = None
         while held:
             fulfill(*held.pop(0))
@@ -247,39 +482,45 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.locator('#password').fill('local-test-password')
         page.locator('#login-form').get_by_role('button', name='Подключить', exact=True).click()
         ready()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
+        open_history()
         fault['corrupt'] = True
-        page.locator('#results-speaker').get_by_role('button', name='Прослушать').first.click()
+        page.locator('.workflow-speaker').get_by_role('button', name='Прослушать').first.click()
         page.wait_for_function("document.getElementById('playback-status').textContent.includes('недоступны')")
         assert not page.locator('#player').is_visible()
         fault['corrupt'] = False
 
         # Archived results and source-deleted outputs survive a page reload.
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
+        open_management()
         page.locator('#detail').get_by_role('button', name='Убрать из рабочего списка', exact=True).click()
-        page.locator('#detail').get_by_role('button', name='Вернуть для обработки', exact=True).wait_for()
-        page.locator('#detail').get_by_role('button', name='Удалить исходники', exact=True).click()
+        page.locator('#detail').get_by_role('button', name='Вернуть в рабочий список', exact=True).wait_for()
+        page.locator('#detail').get_by_text('Опасная зона', exact=True).click()
+        page.locator('#detail').get_by_role('button', name='Удалить исходные дорожки', exact=True).click()
         page.locator('#delete-submit').click()
-        page.wait_for_function("document.getElementById('detail-body').textContent.includes('Доступных исходных дорожек нет.')")
+        page.wait_for_function("document.getElementById('detail-body').textContent.includes('Имена и форматы удалённых дорожек не сохранены.')")
         load()
-        page.locator('#results-speaker').get_by_role('button', name='Прослушать').first.click()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
+        open_history()
+        page.locator('.workflow-speaker').get_by_role('button', name='Прослушать').first.click()
         page.wait_for_function("document.getElementById('audio').src.startsWith('blob:') && document.getElementById('audio').readyState >= 1")
-        shot('results-restored-after-source-deletion-390', '#results')
+        shot('results-restored-after-source-deletion-390', '#detail')
 
         # Incoming sessions with deleted sources must also reject processing intent.
-        page.get_by_text('Фильтры', exact=True).click()
-        page.locator('[name=showRemoved]').check()
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
-        page.locator('#detail').get_by_role('button', name='Вернуть для обработки', exact=True).click()
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
+        open_management()
+        page.locator('#detail').get_by_role('button', name='Вернуть в рабочий список', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Убрать из рабочего списка', exact=True).wait_for()
         start = len(trace)
         page.goto(base_url + f"/Audio-Editor.html?session={snapshot['primary']['id']}&workflow=speaker")
         page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Новая обработка недоступна')")
         readonly(start)
+        page.locator('#source-session-mode-archive').click()
         shot('ineligible-deleted-sources-390', '#source-session-archive-panel')
         load()
 
         # Strong purge confirmation; cancel leaves state untouched.
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
         page.locator('#detail').get_by_text('Опасная зона', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Удалить запись полностью').click()
         page.locator('#purge-confirmation').fill('да')
@@ -291,7 +532,9 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.locator('#delete-cancel').click()
 
         # Ambiguous response to a completed deletion: reconcile, do not claim success/retry blindly.
-        page.locator('#detail').get_by_role('button', name='Удалить всю серию «Для анонс-мейкера»').click()
+        open_history()
+        page.locator('#detail .workflow-announcement').get_by_text('Управление версиями', exact=True).click()
+        page.locator('#detail').get_by_role('button', name='Удалить все версии для анонс-мейкера').click()
         fault['ambiguous'] = True
         page.locator('#delete-submit').click()
         page.wait_for_function("document.getElementById('delete-status').textContent.includes('Результат не подтверждён')")
@@ -301,6 +544,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.locator('#delete-cancel').click()
 
         # Failed listing counts remain unknown. Late older listing cannot overwrite a newer refresh.
+        page.get_by_role('button', name='Сменить запись').click()
         fault['list'] = True
         page.locator('#refresh').click()
         page.wait_for_function("document.getElementById('status').textContent.includes('Не удалось загрузить оба')")
@@ -328,12 +572,11 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         recovery = command('recovery')
         load()
         page.locator('#maintenance-title').click()
-        assert page.locator('#operations .archive-card').count() == len(recovery['maintenance']['transactions'])
-        pending = page.locator('#operations .archive-card').filter(has_text='Удаление данных')
-        assert pending.get_by_role('button').all_text_contents() == ['Продолжить удаление']
-        discarding = page.locator('#operations .archive-card').filter(has_text='Возобновление сохранения недоступно')
-        assert discarding.get_by_role('button').all_text_contents() == ['Завершить удаление незавершённого сохранения']
+        known_ids = {session['id'] for session in recovery['sessions']}
+        unassociated = [item for item in recovery['maintenance']['transactions'] if item.get('sessionId') not in known_ids]
+        assert page.locator('#operations .archive-card').count() == len(unassociated)
         assert 'Запись ещё не определена' in page.locator('#operations').inner_text()
+        assert page.locator('#session-list .attention-summary').count() == len(recovery['maintenance']['transactions']) - len(unassociated)
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width': width, 'height': 900})
             no_overflow()
@@ -342,11 +585,21 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             shot(f'contextual-recovery-{width}', '#records')
         page.set_viewport_size({'width': 390, 'height': 900})
         page.on('dialog', lambda dialog: dialog.accept())
-        pending.get_by_role('button').click()
-        page.wait_for_function("!document.getElementById('operations').textContent.includes('Продолжить удаление')")
-        complete = page.locator('#operations .archive-card').filter(has_text='Все части переданы')
-        complete.first.get_by_role('button', name='Завершить сохранение').click()
-        page.wait_for_function("document.querySelectorAll('#operations .archive-card').length === 5")
+        sessions_by_id = {session['id']: session for session in recovery['sessions']}
+        pending_tx = next(item for item in recovery['maintenance']['transactions'] if item['kind'] == 'pending_delete')
+        details_for(page.locator(f'#session-list [data-session-id="{pending_tx["sessionId"]}"]'))
+        page.locator('#detail-title').wait_for()
+        pending = page.locator('#detail .attention').filter(has_text='Незавершённое удаление')
+        assert pending.get_by_role('button', name='Продолжить удаление').count() == 1
+        pending.get_by_role('button', name='Продолжить удаление').click()
+        page.wait_for_function("!document.getElementById('detail-body').textContent.includes('Продолжить удаление')")
+        complete_tx = next(item for item in recovery['maintenance']['transactions'] if item.get('canFinalize') and item['state'] != 'discarding')
+        details_for(page.locator(f'#session-list [data-session-id="{complete_tx["sessionId"]}"]'))
+        page.locator('#detail-title').wait_for()
+        complete = page.locator('#detail .attention').filter(has_text='Все части переданы')
+        complete.get_by_role('button', name='Завершить сохранение').click()
+        page.wait_for_function("!document.getElementById('detail-body').textContent.includes('Все части переданы')")
+        page.get_by_role('button', name='Сменить запись').click()
         start = len(trace)
         page.locator('#rebuild').click()
         page.wait_for_function("!document.getElementById('rebuild').disabled")
@@ -359,6 +612,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             start = len(trace)
             page.goto(base_url + f"/Audio-Editor.html?session={snapshot['primary']['id']}&workflow={workflow}")
             page.wait_for_function("document.getElementById('source-session-status').textContent.includes('подключите архив')")
+            page.locator('#source-session-mode-archive').click()
             page.locator('#source-session-authenticate').click()
             page.locator('#source-session-password').fill('local-test-password')
             page.locator('#source-session-login-form').get_by_role('button', name='Подключить', exact=True).click()
@@ -369,7 +623,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             shot(f'editor-arrival-{workflow}-390')
             start = len(trace)
             page.reload()
-            page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Показано') || document.getElementById('source-session-list').children.length > 0")
+            page.wait_for_function("document.getElementById('source-session-count').textContent.includes('Список появится')")
             # Current-project badges now require draft reads; reloading must not reopen or download sources.
             assert all(method == 'GET' for method, _, _ in trace[start:])
             assert not any('/blobs/' in path or path.endswith('/content') for _, path, _ in trace[start:])
@@ -379,12 +633,14 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             page.goto(base_url + f'/Audio-Editor.html?session={session_id}&workflow={workflow}')
             page.wait_for_function('text => document.getElementById("source-session-status").textContent.includes(text)', arg=expected)
             readonly(start)
+            page.locator('#source-session-mode-archive').click()
             shot(f'ineligible-{session_id[:3]}-390', '#source-session-archive-panel')
         command('purge-empty')
         start = len(trace)
         page.goto(base_url + f"/Audio-Editor.html?session={snapshot['empty']['id']}&workflow=announcement")
         page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Запись по ссылке недоступна или удалена')")
         readonly(start)
+        page.locator('#source-session-mode-archive').click()
         shot('ineligible-purged-390', '#source-session-archive-panel')
         assert not errors, errors
         assert not blocked, blocked

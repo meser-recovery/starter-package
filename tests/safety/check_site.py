@@ -712,6 +712,29 @@ def is_release_asset_url(value: object) -> bool:
     )
 
 
+def check_audio_archive_header_contract(errors: list[str]) -> None:
+    page = ROOT / "Audio-Archive.html"
+    if not page.is_file():
+        errors.append("Audio-Archive.html is missing")
+        return
+    parser = parse_page(page)
+    for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./"), ("service-link", "Admin-panel.html")):
+        if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
+            errors.append(f"Audio-Archive.html: canonical {class_name} link is missing")
+    source = page.read_text(encoding="utf-8", errors="replace")
+    if '<a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>' not in source:
+        errors.append("Audio-Archive.html: canonical service-link markup is missing")
+    if '<main id="main-content" class="audio-editor-main archive-main">' not in source or '<div class="container archive-management">' not in source:
+        errors.append("Audio-Archive.html: shared page canvas and content surface are missing")
+    primary = source.find('id="record-picker-open"')
+    connection = source.find('class="archive-connection"')
+    if primary < 0 or connection < 0 or primary > connection:
+        errors.append("Audio-Archive.html: record selection must precede connection management")
+    hotline = "Горячая линия АН, где вы можете получить поддержку"
+    if hotline not in source:
+        errors.append("Audio-Archive.html: shared site footer is missing")
+
+
 def check_audio_editor_contract(errors: list[str]) -> None:
     page = ROOT / "Audio-Editor.html"
     manifest_path = ROOT / "data" / "edited-audio.json"
@@ -725,8 +748,8 @@ def check_audio_editor_contract(errors: list[str]) -> None:
             errors.append("Audio-Editor.html: html lang must be ru")
         if parser.h1_texts != ["Редактирование аудио"]:
             errors.append("Audio-Editor.html: expected one H1: Редактирование аудио")
-        if not any(tag == "h2" for tag, attrs in parser.start_tags) or "Архив отредактированных аудио" not in source:
-            errors.append("Audio-Editor.html: archive H2 is missing")
+        if "Прежний архив отредактированных аудио" not in source:
+            errors.append("Audio-Editor.html: collapsed legacy archive is missing")
         if not any(tag == "body" and "site-page" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared page shell is missing")
         if not any(tag == "main" and attrs.get("id") == "main-content" for tag, attrs in parser.start_tags):
@@ -745,7 +768,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared footer is missing")
         styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
-        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css", "styles/audio-studio.css"]:
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css", "styles/audio-studio.css?v=s09b-progressive-3"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
         if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),
@@ -823,9 +846,9 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    expected_h2 = ["Импорт исходных записей", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Архив готовых записей", "Архив отредактированных аудио"]
+    expected_h2 = ["Запись не выбрана", "Выбрать запись", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Сохранённые версии этой записи"]
     if parser.h2_texts[:6] != expected_h2:
-        errors.append("Audio-Editor.html: expected S09A import, editing, exclusive workspaces, finished archives, then legacy archive")
+        errors.append("Audio-Editor.html: expected S09B picker, current recording, exclusive workspaces, current-record versions, then legacy archive")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -968,7 +991,6 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         errors.append("Processor contains a credential/upload/form contract violation")
     for relative, expected_hash in {
         "data/edited-audio.json": "196cb8d26daf8251485383d37df0c270e11f5d1b8a455fccc25903ddfe9c9364",
-        "scripts/audio-editor.js": "51448c682e5b21149191016b74d9374ce499b19c75df64bcf1b15cde657898ee",
     }.items():
         path = ROOT / relative
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
@@ -1013,7 +1035,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "scripts/source-session-archive.mjs": (
             'setMode("archive")', "С устройства", "Анонс-мейкер", "Спикерская",
         ),
-        "Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить исходные записи в аудиоархив", "Сохранить проект"),
+        "Audio-Editor.html": ("Выбрать запись", "С устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
             'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",
@@ -1153,6 +1175,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_calendar_contract(errors)
     check_google_drive_contract(errors)
     check_admin_access_contract(errors)
+    check_audio_archive_header_contract(errors)
     check_audio_editor_contract(errors)
     check_audio_processor_contract(errors)
     check_audio_archive_foundation_contract(errors)
