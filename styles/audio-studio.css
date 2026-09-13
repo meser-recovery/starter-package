@@ -247,7 +247,7 @@
 .audio-studio .archive-entry-actions,.audio-studio .current-recording__actions,.audio-studio .pagination {
   display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
 }
-.audio-studio .editor-page-heading h1,.audio-studio .archive-heading h1 { margin:0; }
+.audio-studio .editor-page-heading h1,.audio-studio .archive-heading h1 { min-width:0; margin:0; overflow-wrap:anywhere; }
 .audio-studio .archive-entry-actions { justify-content:flex-start; margin-block:18px; }
 .audio-studio .record-picker { padding:18px; border:1px solid var(--studio-line); border-radius:10px; }
 .audio-studio .picker-heading h2 { margin:0; }
