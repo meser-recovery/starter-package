@@ -1,6 +1,6 @@
 # S09B progressive-disclosure GUI evidence
 
-Implementation target: `640094638df2b736f09b155e82fb389c7d7685a0` on branch
+Implementation target: `56fc9edb99bcc05634e455d082492f815b0f42d8` on branch
 `codex/s09b-unified-zoom-recording-ux`.
 
 The directory contains 111 real Chromium PNG captures generated from that implementation.
@@ -12,6 +12,7 @@ order and the Archive/Editor ownership boundary.
 
 ## Progressive entry and chooser
 
+- `archive-initial-{320,390,768,1280}.png` and `editor-initial-{320,390,768,1280}.png` — canonical shared header; browser assertions verify the exact service-link structure/destination, centered identity, left-to-right separation and no collisions at every width.
 - `archive-initial-{320,390,768,1280}.png` — Archive entry without a selected record or collection DOM.
 - `chooser-before-request-{320,390,768,1280}.png` — Archive chooser before an explicit search.
 - `chooser-results-1000-{390,1280}.png` — first 10 rows and explicit pagination for the 1,000-record browser fixture; the test traverses all 100 pages without gaps or duplicates.
