@@ -6,7 +6,7 @@ import {
 } from './audio-archive-client.mjs';
 import {
   workflows, lifecycleLabel, sourceLabel, eligible, dateLabel, bytesLabel, mergeSessions,
-  selectSessions, recoveryPolicy, editorUrl, deletionImpact, parseArchiveIntent, RequestGeneration
+  selectSessions, selectResults, recoveryPolicy, editorUrl, deletionImpact, parseArchiveIntent, RequestGeneration
 } from './audio-archive-core.mjs';
 
 const $ = id => document.getElementById(id);
@@ -14,7 +14,8 @@ const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY
 const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete'].map(key => [key, new RequestGeneration()]));
 const state = {
   authenticated: false, sessions: null, maintenance: null, detail: null, projects: new Map(), outputMeta: new Map(),
-  url: null, target: null, returnFocus: null, busy: false, intentConsumed: false
+  url: null, target: null, returnFocus: null, busy: false, intentConsumed: false, detailInput: null,
+  resultSort: { announcement: 'newest', speaker: 'newest' }
 };
 
 function element(tag, text, className) {
@@ -69,7 +70,7 @@ function clearPlayback() {
   state.url = null; $('player').hidden = true; $('playback-status').textContent = '';
 }
 function closeDetail({ updateUrl = true } = {}) {
-  generations.detail.next(); clearPlayback(); state.detail = null; state.outputMeta.clear();
+  generations.detail.next(); clearPlayback(); state.detail = null; state.detailInput = null; state.outputMeta.clear();
   $('detail').hidden = true; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(); $('archive-index').hidden = false;
   if (updateUrl) {
     const url = new URL(location.href); url.searchParams.delete('session'); history.replaceState(history.state, '', url);
@@ -78,7 +79,7 @@ function closeDetail({ updateUrl = true } = {}) {
 }
 function clearSession() {
   for (const generation of Object.values(generations)) generation.next();
-  clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.target = null;
+  clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.detailInput = null; state.target = null;
   state.projects.clear(); state.outputMeta.clear(); $('detail').hidden = true; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(); $('archive-index').hidden = false;
   if ($('delete-dialog').open) $('delete-dialog').close(); updateControls(); render();
 }
@@ -188,15 +189,27 @@ function resultCard(session, output, workflow) {
 function workflowSection(session, workflow) {
   const data = session.workflows[workflow], section = element('section', undefined, `detail-section workflow-section workflow-${workflow}`);
   section.append(element('h3', workflow === 'announcement' ? 'Версии для анонс-мейкера' : 'Финальные версии спикерской'));
-  const versions = [...data.outputs].sort((a, b) => a.version - b.version);
-  const list = element('div', undefined, 'version-list'); for (const output of versions) list.append(resultCard(session, output, workflow));
-  if (!versions.length) list.append(element('p', 'Сохранённых версий пока нет.')); section.append(list);
+  const sortLabel = element('label', `Сортировка · ${workflowTitle(workflow)}`), sort = element('select');
+  sort.id = `version-sort-${workflow}`;
+  for (const [value, text] of Object.entries({ newest: 'Сначала новые', oldest: 'Сначала старые', version: 'Версия по возрастанию', 'version-desc': 'Версия по убыванию', title: 'Название записи' })) {
+    const option = element('option', text); option.value = value; sort.append(option);
+  }
+  sort.value = state.resultSort[workflow]; sortLabel.append(sort); section.append(sortLabel);
+  const list = element('div', undefined, 'version-list');
+  const draw = () => {
+    list.replaceChildren();
+    const versions = selectResults([session], workflow, state.resultSort[workflow]).map(result => result.output);
+    for (const output of versions) list.append(resultCard(session, output, workflow));
+    if (!versions.length) list.append(element('p', 'Сохранённых версий пока нет.'));
+  };
+  sort.addEventListener('change', () => { state.resultSort[workflow] = sort.value; draw(); });
+  draw(); section.append(list);
   for (const version of data.deletedVersions || []) section.append(element('p', `Версия ${version} удалена. Номера версий не переиспользуются.`, 'deleted-version'));
   for (const transaction of attentionFor(session)) if (transaction.workflow === workflow && transaction.reservedVersion && !(data.deletedVersions || []).includes(transaction.reservedVersion)) {
     section.append(element('p', `Версия ${transaction.reservedVersion} занята незавершённым сохранением.`, 'reserved-version'));
   }
   const remove = button(workflow === 'announcement' ? 'Удалить все версии для анонс-мейкера' : 'Удалить все финальные версии спикерской', () => openDeletion(session.id, { kind: 'output-series', workflow }), 'danger');
-  remove.disabled = !versions.length; const disclosure = element('details', undefined, 'destructive-disclosure'); disclosure.append(element('summary', 'Управление версиями'), remove); section.append(disclosure);
+  remove.disabled = !data.outputs.length; const disclosure = element('details', undefined, 'destructive-disclosure'); disclosure.append(element('summary', 'Управление версиями'), remove); section.append(disclosure);
   return section;
 }
 function workflowChoice(session, workflow) {
@@ -245,17 +258,40 @@ function renderDetail() {
 
   const management = element('section', undefined, 'detail-section record-management'); management.append(element('h3', 'Управление записью'));
   const form = element('form'), titleLabel = element('label', 'Название записи'), title = element('input');
-  title.value = session.title; title.required = true; title.maxLength = 200; title.id = 'metadata-title'; titleLabel.append(title);
+  const serverDate = session.recordedAt ? new Date(session.recordedAt).toISOString().slice(0, -1) : '';
+  const draft = state.detailInput?.sessionId === session.id ? state.detailInput : null;
+  title.value = draft?.titleDirty ? draft.title : session.title; title.required = true; title.maxLength = 200; title.id = 'metadata-title'; titleLabel.append(title);
   const dateLabelNode = element('label', 'Дата и время записи (UTC; пусто — дата не указана)'), date = element('input'); date.type = 'datetime-local'; date.step = '0.001'; date.id = 'metadata-date';
-  const initialDate = session.recordedAt ? new Date(session.recordedAt).toISOString().slice(0, -1) : ''; date.value = initialDate; const initialControlValue = date.value; dateLabelNode.append(date);
+  date.value = draft?.dateDirty ? draft.date : serverDate; dateLabelNode.append(date);
   const save = element('button', 'Сохранить название и дату'); save.type = 'submit'; const feedback = element('p'); feedback.id = 'metadata-status'; feedback.setAttribute('role', 'status');
-  const reload = button('Загрузить актуальные сведения', () => openDetail(session.id)); form.append(titleLabel, dateLabelNode, save, feedback, reload);
+  feedback.textContent = draft?.notice || '';
+  const rememberInput = changed => {
+    const current = state.detailInput?.sessionId === session.id ? state.detailInput : null;
+    state.detailInput = {
+      sessionId: session.id, title: title.value, date: date.value,
+      titleDirty: Boolean(current?.titleDirty || changed === 'title' || title.value !== session.title),
+      dateDirty: Boolean(current?.dateDirty || changed === 'date' || date.value !== serverDate),
+      notice: current?.notice || ''
+    };
+    return state.detailInput;
+  };
+  title.addEventListener('input', () => rememberInput('title')); date.addEventListener('input', () => rememberInput('date'));
+  const reload = button('Загрузить актуальные сведения', () => {
+    const input = rememberInput();
+    if (input.titleDirty || input.dateDirty) input.notice = 'Актуальные сведения загружены. Введённые значения сохранены в форме.';
+    openDetail(session.id);
+  });
+  form.append(titleLabel, dateLabelNode, save, feedback, reload);
   form.addEventListener('submit', async event => {
     event.preventDefault(); if (state.busy || save.disabled) return;
-    const patch = { title: title.value.trim(), recordedAt: date.value === initialControlValue ? session.recordedAt : date.value ? new Date(date.value + 'Z').toISOString() : null };
+    const input = rememberInput();
+    const patch = { title: title.value.trim(), recordedAt: date.value === serverDate ? session.recordedAt : date.value ? new Date(date.value + 'Z').toISOString() : null };
     save.disabled = true;
-    await mutate(() => writeSession(session, () => gateway.updateSession(session.id, session.revision, patch, crypto.randomUUID())), () => openDetail(session.id), error => {
-      feedback.textContent = message(error) + ' Введённые значения сохранены в форме. Загрузите актуальные сведения и решите, повторять ли изменение.';
+    await mutate(() => writeSession(session, () => gateway.updateSession(session.id, session.revision, patch, crypto.randomUUID())), () => {
+      state.detailInput = null; openDetail(session.id);
+    }, error => {
+      input.notice = message(error) + ' Введённые значения сохранены в форме. Загрузите актуальные сведения и решите, повторять ли изменение.';
+      feedback.textContent = input.notice;
     });
   });
   const lifecycle = button(session.lifecycle.state === 'incoming' ? 'Убрать из рабочего списка' : 'Вернуть в рабочий список', () => mutate(() => writeSession(session, () => gateway.setLifecycle(session.id, session.lifecycle.state === 'incoming' ? 'archive' : 'restore', session.revision)), () => openDetail(session.id)));
@@ -287,6 +323,7 @@ async function loadOutputMetadata(session, sequence, auth) {
 }
 async function openDetail(id, { updateUrl = false } = {}) {
   if (state.busy) return;
+  if (state.detailInput?.sessionId !== id) state.detailInput = null;
   const sequence = generations.detail.next(), auth = generations.auth.value; clearPlayback(); state.detail = null; state.outputMeta.clear();
   $('archive-index').hidden = true; $('detail').hidden = false; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(element('p', 'Загрузка актуальных сведений…'));
   try {

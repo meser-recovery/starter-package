@@ -1118,13 +1118,25 @@ async function showIncomplete() {
     }
     container.replaceChildren();
     for (const row of byId("list").querySelectorAll(".source-recovery-item")) row.remove();
+    let associated = 0;
     for (const transaction of result.transactions || []) {
       const target = [...byId("list").querySelectorAll(".source-session-item")].find(row => row.dataset.sessionId === transaction.sessionId);
-      if (!target) continue;
-      const row = document.createElement("p"); row.className = "source-recovery-item";
-      row.textContent = "Требует внимания. Откройте запись в Аудиоархиве для безопасного продолжения операции.";
+      if (!target) continue; // Unassociated operations and diagnostics remain in Archive maintenance.
+      associated++;
+      const row = document.createElement("div"); row.className = "source-recovery-item";
+      const title = document.createElement("strong"); title.textContent = "Требуется внимание"; row.append(title);
+      const policy = recoveryPolicy(transaction);
+      row.append(document.createTextNode(transaction.kind === "pending_delete" ? " Удаление не завершено. " :
+        transaction.kind === "publication" ? ` Есть незавершённое сохранение Версии ${transaction.reservedVersion} в «${workflowLabel(transaction.workflow)}». ` : " Сохранение записи Zoom не завершено. "));
+      row.append(document.createTextNode(policy.local));
+      if (transaction.kind === "publication" && transaction.workflow === "speaker" && !transaction.canFinalize &&
+          ["uploading", "cancelled"].includes(transaction.state) && policy.actions.length) {
+        row.append(button("Продолжить передачу", () => resumeSpeakerIncomplete(transaction)));
+      }
+      for (const [action, label] of policy.actions) row.append(button(label, () => recover(transaction, action), action === "discard" ? "source-session-danger" : ""));
       target.append(row);
     }
+    if (!associated) container.textContent = "Незавершённых сохранений для этих записей не найдено.";
 
   } catch (error) {
     if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;

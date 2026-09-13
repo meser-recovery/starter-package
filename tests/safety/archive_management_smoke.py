@@ -183,6 +183,17 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             assert 'Анонс.wav · WAV' in page.locator('#detail').inner_text()
             assert 'Спикерская.mp3 · MP3' in page.locator('#detail').inner_text()
             assert page.locator('#metadata-date').input_value().startswith('2026-09-09T19:30')
+            announcement_sort = page.locator('#version-sort-announcement')
+            speaker_sort = page.locator('#version-sort-speaker')
+            assert announcement_sort.input_value() == 'newest'
+            assert speaker_sort.input_value() == 'newest'
+            announcement_sort.select_option('version')
+            assert page.locator('.workflow-announcement .result-row h4').all_text_contents() == ['Версия 1', 'Версия 3']
+            assert speaker_sort.input_value() == 'newest'
+            speaker_sort.select_option('oldest')
+            assert announcement_sort.input_value() == 'version'
+            announcement_sort.select_option('newest')
+            speaker_sort.select_option('newest')
             assert page.locator('#detail details').first.get_attribute('open') is None
             shot(f'detail-{width}', '#detail')
             page.locator('#detail .workflow-announcement').get_by_text('Управление версиями', exact=True).click()
@@ -216,22 +227,47 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         assert page.locator('#metadata-title').input_value() == 'Новая запись'
         open_primary()
 
-        # Metadata conflict: preserve entered fields, canonical newer title and original timestamp.
+        # Output metadata completes after the form is already usable. Its final render
+        # must preserve edits made while the result descriptions were still loading.
+        page.set_viewport_size({'width': 390, 'height': 900})
+        page.get_by_role('button', name='← Все записи').click()
+        fault['hold'] = f'/v1/source-sessions/{snapshot["primary"]["id"]}/outputs/announcement/'
+        details_for(primary_card())
+        page.locator('#metadata-title').wait_for()
+        page.locator('#metadata-title').fill('Черновик во время загрузки')
+        page.locator('#metadata-date').fill('2026-09-10T10:20')
+        page.wait_for_timeout(150)
+        assert held
+        fault['hold'] = None
+        while held:
+            fulfill(*held.pop(0))
+        page.wait_for_function("document.querySelector('.workflow-announcement .result-row button').disabled === false")
+        assert page.locator('#metadata-title').input_value() == 'Черновик во время загрузки'
+        assert page.locator('#metadata-date').input_value() == '2026-09-10T10:20'
+        shot('metadata-rerender-draft-390', '#detail')
+        page.get_by_role('button', name='← Все записи').click()
+        open_primary()
+
+        # Metadata conflict and explicit canonical reload preserve both entered fields.
         page.set_viewport_size({'width': 390, 'height': 900})
         page.locator('#metadata-title').fill('Моё исправление')
+        page.locator('#metadata-date').fill('2026-09-11T08:15')
         command('conflict', id=snapshot['primary']['id'])
         page.get_by_role('button', name='Сохранить название и дату').click()
         page.wait_for_function("document.getElementById('metadata-status').textContent.includes('Введённые значения')")
         assert page.locator('#metadata-title').input_value() == 'Моё исправление'
+        assert page.locator('#metadata-date').input_value() == '2026-09-11T08:15'
         assert command('snapshot')['primary']['title'] == 'Изменено в другом окне'
         shot('metadata-conflict-390', '#detail')
         page.get_by_role('button', name='Загрузить актуальные сведения').click()
-        page.wait_for_function("document.getElementById('metadata-title')?.value === 'Изменено в другом окне'")
-        page.locator('#metadata-title').fill('Исправленная запись')
+        page.wait_for_function("document.getElementById('metadata-status')?.textContent.includes('Актуальные сведения загружены')")
+        assert page.locator('#metadata-title').input_value() == 'Моё исправление'
+        assert page.locator('#metadata-date').input_value() == '2026-09-11T08:15'
+        shot('metadata-conflict-reloaded-390', '#detail')
         page.get_by_role('button', name='Сохранить название и дату').click()
-        page.wait_for_function("document.getElementById('metadata-title')?.value === 'Исправленная запись' && !document.querySelector('#detail form button').disabled")
+        page.wait_for_function("document.getElementById('metadata-title')?.value === 'Моё исправление' && !document.querySelector('#detail form button').disabled")
         saved = command('snapshot')['primary']
-        assert saved['recordedAt'] == snapshot['primary']['recordedAt']
+        assert saved['recordedAt'] == '2026-09-11T08:15:00.000Z'
         patches = [json.loads(body) for method, _, body in trace if method == 'PATCH']
         assert all(set(body['patch']) == {'title', 'recordedAt'} for body in patches)
 
@@ -280,7 +316,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.locator('#password').fill('local-test-password')
         page.locator('#login-form').get_by_role('button', name='Подключить', exact=True).click()
         ready()
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
         fault['corrupt'] = True
         page.locator('.workflow-speaker').get_by_role('button', name='Прослушать').first.click()
         page.wait_for_function("document.getElementById('playback-status').textContent.includes('недоступны')")
@@ -288,7 +324,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         fault['corrupt'] = False
 
         # Archived results and source-deleted outputs survive a page reload.
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
         page.locator('#detail').get_by_role('button', name='Убрать из рабочего списка', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Вернуть в рабочий список', exact=True).wait_for()
         page.locator('#detail').get_by_text('Опасная зона', exact=True).click()
@@ -296,13 +332,13 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         page.locator('#delete-submit').click()
         page.wait_for_function("document.getElementById('detail-body').textContent.includes('Имена и форматы удалённых дорожек не сохранены.')")
         load()
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
         page.locator('.workflow-speaker').get_by_role('button', name='Прослушать').first.click()
         page.wait_for_function("document.getElementById('audio').src.startsWith('blob:') && document.getElementById('audio').readyState >= 1")
         shot('results-restored-after-source-deletion-390', '#detail')
 
         # Incoming sessions with deleted sources must also reject processing intent.
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
         page.locator('#detail').get_by_role('button', name='Вернуть в рабочий список', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Убрать из рабочего списка', exact=True).wait_for()
         start = len(trace)
@@ -313,7 +349,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         load()
 
         # Strong purge confirmation; cancel leaves state untouched.
-        details_for(page.locator('#session-list .archive-card').filter(has_text='Исправленная запись'))
+        details_for(page.locator('#session-list .archive-card').filter(has_text='Моё исправление'))
         page.locator('#detail').get_by_text('Опасная зона', exact=True).click()
         page.locator('#detail').get_by_role('button', name='Удалить запись полностью').click()
         page.locator('#purge-confirmation').fill('да')
