@@ -240,6 +240,7 @@
 .audio-studio .audio-editor-content,.audio-studio.archive-management,.audio-studio .archive-management {
   max-width:980px; margin-inline:auto; padding:26px 30px 40px; background:#fff; border-radius:12px;
 }
+.audio-studio .audio-editor-content { grid-template-columns:minmax(0,1fr); }
 .audio-studio .site-footer { background:#4c7397; color:#fff; border:0; }
 .audio-studio .site-footer p { color:#fff; }
 .audio-studio .editor-page-heading,.audio-studio .archive-heading>div,.audio-studio .picker-heading,
