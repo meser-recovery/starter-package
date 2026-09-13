@@ -1,6 +1,6 @@
 # S09B progressive-disclosure GUI evidence
 
-Implementation target: `74a68599d03b055d56fc975c6b46de47d0d334eb` on branch
+Implementation target: `340c4d1813321de04181e81889150216a796d80b` on branch
 `codex/s09b-unified-zoom-recording-ux`.
 
 The directory contains 111 real Chromium PNG captures generated from that implementation.
