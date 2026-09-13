@@ -1173,7 +1173,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").all_text_contents()[:6] != ["Запись не выбрана", "Выбрать запись", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Сохранённые версии этой записи"]:
+    if page.locator("h2").all_text_contents()[:5] != ["Откуда взять запись?", "Что нужно сделать?", "Рабочая область спикерской", "Подготовка записи для анонс-мейкера", "Сохранённые версии этой записи"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1219,6 +1219,10 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError("Saved versions must stay hidden until a canonical recording is open")
     for selector in (".source-session-card", ".current-recording", ".processor-card", '[aria-labelledby="archive-heading"]', "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
         element = page.locator(selector)
+        # S09C keeps inactive workspaces and their controls out of the entry
+        # layout; clipping assertions apply when a surface is disclosed.
+        if not element.is_visible():
+            continue
         box = element.bounding_box()
         if not box or box["x"] < 0 or box["x"] + box["width"] > width + 1 or box["width"] < 44:
             raise AssertionError(f"Audio editor control/card clips at {width}px: {selector}, {box}")
@@ -1337,7 +1341,6 @@ def check_audio_editor(page, base_url: str) -> None:
 
 
 def refresh_editor_sources(page):
-    if page.locator('#import-zone').get_attribute('open') is None: page.locator('#import-zone > summary').click()
     page.locator('#source-session-mode-archive').click()
     page.locator('#source-session-refresh').click()
 
@@ -2074,7 +2077,6 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor-save").is_disabled()
         assert page.locator("#speaker-editor-render").is_disabled()
         assert page.locator("#speaker-editor-close").is_disabled()
-        if page.locator("#import-zone").get_attribute("open") is None: page.locator("#import-zone > summary").click()
         page.locator("#source-session-mode-device").click()
         assert page.locator("#speaker-editor").is_visible()
         page.locator("#source-session-mode-archive").click()
@@ -2385,7 +2387,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
 
         goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
         if not page.locator("#import-zone").evaluate("element => element.open"):
-            page.locator("#import-zone > summary").click()
+            page.locator("#source-session-mode-device").click()
         page.locator("#source-session-mode-device").click()
         page.locator("#processor-file").set_input_files({"name": "manual.wav", "mimeType": "audio/wav", "buffer": wavs[0]})
         page.locator("#processor-save-incoming").click()
@@ -2393,7 +2395,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-ingest-submit").click()
         page.locator("#source-session-ingest-dialog").wait_for(state="hidden")
         if not page.locator("#import-zone").evaluate("el => el.open"):
-            page.locator("#import-zone > summary").click()
+            page.locator("#source-session-mode-device").click()
         page.wait_for_function("document.getElementById('source-session-status').textContent === 'Запись Zoom сохранена в аудиоархиве.'")
         assert page.locator("#source-session-status").is_visible()
         assert any(method == "POST" and path == "/v1/source-sessions/ingestions" for method, path, _ in gateway_calls)
@@ -3233,8 +3235,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.wait_for_function("document.getElementById('processor-status').textContent === 'Подготовка формы сигнала…'")
         assert page.locator("#processor-file").is_disabled() and page.locator("#processor-run").is_disabled()
         assert page.locator('.processor-track button[data-track-action="remove"]').is_disabled()
-        assert page.locator("#processor-progress").is_visible()
-        page.locator("#processor-cancel").click()
+        assert page.locator("#device-import-progress").is_visible()
+        page.locator("#device-import-cancel").click()
         wait_processor_status(page, "Обработка отменена.")
         assert_processor_no_result(page)
         for route in held:
@@ -3247,7 +3249,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         with page.expect_worker():
             page.locator("#processor-file").set_input_files(primary)
         page.wait_for_function("window.processorProbe.messages.some(message => message.type === 'LOAD')")
-        page.locator("#processor-cancel").click()
+        page.locator("#device-import-cancel").click()
         wait_processor_status(page, "Обработка отменена.")
         assert page.evaluate("window.processorProbe.terminated") == 1
         assert_processor_no_result(page)
@@ -3257,6 +3259,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
 
         page.locator("#processor-file").set_input_files(primary)
         wait_waveforms(page, 1)
+        page.locator("#open-local-announcement").click()
         waveform = page.locator(".processor-track .processor-waveform canvas:not([hidden])")
         waveform_info = waveform.evaluate("""c => ({width:c.width,height:c.height,
             css:c.getBoundingClientRect().width,dpr:devicePixelRatio,
@@ -3270,6 +3273,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
         print("Real source waveform passed: shared native peak reader, Retina canvas and empty waveform FS.")
 
+        page.locator("#source-session-mode-device").click()
         page.locator("#processor-save-incoming").click()
         assert page.locator("#source-session-login-dialog").is_visible()
         assert page.locator("#source-session-login-status").inner_text() == "Шлюз аудиоархива ещё не настроен."
@@ -3278,6 +3282,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.locator("#source-session-login-cancel").click()
         print("Gateway-unavailable persistence fallback passed: local S07 source state remained intact.")
 
+        page.locator("#open-local-announcement").click()
         page.locator("#processor-run").click()
         wait_processor_status(page, "Готово.")
         assert page.locator("#source-session-publish-announcement").is_disabled()
@@ -3534,7 +3539,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         unsupported_page.route(ARCHIVE_MANIFEST_PATTERN, fixture_manifest_route)
         goto_ready(unsupported_page, url(base_url, AUDIO_EDITOR_PATH))
         unsupported_page.locator("#source-session-mode-device").click()
-        unsupported_page.get_by_text("Обработка аудио не поддерживается в этом браузере.", exact=True).wait_for()
+        unsupported_page.locator("#device-import-status").wait_for()
+        assert unsupported_page.locator("#device-import-status").inner_text() == "Обработка аудио не поддерживается в этом браузере."
         unsupported_page.locator('.legacy-archive > summary').click()
         wait_for_archive_items(unsupported_page, 3)
         assert unsupported_page.locator("#processor-run").is_disabled()

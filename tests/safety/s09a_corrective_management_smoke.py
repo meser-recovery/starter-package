@@ -370,7 +370,9 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         # confirmed empty result set for the current recording.
         fault['list'] = True
         if not page.locator('#import-zone').evaluate('e=>e.open'):
-            page.locator('#import-zone > summary').click()
+            # S09C keeps the closed picker out of the focused-work layout; the
+            # persistent source-choice control is its supported entry point.
+            page.locator('#source-session-mode-archive').click()
         page.locator('#source-session-refresh').click()
         page.wait_for_function("document.getElementById('source-session-status').textContent.includes('временно недоступен')")
         assert page.locator('#source-session-results-speaker-count').inner_text() == '—'

@@ -160,6 +160,9 @@ const run = byId("run");
 const cancel = byId("cancel");
 const status = byId("status");
 const progress = byId("progress");
+const deviceStatus = document.getElementById("device-import-status");
+const deviceProgress = document.getElementById("device-import-progress");
+const deviceCancel = document.getElementById("device-import-cancel");
 const sourceAudio = byId("source-audio");
 const resultAudio = byId("result-audio");
 const result = byId("result");
@@ -188,6 +191,24 @@ let sourceFollowEnabled = false;
 let sourceZoomMinimum = 2;
 let sourceZoomMaximum = 2;
 let sourceZoomInitialized = false;
+
+function mirrorDeviceImportFeedback() {
+  if (!deviceStatus || !deviceProgress || !deviceCancel) return;
+  deviceStatus.textContent = status.textContent;
+  deviceProgress.hidden = progress.hidden;
+  deviceCancel.hidden = cancel.hidden;
+  deviceCancel.disabled = cancel.disabled;
+  for (const attribute of ["value", "max"]) {
+    const value = progress.getAttribute(attribute);
+    if (value === null) deviceProgress.removeAttribute(attribute);
+    else deviceProgress.setAttribute(attribute, value);
+  }
+}
+new MutationObserver(mirrorDeviceImportFeedback).observe(status, { childList: true, subtree: true });
+new MutationObserver(mirrorDeviceImportFeedback).observe(progress, { attributes: true, attributeFilter: ["hidden", "value", "max"] });
+new MutationObserver(mirrorDeviceImportFeedback).observe(cancel, { attributes: true, attributeFilter: ["hidden", "disabled"] });
+deviceCancel?.addEventListener("click", () => cancel.click());
+mirrorDeviceImportFeedback();
 let sourceScaleMode = "time";
 let sourceTimeZoomValue = 50;
 let sourceTrackHeight = 196;

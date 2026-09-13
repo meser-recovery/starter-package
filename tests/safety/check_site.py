@@ -768,7 +768,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
         if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared footer is missing")
         styles = [attrs.get("href") for tag, attrs in parser.start_tags if tag == "link" and attrs.get("rel") == "stylesheet"]
-        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css", "styles/audio-studio.css?v=s09b-progressive-3"]:
+        if styles != ["styles/foundation.css", "styles/components.css", "styles/audio-editor.css", "styles/audio-workspace.css", "styles/audio-studio.css?v=s09c-portal-1"]:
             errors.append("Audio-Editor.html: expected shared and dedicated stylesheets")
         scripts = [(attrs.get("src"), "defer" in attrs) for tag, attrs in parser.start_tags if tag == "script"]
         if scripts != [("scripts/service-landing.js", False), ("scripts/audio-editor.js", True),
@@ -846,9 +846,9 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    expected_h2 = ["Запись не выбрана", "Выбрать запись", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Сохранённые версии этой записи"]
-    if parser.h2_texts[:6] != expected_h2:
-        errors.append("Audio-Editor.html: expected S09B picker, current recording, exclusive workspaces, current-record versions, then legacy archive")
+    expected_h2 = ["Откуда взять запись?", "Что нужно сделать?", "Рабочая область спикерской", "Подготовка записи для анонс-мейкера", "Сохранённые версии этой записи"]
+    if parser.h2_texts[:5] != expected_h2:
+        errors.append("Audio-Editor.html: expected S09C source, workflow, focused workspaces, then current-record versions")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -1035,7 +1035,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "scripts/source-session-archive.mjs": (
             'setMode("archive")', "С устройства", "Анонс-мейкер", "Спикерская",
         ),
-        "Audio-Editor.html": ("Выбрать запись", "С устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
+        "Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
             'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",

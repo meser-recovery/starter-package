@@ -42,7 +42,7 @@ def assert_archive_visual_shell(page, width, state):
     }))""")
     assert all(boxes.values()), {'state': state, 'width': width, 'boxes': boxes}
     assert abs(boxes['surface']['x'] + boxes['surface']['width'] / 2 - width / 2) <= 1, {'state': state, 'width': width, 'boxes': boxes}
-    assert boxes['surface']['width'] <= 950.5 and boxes['surface']['right'] <= width + .5, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['width'] <= 1120.5 and boxes['surface']['right'] <= width + .5, {'state': state, 'width': width, 'boxes': boxes}
     assert boxes['surface']['y'] > boxes['main']['y'] and boxes['surface']['bottom'] <= boxes['main']['bottom'], {'state': state, 'width': width, 'boxes': boxes}
     assert boxes['footer']['y'] >= boxes['main']['bottom'] - .5, {'state': state, 'width': width, 'boxes': boxes}
     if state == 'initial':
@@ -56,7 +56,7 @@ def assert_archive_visual_shell(page, width, state):
         }
         assert connection['height'] < 150, {'state': state, 'width': width, 'connection': connection, 'stretched_connection': True}
         primary_style = page.locator('#record-picker-open').evaluate("el => ({background:getComputedStyle(el).backgroundColor, color:getComputedStyle(el).color})")
-        assert primary_style == {'background': 'rgb(71, 138, 201)', 'color': 'rgb(255, 255, 255)'}, primary_style
+        assert primary_style == {'background': 'rgb(23, 107, 159)', 'color': 'rgb(255, 255, 255)'}, primary_style
     return boxes
 
 

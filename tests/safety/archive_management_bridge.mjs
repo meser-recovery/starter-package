@@ -1,6 +1,6 @@
 // Test-only JSON-lines bridge: real client + authenticated app + in-memory domain. No network transport.
 import { createInterface } from 'node:readline';
-import { managementFixture } from '../../gateway/audio-archive/test/archive-management-fixture.mjs';
+import { managementFixture, wav } from '../../gateway/audio-archive/test/archive-management-fixture.mjs';
 let h = await managementFixture();
 let authenticated = true;
 async function snapshot() {
@@ -49,6 +49,13 @@ for await (const line of createInterface({ input: process.stdin })) {
     if (command.action === 'reset') { h = await managementFixture(); authenticated = true; result = await snapshot(); }
     else if (command.action === 'snapshot') result = await snapshot();
     else if (command.action === 'recovery') { await seedRecovery(); result = await snapshot(); }
+    else if (command.action === 'multi-track-preview') {
+      const files = ['Ведущий.wav', 'Спикер 1.wav', 'Спикер 2.wav'].map(name => new File([wav()], name, { type: 'audio/wav' }));
+      result = await h.gateway.ingestFiles({
+        files, title: 'Спикерская · три синхронизированные дорожки', recordedAt: '2026-09-08T18:00:00Z',
+        origin: 'manual', idempotencyKey: 's09c-preview-multi-track'
+      });
+    }
     else if (command.action === 'purge-empty') {
       const session = await h.gateway.getSession(h.empty.id);
       await h.gateway.purgeSession(session.id, { expectedRevision: session.revision, idempotencyKey: 's09-navigation-purge', confirmation: session.id }); result = {};

@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
     <link rel="stylesheet" href="styles/audio-workspace.css">
-  <link rel="stylesheet" href="styles/audio-studio.css?v=s09b-progressive-3">
+    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-portal-1">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -29,13 +29,30 @@
     </header>
     <main id="main-content" class="audio-editor-main">
       <div class="container audio-editor-content">
-        <div class="editor-page-heading"><h1>Редактирование аудио</h1><a href="Audio-Archive.html">Аудиоархив ↗</a></div><div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
-        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading">
-          <div><p class="archive-eyebrow">Текущая запись</p><h2 id="current-recording-heading">Запись не выбрана</h2><p id="current-recording-state">Откройте запись из аудиоархива или выберите дорожки на устройстве.</p></div>
-          <div class="current-recording__actions"><button id="source-session-mode-archive" type="button" aria-pressed="true" aria-expanded="false" aria-controls="import-zone">Выбрать запись</button><button id="source-session-mode-device" type="button" aria-pressed="false">С устройства</button><a id="current-recording-archive-link" href="Audio-Archive.html" hidden>Открыть в аудиоархиве</a></div>
+        <div class="editor-page-heading">
+          <div><p class="portal-kicker">Аудиопортал</p><h1>Редактирование аудио</h1><p class="portal-lead">Выберите запись, затем откройте нужную задачу. Исходники обрабатываются только после вашей команды.</p></div>
+          <a class="portal-link" href="Audio-Archive.html">Открыть аудиоархив</a>
+        </div>
+        <div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
+        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading" data-recording-state="empty">
+          <div class="current-recording__copy">
+            <div class="current-recording__label"><span class="step-number" aria-hidden="true">1</span><p class="archive-eyebrow">Текущая запись Zoom</p><span id="current-recording-badge" class="recording-badge">Не выбрана</span></div>
+            <h2 id="current-recording-heading">Откуда взять запись?</h2>
+            <p id="current-recording-state">Выберите сохранённую запись из аудиоархива или несколько синхронизированных дорожек с этого устройства.</p>
+            <dl id="current-recording-facts" class="current-recording__facts" hidden>
+              <div><dt>Источник</dt><dd id="current-recording-source">—</dd></div>
+              <div><dt>Дорожки</dt><dd id="current-recording-tracks">—</dd></div>
+              <div><dt>Дальше</dt><dd id="current-recording-next">Выберите задачу</dd></div>
+            </dl>
+          </div>
+          <div class="current-recording__actions" aria-label="Выбор источника записи">
+            <button id="source-session-mode-archive" class="source-choice source-choice--archive" type="button" aria-pressed="true" aria-expanded="false" aria-controls="import-zone"><span>Из аудиоархива</span><small>Найти сохранённую запись</small></button>
+            <button id="source-session-mode-device" class="source-choice source-choice--device" type="button" aria-pressed="false" aria-expanded="false" aria-controls="import-zone"><span>С устройства</span><small>Выбрать локальные дорожки</small></button>
+            <a id="current-recording-archive-link" class="recording-detail-link" href="Audio-Archive.html" hidden>Открыть сведения о записи</a>
+          </div>
         </section>
         <div id="source-session-recovery-list" class="contextual-recovery" aria-live="polite" hidden></div>
-        <details id="import-zone" class="archive-card source-session-card"><summary><h2 id="source-session-heading">Выбрать запись</h2><span id="import-summary">Запись не выбрана</span></summary>
+        <details id="import-zone" class="archive-card source-session-card" hidden><summary><span class="step-number" aria-hidden="true">1</span><span><strong id="source-session-heading">Выбор записи</strong><small id="import-summary">Запись не выбрана</small></span></summary>
           <div class="archive-card__heading">
             <p>Откройте сохранённую запись или создайте новую из файлов на этом устройстве.</p><p><strong>Важно:</strong> все выбранные дорожки должны относиться к одной и той же записи Zoom.</p>
           </div>
@@ -60,18 +77,24 @@
           </div>
 <div class="action-group"><button id="import-add" type="button">Добавить дорожки</button><button id="import-replace" type="button">Заменить дорожки</button></div>
 <input id="import-add-files" type="file" multiple accept=".mp3,.m4a,.wav" hidden>
-<ul id="import-files" aria-label="Выбранные файлы"></ul><div id="processor-device-ingest-actions" class="secondary-action-group">
+<ul id="import-files" aria-label="Выбранные файлы"></ul><div class="device-import-feedback"><p id="device-import-status" role="status">Выберите аудиодорожки.</p><progress id="device-import-progress" aria-label="Подготовка локальных дорожек" hidden></progress><button id="device-import-cancel" type="button" hidden>Отменить подготовку</button></div><div id="processor-device-ingest-actions" class="secondary-action-group">
               <p>Сохраните исходные дорожки, если хотите открыть их позже или использовать на другом устройстве. Для обработки только на этом устройстве это не требуется.</p>
               <button id="processor-save-incoming" type="button" disabled>Сохранить запись Zoom в аудиоархив</button>
             </div></div>
         </details>
-        <section class="editing-modes" aria-labelledby="editing-heading"><h2 id="editing-heading">Редактирование</h2><div class="mode-options">
-<div><h3>Редактирование для анонс-мейкера</h3><p>Автоматически сокращает длинные паузы в записи. Если выбрано несколько дорожек, пауза сокращается только там, где одновременно молчат все участники.</p><p>Паузы от 2 секунд сокращаются примерно до 0,35 секунды.</p><button id="open-local-announcement" aria-controls="announcement-processor-card" type="button">Открыть редактор анонс-мейкера</button></div>
-<div><h3>Финальная обработка спикерской</h3><p>Подготовьте финальную версию спикерской вручную: задайте начало и конец записи, вырежьте ненужные фрагменты, замените фрагменты отдельных дорожек тишиной или исключите дорожки из финального микса.</p><button id="open-local-speaker" aria-controls="speaker-editor" type="button">Открыть финальную обработку спикерской</button></div></div><p id="active-editor-mode" role="status">Выберите исходники и режим редактирования.</p></section><section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
+        <section id="workflow-choice" class="editing-modes" aria-labelledby="editing-heading" tabindex="-1" hidden>
+          <div class="workflow-choice__heading"><span class="step-number" aria-hidden="true">2</span><div><p class="archive-eyebrow">Следующий шаг</p><h2 id="editing-heading">Что нужно сделать?</h2></div></div>
+          <div class="mode-options">
+            <article><p class="workflow-card__eyebrow">Быстрая обработка</p><h3>Анонс-мейкер</h3><p>Сократит общие длинные паузы, сведёт выбранные дорожки и подготовит MP3 для прослушивания или сохранения.</p><button id="open-local-announcement" class="action-primary" aria-controls="announcement-processor-card" type="button">Открыть редактор анонс-мейкера</button></article>
+            <article><p class="workflow-card__eyebrow">Точный монтаж</p><h3>Спикерская</h3><p>Откроет полноэкранную рабочую область с волнами, монтажом, обработкой дорожек и финальным сведением.</p><button id="open-local-speaker" class="action-primary" aria-controls="speaker-editor" type="button">Открыть финальную обработку спикерской</button></article>
+          </div>
+          <p id="active-editor-mode" class="workflow-current" role="status">Запись готова. Выберите одну задачу.</p>
+        </section>
+        <section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
           <div class="archive-card__heading">
             <button id="speaker-editor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
-            <p class="archive-eyebrow">Сейчас открыто: Финальная обработка спикерской</p>
-            <h2 id="speaker-editor-heading">Проект обработки спикерской</h2>
+            <p class="archive-eyebrow">Спикерская · точный монтаж</p>
+            <h2 id="speaker-editor-heading">Рабочая область спикерской</h2>
             <p id="speaker-editor-identity"></p>
             <p id="speaker-editor-status" class="archive-status" role="status"></p><button id="speaker-editor-source-retry" type="button" hidden>Повторить подготовку дорожек</button>
           </div>
@@ -168,8 +191,8 @@
         <section hidden id="announcement-processor-card" class="archive-card processor-card" aria-labelledby="processor-heading">
           <div class="archive-card__heading">
             <button id="processor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
-            <p class="archive-eyebrow">Сейчас открыто: Редактирование для анонс-мейкера</p>
-            <h2 id="processor-heading">Редактирование для анонс-мейкера</h2>
+            <p class="archive-eyebrow">Анонс-мейкер · быстрая обработка</p>
+            <h2 id="processor-heading">Подготовка записи для анонс-мейкера</h2>
             <details class="daw-workflow-help"><summary>Как работает обработка пауз</summary>
             <p>Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.</p>
             <p>Выберите одну дорожку или несколько уже синхронизированных дорожек одной записи Zoom. Сокращаются только участки, где все выбранные дорожки одновременно молчат. Затем дорожки сводятся в один MP3.</p>

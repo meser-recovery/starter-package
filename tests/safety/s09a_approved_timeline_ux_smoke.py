@@ -41,12 +41,14 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
 
         # The one slider retains independent time and height values and never mutates the recipe.
         zoom = page.locator("#speaker-editor-zoom")
-        zoom.fill("4"); zoom.dispatch_event("input")
+        # Keep headroom for the gesture assertion even when S09C gives the
+        # workspace the full desktop viewport (a factor of 4 can hit 1000 px/s).
+        zoom.fill("2"); zoom.dispatch_event("input")
         page.locator("#speaker-editor-scale-mode").click(); assert zoom.input_value() == "196"
         zoom.fill("180"); zoom.dispatch_event("input")
         assert abs(rows.first.locator(".speaker-waveform-scroll").bounding_box()["height"] - 180) < 2
         assert page.evaluate(payload) == baseline
-        page.locator("#speaker-editor-scale-mode").click(); assert float(zoom.input_value()) == 4
+        page.locator("#speaker-editor-scale-mode").click(); assert float(zoom.input_value()) == 2
 
         # Track color follows identity through reorder and leaves edit colors semantic.
         identity = rows.first.get_attribute("data-track-id")
