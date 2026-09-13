@@ -79,7 +79,25 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         return page.evaluate("async()=>{const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();return {session:s.session,payload:s.payload,draft:s.draft,files:s.files.map(f=>[f.name,f.size]),epoch:s.sourceEpoch,candidate:s.candidate?.candidateType}}")
     def unchanged(before):
         after=snapshot(); assert after['payload']==before['payload'], (before['payload'],after['payload']); assert after['files']==before['files']; assert after['epoch']==before['epoch']
-    def overflow(): assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.viewport_size
+    def overflow():
+        layout = page.evaluate("""() => ({
+            scrollWidth: document.documentElement.scrollWidth,
+            innerWidth,
+            offenders: [...document.querySelectorAll('body *')].map(element => {
+                const rect = element.getBoundingClientRect();
+                return {
+                    tag: element.tagName,
+                    id: element.id,
+                    className: typeof element.className === 'string' ? element.className : '',
+                    left: Math.round(rect.left * 10) / 10,
+                    right: Math.round(rect.right * 10) / 10,
+                    width: Math.round(rect.width * 10) / 10,
+                    scrollWidth: element.scrollWidth,
+                    clientWidth: element.clientWidth,
+                };
+            }).filter(item => item.left < -0.5 || item.right > innerWidth + 0.5).slice(0, 12),
+        })""")
+        assert layout['scrollWidth'] <= layout['innerWidth'], {**page.viewport_size, **layout}
     try:
         page.goto(base_url+'/Audio-Editor.html'); page.wait_for_function("document.getElementById('source-session-session-status').textContent.includes('активен')")
         page.locator('#source-session-mode-device').click()
