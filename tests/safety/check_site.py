@@ -823,9 +823,9 @@ PROCESSOR_ACCEPT = {".mp3", ".m4a", ".wav", "audio/mpeg", "audio/mp4", "audio/x-
 def check_processor_markup(source: str, errors: list[str]) -> None:
     parser = PageParser()
     parser.feed(source)
-    expected_h2 = ["Импорт исходных записей", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Архив готовых записей", "Архив отредактированных аудио"]
-    if parser.h2_texts[:6] != expected_h2:
-        errors.append("Audio-Editor.html: expected S09A import, editing, exclusive workspaces, finished archives, then legacy archive")
+    expected_h2 = ["Выберите запись Zoom", "Запись не выбрана", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Сохранённые версии этой записи", "Архив отредактированных аудио"]
+    if parser.h2_texts[:7] != expected_h2:
+        errors.append("Audio-Editor.html: expected S09B picker, current recording, exclusive workspaces, current-record versions, then legacy archive")
     tags = parser.start_tags
     ids = [attrs.get("id") for _, attrs in tags if attrs.get("id")]
     expected = {
@@ -1013,7 +1013,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "scripts/source-session-archive.mjs": (
             'setMode("archive")', "С устройства", "Анонс-мейкер", "Спикерская",
         ),
-        "Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить исходные записи в аудиоархив", "Сохранить проект"),
+        "Audio-Editor.html": ("Открыть запись из аудиоархива", "Новая запись с устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
             'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",

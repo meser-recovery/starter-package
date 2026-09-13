@@ -21,27 +21,38 @@
     <a href="Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html">Для служащих</a>
   </div></header>
   <main id="main-content" class="container archive-management">
-    <div class="archive-heading"><div><p class="eyebrow">Записи и сохранённые результаты</p><h1>Аудиоархив</h1></div>
-      </div>
-    <p>Общее хранилище исходных поканальных записей, проектов обработки спикерских и готовых обработанных версий.</p>
-    <div class="toolbar"><button id="login" type="button">Подключить архив</button><button id="refresh" type="button" disabled>Обновить данные</button><button id="logout" type="button" hidden>Отключить архив</button></div>
-    <p id="status" role="status" aria-live="polite">Проверка подключения…</p>
-    <nav class="archive-nav" aria-label="Разделы аудиоархива"><a href="#records">Исходные записи</a><a href="#projects">Проекты спикерских</a><a href="#results">Готовые записи</a></nav>
-    <div id="counts" class="counts" hidden></div>
-    <section id="records" aria-labelledby="records-title"><h2 id="records-title" tabindex="-1">Исходные записи</h2>
-<form id="filters" class="filters" role="search">
-<label class="wide">Поиск по названию или имени исходного файла<input name="search" type="search"></label>
-<label>Сортировка<select name="sort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="title">По названию</option></select></label>
-<details><summary>Фильтры</summary><label class="checkbox"><input name="showRemoved" type="checkbox">Показать убранные из рабочего списка</label><label class="checkbox"><input name="availableOnly" type="checkbox">Только записи с доступными исходниками</label><label class="checkbox"><input name="attention" type="checkbox">Требующие внимания</label><button type="reset">Сбросить поиск и фильтры</button></details></form>
-      <p id="matching" role="status"></p><div id="session-list" class="cards"></div>
-    </section>
-    <section id="detail" aria-labelledby="detail-title" hidden><h2 id="detail-title" tabindex="-1">Сведения о записи</h2><div id="detail-body"></div></section>
-    <section id="projects"><h2>Проекты спикерских</h2><div id="project-list" class="cards"></div></section><section id="results" aria-labelledby="results-title"><h2 id="results-title">Готовые записи</h2><p>Доступны также для записей, убранных из рабочего списка, и после удаления исходников.</p><div id="result-sections"></div>
-      <div id="player" hidden><h3 id="player-title"></h3><p id="player-meta"></p><audio id="audio" controls preload="none"></audio><a id="download">Скачать проверенный файл</a><button id="player-close" type="button">Закрыть проигрыватель</button></div><p id="playback-status" role="status"></p>
-    </section>
-    <details id="maintenance"><summary id="maintenance-title">Техническое обслуживание</summary><p>Продолжение с локальными файлами выполняется в прежней вкладке редактора. Не закрывайте её: повторное открытие не возвращает потерянный результат.</p><div id="operations" class="cards"></div><div id="observations"></div>
-      <h3>Каталог</h3><p>Восстанавливает внутренний список записей по сохранённым данным. Не изменяет аудиофайлы и не восстанавливает удалённые записи.</p><button id="rebuild" type="button" disabled>Пересобрать служебный каталог</button>
-    </details>
+    <div id="archive-index">
+      <div class="archive-heading"><div><p class="eyebrow">Аудиоархив</p><h1>Записи Zoom</h1></div></div>
+      <p class="archive-intro">Найдите встречу и откройте её запись, чтобы продолжить обработку или получить готовый файл.</p>
+      <div class="toolbar archive-connection"><button id="login" type="button">Подключить архив</button><button id="refresh" type="button" disabled>Обновить данные</button><button id="logout" type="button" hidden>Отключить архив</button></div>
+      <p id="status" role="status" aria-live="polite">Проверка подключения…</p>
+      <nav class="archive-nav" aria-label="Разделы аудиоархива"><a href="#records">Записи Zoom</a><a href="#filters">Поиск и фильтры</a><a href="#maintenance">Техническое обслуживание</a></nav>
+      <section id="records" aria-labelledby="records-title"><h2 id="records-title" tabindex="-1">Все записи</h2>
+        <form id="filters" class="filters" role="search">
+          <label class="wide">Поиск по названию или имени исходной дорожки<input name="search" type="search" autocomplete="off"></label>
+          <label>Сортировка<select name="sort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="title">По названию</option></select></label>
+          <fieldset class="quick-filters"><legend>Быстрый фильтр</legend>
+            <label><input name="quick" type="radio" value="all" checked>Все записи</label>
+            <label><input name="quick" type="radio" value="incoming">В рабочем списке</label>
+            <label><input name="quick" type="radio" value="archived">Убраны из рабочего списка</label>
+            <label><input name="quick" type="radio" value="attention">Требуют внимания</label>
+          </fieldset>
+          <details class="secondary-filters"><summary>Дополнительные фильтры</summary><div>
+            <label class="checkbox"><input name="availableOnly" type="checkbox">Исходники доступны</label>
+            <label class="checkbox"><input name="speakerProject" type="checkbox">Есть проект обработки спикерской</label>
+            <label class="checkbox"><input name="announcementResult" type="checkbox">Есть версии для анонс-мейкера</label>
+            <label class="checkbox"><input name="speakerResult" type="checkbox">Есть финальные версии спикерской</label>
+            <button type="reset">Сбросить поиск и фильтры</button>
+          </div></details>
+        </form>
+        <p id="matching" role="status" aria-live="polite"></p><div id="session-list" class="cards"></div>
+      </section>
+      <details id="maintenance"><summary id="maintenance-title">Техническое обслуживание</summary><p>Здесь находятся операции без подтверждённой связи с записью и диагностические наблюдения. Операции известной записи показаны в её сведениях.</p><div id="operations" class="cards"></div><div id="observations"></div>
+        <h3>Служебный каталог</h3><p>Восстанавливает внутренний список записей по сохранённым данным. Не изменяет аудиофайлы и не восстанавливает удалённые записи.</p><button id="rebuild" type="button" disabled>Пересобрать служебный каталог</button>
+      </details>
+    </div>
+    <section id="detail" aria-labelledby="detail-title" hidden><button id="detail-close" class="back-button" type="button">← Все записи</button><div id="detail-heading" class="record-hero"></div><div id="detail-body"></div></section>
+    <div id="player" hidden><div><h3 id="player-title"></h3><p id="player-meta"></p></div><audio id="audio" controls preload="none"></audio><div><a id="download">Скачать проверенный файл</a><button id="player-close" type="button">Закрыть</button></div></div><p id="playback-status" role="status" aria-live="polite"></p>
   </main>
   <dialog id="login-dialog" aria-labelledby="login-title"><form id="login-form"><h2 id="login-title">Подключить аудиоархив</h2><label>Общий служебный пароль<input id="password" type="password" autocomplete="current-password" required></label><p id="login-status" role="status"></p><div class="toolbar"><button type="submit">Подключить</button><button id="login-cancel" type="button">Отмена</button></div></form></dialog>
   <dialog id="delete-dialog" aria-labelledby="delete-title"><form id="delete-form"><h2 id="delete-title">Подтвердите удаление</h2><p id="delete-name"></p><h3>Будет удалено</h3><p id="delete-removed"></p><h3>Останется сохранено</h3><p id="delete-retained"></p><p id="delete-pending"></p><label id="purge-label" hidden>Введите точный ID записи: <strong id="purge-id"></strong><input id="purge-confirmation" autocomplete="off" spellcheck="false"></label><p id="delete-status" role="status"></p><div class="toolbar"><button id="delete-submit" type="submit" class="danger">Подтвердить удаление</button><button id="delete-cancel" type="button">Отмена</button></div></form></dialog>

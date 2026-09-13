@@ -63,31 +63,32 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         fulfill(route, result)
 
     context.route('**/*', intercept)  # Isolation is installed before any navigation.
-    page = context.new_page(); page.on('pageerror', lambda error: errors.append(str(error)))
+    page = context.new_page(); archive = context.new_page()
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    archive.on('pageerror', lambda error: errors.append(str(error)))
     output = Path(screenshot_dir)/'s09a-corrective-management' if screenshot_dir else None
     if output: output.mkdir(parents=True, exist_ok=True)
 
-    def shot(name, selector=None):
+    def shot(name, selector=None, target=None):
+        target = target or page
         if output:
             if selector:
-                page.evaluate('scrollTo(0,0)')
-                page.screenshot(path=str(output/(name+'.png')), clip=page.locator(selector).bounding_box(), full_page=True)
-            else: page.screenshot(path=str(output/(name+'.png')), full_page=True)
+                target.evaluate('scrollTo(0,0)')
+                target.screenshot(path=str(output/(name+'.png')), clip=target.locator(selector).bounding_box(), full_page=True)
+            else: target.screenshot(path=str(output/(name+'.png')), full_page=True)
             if selector and 'dialog' in selector:
-                previous=page.viewport_size
+                previous=target.viewport_size
                 for width in (320,390,768,1280):
-                    page.set_viewport_size({'width':width,'height':900})
-                    assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-                    page.locator(selector).screenshot(path=str(output/(name+f'-{width}.png')))
-                page.set_viewport_size(previous)
+                    target.set_viewport_size({'width':width,'height':900})
+                    assert target.evaluate('document.documentElement.scrollWidth<=innerWidth')
+                    target.locator(selector).screenshot(path=str(output/(name+f'-{width}.png')))
+                target.set_viewport_size(previous)
 
-    def ready(): page.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
+    def ready(): archive.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
 
     def detail():
-        row = page.locator('#session-list .archive-card').filter(has_text=primary['title'])
-        row.locator('.audio-actions > summary').click()
-        row.get_by_role('button', name='Сведения о записи').click()
-        page.locator('#metadata-title').wait_for()
+        archive.goto(base_url.rstrip('/')+f'/Audio-Archive.html?session={primary["id"]}')
+        archive.locator('#metadata-title').wait_for()
 
     def open_editor():
         page.goto(base_url.rstrip('/')+f'/Audio-Editor.html?session={primary["id"]}&workflow=speaker')
@@ -110,18 +111,24 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             s.candidate?.blob===old.blob && document.getElementById('speaker-editor-download').href===old.url && (await fetch(old.url)).ok;
         }""")
 
-    def source_menu():
-        if not page.locator('#import-zone').evaluate('e=>e.open'): page.locator('#import-zone > summary').click()
-        page.locator('#source-session-mode-archive').click()
-        row = page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]')
-        row.locator('.audio-actions > summary').click()
-        return row
+    def output_delete(series=False, workflow='speaker'):
+        detail()
+        section = archive.locator(f'#detail .workflow-{workflow}')
+        if series:
+            section.get_by_text('Управление версиями', exact=True).click()
+            label = 'Удалить все финальные версии спикерской' if workflow == 'speaker' else 'Удалить все версии для анонс-мейкера'
+            section.get_by_role('button', name=label, exact=True).click()
+        else:
+            row = section.locator('.result-row').first
+            row.locator('.audio-actions > summary').click()
+            row.get_by_role('button', name='Удалить версию', exact=True).click()
+        archive.locator('#delete-dialog').wait_for(state='visible')
 
-    def output_delete():
-        page.locator('#source-session-results-speaker').click()
-        page.locator('#source-session-results-speaker-list .result-archive-item').filter(has_text=primary['title']).get_by_role('button', name='Удалить версию').first.click()
-        page.locator('#source-session-delete-dialog').wait_for(state='visible')
-        assert page.locator('#source-session-delete-dialog input[type=radio]').count() == 0
+    def source_delete():
+        detail()
+        archive.locator('#detail').get_by_text('Опасная зона', exact=True).click()
+        archive.locator('#detail').get_by_role('button', name='Удалить исходные дорожки', exact=True).click()
+        archive.locator('#delete-dialog').wait_for(state='visible')
 
     def wait_held():
         end = time.monotonic()+15
@@ -130,8 +137,9 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
 
     def deletion_during_preparation(kind):
         command('reset')
-        page.goto(base_url.rstrip('/')+'/Audio-Archive.html')
-        page.goto(base_url.rstrip('/')+'/Audio-Editor.html#review-preparation')
+        page.goto(base_url.rstrip('/')+f'/Audio-Editor.html?review={kind}#review-preparation')
+        if not page.locator('#import-zone').evaluate('e=>e.open'):
+            page.locator('#import-zone > summary').click()
         page.locator('#source-session-mode-archive').click()
         row=page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]')
         row.get_by_role('button', name='Открыть финальную обработку спикерской').click()
@@ -142,20 +150,17 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         }""")
         assert page.locator('#speaker-editor-render').is_disabled()
         before=len(trace)
-        if kind != 'series': output_delete()
-        else:
-            source_menu().get_by_role('button', name='Удалить всю серию «Спикерская»', exact=True).click()
-            page.locator('#source-session-delete-dialog').wait_for(state='visible')
-        page.locator('#source-session-delete-submit').click()
-        page.locator('#source-session-delete-dialog').wait_for(state='hidden')
+        output_delete(series=kind == 'series')
+        archive.locator('#delete-submit').click()
+        archive.locator('#delete-dialog').wait_for(state='hidden')
         canonical=command('snapshot')['primary']
         assert canonical['revision'] > primary['revision']
         assert canonical['sourceTracks'] == primary['sourceTracks']
         assert len(canonical['workflows']['speaker']['outputs']) == (len(primary['workflows']['speaker']['outputs'])-1 if kind!='series' else 0)
-        assert page.evaluate("""async revision => {
+        assert page.evaluate("""async canonical => {
           const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
-          return reviewPreparationPending && !s.ready && s.session.revision===revision;
-        }""", canonical['revision'])
+          return reviewPreparationPending && !s.ready && s.session.id===canonical.id && s.session.revision<canonical.revision;
+        }""", canonical)
         shot('preparation-'+kind+'-deleted', '#speaker-editor')
         if kind == 'decoder-failure':
             fault['wasm']=True; page.evaluate('window.reviewRejectDecode=true')
@@ -174,7 +179,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             files:s.files.length===old.files.length && s.files.every((f,i)=>f===old.files[i]),session:s.session};
         }""")
         assert all(retained[key] for key in ('ready','epoch','payload','files')), retained
-        assert retained['session']==canonical, retained
+        assert retained['session']['id'] == canonical['id'] and retained['session']['revision'] < canonical['revision'], retained
         # Metadata refresh cannot roll revision back or replace source/track identity.
         assert page.evaluate("""async () => {
           const editor=await import('./scripts/speaker-editor.mjs'), original=editor.getSpeakerSaveState();
@@ -192,7 +197,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         assert len(writes)==1 and writes[0][0]=='POST' and writes[0][1].endswith('/delete'), writes
         assert page.locator('#speaker-editor-source-retry').is_hidden()
         shot('preparation-'+kind+'-ready', '#speaker-editor')
-        print(f'PR36 preparation/{kind}: actual decode held; visible deletion succeeded; exact Files/order/payload/epoch and latest canonical revision retained; ready with one delete write.', flush=True)
+        print(f'PR36 preparation/{kind}: actual decode held; Archive deletion succeeded; exact Files/order/payload/epoch retained in Editor while canonical revision advanced; ready with one delete write.', flush=True)
 
     # Hold only the first real native decode completion, not gateway responses or editor state.
     page.add_init_script("""(() => {
@@ -211,148 +216,157 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
     })();""")
 
     try:
-        for kind in ('version','series','decoder-failure'): deletion_during_preparation(kind)
+        for kind in ('version', 'series', 'decoder-failure'):
+            deletion_during_preparation(kind)
+
         command('reset')
-        page.goto(base_url.rstrip('/')+'/Audio-Archive.html'); ready()
         detail()
-        assert page.locator('#detail-body').get_by_role('link', name='Продолжить обработку').count() == 1
+        assert archive.locator('#detail-body').get_by_role('link', name='Продолжить обработку').count() == 1
         for mode in ('failed', 'unsupported'):
             fault['draft'] = mode
-            # Detail must read the current draft, never reuse the old successful list projection.
+            # Detail must read the current draft and must never offer a destructive
+            # replacement path when the saved project cannot be validated.
             detail()
-            assert page.locator('#detail-body').get_by_role('link', name='Продолжить обработку').count() == 0
-            assert 'Последнее сохранение' not in page.locator('#detail-body').inner_text()
-            page.locator('#refresh').click(); ready()
-            row = page.locator('#session-list .archive-card').filter(has_text=primary['title'])
-            assert 'Сохранён проект' not in row.inner_text()
-            assert 'Проект не проверен' in row.inner_text()
-            assert page.locator('#project-list').get_by_role('link', name='Продолжить обработку').count()==0
-            shot('project-'+mode, '#records')
-        fault['draft'] = None; page.locator('#refresh').click(); ready()
+            body = archive.locator('#detail-body')
+            assert body.get_by_role('link', name='Продолжить обработку').count() == 0
+            assert 'сохранённый проект не прошёл проверку' in body.inner_text()
+            archive.goto(base_url.rstrip('/') + '/Audio-Archive.html'); ready()
+            row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
+            assert 'Сохранённый проект недоступен' in row.inner_text()
+            assert row.get_by_role('button', name='Открыть запись', exact=True).count() == 1
+            shot('project-' + mode, '#records', archive)
+        fault['draft'] = None
+
+        # The replacement archive model is one compact recordings list leading to
+        # a dedicated recording screen; both surfaces remain usable at all widths.
         for width in (320, 390, 768, 1280):
-            page.set_viewport_size({'width':width,'height':900})
-            row = page.locator('#session-list .archive-card').filter(has_text=primary['title'])
-            summary = row.locator('.audio-actions > summary'); summary.focus(); page.keyboard.press('Enter')
-            page.keyboard.press('Tab')
-            assert row.get_by_role('button', name='Сведения о записи').evaluate('e=>e===document.activeElement')
-            assert row.locator('.audio-actions').evaluate('e=>e.open')
-            assert page.evaluate('document.documentElement.scrollWidth<=innerWidth')
-            if width >= 768:
-                popup = row.locator('.audio-actions__items')
-                page.wait_for_function("""() => [...document.querySelectorAll('.audio-actions[open] .audio-actions__items')]
-                    .every(e => typeof e.showPopover !== 'function' || e.matches(':popover-open'))""")
-                assert popup.evaluate("""e => { const r=e.getBoundingClientRect();
-                    const top=document.elementFromPoint(r.x+r.width/2,r.y+Math.min(20,r.height/2));
-                    return r.x>=0 && r.y>=0 && r.right<=innerWidth && r.bottom<=innerHeight && e.contains(top); }""")
-            shot(f'library-menu-{width}', '#records')
-            page.keyboard.press('Escape')
-            assert summary.evaluate('e=>e===document.activeElement')
-            assert not row.locator('.audio-actions').evaluate('e=>e.open')
-            if width==1280: assert row.bounding_box()['height'] < 150, row.bounding_box()
-            shot(f'library-projects-{width}', '#projects')
-            shot(f'library-results-{width}', '#results')
-        # Opening a still-focused summary after it scrolls outside the viewport
-        # must reveal the anchor and preserve keyboard entry into the menu.
-        summary.focus()
-        summary.evaluate('e=>scrollBy(0,e.getBoundingClientRect().bottom+10)')
-        assert summary.bounding_box()['y'] < 0
-        page.keyboard.press('Enter');page.keyboard.press('Tab')
-        row.get_by_role('button', name='Сведения о записи').wait_for(state='visible')
-        assert row.get_by_role('button', name='Сведения о записи').evaluate('e=>e===document.activeElement')
-        page.wait_for_function("""() => {const e=document.querySelector('.audio-actions[open] .audio-actions__items');
-            if(!e?.matches(':popover-open')) return false;const r=e.getBoundingClientRect();
-            return r.top>=0&&r.bottom<=innerHeight;}""")
-        if output: page.screenshot(path=str(output/'library-menu-offscreen-focus.png'))
-        page.keyboard.press('Escape')
-        assert summary.evaluate('e=>e===document.activeElement')
-        # A short viewport forces edge placement; resizing an open desktop
-        # popover must restore the mobile in-flow menu, then the top layer.
-        page.set_viewport_size({'width':1280,'height':450})
-        summary.evaluate("e=>e.scrollIntoView({block:'end'})")
-        summary.click()
-        popup = row.locator('.audio-actions__items')
-        for width in (1280,390,768):
-            page.set_viewport_size({'width':width,'height':450})
-            if width >= 768:
-                page.wait_for_function("""() => {const e=document.querySelector('.audio-actions[open] .audio-actions__items');
-                    if(!e || !e.matches(':popover-open')) return false;
-                    const r=e.getBoundingClientRect();return r.x>=0&&r.y>=0&&r.right<=innerWidth&&r.bottom<=innerHeight;}""")
-            else:
-                page.wait_for_function("!document.querySelector('.audio-actions[open] .audio-actions__items').hasAttribute('popover')")
-            if output: page.screenshot(path=str(output/f'library-menu-short-{width}.png'))
-        page.keyboard.press('Escape')
-        assert summary.evaluate('e=>e===document.activeElement')
-        summary.click();page.locator('h1').click()
-        assert not row.locator('.audio-actions').evaluate('e=>e.open')
-        page.set_viewport_size({'width':1280,'height':900})
-        detail()
-        page.locator('#detail').get_by_role('button', name='Удалить всю серию «Для анонс-мейкера»').click()
-        page.locator('#delete-dialog').wait_for(state='visible'); fault['preview']=True; before=len(trace)
-        page.locator('#delete-submit').click()
-        page.wait_for_function("document.getElementById('delete-status').textContent.includes('Результат не подтверждён')")
-        assert not [(m,p) for m,p in trace[before:] if m=='POST' and p.endswith('/delete')]
-        assert page.locator('#delete-submit').is_disabled()
-        fault['preview']=False; page.locator('#delete-cancel').click()
-        detail(); page.locator('#detail').get_by_role('button', name='Удалить всю серию «Для анонс-мейкера»').click()
-        page.locator('#delete-dialog').wait_for(state='visible'); fault['unauthorized']=True
-        page.locator('#delete-submit').click()
-        page.wait_for_function("document.getElementById('status').textContent.includes('Подключение к аудиоархиву истекло')")
-        assert page.locator('#delete-dialog').is_hidden()
-        assert page.locator('#login').is_visible() and page.locator('#refresh').is_disabled()
-        assert page.locator('#project-list').inner_text()=='Проекты не загружены.'
-        print('Corrective library: fresh supported draft only, honest failure states, compact rows, keyboard/touch menus, fresh deletion dependencies and auth consent at four widths passed.', flush=True)
+            archive.set_viewport_size({'width': width, 'height': 900})
+            archive.goto(base_url.rstrip('/') + '/Audio-Archive.html'); ready()
+            row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
+            assert archive.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            if width == 1280:
+                assert row.bounding_box()['height'] < 220, row.bounding_box()
+            open_button = row.get_by_role('button', name='Открыть запись', exact=True)
+            open_button.focus()
+            assert open_button.evaluate('e=>e===document.activeElement')
+            open_button.click()
+            archive.locator('#metadata-title').wait_for()
+            assert archive.locator('#archive-index').is_hidden()
+            assert archive.locator('#detail').is_visible()
+            assert archive.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            assert archive.locator('#detail-body .workflow-announcement').is_visible()
+            assert archive.locator('#detail-body .workflow-speaker').is_visible()
+            shot(f'record-detail-{width}', '#detail', archive)
+            archive.locator('#detail-close').click()
+            assert archive.locator('#archive-index').is_visible()
+            assert archive.locator('#detail').is_hidden()
+            assert 'session=' not in archive.url
 
-        page.set_viewport_size({'width':390,'height':900}); open_editor(); preserved()
-        output_delete(); shot('version-target', '#source-session-delete-dialog')
-        page.locator('#source-session-delete-submit').click()
-        page.locator('#source-session-delete-dialog').wait_for(state='hidden'); preserved()
-        assert len(command('snapshot')['primary']['workflows']['speaker']['outputs']) == len(primary['workflows']['speaker']['outputs'])-1
-        assert page.locator('#speaker-editor-status').get_attribute('data-dirty')=='true'
-        # Source deletion must first protect current unsaved work. Cancel means no write/teardown.
-        before=len(trace); source_menu().get_by_role('button', name='Удалить исходники', exact=True).click()
-        page.locator('#speaker-unsaved-dialog').wait_for(state='visible'); shot('source-unsaved', '#speaker-unsaved-dialog')
-        page.locator('#speaker-unsaved-cancel').click(); preserved()
-        assert all(method=='GET' for method,_ in trace[before:])
-        # Explicit discard permits preview, not a stale mutation after another writer advances revision.
-        source_menu().get_by_role('button', name='Удалить исходники', exact=True).click()
-        page.locator('#speaker-unsaved-discard').click(); page.locator('#source-session-delete-dialog').wait_for(state='visible')
-        command('conflict', id=primary['id']); before=len(trace)
-        page.locator('#source-session-delete-confirmation').fill('Удалить исходники, сохранить результаты')
-        page.locator('#source-session-delete-submit').click()
-        page.wait_for_function("document.getElementById('source-session-delete-status').textContent.includes('изменились')")
-        assert page.locator('#source-session-delete-submit').is_disabled(); preserved()
-        assert all(method=='GET' for method,_ in trace[before:])
-        shot('stale-deletion', '#source-session-delete-dialog'); page.locator('#source-session-delete-cancel').click()
+        archive.set_viewport_size({'width': 1280, 'height': 900})
+        # A fresh dependency mismatch must reject deletion before the write.
+        output_delete(series=True, workflow='announcement')
+        fault['preview'] = True
+        before = len(trace)
+        archive.locator('#delete-submit').click()
+        archive.wait_for_function("document.getElementById('delete-status').textContent.includes('Результат не подтверждён')")
+        assert not [(method, path) for method, path in trace[before:] if method == 'POST' and path.endswith('/delete')]
+        assert archive.locator('#delete-submit').is_disabled()
+        fault['preview'] = False
+        archive.locator('#delete-cancel').click()
 
-        command('reset'); open_editor(); output_delete(); fault['unauthorized']=True
-        page.locator('#source-session-delete-submit').click()
-        page.wait_for_function("document.getElementById('source-session-delete-status').textContent.includes('Подключение')")
-        preserved(); assert page.locator('#source-session-delete-submit').is_disabled()
-        before=len(trace); page.locator('#source-session-delete-cancel').click()
-        page.locator('#archive-reconnect-login').click(); page.locator('#source-session-password').fill('local-test-password')
-        page.locator('#source-session-login-form button[type=submit]').click()
-        page.locator('#source-session-login-dialog').wait_for(state='hidden'); preserved()
-        assert page.locator('#archive-reconnect-retry').is_hidden(), 'Destructive consent became a retry action'
-        assert not [(m,p) for m,p in trace[before:] if m=='POST' and p.endswith('/delete')]
-        # Unknown data never turns into a confirmed empty archive.
-        fault['list']=True
-        if not page.locator('#import-zone').evaluate('e=>e.open'): page.locator('#import-zone > summary').click()
+        # Expired authorization clears the detail and destructive consent; it does
+        # not silently retry the write after reconnecting.
+        output_delete(series=True, workflow='announcement')
+        fault['unauthorized'] = True
+        before = len(trace)
+        archive.locator('#delete-submit').click()
+        archive.wait_for_function("document.getElementById('status').textContent.includes('Подключение к аудиоархиву истекло')")
+        assert archive.locator('#delete-dialog').is_hidden()
+        assert archive.locator('#login').is_visible() and archive.locator('#refresh').is_disabled()
+        assert archive.locator('#matching').inner_text() == 'Список записей не загружен.'
+        archive.locator('#login').click()
+        archive.locator('#password').fill('local-test-password')
+        archive.locator('#login-form button[type=submit]').click()
+        archive.locator('#login-dialog').wait_for(state='hidden')
+        ready()
+        assert len([(method, path) for method, path in trace[before:] if method == 'POST' and path.endswith('/delete')]) == 1
+        print('Corrective archive: only validated projects can continue; list/detail navigation, responsive layout, fresh deletion dependencies and expired consent passed.', flush=True)
+
+        page.set_viewport_size({'width': 390, 'height': 900})
+        command('reset')
+        open_editor()
+        preserved()
+
+        # Version removal now belongs to the recording detail in the archive. An
+        # already-open Editor keeps its exact local Files, recipe, epoch and Blob.
+        output_delete()
+        shot('version-target', '#delete-dialog', archive)
+        archive.locator('#delete-submit').click()
+        archive.locator('#delete-dialog').wait_for(state='hidden')
+        preserved()
+        assert len(command('snapshot')['primary']['workflows']['speaker']['outputs']) == len(primary['workflows']['speaker']['outputs']) - 1
+        assert page.locator('#speaker-editor-status').get_attribute('data-dirty') == 'true'
+
+        # Cancelling source removal from the Archive performs no write and cannot
+        # disturb unsaved montage work in the separate Editor screen.
+        before = len(trace)
+        source_delete()
+        shot('source-delete', '#delete-dialog', archive)
+        archive.locator('#delete-cancel').click()
+        preserved()
+        assert all(method == 'GET' for method, _ in trace[before:])
+
+        # A concurrent revision change invalidates the freshly reviewed target.
+        source_delete()
+        command('conflict', id=primary['id'])
+        before = len(trace)
+        archive.locator('#delete-submit').click()
+        archive.wait_for_function("document.getElementById('delete-status').textContent.includes('изменились')")
+        assert archive.locator('#delete-submit').is_disabled()
+        preserved()
+        assert all(method == 'GET' for method, _ in trace[before:])
+        shot('stale-deletion', '#delete-dialog', archive)
+        archive.locator('#delete-cancel').click()
+
+        command('reset')
+        open_editor()
+        output_delete()
+        fault['unauthorized'] = True
+        archive.locator('#delete-submit').click()
+        archive.wait_for_function("document.getElementById('status').textContent.includes('Подключение')")
+        preserved()
+        assert archive.locator('#delete-dialog').is_hidden()
+        before = len(trace)
+        archive.locator('#login').click()
+        archive.locator('#password').fill('local-test-password')
+        archive.locator('#login-form button[type=submit]').click()
+        archive.locator('#login-dialog').wait_for(state='hidden')
+        ready()
+        preserved()
+        assert not [(method, path) for method, path in trace[before:] if method == 'POST' and path.endswith('/delete')]
+
+        # Unknown list data remains unknown in Editor and is never presented as a
+        # confirmed empty result set for the current recording.
+        fault['list'] = True
+        if not page.locator('#import-zone').evaluate('e=>e.open'):
+            page.locator('#import-zone > summary').click()
         page.locator('#source-session-refresh').click()
         page.wait_for_function("document.getElementById('source-session-status').textContent.includes('временно недоступен')")
-        assert page.locator('#source-session-results-speaker-count').inner_text()=='—'
+        assert page.locator('#source-session-results-speaker-count').inner_text() == '—'
         assert 'Результаты не загружены' in page.locator('#source-session-results-speaker-list').inner_text()
-        preserved(); shot('unknown-counts', '#source-session-results')
-        fault['list']=False
-        print('Corrective deletion: concrete target, retained montage/File/Blob after version removal, source unsaved protection, stale revision and expired-consent rejection passed.', flush=True)
+        preserved()
+        shot('unknown-counts', '#source-session-results')
+        fault['list'] = False
+        print('Corrective deletion: Archive owns destructive actions; current Editor work survives version/source removal, stale revision and reconnect paths.', flush=True)
 
-        # Hold a successful destructive response, then open new work through the editor API.
-        # This models an independent local-source intent arriving during the request.
-        command('reset'); open_editor()
-        source_menu().get_by_role('button', name='Удалить исходники', exact=True).click()
-        page.locator('#speaker-unsaved-discard').click(); page.locator('#source-session-delete-dialog').wait_for(state='visible')
-        page.locator('#source-session-delete-confirmation').fill('Удалить исходники, сохранить результаты')
-        fault['hold'] = lambda method,path: method=='POST' and path.endswith('/delete')
-        page.locator('#source-session-delete-submit').click(); wait_held()
+        # A delayed Archive deletion response cannot close newer local work opened
+        # through the Editor API in the other page.
+        command('reset')
+        open_editor()
+        source_delete()
+        fault['hold'] = lambda method, path: method == 'POST' and path.endswith('/delete')
+        archive.locator('#delete-submit').click()
+        wait_held()
         await_new = page.evaluate("""async () => {
           const editor=await import('./scripts/speaker-editor.mjs'), {localSourceContext}=await import('./scripts/audio-project.mjs');
           const files=editor.getSpeakerSaveState().files;
@@ -360,7 +374,8 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
           await editor.openSpeakerEditor({session:localSourceContext(files),files});
           const s=editor.getSpeakerSaveState(); window.newWork=s; return s.sourceEpoch;
         }""")
-        fulfill(*held.pop()); page.locator('#source-session-delete-dialog').wait_for(state='hidden')
+        fulfill(*held.pop())
+        archive.locator('#delete-dialog').wait_for(state='hidden')
         assert page.evaluate("""async epoch => {
           const s=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
           return s.ready && s.sourceEpoch===epoch && s.files.every((f,i)=>f===newWork.files[i]);
@@ -368,6 +383,6 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         assert page.locator('#speaker-editor').is_visible()
         assert not errors, errors
         assert not blocked, blocked
-        print('Corrective epochs: delayed source deletion cannot close a newer local project; no outbound archive access.', flush=True)
+        print('Corrective epochs: delayed Archive source deletion cannot close newer local Editor work; no outbound archive access.', flush=True)
     finally:
         context.close(); bridge.terminate(); bridge.wait(timeout=5)
