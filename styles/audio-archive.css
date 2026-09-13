@@ -99,7 +99,7 @@
 #maintenance { margin-top: 2rem; border-top: 1px solid #cbd6df; padding-top: .5rem; }
 #maintenance > summary { font-weight: 700; }
 [hidden] { display: none !important; }
-dialog { box-sizing: border-box; width: min(620px, calc(100% - 24px)); max-height: calc(100dvh - 24px); overflow-y: auto; border: 1px solid #698099; border-radius: 12px; padding: 1.3rem; color: #20364a; }
+dialog { box-sizing: border-box; width: min(620px, calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: calc(100dvh - 24px); overflow: hidden auto; border: 1px solid #698099; border-radius: 12px; padding: 1.3rem; color: #20364a; }
 dialog::backdrop { background: #102b46a6; }
 
 @media (max-width: 767px) {

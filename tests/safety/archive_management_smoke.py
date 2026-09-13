@@ -150,7 +150,14 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         assert page.locator('.version-history').get_attribute('open') is None
 
     def no_overflow():
-        assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), page.viewport_size
+        overflow = page.evaluate("""() => [...document.querySelectorAll('main, main *, dialog[open], dialog[open] *')]
+            .filter(element => {
+                const style = getComputedStyle(element), box = element.getBoundingClientRect();
+                return style.display !== 'none' && style.visibility !== 'hidden' && box.width > 0 && box.height > 0 &&
+                    (box.left < -0.5 || box.right > innerWidth + 0.5);
+            }).map(element => ({tag: element.tagName, id: element.id, className: element.className,
+                left: element.getBoundingClientRect().left, right: element.getBoundingClientRect().right}))""")
+        assert not overflow, {'viewport': page.viewport_size, 'overflow': overflow}
         assert page.locator('main').count() == 1
         for control in page.locator('button, input, select').all():
             if control.is_visible():
