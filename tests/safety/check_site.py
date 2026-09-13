@@ -712,6 +712,20 @@ def is_release_asset_url(value: object) -> bool:
     )
 
 
+def check_audio_archive_header_contract(errors: list[str]) -> None:
+    page = ROOT / "Audio-Archive.html"
+    if not page.is_file():
+        errors.append("Audio-Archive.html is missing")
+        return
+    parser = parse_page(page)
+    for class_name, href in (("site-header__logo", "./"), ("site-header__identity", "./"), ("service-link", "Admin-panel.html")):
+        if not any(tag == "a" and class_name in (attrs.get("class") or "").split() and attrs.get("href") == href for tag, attrs in parser.start_tags):
+            errors.append(f"Audio-Archive.html: canonical {class_name} link is missing")
+    source = page.read_text(encoding="utf-8", errors="replace")
+    if '<a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>' not in source:
+        errors.append("Audio-Archive.html: canonical service-link markup is missing")
+
+
 def check_audio_editor_contract(errors: list[str]) -> None:
     page = ROOT / "Audio-Editor.html"
     manifest_path = ROOT / "data" / "edited-audio.json"
@@ -1152,6 +1166,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_calendar_contract(errors)
     check_google_drive_contract(errors)
     check_admin_access_contract(errors)
+    check_audio_archive_header_contract(errors)
     check_audio_editor_contract(errors)
     check_audio_processor_contract(errors)
     check_audio_archive_foundation_contract(errors)

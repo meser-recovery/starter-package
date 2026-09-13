@@ -20,7 +20,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 from playwright.sync_api import Error, sync_playwright
-from archive_management_smoke import check_archive_management
+from archive_management_smoke import assert_shared_audio_header, check_archive_management
 from archive_management_cors_regression import check_archive_management_cors
 
 
@@ -1649,6 +1649,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         if screenshot_dir:
             for width in (320, 390, 768, 1280):
                 page.set_viewport_size({"width": width, "height": 900})
+                assert_shared_audio_header(page, width, 'Audio-Editor')
                 page.evaluate("document.activeElement?.blur(); scrollTo(0, 0)")
                 page.screenshot(path=str(screenshot_dir / f"editor-initial-{width}.png"), full_page=True)
         page.locator("#source-session-mode-archive").click()

@@ -9,6 +9,25 @@ from urllib.parse import urlparse
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def assert_shared_audio_header(page, width, surface):
+    header = page.locator('.site-header__content')
+    logo = header.locator('a.site-header__logo[href="./"]')
+    identity = header.locator('a.site-header__identity[href="./"]')
+    service = header.locator('a.service-link[href="Admin-panel.html"]')
+    assert logo.count() == identity.count() == service.count() == 1, f'{surface}: canonical header links missing'
+    assert service.locator(':scope > span').all_text_contents() == ['Для', 'служащих'], f'{surface}: service-link markup differs'
+    boxes = {name: locator.bounding_box() for name, locator in [('header', header), ('logo', logo), ('identity', identity), ('service', service)]}
+    assert all(boxes.values()), {surface: boxes, 'width': width}
+    assert abs((boxes['identity']['x'] + boxes['identity']['width'] / 2) - width / 2) <= 1, {surface: boxes, 'width': width}
+    assert boxes['header']['x'] >= -0.5 and boxes['header']['x'] + boxes['header']['width'] <= width + 0.5, {surface: boxes, 'width': width}
+    for left, right in (('logo', 'identity'), ('identity', 'service')):
+        assert boxes[left]['x'] + boxes[left]['width'] <= boxes[right]['x'], {surface: boxes, 'width': width, 'collision': [left, right]}
+    for name in ('logo', 'identity', 'service'):
+        box = boxes[name]
+        assert box['x'] >= boxes['header']['x'] - 0.5 and box['x'] + box['width'] <= boxes['header']['x'] + boxes['header']['width'] + 0.5, {surface: boxes, 'width': width, 'outside': name}
+    return boxes
+
+
 def check_archive_management(browser, base_url, screenshot_dir=None):
     base_url = base_url.rstrip('/')  # Retain the site mount when building page URLs.
     parsed_site = urlparse(base_url)
@@ -170,6 +189,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         assert page.locator('#session-list .archive-card').count() == 0
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width': width, 'height': 900})
+            assert_shared_audio_header(page, width, 'Audio-Archive')
             shot(f'archive-initial-{width}')
         page.locator('#record-picker-open').click()
         assert page.locator('#session-list .archive-card').count() == 0
