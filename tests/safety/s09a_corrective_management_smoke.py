@@ -69,6 +69,19 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
     output = Path(screenshot_dir)/'s09a-corrective-management' if screenshot_dir else None
     if output: output.mkdir(parents=True, exist_ok=True)
 
+    def assert_no_visible_overflow(target):
+        offenders = target.evaluate("""() => [...document.querySelectorAll('body *')].map(element => {
+            const rect = element.getBoundingClientRect();
+            return {element, tag: element.tagName, id: element.id, className: typeof element.className === 'string' ? element.className : '', left: rect.left, right: rect.right};
+        }).filter(item => {
+            if (item.left >= -0.5 && item.right <= innerWidth + 0.5) return false;
+            for (let ancestor = item.element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+                if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(ancestor).overflowX)) return false;
+            }
+            return true;
+        }).slice(0, 12).map(({element, ...item}) => item)""")
+        assert not offenders, {'viewport': target.viewport_size, 'offenders': offenders}
+
     def shot(name, selector=None, target=None):
         target = target or page
         if output:
@@ -80,7 +93,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
                 previous=target.viewport_size
                 for width in (320,390,768,1280):
                     target.set_viewport_size({'width':width,'height':900})
-                    assert target.evaluate('document.documentElement.scrollWidth<=innerWidth')
+                    assert_no_visible_overflow(target)
                     target.locator(selector).screenshot(path=str(output/(name+f'-{width}.png')))
                 target.set_viewport_size(previous)
 
@@ -251,7 +264,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             archive.locator('#record-picker-open').click()
             archive.locator('#record-picker-recent').click()
             row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
-            assert archive.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            assert_no_visible_overflow(archive)
             if width == 1280:
                 assert row.bounding_box()['height'] < 220, row.bounding_box()
             open_button = row.get_by_role('button', name='Открыть запись', exact=True)
@@ -261,7 +274,7 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             archive.locator('#detail-title').wait_for()
             assert archive.locator('#archive-index').is_hidden()
             assert archive.locator('#detail').is_visible()
-            assert archive.evaluate('document.documentElement.scrollWidth<=innerWidth')
+            assert_no_visible_overflow(archive)
             assert archive.locator('#detail-body .ready-results').is_visible()
             assert archive.locator('#detail-body .version-history').get_attribute('open') is None
             shot(f'record-detail-{width}', '#detail', archive)
