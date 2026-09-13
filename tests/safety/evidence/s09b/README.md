@@ -1,9 +1,9 @@
 # S09B progressive-disclosure GUI evidence
 
-Implementation target: `cfa39406f04c18e681fb7c5b2d09faf6be92c5c3` on branch
+Implementation target: `6c66ff505df4eb612c230e4c9cf761cf89e19913` on branch
 `codex/s09b-unified-zoom-recording-ux`.
 
-The directory contains 111 real Chromium PNG captures generated from that implementation.
+The directory contains 120 real Chromium PNG captures generated from that implementation.
 The fixture uses generated audio and the real frontend client/gateway/domain over
 `MemoryRepository`; production gateway and GitHub archive destinations are blocked.
 The full browser suite passed at 320/390/768/1280 px, and the representative states
@@ -13,15 +13,18 @@ order and the Archive/Editor ownership boundary.
 ## Progressive entry and chooser
 
 - `archive-initial-{320,390,768,1280}.png` and `editor-initial-{320,390,768,1280}.png` — canonical shared header; browser assertions verify the exact service-link structure/destination, centered identity, left-to-right separation and no collisions at every width.
-- `archive-initial-{320,390,768,1280}.png` — Archive entry without a selected record or collection DOM.
+- `archive-initial-{320,390,768,1280}.png` — full Archive entry without a selected record or collection DOM; the primary selection action precedes compact connection controls and the content surface ends with its content instead of filling the page.
+- `archive-chooser-full-{320,390,768,1280}.png` — full Archive page with the chooser open before a request, including the shared canvas and footer.
 - `chooser-before-request-{320,390,768,1280}.png` — Archive chooser before an explicit search.
+- `archive-connection-error-390.png` — visible connection failure treatment inside the compact secondary connection group.
 - `chooser-results-1000-{390,1280}.png` — first 10 rows and explicit pagination for the 1,000-record browser fixture; the test traverses all 100 pages without gaps or duplicates.
 - `editor-initial-{320,390,768,1280}.png` — compact Editor entry and current-record card.
 - `editor-chooser-before-request-{320,390,768,1280}.png` and `s08b-archive-overview-{390,1280}.png` — Editor chooser before and after an explicit request.
 
 ## Selected record and preserved functions
 
-- `detail-{320,390,768,1280}.png` and `archive-intent-detail-390.png` — one selected record, latest ready result per workflow and the on-demand full histories/management.
+- `archive-selected-{320,390,768,1280}.png` — full page for one selected record with compact identity, latest ready result per workflow, collapsed secondary sections and shared footer.
+- `detail-{320,390,768,1280}.png` and `archive-intent-detail-390.png` — selected-record detail with the on-demand full histories/management.
 - `s08b-selected-work-{390,1280}.png`, `s08b-local-result-{390,1280}.png` — Announcement workspace and local result.
 - `s08c-speaker-opened-{390,1280}.png`, `s08c-local-result-{390,1280}.png` — Speaker workspace and local result.
 - `verified-{announcement,speaker}-390.png` — verified playback/download for the two distinct histories.
