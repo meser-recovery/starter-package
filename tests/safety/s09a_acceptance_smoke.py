@@ -234,22 +234,26 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
                 assert page.locator('#login').is_visible()
                 assert page.locator('#logout').is_hidden()
                 assert page.locator('#refresh').is_disabled()
-                assert 'Проекты не загружены.' in page.locator('#project-list').inner_text()
+                assert page.locator('#matching').inner_text() == 'Список записей не загружен.'
+                assert page.locator('#session-list .archive-card').count() == 0
                 assert 'Данные загружены' not in page.locator('#status').inner_text()
                 shot(f'archive-project-{status}-reconnect')
                 login(False)
                 page.wait_for_function("document.getElementById('status').textContent.includes('Данные загружены')")
-                assert primary['title'] in page.locator('#project-list').inner_text()
+                primary_row = page.locator(f'#session-list [data-session-id="{primary["id"]}"]')
+                assert primary['title'] in primary_row.inner_text()
+                assert 'Проект спикерской сохранён' in primary_row.inner_text()
                 assert page.locator('#login').is_hidden()
                 no_archive_writes(start)
             fault.update(status=None, hold=True, match=lambda p: p.endswith('/drafts/speaker'))
             page.locator('#refresh').click(); wait_held()
             page.locator('#logout').click()
-            page.wait_for_function("document.getElementById('status').textContent==='Архив отключён.'")
+            page.wait_for_function("document.getElementById('status').textContent==='Аудиоархив отключён.'")
             release(); page.wait_for_load_state('networkidle')
-            assert page.locator('#status').inner_text() == 'Архив отключён.'
-            assert page.locator('#project-list').inner_text() == 'Проекты не загружены.'
-            print('Acceptance P2: project-list 401+403 reconnect honestly; late draft response cannot restore logged-out state.', flush=True)
+            assert page.locator('#status').inner_text() == 'Аудиоархив отключён.'
+            assert page.locator('#matching').inner_text() == 'Список записей не загружен.'
+            assert page.locator('#session-list .archive-card').count() == 0
+            print('Acceptance P2: recording-list project state handles 401+403 honestly; late draft response cannot restore logged-out state.', flush=True)
         assert not errors, errors
         assert not blocked, blocked
     finally:

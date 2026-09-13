@@ -30,28 +30,28 @@
     <main id="main-content" class="audio-editor-main">
       <div class="container audio-editor-content">
         <h1>Редактирование аудио</h1><div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
-        <details open id="import-zone" class="archive-card source-session-card"><summary><h2 id="source-session-heading">Импорт исходных записей</h2><span id="import-summary">Выберите исходные дорожки</span></summary>
+        <details open id="import-zone" class="archive-card source-session-card"><summary><h2 id="source-session-heading">Выберите запись Zoom</h2><span id="import-summary">Запись не выбрана</span></summary>
           <div class="archive-card__heading">
-                        <p>Выберите одну или несколько исходных аудиодорожек участников.</p><p>Выбранные дорожки будут доступны для обработки в разделах «Редактирование для анонс-мейкера» и «Финальная обработка спикерской».</p><p>Сохранённые обработанные версии будут находиться в соответствующих разделах аудиоархива.</p><p><strong>Важно:</strong> все выбранные дорожки должны относиться к одной и той же исходной записи Zoom.</p>
+            <p>Откройте сохранённую запись или создайте новую из файлов на этом устройстве.</p><p><strong>Важно:</strong> все выбранные дорожки должны относиться к одной и той же записи Zoom.</p>
           </div>
-          <h3>Исходные поканальные записи</h3><div class="source-entry-modes" role="group" aria-label="Источник аудио">
-            <button id="source-session-mode-archive" type="button" aria-pressed="true">Из аудиоархива</button>
-            <button id="source-session-mode-device" type="button" aria-pressed="false">С устройства</button>
+          <div class="source-entry-modes" role="group" aria-label="Источник записи Zoom">
+            <button id="source-session-mode-archive" type="button" aria-pressed="true">Открыть запись из аудиоархива</button>
+            <button id="source-session-mode-device" type="button" aria-pressed="false">Новая запись с устройства</button>
           </div>
           <p id="source-session-status" class="archive-status" role="status">Подключение к архиву исходников…</p>
           <div id="source-session-archive-panel">
             <div class="source-session-toolbar">
-              <h3>Исходные записи в аудиоархиве</h3>
+              <h3>Записи, доступные для обработки</h3>
               <button id="source-session-refresh" type="button">Обновить</button>
 
               <button id="source-session-authenticate" type="button">Подключить архив</button>
             </div>
             <p id="source-session-session-status" class="source-session-session-status">Подключение к архиву проверяется…</p>
             <p id="source-session-count" class="archive-count" hidden></p>
-            <div id="source-session-list" class="source-session-list" aria-live="polite"></div><div id="source-session-recovery-list" aria-live="polite"></div>
+            <div id="source-session-list" class="source-session-list" aria-live="polite"></div><div id="source-session-recovery-list" hidden aria-live="polite"></div>
 
           </div>
-          <div id="source-session-device-panel" hidden><h3>С устройства</h3><div id="processor-device-field" class="processor-field">
+          <div id="source-session-device-panel" hidden><h3>Новая запись Zoom</h3><p>Только на этом устройстве, пока вы явно не сохраните её в аудиоархив.</p><div id="processor-device-field" class="processor-field">
             <label for="processor-file">Выберите аудиодорожки</label>
             <p id="processor-file-help">MP3, M4A или WAV. Общий размер всех файлов — не более 500 МБ. Результат — MP3, 128 кбит/с.</p>
             <input id="processor-file" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-describedby="processor-file-help processor-privacy">
@@ -60,9 +60,13 @@
 <input id="import-add-files" type="file" multiple accept=".mp3,.m4a,.wav" hidden>
 <ul id="import-files" aria-label="Выбранные файлы"></ul><div id="processor-device-ingest-actions" class="secondary-action-group">
               <p>Сохраните исходные дорожки, если хотите открыть их позже или использовать на другом устройстве. Для обработки только на этом устройстве это не требуется.</p>
-              <button id="processor-save-incoming" type="button" disabled>Сохранить исходные записи в аудиоархив</button>
+              <button id="processor-save-incoming" type="button" disabled>Сохранить запись Zoom в аудиоархив</button>
             </div></div>
         </details>
+        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading">
+          <div><p class="archive-eyebrow">Текущая запись Zoom</p><h2 id="current-recording-heading">Запись не выбрана</h2><p id="current-recording-state">Откройте запись из аудиоархива или выберите дорожки на устройстве.</p></div>
+          <a id="current-recording-archive-link" href="Audio-Archive.html" hidden>Открыть запись в аудиоархиве</a>
+        </section>
 
 
         <section class="editing-modes" aria-labelledby="editing-heading"><h2 id="editing-heading">Редактирование</h2><div class="mode-options">
@@ -246,13 +250,13 @@
             </div>
             <p id="source-session-publish-reason" class="archive-status">Сначала сохраните исходные записи в аудиоархив.</p>
           </div>
-        </section><section id="source-session-results" class="archive-card result-archive-card" aria-labelledby="source-session-results-heading">
+        </section><section id="source-session-results" class="archive-card result-archive-card" aria-labelledby="source-session-results-heading" hidden>
           <div class="archive-card__heading">
-            <p class="archive-eyebrow">Сохранённые результаты</p>
-            <h2 id="source-session-results-heading">Архив готовых записей</h2>
-            <p>Оба раздела используют одно защищённое хранилище, но результаты разных типов работы никогда не смешиваются.</p>
+            <p class="archive-eyebrow">Текущая запись Zoom</p>
+            <h2 id="source-session-results-heading">Сохранённые версии этой записи</h2>
+            <p>Показаны только версии текущей записи и открытого режима обработки. Управление всей историей находится в Аудиоархиве.</p>
           </div>
-          <div class="result-archive-navigation" role="group" aria-label="Раздел архива результатов">
+          <div class="result-archive-navigation" role="group" aria-label="Вид сохранённых версий" hidden>
             <button id="source-session-results-announcement" type="button" aria-pressed="true">
               <span>Для анонс-мейкера</span>
               <span id="source-session-results-announcement-count" class="result-archive-count">—</span>
@@ -265,15 +269,15 @@
           <p id="source-session-results-status" class="archive-status" role="status">Загрузка сохранённых результатов…</p>
           <section id="source-session-results-announcement-panel" class="result-archive-panel" aria-labelledby="source-session-results-announcement-heading">
             <div class="result-archive-panel__heading">
-              <h3 id="source-session-results-announcement-heading">Для анонс-мейкера</h3>
-              <p>Сохранённые версии записей, обработанных для анонс-мейкера.</p>
+              <h3 id="source-session-results-announcement-heading">Версии для анонс-мейкера</h3>
+              <p>Сохранённые версии текущей записи.</p>
             </div>
             <div id="source-session-results-announcement-list" class="result-archive-list" aria-live="polite"></div>
           </section>
           <section id="source-session-results-speaker-panel" class="result-archive-panel" aria-labelledby="source-session-results-speaker-heading" hidden>
             <div class="result-archive-panel__heading">
               <h3 id="source-session-results-speaker-heading">Финальные версии спикерских</h3>
-              <p>Сохранённые финальные версии спикерских записей.</p>
+              <p>Сохранённые финальные версии текущей записи.</p>
             </div>
             <div id="source-session-results-speaker-list" class="result-archive-list" aria-live="polite"></div>
           </section>
@@ -332,7 +336,7 @@
         </dialog>
         <dialog id="source-session-ingest-dialog" class="source-session-dialog" aria-labelledby="source-session-ingest-title">
           <form id="source-session-ingest-form" method="dialog">
-            <h2 id="source-session-ingest-title">Сохранить исходные записи в аудиоархив</h2>
+            <h2 id="source-session-ingest-title">Сохранить запись Zoom в аудиоархив</h2>
             <div id="source-session-ingest-files-field" class="processor-field">
               <label for="source-session-ingest-files">Синхронизированные аудиодорожки</label>
               <input id="source-session-ingest-files" type="file" multiple required accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav">
@@ -343,7 +347,7 @@
               <input id="source-session-ingest-name" type="text" required maxlength="200" autocomplete="off">
             </div>
             <div class="processor-field">
-              <label for="source-session-ingest-recorded">Дата и время записи (необязательно)</label>
+              <label for="source-session-ingest-recorded">Дата и время записи на этом устройстве (необязательно)</label>
               <input id="source-session-ingest-recorded" type="datetime-local">
             </div>
             <p id="source-session-ingest-status" role="status"></p>
@@ -414,7 +418,7 @@
         <button id="service-logout" class="service-logout" type="button">Выйти</button>
       </div>
     </main><dialog id="speaker-unsaved-dialog" aria-labelledby="speaker-unsaved-heading"><h2 id="speaker-unsaved-heading">В проекте есть несохранённые изменения.</h2><p id="speaker-unsaved-status" role="status"></p><div class="action-group"><button id="speaker-unsaved-save" type="button">Сохранить и продолжить</button><button id="speaker-unsaved-discard" type="button">Не сохранять</button><button id="speaker-unsaved-cancel" type="button">Отмена</button></div></dialog>
-<dialog id="speaker-local-save-dialog" aria-labelledby="speaker-local-save-heading"><h2 id="speaker-local-save-heading">Сохранить проект</h2><p>Эти дорожки находятся только на этом устройстве. Чтобы проект можно было открыть позже, исходники также нужно сохранить в аудиоархиве.</p><div class="action-group"><button id="speaker-local-save-confirm" type="button">Сохранить исходники и проект</button><button id="speaker-local-save-cancel" type="button">Отмена</button></div></dialog>
+<dialog id="speaker-local-save-dialog" aria-labelledby="speaker-local-save-heading"><h2 id="speaker-local-save-heading">Сохранить проект</h2><p>Эта запись пока существует только на этом устройстве. Чтобы проект можно было открыть позже, нужно сохранить исходные дорожки в аудиоархиве.</p><div class="action-group"><button id="speaker-local-save-confirm" type="button">Сохранить запись Zoom и проект</button><button id="speaker-local-save-cancel" type="button">Отмена</button></div></dialog>
     <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
   </body>
 </html>

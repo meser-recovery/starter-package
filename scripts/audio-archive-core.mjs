@@ -1,9 +1,10 @@
 import { isUuid, validateSessionManifest } from './audio-archive-client.mjs';
 
-export const workflows = Object.freeze({ announcement: 'Для анонс-мейкера', speaker: 'Финальные версии спикерских' });
+export const workflows = Object.freeze({ announcement: 'Анонс-мейкер', speaker: 'Спикерская' });
 export const statuses = Object.freeze({ new: 'Новая', in_progress: 'В работе', result_ready: 'Результат готов' });
-export const lifecycleLabel = session => session.lifecycle.state === 'incoming' ? 'Готова к обработке' : 'Убрана из рабочего списка';
-export const sourceLabel = session => session.sourceState === 'available' ? 'Исходники доступны' : 'Исходные дорожки недоступны';
+export const lifecycleLabel = session => session.lifecycle.state === 'incoming' ? 'В рабочем списке' : 'Убрана из рабочего списка';
+export const sourceLabel = session => session.sourceState === 'available' ? 'Исходники доступны' :
+  session.sourceState === 'deleted' ? 'Исходники удалены' : 'Исходники недоступны';
 export const eligible = session => session.lifecycle.state === 'incoming' && session.sourceState === 'available';
 const normalized = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
 const compareText = (a, b) => String(a).localeCompare(String(b), 'ru');
@@ -45,6 +46,9 @@ export function selectSessions(sessions, filters = {}, transactions = null) {
     if (filters.lifecycle && session.lifecycle.state !== filters.lifecycle) return false;
     if (filters.sources && (session.sourceState === 'available' ? 'available' : 'unavailable') !== filters.sources) return false;
     if (filters.attention && !attention.has(session.id)) return false;
+    if (filters.speakerProject && !session.workflows.speaker.currentDraft) return false;
+    if (filters.announcementResult && !session.workflows.announcement.outputs.length) return false;
+    if (filters.speakerResult && !session.workflows.speaker.outputs.length) return false;
     for (const workflow of Object.keys(workflows)) {
       const state = filters[workflow + 'State'], result = filters[workflow + 'Result'];
       if (state && session.workflows[workflow].status !== state) return false;
@@ -102,6 +106,14 @@ export function parseEditorIntent(search) {
   if (params.getAll('session').length !== 1 || params.getAll('workflow').length !== 1 ||
       !isUuid(params.get('session')) || !Object.hasOwn(workflows, params.get('workflow'))) throw new Error('Некорректная ссылка на обработку. Откройте запись из аудиоархива.');
   return { sessionId: params.get('session'), workflow: params.get('workflow') };
+}
+export function parseArchiveIntent(search) {
+  const params = new URLSearchParams(search);
+  if (!params.has('session')) return null;
+  if (params.getAll('session').length !== 1 || [...params.keys()].some(key => key !== 'session') || !isUuid(params.get('session'))) {
+    throw new Error('Некорректная ссылка на запись. Откройте запись из списка аудиоархива.');
+  }
+  return { sessionId: params.get('session') };
 }
 export function editorUrl(session, workflow) {
   if (!eligible(session) || !Object.hasOwn(workflows, workflow)) throw new Error('Для обработки нужны запись в рабочем списке и доступные исходники.');
