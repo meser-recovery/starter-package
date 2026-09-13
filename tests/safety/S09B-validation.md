@@ -3,9 +3,17 @@
 The recording-detail layout and primary scenario are refined by `S09B-archive-ux-amendment.md`.
 
 Implementation base: `70a9dfe7996d213ca57c5b897cb2d53419067e09` (`origin/main`).
-Implementation screenshot target: `27ac26176704effb1261e06944d71281fd181728`. Evidence-only HEAD may be later.
+Implementation screenshot target: `739e6b4b2b6b1b256796f5140bcd228f1350d0af`. Evidence-only HEAD may be later.
 
-The browser fixture uses `MemoryRepository`, generated audio and the real gateway/client/domain code through `archive_management_bridge.mjs`. Production gateway and GitHub archive traffic are blocked. The focused run observed 319 local gateway requests and no outbound archive access.
+The browser fixture uses `MemoryRepository`, generated audio and the real gateway/client/domain code through `archive_management_bridge.mjs`. Production gateway and GitHub archive traffic are blocked. The focused run observed 329 local gateway requests and no outbound archive access.
+
+## PR #40 delta-fix
+
+- The S09A failure came from replacing the Editor recovery path with an Archive-only marker: `resumeSpeakerIncomplete` still existed, but no user-visible Editor button invoked it. The test had consequently stopped exercising continuation and checked deletion instead. The button is contextual again for the current eligible recording and Speaker operation.
+- The restored regression holds the upload, proves one transaction GET/PUT despite a double click, compares the uploaded bytes with the original rendered Blob, checks the same transaction/blob IDs and reserved version, cancels, refreshes, retries the same operation, and separately covers candidate mismatch and already-complete finalization.
+- Archive now retains field-level title/date drafts through the output-metadata rerender and through `409 → Загрузить актуальные сведения`; the second save uses the fresh revision without replacing entered values.
+- Each recording detail has two independent version-sort controls with the prior `newest`, `oldest`, version ascending/descending and title choices.
+- `evidence/s09b/` contains 93 real Chromium PNG files captured at the implementation target; representative A–F states were visually inspected.
 
 ## Acceptance §54
 
@@ -32,7 +40,7 @@ The browser fixture uses `MemoryRepository`, generated audio and the real gatewa
 | 19 | Announcement processing remains local until explicit save. | Existing processor browser trace and gateway publication tests. |
 | 20 | Workspace activation keeps only one work surface active. | Existing Editor mode/transition tests. |
 | 21 | Current record card remains visible throughout work. | `#current-recording` is outside both workspaces. |
-| 22 | Editor versions filter by current record and active workflow. | `renderResultArchive` plus adapted browser counts. |
+| 22 | Editor versions filter by current record and active workflow. | `renderResultArchive` plus restored ownership/count/playback/download browser assertions. |
 | 23 | Version/series deletion is present in Archive detail only. | Archive deletion browser matrix; Editor has no delete button. |
 | 24 | Playback validates metadata, part order/size/hash and whole output. | Existing client/gateway integrity tests and corrupt-part browser case. |
 | 25 | Lifecycle calls the unchanged `archive`/`restore` client actions. | Archive lifecycle browser trace and gateway regression. |
@@ -97,8 +105,8 @@ Status: **I** implemented here, **P** preserved, **S** superseded definition/doc
 | 32 | I | Validated Archive → Editor intent. |
 | 33 | I | UUID-validated Editor → Archive detail intent. |
 | 34 | I | Removed/deleted explanations and no hidden restore. |
-| 35 | I | Title/date-only optimistic metadata editing with retained conflict form. |
-| 36 | I | Contextual canonical recovery matrix. |
+| 35 | I | Title/date-only optimistic metadata editing with field-level draft retention across late metadata and conflict reload. |
+| 36 | I | Contextual canonical recovery matrix plus exact-local-Blob Speaker continuation in Editor. |
 | 37 | I | Collapsed unassociated operations/observations/rebuild. |
 | 38 | I | Six contextual deletion targets. |
 | 39 | P | Source deletion retains independent results. |
@@ -131,6 +139,7 @@ Status: **I** implemented here, **P** preserved, **S** superseded definition/doc
 | Open source for work | Editor picker / detail contextual action | Editor intent tests |
 | Speaker project | Record detail + Speaker workspace | project projection/browser cases |
 | Announcement/Speaker outputs | Record detail; current record in Editor | ownership/count/playback tests |
+| Version sorting | Independent controls in each record-detail history | per-workflow control and order assertions |
 | Metadata/lifecycle | Record detail | conflict and transition tests |
 | Playback/download | Record detail/current versions | integrity/corruption tests |
 | Version/series deletion | Record detail workflow disclosure | all-target deletion matrix |
@@ -158,9 +167,10 @@ These are deterministic operator walkthrough observations, not a novice-user stu
 - `node --test tests/safety/*.test.mjs` — PASS, 46/46.
 - `node --check` for each changed MJS module — PASS.
 - `git diff --check` — PASS.
-- Focused S09B in-memory browser smoke — PASS at 320/390/768/1280; 319 local gateway requests; no outbound archive access. The run covers the separate record screen, both primary intents and return to the preserved list state.
+- Focused S09B in-memory browser smoke — PASS at 320/390/768/1280; 329 local gateway requests; no outbound archive access. The run covers the separate record screen, both primary intents, independent history sorts, retained metadata drafts and return to the preserved list state.
 - Root/subpath CORS browser regression — PASS with default Chromium web security.
-- Focused S09A replacement scenario — PASS. The former test clicked hidden legacy switch `#source-session-results-speaker`; the approved model now selects the saved-version panel from the currently open workflow. The replacement asserts that local-only work has no canonical history, results belong only to the current recording UUID, Announcement and Speaker histories remain separate, and verified playback/download are available from the active workflow.
+- Focused S09A Editor scenario — PASS. The approved saved-version panel still replaces the hidden legacy switch `#source-session-results-speaker`, while the original incomplete-Speaker continuation path is restored contextually. The scenario asserts current-record ownership, separation of Announcement and Speaker histories, playback/download, exact-Blob continuation, cancellation and same-transaction retry.
 - Corrective management scenario — PASS. Version/series/source deletion and contextual recovery now follow `Записи Zoom → Открыть запись`; an already-open Editor retains exact `File` objects, recipe, source epoch and result `Blob` across deletion, stale-revision and reconnect paths.
 - Project-validation regression — PASS. A saved Speaker draft that is unavailable or fails projection validation no longer exposes `Продолжить обработку`; the Archive explains that the project was not validated and will not be overwritten.
 - Full `browser_smoke.py` against a clean static test server — PASS: `Browser smoke suite passed.` The review preview is intentionally separate because it injects the local service-session marker for manual review.
+- Focused evidence runs — PASS at implementation SHA `739e6b4b2b6b1b256796f5140bcd228f1350d0af`; 93 PNG files committed under `evidence/s09b/` and representative A–F frames visually inspected.
