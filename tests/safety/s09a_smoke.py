@@ -86,6 +86,7 @@ def check_s09a(browser, base_url, screenshot_dir=None):
             offenders: [...document.querySelectorAll('body *')].map(element => {
                 const rect = element.getBoundingClientRect();
                 return {
+                    element,
                     tag: element.tagName,
                     id: element.id,
                     className: typeof element.className === 'string' ? element.className : '',
@@ -95,9 +96,15 @@ def check_s09a(browser, base_url, screenshot_dir=None):
                     scrollWidth: element.scrollWidth,
                     clientWidth: element.clientWidth,
                 };
-            }).filter(item => item.left < -0.5 || item.right > innerWidth + 0.5).slice(0, 12),
+            }).filter(item => {
+                if (item.left >= -0.5 && item.right <= innerWidth + 0.5) return false;
+                for (let ancestor = item.element.parentElement; ancestor && ancestor !== document.body; ancestor = ancestor.parentElement) {
+                    if (['auto', 'scroll', 'hidden', 'clip'].includes(getComputedStyle(ancestor).overflowX)) return false;
+                }
+                return true;
+            }).slice(0, 12).map(({element, ...item}) => item),
         })""")
-        assert layout['scrollWidth'] <= layout['innerWidth'], {**page.viewport_size, **layout}
+        assert not layout['offenders'], {**page.viewport_size, **layout}
     try:
         page.goto(base_url+'/Audio-Editor.html'); page.wait_for_function("document.getElementById('source-session-session-status').textContent.includes('активен')")
         page.locator('#source-session-mode-device').click()
