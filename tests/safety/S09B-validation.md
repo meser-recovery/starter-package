@@ -3,7 +3,7 @@
 The recording-detail layout and primary scenario are refined by `S09B-archive-ux-amendment.md`.
 
 Implementation base: `70a9dfe7996d213ca57c5b897cb2d53419067e09` (`origin/main`).
-Implementation screenshot target: `[IMPLEMENTATION_SHA]`. Evidence-only HEAD may be later.
+Implementation screenshot target: `27ac26176704effb1261e06944d71281fd181728`. Evidence-only HEAD may be later.
 
 The browser fixture uses `MemoryRepository`, generated audio and the real gateway/client/domain code through `archive_management_bridge.mjs`. Production gateway and GitHub archive traffic are blocked. The focused run observed 319 local gateway requests and no outbound archive access.
 
