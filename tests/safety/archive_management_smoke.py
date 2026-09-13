@@ -20,8 +20,11 @@ def assert_shared_audio_header(page, width, surface):
     assert all(boxes.values()), {surface: boxes, 'width': width}
     assert abs((boxes['identity']['x'] + boxes['identity']['width'] / 2) - width / 2) <= 1, {surface: boxes, 'width': width}
     assert boxes['header']['x'] >= -0.5 and boxes['header']['x'] + boxes['header']['width'] <= width + 0.5, {surface: boxes, 'width': width}
+    minimum_gap = 4
     for left, right in (('logo', 'identity'), ('identity', 'service')):
-        assert boxes[left]['x'] + boxes[left]['width'] <= boxes[right]['x'], {surface: boxes, 'width': width, 'collision': [left, right]}
+        assert boxes[left]['x'] + boxes[left]['width'] + minimum_gap <= boxes[right]['x'], {
+            surface: boxes, 'width': width, 'collision_or_sticking': [left, right], 'minimum_gap': minimum_gap
+        }
     for name in ('logo', 'identity', 'service'):
         box = boxes[name]
         assert box['x'] >= boxes['header']['x'] - 0.5 and box['x'] + box['width'] <= boxes['header']['x'] + boxes['header']['width'] + 0.5, {surface: boxes, 'width': width, 'outside': name}
