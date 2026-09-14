@@ -1171,10 +1171,10 @@
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-disclosure { display:block; min-width:0; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field { min-height:18px; color:#91a9bc; font-size:.56rem; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression { grid-template-columns:minmax(0,1fr) auto; row-gap:0; }
-.audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-compression-scale { display:grid; grid-column:1/-1; grid-row:2; min-width:0; padding-inline:0; }
+.audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-compression-scale { display:grid; grid-column:1/-1; grid-row:2; min-width:0; padding-inline:4px; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-compression-scale > input { grid-column:1; grid-row:1; width:100%; min-width:0; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-compression-ticks { grid-column:1; grid-row:2; width:100%; min-width:0; letter-spacing:normal; }
-.audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-compression-ticks > * { width:max-content; max-width:none; min-width:0; overflow:visible; white-space:nowrap; text-align:center; color:#b8cad8; font-size:.52rem; font-weight:500; }
+.audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-compression-ticks > * { width:max-content; max-width:none; min-width:0; overflow:visible; white-space:nowrap; text-align:center; color:#b8cad8; font-size:.48rem; font-weight:500; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-dsp-field--compression .speaker-dsp-value { grid-column:2; grid-row:1; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-track > .speaker-waveform-scroll,.audio-studio[data-editing="speaker"] #speaker-editor .speaker-track .speaker-waveform { height:var(--track-height,196px); min-height:var(--track-height,196px); overflow:hidden; background:#0b2030; }
 .audio-studio[data-editing="speaker"] #speaker-editor .speaker-track canvas { min-height:0; background:#0b2030; }

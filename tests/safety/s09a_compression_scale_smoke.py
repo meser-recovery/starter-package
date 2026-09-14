@@ -18,11 +18,13 @@ def check_compression_scale(browser, base_url, screenshot_dir=None):
           .filter(field => field.getBoundingClientRect().width > 0).slice(0,2).map(field => {
             const input=field.querySelector('input'), ticks=field.querySelector('.speaker-compression-ticks'), output=field.querySelector('.speaker-dsp-value');
             const range=input.getBoundingClientRect(), tickBox=ticks.getBoundingClientRect();
+            const panel=field.closest('.speaker-track-controls').getBoundingClientRect();
             const zoom=range.width/input.offsetWidth, thumb=16*zoom;
             const expected=[range.left+thumb/2,range.left+range.width/3+thumb/6,
               range.left+range.width*2/3-thumb/6,range.right-thumb/2];
             const labels=[...ticks.children].map(node => { const box=node.getBoundingClientRect(); return {left:box.left,right:box.right,center:(box.left+box.right)/2,text:node.textContent,clientWidth:node.clientWidth,scrollWidth:node.scrollWidth}; });
             return {range:{left:range.left,right:range.right,width:range.width},
+              panel:{left:panel.left,right:panel.right},
               ticks:{left:tickBox.left,right:tickBox.right,width:tickBox.width}, expected, labels,
               fieldHeight:field.getBoundingClientRect().height, aria:input.getAttribute('aria-valuetext'),
               selected:{text:output.textContent,visible:output.getBoundingClientRect().width>0&&output.getBoundingClientRect().height>0}};
@@ -34,6 +36,7 @@ def check_compression_scale(browser, base_url, screenshot_dir=None):
             assert all(abs(label["center"] - expected) < 1.25 for label, expected in zip(value["labels"], value["expected"])), value
             assert all(value["labels"][index]["right"] + 2 <= value["labels"][index + 1]["left"] for index in range(3)), value
             assert all(label["scrollWidth"] <= label["clientWidth"] + 1 for label in value["labels"]), value
+            assert all(label["left"] >= value["panel"]["left"] - 1 and label["right"] <= value["panel"]["right"] + 1 for label in value["labels"]), value
             assert [label["text"] for label in value["labels"]] == ["Выкл.", "Лёгкая", "Средняя", "Сильная"], value
             assert value["selected"]["visible"], value
         return values
