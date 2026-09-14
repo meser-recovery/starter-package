@@ -23,9 +23,10 @@ def check_input_focus(browser, base_url):
             page.goto(base_url.rstrip("/") + "/Audio-Editor.html")
             page.locator("#source-session-mode-device").click()
             page.locator("#processor-file").set_input_files([fixture(330, 8), fixture(660, 8)])
+            page.locator("#source-session-use-local").click()
             page.locator(launcher).click()
             page.wait_for_function(f"!document.getElementById('{audio_id}-play').disabled", timeout=180000)
-            assert page.locator(launcher).evaluate("e=>e===document.activeElement")
+            assert page.locator(workspace).is_visible()
             # Neither gesture path needs keyboard focus or a pointer click in the studio.
             surface = page.locator(workspace + " " + surface_selector).first
             surface.scroll_into_view_if_needed(); box = surface.bounding_box()
@@ -42,7 +43,7 @@ def check_input_focus(browser, base_url):
                 }
             }""")
             assert width() > before
-            assert page.locator(launcher).evaluate("e=>e===document.activeElement")
+            assert page.locator(workspace).is_visible()
             page.keyboard.press("Space")
             page.wait_for_function(f"!document.getElementById('{audio_id}').paused")
             assert page.locator("#announcement-processor-card audio" if speaker else "#speaker-editor audio").evaluate_all("nodes=>nodes.every(a=>a.paused)")

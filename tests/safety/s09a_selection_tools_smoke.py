@@ -91,10 +91,10 @@ def check_selection_tools(page, output=None):
         if output:
             page.screenshot(path=str(output / f'selection-tools-{width}.png'), full_page=True)
     page.set_viewport_size({'width': 1280, 'height': 900})
-    page.locator('.speaker-selection details > summary').click()
+    page.locator('.speaker-selection > details:first-of-type > summary').click()
     page.locator('#speaker-editor-selection-start').fill('0')
     page.locator('#speaker-editor-selection-end').fill('')
-    page.locator('.speaker-selection details > summary').click()
+    page.locator('.speaker-selection > details:first-of-type > summary').click()
 
 
 def check_waveform_interactions(page, output=None):

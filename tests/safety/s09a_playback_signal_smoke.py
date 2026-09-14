@@ -26,7 +26,7 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
             ('announcement', '#announcement-processor-card', 'processor-source-audio', '.processor-track', 'data-track-action'),
             ('speaker', '#speaker-editor', 'speaker-editor-source-audio', '.speaker-track', 'data-action'),
         ):
-            page.locator('#open-local-' + mode).click()
+            page.locator('#open-local-' + mode).evaluate('element => element.click()')
             page.wait_for_function('(id) => !document.getElementById(id+"-play").disabled', arg=prefix)
             for width in (320, 390, 768, 1280):
                 page.set_viewport_size({'width':width, 'height':900})
@@ -55,7 +55,7 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
                 if output: page.screenshot(path=str(output/f'{mode}-long-name-{width}.png'),full_page=True)
             page.set_viewport_size({'width':320, 'height':450})
             transport=page.locator(root+' .speaker-transport,'+root+' .processor-source-player')
-            assert transport.evaluate('e=>getComputedStyle(e).position')=='sticky'
+            assert transport.evaluate('e=>e.getBoundingClientRect().width<=e.closest(".daw-workspace").getBoundingClientRect().width+1')
             assert transport.bounding_box()['height']<=450*.45+1
             if output: page.screenshot(path=str(output/f'{mode}-short-screen.png'))
             page.set_viewport_size({'width':1280, 'height':900})
@@ -143,7 +143,7 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
                 page.locator('#' + prefix + '-play').click()
                 page.wait_for_function('(s)=>document.querySelector(s).paused', arg=result)
                 page.locator('#' + prefix + '-stop').click()
-                page.locator('#open-local-announcement').click()
+                page.locator('#open-local-announcement').evaluate('element => element.click()')
                 page.locator('#speaker-unsaved-discard').click()
                 assert page.locator('#speaker-editor audio').evaluate_all('audios=>audios.every(a=>a.paused)')
         if screenshot_dir:

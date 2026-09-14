@@ -23,7 +23,7 @@ def check_timeline_controls(browser, base_url, screenshot_dir=None):
                 ('announcement','processor-source-audio','processor-track','processor-waveform-scroll','processor-waveform','processor-source-zoom-range','processor-source-scrollbar'),
                 ('speaker','speaker-editor-source-audio','speaker-track','speaker-waveform-scroll','speaker-waveform','speaker-editor-zoom','speaker-editor-source-scrollbar'),
             ):
-                page.locator('#open-local-'+mode).click()
+                page.locator('#open-local-'+mode).evaluate('element => element.click()')
                 page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix)
                 rows=page.locator('.'+row_class); scroll=rows.first.locator('.'+scroll_class); wave=rows.first.locator('.'+wave_class)
                 audio=page.locator('#'+prefix)
@@ -106,6 +106,9 @@ def check_flags_and_keyboard(page,output,dpr):
         page.keyboard.press('Home' if kind=='start' else 'End')
         assert page.evaluate(state)==baseline
         assert flag.evaluate('e=>e===document.activeElement')
+    disclosure = rows.first.locator('.speaker-dsp-disclosure')
+    if not disclosure.evaluate('element => element.open'):
+        disclosure.locator('summary').click()
     for label in ('Улучшение','Выравнивание громкости'):
         switch=rows.first.get_by_role('switch',name=label,exact=True)
         switch.focus();page.keyboard.press('Space');assert switch.is_checked()

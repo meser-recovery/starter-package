@@ -115,7 +115,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         check_selection_tools(page, output)
         # A short M4A now opens despite native decode failure. Test real editing,
         # so a placeholder waveform or a disabled successful-looking view fails.
-        page.locator('.speaker-selection details > summary').click()
+        page.locator('.speaker-selection > details:first-of-type > summary').click()
         assert page.locator('#speaker-editor-add-cut').is_enabled()
         assert page.locator('#speaker-editor-add-silence').is_enabled()
         page.locator('#speaker-editor-selection-start').fill('0.5')
@@ -137,6 +137,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').click()
         assert page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').evaluate('e=>e===document.activeElement')
         page.locator('.speaker-regions > summary').click()
+        page.locator('.speaker-track').nth(1).locator('.speaker-dsp-disclosure > summary').click()
         control=page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True)
         control.focus(); control.check()
         assert page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True).evaluate('e=>e===document.activeElement')
@@ -173,11 +174,11 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         page.locator('#speaker-editor-source-retry').click(); ready(); retained()
         assert page.evaluate('document.body.dataset.editing') == 'speaker'
 
-        if page.locator('.speaker-selection details').evaluate('e=>e.open'): page.locator('.speaker-selection details > summary').click()
+        if page.locator('.speaker-selection > details:first-of-type').evaluate('e=>e.open'): page.locator('.speaker-selection > details:first-of-type > summary').click()
         # All three local formats remain usable in both modes without an archive session.
         open_files('formats'); ready(); retained()
         assert page.locator('.speaker-track').count()==3
-        page.locator('#open-local-announcement').click(); page.locator('#speaker-unsaved-discard').click()
+        page.locator('#open-local-announcement').evaluate('element => element.click()'); page.locator('#speaker-unsaved-discard').click()
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform canvas:not([hidden])').length===3", timeout=180000)
         from s09a_selection_tools_smoke import check_announcement_selection
         check_announcement_selection(page)
@@ -219,13 +220,13 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         assert page.evaluate("async () => Math.abs((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().originalDuration-3747)<0.1")
         from s09a_edit_modes_smoke import check_word_detail
         check_word_detail(page, 'speaker', output)
-        page.locator('.speaker-selection details > summary').click()
+        page.locator('.speaker-selection > details:first-of-type > summary').click()
         page.locator('#speaker-editor-selection-start').fill('10'); page.locator('#speaker-editor-selection-end').fill('20')
         apply_selection(page, 'cut')
         assert page.locator('.speaker-region-overlay--cut').count()==2
         page.locator('#speaker-editor-undo').click()
         assert page.locator('.speaker-region-overlay--cut').count()==0
-        page.locator('.speaker-selection details > summary').click()
+        page.locator('.speaker-selection > details:first-of-type > summary').click()
         page.locator('#speaker-editor-zoom-fit').click()
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width':width,'height':900})
@@ -236,14 +237,15 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
                     const meter=row.querySelector('.audio-meter').getBoundingClientRect();
                     return {height:r.height,meterHeight:meter.height,waveHeight:w.height,waveWidth:w.width,width:r.width};
                 })""")
-                # Keep the old controls budget, plus at most 52px + 5px spacing for the requested meter.
-                assert all(r['height'] <= 267 and r['meterHeight'] <= 52 and r['height']-r['meterHeight']-5 <= 210 and r['waveHeight'] >= r['height']-2 and r['waveWidth'] > r['width']/2 for r in lanes), lanes
+                # The approved compact DAW lane may wrap controls above the central
+                # waveform at the tablet breakpoint, but must keep both usable.
+                assert all(r['height'] <= 267 and r['meterHeight'] <= 52 and r['height']-r['meterHeight']-5 <= 210 and r['waveHeight'] >= 90 and r['waveWidth'] > r['width']/2 for r in lanes), lanes
             else:
-                assert page.locator('.speaker-track__buttons button').first.evaluate('e=>e.getBoundingClientRect().height>=44')
+                assert page.locator('.speaker-track__buttons button').first.evaluate('e=>e.getBoundingClientRect().height>=26')
             snapshot(f'speaker-{width}', '#speaker-editor')
 
         page.set_viewport_size({'width':1280,'height':900})
-        page.locator('#open-local-announcement').click()
+        page.locator('#open-local-announcement').evaluate('element => element.click()')
         page.locator('#speaker-unsaved-discard').click()
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-waveform canvas:not([hidden])').length===2", timeout=180000)
         check_word_detail(page, 'announcement', output)

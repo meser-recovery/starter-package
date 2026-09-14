@@ -25,7 +25,7 @@ const state = {
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
-  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
+  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 112, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
   measurementCache: new LoudnessMeasurementCache(128), sourceIdentities: new SourceIdentityRegistry(), lastRenderProfile: null
 };
 let renderOperationSequence = 0;
@@ -641,7 +641,7 @@ function renderTracks() {
     }
     const editsDisabled = editorBusy() || !state.ready;
     const include = makeButton(excluded.has(trackId) ? "Вернуть в микс" : "Исключить из микса", () => changeTrack(trackId, "excluded", !excluded.has(trackId)), trackId, editsDisabled);
-    include.setAttribute("aria-label", include.textContent); include.title = include.textContent; include.textContent = excluded.has(trackId) ? "Вне микса" : "В миксе";
+    include.setAttribute("aria-label", include.textContent); include.title = include.textContent; include.textContent = excluded.has(trackId) ? "Откл." : "Вкл.";
     const up = makeButton("Вверх", () => moveTrack(trackId, -1), trackId, editsDisabled || index === 0);
     const down = makeButton("Вниз", () => moveTrack(trackId, 1), trackId, editsDisabled || index === state.payload.trackIds.length - 1);
     for (const [button, icon] of [[up, "↑"], [down, "↓"]]) {
@@ -656,7 +656,7 @@ function renderTracks() {
     header.append(element("span", "speaker-track-selection"));
     const preview = state.ready ? waveform(track) : element("div", "speaker-source-pending", track.preparationError || (state.preparationError ? "Ожидает повторной подготовки." : "Подготовка формы сигнала…"));
     const processing = element("details", "speaker-dsp-disclosure");
-    processing.open = track.controlsOpen ?? window.innerWidth >= 768;
+    processing.open = track.controlsOpen ?? false;
     const processingToggle = element("summary", "", "Обработка дорожки");
     processingToggle.addEventListener("click", event => {
       event.preventDefault(); track.controlsOpen = !processing.open; processing.open = track.controlsOpen;
@@ -739,7 +739,8 @@ function render() {
   if (!state.ready) renderSourceTimeline("speaker-source-timeline", NaN, 0);
   byId("status").dataset.dirty = String(currentDirty());
   byId("status").textContent = state.preparationError || (!state.ready ? "Подготовка исходников…" : currentDirty() ? "Есть несохранённые изменения" : "Все изменения сохранены");
-  byId("identity").textContent = `${state.session.title} · ${state.tracks.length} дорожек · ${clock(state.originalDuration)}`;
+  byId("heading").textContent = state.session.title;
+  byId("identity").textContent = `${state.tracks.length} дорожек · ${clock(state.originalDuration)} · исходная шкала`;
   notifyState();
 }
 
@@ -924,7 +925,7 @@ function setScaleMode(mode) {
   byId("scale-mode").setAttribute("aria-label", height ? "Переключить на масштаб времени" : "Переключить на высоту дорожек");
   byId("scale-mode").querySelector("span").textContent = height ? "Высота" : "Время";
   byId("scale-mode").querySelector("path").setAttribute("d", height ? "M12 4v16M9 7l3-3 3 3m-6 10 3 3 3-3" : "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
-  if (height) { range.min = "148"; range.max = "300"; range.step = "4"; range.value = String(state.trackHeight); range.setAttribute("aria-label", "Высота всех дорожек Спикерской"); applyTrackHeight(); }
+  if (height) { range.min = "96"; range.max = "300"; range.step = "4"; range.value = String(state.trackHeight); range.setAttribute("aria-label", "Высота всех дорожек Спикерской"); applyTrackHeight(); }
   else { range.min = "1"; range.max = String(state.timeZoomMax); range.step = ".25"; range.value = String(state.timeZoomValue); range.setAttribute("aria-label", "Масштаб времени исходников Спикерской"); updateWaveWidths(true); }
 }
 
@@ -1579,7 +1580,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
-  state.selectionScope = "all"; state.scaleMode = "time"; state.timeZoomValue = 1; state.timeZoomMax = 8; state.trackHeight = 196;
+  state.selectionScope = "all"; state.scaleMode = "time"; state.timeZoomValue = 1; state.timeZoomMax = 8; state.trackHeight = 112;
   byId("zoom").min = "1"; byId("zoom").step = ".25"; byId("zoom").value = "1";
   byId("scale-mode").setAttribute("aria-pressed", "false"); byId("scale-mode").querySelector("span").textContent = "Время";
   setSelection(0, "", orderedManifest[0]?.trackId, "all"); clearCandidate();

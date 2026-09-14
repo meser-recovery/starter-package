@@ -41,8 +41,11 @@ def check_compression_scale(browser, base_url, screenshot_dir=None):
         page.goto(base_url.rstrip("/") + "/Audio-Editor.html")
         page.locator("#source-session-mode-device").click()
         page.locator("#processor-file").set_input_files([fixture(330, 4), fixture(440, 4)])
+        page.locator("#source-session-use-local").click()
         page.locator("#open-local-speaker").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
+        for details in page.locator(".speaker-dsp-disclosure").all():
+            if details.get_attribute("open") is None: details.locator("summary").click()
         normal = geometry()
         if screenshot_dir:
             target = Path(screenshot_dir); target.mkdir(parents=True, exist_ok=True)

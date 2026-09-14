@@ -10,23 +10,22 @@
   <link rel="stylesheet" href="styles/foundation.css">
   <link rel="stylesheet" href="styles/components.css">
   <link rel="stylesheet" href="styles/audio-archive.css">
-  <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-portal-1">
+  <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-8">
   <script src="scripts/service-landing.js"></script>
   <script type="module" src="scripts/audio-archive.mjs"></script>
 </head>
 <body class="audio-studio site-page">
   <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
-  <header class="site-header"><div class="container site-header__content">
-    <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
-    <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
-    <a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
+  <header class="site-header portal-sidebar"><div class="container site-header__content">
+    <div class="portal-brand"><a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="./"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
+    <nav class="portal-nav" aria-label="Аудиопортал"><a href="Audio-Editor.html"><span aria-hidden="true">⌁</span> Редактор</a><a class="is-current" href="Audio-Archive.html" aria-current="page"><span aria-hidden="true">▣</span> Аудиоархив</a></nav>
+    <div class="portal-sidebar__footer"><a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a></div>
   </div></header>
   <main id="main-content" class="audio-editor-main archive-main">
     <div class="container archive-management">
       <div id="archive-index">
-        <div class="archive-heading"><div><div><p class="portal-kicker">Аудиопортал</p><h1>Аудиоархив</h1></div><a class="portal-link" href="Audio-Editor.html">Перейти к обработке</a></div></div>
-        <p class="archive-intro">Найдите запись Zoom, чтобы прослушать готовые версии, продолжить обработку или открыть управление.</p>
-        <div class="archive-entry-actions"><button id="record-picker-open" class="action-primary" type="button" aria-expanded="false" aria-controls="records">Найти запись</button><a href="Audio-Editor.html">Добавить с устройства</a></div>
+        <div class="archive-heading"><div><div><p class="portal-kicker">Аудиопортал</p><h1>Аудиоархив</h1><p class="archive-intro">Ваши Zoom-записи, проекты и результаты</p></div><a class="portal-link action-primary" href="Audio-Editor.html">+ Новая запись</a></div></div>
+        <div class="archive-entry-actions"><button id="record-picker-open" class="action-primary" type="button" aria-expanded="false" aria-controls="records">Показать записи</button></div>
       <section id="records" class="record-picker" aria-labelledby="records-title" hidden><div class="picker-heading"><h2 id="records-title" tabindex="-1">Выбрать запись</h2><button id="record-picker-close" type="button">Закрыть</button></div>
         <form id="filters" class="filters" role="search">
           <label class="wide">Поиск по названию или имени исходной дорожки<input name="search" type="search" autocomplete="off"></label>

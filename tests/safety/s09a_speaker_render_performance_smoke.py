@@ -66,9 +66,13 @@ def check_speaker_render_performance(browser, base_url):
         page.locator("#source-session-mode-device").click()
         sources = [fixture(330, 6), fixture(440, 6), fixture(550, 6)]
         page.locator("#processor-file").set_input_files(sources)
+        page.locator("#source-session-use-local").evaluate("element => element.click()")
         page.locator("#open-local-speaker").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
-        page.get_by_text("Точное редактирование", exact=True).click()
+        editing = page.locator(".speaker-selection > details:first-of-type")
+        if not editing.evaluate("element => element.open"): editing.locator("summary").click()
+        for details in page.locator(".speaker-dsp-disclosure").all():
+            if details.get_attribute("open") is None: details.locator("summary").click()
         for index in range(3):
             page.locator('.speaker-track [data-dsp-field="leveling"]').nth(index).check()
 
@@ -144,10 +148,13 @@ def check_speaker_render_performance(browser, base_url):
 
         # Re-selecting equal bytes under equal names creates new File objects and a fresh source context.
         page.locator("#processor-file").set_input_files(sources)
+        page.locator("#source-session-use-local").evaluate("element => element.click()")
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.locator("#open-local-speaker").click()
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
+        for details in page.locator(".speaker-dsp-disclosure").all():
+            if details.get_attribute("open") is None: details.locator("summary").click()
         for index in range(3): page.locator('.speaker-track [data-dsp-field="leveling"]').nth(index).check()
         before = page.evaluate("({messages:window.speakerRenderProbe.messages.length,terminated:window.speakerRenderProbe.terminated})")
         page.locator("#speaker-editor-render").click()
@@ -171,10 +178,13 @@ def check_speaker_render_performance(browser, base_url):
 
         # A real loudnorm -inf/invalid measurement fails closed and is retried, never cached as ready.
         page.locator("#processor-file").set_input_files([fixture(0, 2)])
+        page.locator("#source-session-use-local").evaluate("element => element.click()")
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.locator("#open-local-speaker").click()
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
+        if page.locator(".speaker-dsp-disclosure").get_attribute("open") is None:
+            page.locator(".speaker-dsp-disclosure summary").click()
         page.locator('.speaker-track [data-dsp-field="leveling"]').check()
         for _ in range(2):
             before = page.evaluate("window.speakerRenderProbe.messages.length")
@@ -206,10 +216,12 @@ def check_speaker_parallel_equivalence(browser, base_url):
             page.goto(base_url.rstrip("/") + "/Audio-Editor.html")
             page.locator("#source-session-mode-device").click()
             page.locator("#processor-file").set_input_files([fixture(330, 6), fixture(440, 6), fixture(550, 6)])
+            page.locator("#source-session-use-local").evaluate("element => element.click()")
             page.locator("#open-local-speaker").click()
             page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
             for index in range(3):
                 row = page.locator(".speaker-track").nth(index)
+                row.locator(".speaker-dsp-disclosure summary").click()
                 row.locator('[data-dsp-field="enhancement"]').check()
                 row.locator('[data-dsp-field="leveling"]').check()
                 compression = row.locator('[data-dsp-field="compression"]')

@@ -170,7 +170,7 @@ def check_region_identity_and_collisions(page, baseline):
 
     def create(tool, start, end, row=0):
         page.keyboard.press('Escape')
-        detail=page.locator('.speaker-selection details')
+        detail=page.locator('.speaker-selection > details:first-of-type')
         if not detail.evaluate('e=>e.open'):detail.locator('summary').click()
         page.locator('#speaker-editor-selection-track').select_option(rows.nth(row).get_attribute('data-track-id'))
         for edge, value in [('start',start),('end',end)]:
@@ -244,6 +244,6 @@ def check_region_identity_and_collisions(page, baseline):
     assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().sourceEpoch>regionEpoch")
     assert page.evaluate("async()=>(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().files.every((f,i)=>f===handleFiles[i])")
     assert page.locator('[data-gesture-preview]').count()==0
-    detail=page.locator('.speaker-selection details')
+    detail=page.locator('.speaker-selection > details:first-of-type')
     if detail.evaluate('e=>e.open'):detail.locator('summary').click()
     print('Region safety: coincident ID restore, numeric reset, collision/inversion rejection, touch edges and replacement/late-pointer cancellation passed.',flush=True)

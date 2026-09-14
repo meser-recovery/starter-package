@@ -3,6 +3,22 @@ import { createInterface } from 'node:readline';
 import { managementFixture, wav } from '../../gateway/audio-archive/test/archive-management-fixture.mjs';
 let h = await managementFixture();
 let authenticated = true;
+function previewWav(trackIndex = 0) {
+  const rate = 8000, seconds = 8, samples = rate * seconds;
+  const bytes = Buffer.alloc(44 + samples * 2);
+  bytes.write('RIFF'); bytes.writeUInt32LE(bytes.length - 8, 4); bytes.write('WAVEfmt ', 8);
+  bytes.writeUInt32LE(16, 16); bytes.writeUInt16LE(1, 20); bytes.writeUInt16LE(1, 22); bytes.writeUInt32LE(rate, 24); bytes.writeUInt32LE(rate * 2, 28);
+  bytes.writeUInt16LE(2, 32); bytes.writeUInt16LE(16, 34); bytes.write('data', 36); bytes.writeUInt32LE(samples * 2, 40);
+  for (let index = 0; index < samples; index++) {
+    const time = index / rate;
+    const phrase = .2 + .58 * Math.abs(Math.sin(time * Math.PI * (.72 + trackIndex * .11) + trackIndex));
+    const syllables = .35 + .65 * Math.abs(Math.sin(time * Math.PI * (3.1 + trackIndex * .37)));
+    const pause = (time > 2.15 + trackIndex * .12 && time < 2.72 + trackIndex * .1) || (time > 5.35 && time < 5.72 + trackIndex * .08) ? .025 : 1;
+    const carrier = Math.sin(2 * Math.PI * (155 + trackIndex * 73) * time) + .34 * Math.sin(2 * Math.PI * (311 + trackIndex * 41) * time);
+    bytes.writeInt16LE(Math.round(8800 * phrase * syllables * pause * carrier), 44 + index * 2);
+  }
+  return bytes;
+}
 async function snapshot() {
   return { primary: await h.gateway.getSession(h.primary.id), archived: await h.gateway.getSession(h.archived.id), empty: h.empty,
     sessions: [...(await h.gateway.listSessions('incoming')).sessions, ...(await h.gateway.listSessions('archived')).sessions], maintenance: await h.gateway.listIncomplete() };
@@ -50,7 +66,7 @@ for await (const line of createInterface({ input: process.stdin })) {
     else if (command.action === 'snapshot') result = await snapshot();
     else if (command.action === 'recovery') { await seedRecovery(); result = await snapshot(); }
     else if (command.action === 'multi-track-preview') {
-      const files = ['Ведущий.wav', 'Спикер 1.wav', 'Спикер 2.wav'].map(name => new File([wav()], name, { type: 'audio/wav' }));
+      const files = ['Ведущий.wav', 'Спикер 1.wav', 'Спикер 2.wav'].map((name, index) => new File([previewWav(index)], name, { type: 'audio/wav' }));
       result = await h.gateway.ingestFiles({
         files, title: 'Спикерская · три синхронизированные дорожки', recordedAt: '2026-09-08T18:00:00Z',
         origin: 'manual', idempotencyKey: 's09c-preview-multi-track'

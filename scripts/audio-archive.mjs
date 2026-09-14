@@ -299,7 +299,7 @@ function renderDetail() {
   else if (speakerProject?.projection) project.append(element('p', `Проект сохранён ${dateLabel(speakerProject.projection.savedAt)}. Продолжить его можно в верхней части страницы.`));
   else project.append(element('p', 'Сохранённый проект не прошёл проверку и не будет перезаписан. Продолжение обработки недоступно.'));
   container.append(project);
-  const sources = element('details', undefined, 'detail-section source-section'); sources.open = disclosureState['source-section']; sources.append(element('summary', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
+  const sources = element('details', undefined, 'detail-section source-section'); sources.open = true; sources.append(element('summary', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
   if (session.sourceState === 'available') for (const track of [...session.sourceTracks].sort((a, b) => a.ordinal - b.ordinal)) {
     const row = element('div', undefined, 'source-track'); row.append(element('span', String(track.ordinal), 'track-number'), element('span', track.originalName, 'track-name'), element('span', `${mediaTypeLabel(track.mediaType)} · ${bytesLabel(track.sizeBytes)}`, 'track-meta')); sources.append(row);
   }
@@ -559,7 +559,7 @@ $('logout').addEventListener('click', async () => {
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
-  try { await gateway.sessionStatus(); if (!generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); }
+  try { await gateway.sessionStatus(); if (!generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();

@@ -32,6 +32,7 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         page.goto(base_url.rstrip("/") + "/Audio-Editor.html")
         page.locator("#source-session-mode-device").click()
         page.locator("#processor-file").set_input_files([fixture(330), fixture(660)])
+        page.locator("#source-session-use-local").click()
         page.locator("#open-local-speaker").click()
         page.wait_for_function("!document.getElementById('speaker-editor-source-audio-play').disabled", timeout=180000)
         rows = page.locator("#speaker-editor-tracks .speaker-track")
@@ -44,7 +45,8 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         # Keep headroom for the gesture assertion even when S09C gives the
         # workspace the full desktop viewport (a factor of 4 can hit 1000 px/s).
         zoom.fill("2"); zoom.dispatch_event("input")
-        page.locator("#speaker-editor-scale-mode").click(); assert zoom.input_value() == "196"
+        lane_height = rows.first.locator(".speaker-waveform-scroll").bounding_box()["height"]
+        page.locator("#speaker-editor-scale-mode").click(); assert abs(float(zoom.input_value()) - lane_height) < 2
         zoom.fill("180"); zoom.dispatch_event("input")
         assert abs(rows.first.locator(".speaker-waveform-scroll").bounding_box()["height"] - 180) < 2
         assert page.evaluate(payload) == baseline
@@ -59,7 +61,7 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         colored = page.locator(f'.speaker-track[data-track-id="{identity}"]')
         assert colored.evaluate("e=>getComputedStyle(e).getPropertyValue('--track-wave').trim()") == "#6a4fb3"
 
-        details = page.locator(".speaker-selection > details"); details.evaluate("e=>e.open=true")
+        details = page.locator(".speaker-selection > details:first-of-type"); details.evaluate("e=>e.open=true")
         for edge, value in (("start", ".3"), ("end", "3.7")):
             page.locator(f"#speaker-editor-selection-{edge}").fill(value)
             page.locator(f"#speaker-editor-set-{edge}").click()
@@ -127,7 +129,7 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         page.keyboard.press("Escape"); assert not page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
 
         # Switch to the second editor, preserving its own display state and common selection.
-        page.locator("#open-local-announcement").click()
+        page.locator("#open-local-announcement").evaluate('element => element.click()')
         page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-track').length===2 && !document.getElementById('processor-source-audio-play').disabled", timeout=60000)
         tracks = page.locator("#processor-file-info .processor-track")

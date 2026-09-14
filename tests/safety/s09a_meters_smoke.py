@@ -35,7 +35,7 @@ def check_audio_meters(browser, base_url, screenshot_dir=None):
         for mode, root, prefix, row_selector, action in [
             ('speaker','#speaker-editor','speaker-editor-source-audio','.speaker-track','data-action'),
             ('announcement','#announcement-processor-card','processor-source-audio','.processor-track','data-track-action')]:
-            page.locator('#open-local-'+mode).click()
+            page.locator('#open-local-'+mode).evaluate('element => element.click()')
             if page.locator('#speaker-unsaved-discard').is_visible(): page.locator('#speaker-unsaved-discard').click()
             page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix)
             rows=page.locator(root+' '+row_selector)

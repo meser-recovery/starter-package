@@ -33,7 +33,7 @@ def restore_selection(page, tool):
 def check_edit_modes(page, output=None):
     state = "async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload"
     rows = page.locator('.speaker-track')
-    page.locator('.speaker-selection details').evaluate('e => e.open = true')
+    page.locator('.speaker-selection > details:first-of-type').evaluate('e => e.open = true')
     baseline = page.evaluate(state)
     assert page.locator('.speaker-selection__actions button').evaluate_all(
         "bs => bs.map(b => b.id.replace('speaker-editor-',''))") == [

@@ -124,7 +124,7 @@ function renderCurrentRecording() {
   const source = document.getElementById("current-recording-source");
   const tracks = document.getElementById("current-recording-tracks");
   const next = document.getElementById("current-recording-next");
-  const pickerLabel = picker.querySelector("span");
+  const pickerLabel = picker.querySelector(":scope > span:not(.source-choice__icon):not(.source-choice__action):not(.visually-hidden)");
   if (manifest) {
     heading.textContent = manifest.title;
     summary.textContent = `${formatDate(manifest.recordedAt)} · ${manifest.sourceTracks.length} дорожек · Сохранена в аудиоархиве`;
@@ -158,6 +158,7 @@ function renderCurrentRecording() {
 function setMode(mode) {
   state.mode = mode;
   const archive = mode === "archive";
+  byId("heading").textContent = archive ? "Выберите запись" : "Выберите аудиодорожки";
   byId("archive-panel").hidden = !archive;
   byId("device-panel").hidden = archive;
   document.getElementById("processor-device-field").hidden = archive;
@@ -167,6 +168,23 @@ function setMode(mode) {
   byId("mode-device").setAttribute("aria-expanded", String(!archive && document.getElementById("import-zone").open));
   updateSourceSaveState();
   renderCurrentRecording(); updatePublishState(); renderResultArchive(); void showIncomplete();
+}
+
+function setSourceLoading(visible, { title = "Открываем запись…", record = "Подготавливаем дорожки и проект.", progress = 18, step = "record" } = {}) {
+  const overlay = document.getElementById("source-session-loading");
+  if (!overlay) return;
+  overlay.hidden = !visible;
+  document.body.toggleAttribute("data-source-loading", visible);
+  document.getElementById("source-session-loading-title").textContent = title;
+  document.getElementById("source-session-loading-record").textContent = record;
+  document.getElementById("source-session-loading-progress").value = progress;
+  for (const item of overlay.querySelectorAll("[data-loading-step]")) {
+    const order = ["record", "tracks", "files", "editor"];
+    const itemIndex = order.indexOf(item.dataset.loadingStep);
+    const activeIndex = order.indexOf(step);
+    item.classList.toggle("is-complete", itemIndex < activeIndex);
+    item.classList.toggle("is-active", itemIndex === activeIndex);
+  }
 }
 
 function clearOutputPlayback() {
@@ -231,7 +249,10 @@ function activateMode(mode) {
   for (const audio of inactiveEditor.querySelectorAll("audio")) audio.pause();
   state.resultArchive = mode; renderAnnouncementWorkspace(); renderImportFiles(); void showIncomplete();
   const workspace = document.getElementById(mode === "speaker" ? "speaker-editor" : "announcement-processor-card");
-  requestAnimationFrame(() => scrollToElement(workspace));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    workspace.focus?.({ preventScroll: true });
+  }));
 }
 
 function updatePublishState() {
@@ -810,12 +831,14 @@ function renderSessions() {
 
 async function selectSessionContext(session) {
   if (state.publicationController || state.uploadController || state.speakerSaveController || state.speakerResumeController) return;
-  const sequence = ++state.sessionSequence, auth = state.authSequence;
+  const sequence = ++state.sessionSequence, auth = state.authSequence, loadingStarted = performance.now();
+  setSourceLoading(true, { record: session.title, progress: 18, step: "record" });
   setArchiveStatus("Проверка выбранной записи…");
   try {
     const complete = await gateway.getSession(session.id);
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     if (!validateSessionManifest(complete) || complete.id !== session.id || !eligible(complete)) throw new Error("Запись больше не доступна для редактирования.");
+    setSourceLoading(true, { record: complete.title, progress: 68, step: "tracks" });
     if (!await closeSpeakerEditor(false, () => sequence === state.sessionSequence && auth === state.authSequence)) return;
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     closeAnnouncementWorkspace(true);
@@ -823,9 +846,14 @@ async function selectSessionContext(session) {
     document.getElementById("import-zone").open = false; document.getElementById("import-zone").hidden = true;
     clearProcessorFiles(); state.processorProvenance = []; state.candidate = null;
     renderCurrentRecording(); renderResultArchive(); renderSessions(); await showIncomplete();
+    setSourceLoading(true, { record: complete.title, progress: 92, step: "editor" });
     setArchiveStatus(`Выбрана запись: ${complete.title}. Выберите тип обработки.`);
   } catch (error) {
     if (sequence === state.sessionSequence && auth === state.authSequence) onGatewayError(error, "Не удалось выбрать запись.");
+  } finally {
+    const remaining = 550 - (performance.now() - loadingStarted);
+    if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+    setSourceLoading(false);
   }
 }
 
@@ -894,6 +922,9 @@ function updateSourceSaveState() {
 function renderImportFiles() {
   updateSourceSaveState();
   const list = document.getElementById("import-files"); list.replaceChildren();
+  const useLocal = document.getElementById("source-session-use-local");
+  useLocal.hidden = !workingFiles().length;
+  useLocal.disabled = !workingFiles().length;
   document.getElementById("import-summary").textContent = workingFiles().length ? `Выбрано дорожек: ${workingFiles().length}` : "Запись не выбрана";
   for (const [index, file] of workingFiles().entries()) {
     const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${file.name.split('.').at(-1).toUpperCase()} · ${formatBytes(file.size)} `));
@@ -1405,6 +1436,7 @@ async function initialize() {
 
 byId("mode-archive").addEventListener("click", () => {
   setMode("archive"); document.getElementById("import-zone").hidden = false; document.getElementById("import-zone").open = true;
+  state.picker.requested = true; state.picker.page = 0; renderSessions();
   byId("mode-archive").setAttribute("aria-expanded", "true"); byId("filters").elements.search.focus();
 });
 byId("mode-device").addEventListener("click", () => {
@@ -1415,6 +1447,14 @@ byId("picker-close").addEventListener("click", () => {
   const zone = document.getElementById("import-zone"); zone.open = false;
   if (!state.activeManifest && !state.localContext && !workingFiles().length) zone.hidden = true;
   byId("mode-archive").setAttribute("aria-expanded", "false"); byId("mode-device").setAttribute("aria-expanded", "false"); byId(`mode-${state.mode}`).focus();
+});
+document.getElementById("source-session-use-local").addEventListener("click", () => {
+  if (!workingFiles().length) return;
+  const zone = document.getElementById("import-zone");
+  zone.open = false;
+  byId("mode-device").setAttribute("aria-expanded", "false");
+  document.getElementById("workflow-choice").focus({ preventScroll: true });
+  scrollToElement(document.getElementById("workflow-choice"));
 });
 document.getElementById("import-zone").addEventListener("toggle", event => {
   byId("mode-archive").setAttribute("aria-expanded", String(event.currentTarget.open && state.mode === "archive"));
