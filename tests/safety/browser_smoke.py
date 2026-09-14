@@ -2186,7 +2186,36 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#source-session-mode-archive").click()
         page.locator("#source-session-recent").click()
         page.locator(f'#source-session-list [data-session-id="{session_id}"]').get_by_role("button", name="Выбрать", exact=True).click()
+        # speaker-editor-opened fires before prepareSources() settles. Hold native decoding so
+        # the pre-ready context is observable and cannot expose a recovery mutation.
+        page.evaluate("""() => {
+          const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+          const original = AudioContextClass.prototype.decodeAudioData;
+          let release;
+          const gate = new Promise(resolve => { release = resolve; });
+          window.__s09cSpeakerPreparationHeld = false;
+          window.__s09cReleaseSpeakerPreparation = () => {
+            AudioContextClass.prototype.decodeAudioData = original;
+            release();
+          };
+          AudioContextClass.prototype.decodeAudioData = async function (...args) {
+            const decoded = await original.apply(this, args);
+            window.__s09cSpeakerPreparationHeld = true;
+            await gate;
+            return decoded;
+          };
+        }""")
+        recovery_posts_before_preparation = len([call for call in gateway_calls
+            if call[0] == "POST" and call[1].startswith("/v1/maintenance/incomplete/")])
         page.locator("#open-local-speaker").click()
+        page.wait_for_function("window.__s09cSpeakerPreparationHeld === true")
+        assert page.evaluate("async () => !(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().ready")
+        assert page.locator("#source-session-recovery-list").is_hidden()
+        assert page.locator("#source-session-recovery-list button").count() == 0
+        assert len([call for call in gateway_calls if call[0] == "POST" and
+            call[1].startswith("/v1/maintenance/incomplete/")]) == recovery_posts_before_preparation
+        page.evaluate("window.__s09cReleaseSpeakerPreparation()")
+        page.wait_for_function("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().ready")
         page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 5')")
         assert recovery_button(page, "Завершить сохранение").count() == 1
         if screenshot_dir:

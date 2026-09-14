@@ -1226,7 +1226,7 @@ async function showIncomplete() {
   const sequence = ++state.incompleteSequence, auth = state.authSequence;
   const container = byId("recovery-list");
   const currentSessionId = state.activeManifest?.id || speakerEditorSessionId();
-  const contextual = Boolean(currentSessionId && state.mode === "archive" && state.editorMode === "speaker");
+  const contextual = Boolean(currentSessionId && state.mode === "archive" && state.editorMode === "speaker" && getSpeakerSaveState().ready);
   if (!contextual && !state.speakerResumeController) {
     container.replaceChildren(); container.hidden = true; return;
   }
