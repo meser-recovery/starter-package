@@ -23,6 +23,7 @@ The binding visual comparison and required corrections are recorded in
   `speaker-scale-height-1280.png`, `speaker-scale-height-min-1280.png`,
   `speaker-scale-height-max-1280.png`, `speaker-fit-after-zoom-1280.png`
 - Persistent track processing controls: `speaker-track-enhancement-controls-1280.png`
+- Compression labels: `speaker-compression-normal.png`, `speaker-compression-compact-narrow.png`
 - Speaker help disclosure: `speaker-help-closed-1280.png`, `speaker-help-open-1280.png`
 - Speaker result: `speaker-result-1680.png`, `speaker-result-1280.png`
 - Archive list: `archive-list-1536.png`, `archive-list-1280.png`, `archive-list-390.png`
