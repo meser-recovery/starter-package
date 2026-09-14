@@ -215,6 +215,61 @@ def main():
                     shot(page, f"speaker-workspace-{width}", full_page=False)
 
             page.set_viewport_size({"width": 1280, "height": 900})
+            transport = page.locator("#speaker-editor .speaker-transport")
+            transported_ids = ("speaker-editor-scale-mode", "speaker-editor-zoom-out", "speaker-editor-zoom",
+                "speaker-editor-scale-value", "speaker-editor-zoom-in", "speaker-editor-zoom-fit", "speaker-editor-follow")
+            for control_id in transported_ids:
+                assert transport.locator(f"#{control_id}").count() == 1, control_id
+                assert page.locator(f"#speaker-editor .speaker-selection #{control_id}").count() == 0, control_id
+            fit = page.locator("#speaker-editor-zoom-fit")
+            follow = page.locator("#speaker-editor-follow")
+            assert fit.get_attribute("aria-label") == fit.get_attribute("title") == "Вписать timeline в доступную ширину"
+            assert follow.get_attribute("aria-label") == follow.get_attribute("title") == "Следовать за playhead при воспроизведении"
+            for icon_button in (fit, follow):
+                assert icon_button.evaluate("button => ![...button.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())")
+                assert icon_button.locator("svg[aria-hidden=true]").count() == 1
+                assert icon_button.locator(".visually-hidden").count() == 1
+
+            project_before_transport = page.evaluate("async () => JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)")
+            zoom = page.locator("#speaker-editor-zoom")
+            zoom.fill("4"); zoom.dispatch_event("input")
+            page.wait_for_timeout(80)
+            time_width = wave.evaluate("element => element.getBoundingClientRect().width")
+            assert zoom.get_attribute("aria-label") == "Горизонтальный масштаб времени"
+            assert "Горизонтальный масштаб времени" in page.locator("#speaker-editor-scale-mode").get_attribute("aria-label")
+            shot(page, "speaker-scale-time-1280", full_page=False)
+
+            page.locator("#speaker-editor-scale-mode").click()
+            assert page.locator("#speaker-editor-scale-mode").get_attribute("aria-pressed") == "true"
+            assert zoom.get_attribute("aria-label") == "Высота всех дорожек Спикерской"
+            assert "Высота дорожек" in page.locator("#speaker-editor-scale-mode").get_attribute("aria-label")
+            zoom.fill("176"); zoom.dispatch_event("input")
+            page.wait_for_timeout(80)
+            assert abs(page.locator("#speaker-editor-tracks .speaker-waveform-scroll").first.bounding_box()["height"] - 176) < 2
+            shot(page, "speaker-scale-height-1280", full_page=False)
+            zoom.fill("112"); zoom.dispatch_event("input")
+            page.locator("#speaker-editor-scale-mode").click()
+            assert float(zoom.input_value()) == 4
+            page.locator("#speaker-editor-zoom-in").focus(); page.keyboard.press("Tab")
+            assert fit.evaluate("button => document.activeElement === button && button.matches(':focus-visible')")
+            fit.click()
+            page.wait_for_timeout(80)
+            assert float(zoom.input_value()) == 1
+            assert wave.evaluate("element => element.getBoundingClientRect().width") < time_width
+            shot(page, "speaker-fit-after-zoom-1280", full_page=False)
+
+            page.locator("#speaker-editor-zoom-in").focus(); page.keyboard.press("Tab"); page.keyboard.press("Tab")
+            assert follow.evaluate("button => document.activeElement === button && button.matches(':focus-visible')")
+            assert follow.get_attribute("aria-pressed") == "false"
+            shot(page, "speaker-follow-off-1280", full_page=False)
+            page.keyboard.press("Space")
+            assert follow.get_attribute("aria-pressed") == "true"
+            assert page.evaluate("getComputedStyle(document.getElementById('speaker-editor-follow')).backgroundColor") == "rgb(8, 126, 101)"
+            shot(page, "speaker-follow-on-1280", full_page=False)
+            page.keyboard.press("Space")
+            assert follow.get_attribute("aria-pressed") == "false"
+            assert page.evaluate("async () => JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)") == project_before_transport
+
             page.locator("#speaker-editor-render").click()
             page.locator("#speaker-editor-result").wait_for(state="visible", timeout=120_000)
             page.locator("#speaker-editor-result").scroll_into_view_if_needed()

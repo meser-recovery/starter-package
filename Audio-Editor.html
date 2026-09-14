@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
     <link rel="stylesheet" href="styles/audio-workspace.css">
-    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-8">
+    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-9">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -114,6 +114,15 @@
             </div>
             <audio id="speaker-editor-source-audio" aria-labelledby="speaker-source-heading" controls preload="metadata"></audio>
             <div id="speaker-editor-preview-audios" hidden></div>
+            <div class="speaker-transport-controls" role="group" aria-label="Навигация и масштаб рабочей timeline">
+              <button id="speaker-editor-scale-mode" class="transport-icon-button scale-mode" type="button" aria-pressed="false" aria-label="Горизонтальный масштаб времени: переключить на высоту дорожек" title="Горизонтальный масштаб времени: переключить на высоту дорожек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3"/></svg><span class="visually-hidden">Масштаб времени</span></button>
+              <button id="speaker-editor-zoom-out" class="transport-icon-button" type="button" aria-label="Уменьшить горизонтальный масштаб времени" title="Уменьшить горизонтальный масштаб времени">−</button>
+              <input id="speaker-editor-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Горизонтальный масштаб времени">
+              <output id="speaker-editor-scale-value" class="scale-value">—</output>
+              <button id="speaker-editor-zoom-in" class="transport-icon-button" type="button" aria-label="Увеличить горизонтальный масштаб времени" title="Увеличить горизонтальный масштаб времени">+</button>
+              <button id="speaker-editor-zoom-fit" class="transport-icon-button" type="button" aria-label="Вписать timeline в доступную ширину" title="Вписать timeline в доступную ширину"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4M8 12h8M10 9l-3 3 3 3M14 9l3 3-3 3"/></svg><span class="visually-hidden">Вписать timeline</span></button>
+              <button id="speaker-editor-follow" class="transport-icon-button" type="button" aria-pressed="false" aria-label="Следовать за playhead при воспроизведении" title="Следовать за playhead при воспроизведении"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M4 8V5h4M20 8V5h-4M4 16v3h4M20 16v3h-4M9 12h6"/></svg><span class="visually-hidden">Следовать за playhead</span></button>
+            </div>
             </div>
             <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
               <div class="speaker-selection-context">
@@ -126,15 +135,7 @@
                 <button id="speaker-editor-add-cut" class="edit-tool edit-tool--cut" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="m8 8 13 12M8 16 21 4"/></svg><span>Вырезать<small>На всех дорожках</small></span></button>
                 <button id="speaker-editor-add-silence" class="edit-tool edit-tool--silence" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h4l5-5v14l-5-5H3zM16 9l6 6m0-6-6 6"/></svg><span>Тишина<small>Выбранная дорожка</small></span></button>
               </div>
-            <div class="processor-zoom" role="group" aria-label="Масштаб исходников Спикерской">
-              <button id="speaker-editor-undo" type="button" disabled>Отменить</button><button id="speaker-editor-redo" type="button" disabled>Повторить</button><button id="speaker-editor-scale-mode" class="scale-mode" type="button" aria-pressed="false" aria-label="Переключить на высоту дорожек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3"/></svg><span>Время</span></button>
-              <button id="speaker-editor-zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
-              <input id="speaker-editor-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Масштаб исходников">
-              <output id="speaker-editor-scale-value" class="scale-value">—</output>
-              <button id="speaker-editor-zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
-              <button id="speaker-editor-zoom-fit" type="button">Вписать</button>
-              <button id="speaker-editor-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
-            </div>
+              <div class="speaker-history-controls" role="group" aria-label="История монтажных изменений"><button id="speaker-editor-undo" type="button" disabled>Отменить</button><button id="speaker-editor-redo" type="button" disabled>Повторить</button></div>
               <p id="speaker-editor-selection-scope">Протяните выделение по волне. Затем выберите инструмент.</p>
               <details open><summary>Точное редактирование</summary><div class="speaker-selection__fields">
                 <label>Начало, с<input id="speaker-editor-selection-start" type="number" min="0" step="0.000001" inputmode="decimal"></label>

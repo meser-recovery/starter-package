@@ -17,6 +17,8 @@ The binding visual comparison and required corrections are recorded in
 - Workflow choice: `editor-workflow-choice-1280.png`, `editor-workflow-choice-390.png`
 - Announcement workspace and result: `announcement-workspace-1280.png`, `announcement-result-1280.png`
 - Full Speaker workspace: `speaker-workspace-1680.png`, `speaker-workspace-1280.png`, `speaker-workspace-390.png`
+- Speaker transport delta: `speaker-follow-off-1280.png`, `speaker-follow-on-1280.png`,
+  `speaker-scale-time-1280.png`, `speaker-scale-height-1280.png`, `speaker-fit-after-zoom-1280.png`
 - Speaker result: `speaker-result-1680.png`, `speaker-result-1280.png`
 - Archive list: `archive-list-1536.png`, `archive-list-1280.png`, `archive-list-390.png`
 - Archive record detail: `archive-record-detail-1280.png`, `archive-detail-expanded-history-1280.png`

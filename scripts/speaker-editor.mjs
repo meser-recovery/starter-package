@@ -921,10 +921,13 @@ function setScaleMode(mode) {
   else state.trackHeight = Number(range.value);
   state.scaleMode = mode;
   const height = mode === "height";
-  byId("scale-mode").setAttribute("aria-pressed", String(height));
-  byId("scale-mode").setAttribute("aria-label", height ? "Переключить на масштаб времени" : "Переключить на высоту дорожек");
-  byId("scale-mode").querySelector("span").textContent = height ? "Высота" : "Время";
-  byId("scale-mode").querySelector("path").setAttribute("d", height ? "M12 4v16M9 7l3-3 3 3m-6 10 3 3 3-3" : "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
+  const modeButton = byId("scale-mode");
+  const modeLabel = height ? "Высота дорожек: переключить на горизонтальный масштаб времени" : "Горизонтальный масштаб времени: переключить на высоту дорожек";
+  modeButton.setAttribute("aria-pressed", String(height));
+  modeButton.setAttribute("aria-label", modeLabel);
+  modeButton.title = modeLabel;
+  modeButton.querySelector("span").textContent = height ? "Высота дорожек" : "Масштаб времени";
+  modeButton.querySelector("path").setAttribute("d", height ? "M12 4v16M9 7l3-3 3 3m-6 10 3 3 3-3" : "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
   if (height) { range.min = "96"; range.max = "300"; range.step = "4"; range.value = String(state.trackHeight); range.setAttribute("aria-label", "Высота всех дорожек Спикерской"); applyTrackHeight(); }
   else { range.min = "1"; range.max = String(state.timeZoomMax); range.step = ".25"; range.value = String(state.timeZoomValue); range.setAttribute("aria-label", "Масштаб времени исходников Спикерской"); updateWaveWidths(true); }
 }
@@ -1581,8 +1584,8 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
   state.selectionScope = "all"; state.scaleMode = "time"; state.timeZoomValue = 1; state.timeZoomMax = 8; state.trackHeight = 112;
-  byId("zoom").min = "1"; byId("zoom").step = ".25"; byId("zoom").value = "1";
-  byId("scale-mode").setAttribute("aria-pressed", "false"); byId("scale-mode").querySelector("span").textContent = "Время";
+  byId("zoom").min = "1"; byId("zoom").max = "8"; byId("zoom").step = ".25"; byId("zoom").value = "1"; byId("zoom").setAttribute("aria-label", "Горизонтальный масштаб времени");
+  byId("scale-mode").setAttribute("aria-pressed", "false"); byId("scale-mode").setAttribute("aria-label", "Горизонтальный масштаб времени: переключить на высоту дорожек"); byId("scale-mode").title = "Горизонтальный масштаб времени: переключить на высоту дорожек"; byId("scale-mode").querySelector("span").textContent = "Масштаб времени"; byId("scale-mode").querySelector("path").setAttribute("d", "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
   setSelection(0, "", orderedManifest[0]?.trackId, "all"); clearCandidate();
   state.originalDuration = NaN; render();
   window.dispatchEvent(new Event("speaker-editor-opened"));

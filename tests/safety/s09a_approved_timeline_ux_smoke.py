@@ -37,6 +37,17 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         page.wait_for_function("!document.getElementById('speaker-editor-source-audio-play').disabled", timeout=180000)
         rows = page.locator("#speaker-editor-tracks .speaker-track")
         assert page.locator(".speaker-selection-overlay[data-scope=all]").count() == rows.count()
+        transport = page.locator("#speaker-editor .speaker-transport")
+        for control_id in ("speaker-editor-scale-mode", "speaker-editor-zoom-out", "speaker-editor-zoom",
+            "speaker-editor-scale-value", "speaker-editor-zoom-in", "speaker-editor-zoom-fit", "speaker-editor-follow"):
+            assert transport.locator(f"#{control_id}").count() == 1
+            assert page.locator(f"#speaker-editor .speaker-selection #{control_id}").count() == 0
+        assert page.locator("#speaker-editor-zoom-fit").get_attribute("title") == "Вписать timeline в доступную ширину"
+        assert page.locator("#speaker-editor-follow").get_attribute("title") == "Следовать за playhead при воспроизведении"
+        page.locator("#speaker-editor-zoom-in").focus(); page.keyboard.press("Tab"); assert page.locator("#speaker-editor-zoom-fit").evaluate("e=>document.activeElement===e && e.matches(':focus-visible')")
+        page.keyboard.press("Tab"); assert page.locator("#speaker-editor-follow").evaluate("e=>document.activeElement===e && e.matches(':focus-visible')")
+        page.keyboard.press("Space"); assert page.locator("#speaker-editor-follow").get_attribute("aria-pressed") == "true"
+        page.keyboard.press("Space"); assert page.locator("#speaker-editor-follow").get_attribute("aria-pressed") == "false"
         payload = "async()=>JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)"
         baseline = page.evaluate(payload)
 
