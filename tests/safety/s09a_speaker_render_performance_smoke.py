@@ -71,8 +71,8 @@ def check_speaker_render_performance(browser, base_url):
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
         editing = page.locator(".speaker-selection > details:first-of-type")
         if not editing.evaluate("element => element.open"): editing.locator("summary").click()
-        for details in page.locator(".speaker-dsp-disclosure").all():
-            if details.get_attribute("open") is None: details.locator("summary").click()
+        processing_groups = page.get_by_role("group", name="Обработка дорожки", exact=False)
+        assert processing_groups.count() == 3 and all(group.is_visible() for group in processing_groups.all())
         for index in range(3):
             page.locator('.speaker-track [data-dsp-field="leveling"]').nth(index).check()
 
@@ -153,8 +153,8 @@ def check_speaker_render_performance(browser, base_url):
         page.locator("#open-local-speaker").click()
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
-        for details in page.locator(".speaker-dsp-disclosure").all():
-            if details.get_attribute("open") is None: details.locator("summary").click()
+        processing_groups = page.get_by_role("group", name="Обработка дорожки", exact=False)
+        assert processing_groups.count() == 3 and all(group.is_visible() for group in processing_groups.all())
         for index in range(3): page.locator('.speaker-track [data-dsp-field="leveling"]').nth(index).check()
         before = page.evaluate("({messages:window.speakerRenderProbe.messages.length,terminated:window.speakerRenderProbe.terminated})")
         page.locator("#speaker-editor-render").click()

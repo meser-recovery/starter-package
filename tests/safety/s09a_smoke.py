@@ -130,9 +130,16 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         original=snapshot(); assert original['session'].get('id') is None
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Вверх',exact=True).click()
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
-        first_dsp = page.locator('.speaker-dsp-disclosure').first
-        if first_dsp.get_attribute('open') is None: first_dsp.locator('summary').click()
-        page.locator('.speaker-dsp input').nth(0).check()
+        first_track = page.locator('.speaker-track').first
+        first_dsp = first_track.get_by_role('group', name='Обработка дорожки 1', exact=True)
+        assert first_dsp.is_visible()
+        enhancement = first_dsp.get_by_role('switch', name='Улучшение', exact=True)
+        leveling = first_dsp.get_by_role('switch', name='Выравнивание громкости', exact=True)
+        compression = first_dsp.get_by_role('slider', name='Компрессия', exact=True)
+        for control in (enhancement, leveling, compression):
+            assert control.count() == 1 and control.is_visible() and control.is_enabled()
+        enhancement.check()
+        assert any(setting['enhancement'] == 'gentle' for setting in snapshot()['payload']['trackProcessing'])
         exact_editing = page.locator('.speaker-selection > details').first
         if exact_editing.get_attribute('open') is None: exact_editing.locator('summary').click()
         page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()

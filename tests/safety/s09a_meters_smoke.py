@@ -62,8 +62,10 @@ def check_audio_meters(browser, base_url, screenshot_dir=None):
             page.wait_for_function('(s)=>Number(document.querySelector(s).dataset.rmsDb)===-Infinity',arg=root+' .audio-meter--master')
             assert float(master.get_attribute('data-peak-db')) == float('-inf')
             assert master.locator('.audio-meter__clip').get_attribute('aria-pressed')=='true', 'Stop must retain the overload latch until explicit reset'
-            master.locator('.audio-meter__clip').click()
-            assert master.locator('.audio-meter__clip').get_attribute('aria-pressed')=='false'
+            clip = master.locator('.audio-meter__clip')
+            clip.focus(); page.keyboard.press('Enter')
+            assert clip.evaluate('element => element === document.activeElement')
+            assert clip.get_attribute('aria-pressed')=='false'
             for row in rows.all(): row.locator('['+action+'=mute]').click()
             for width in (320,390,768,1280):
                 page.set_viewport_size({'width':width,'height':1000})

@@ -42,16 +42,12 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
                     return Math.abs(panel.right-wave.left)<2 && Math.abs(panel.top-wave.top)<2 && wave.width>0;
                 })''')
                 if mode == 'speaker' and width < 768:
-                    disclosure=page.locator('.speaker-dsp-disclosure').first
-                    if disclosure.evaluate('e=>e.open'):
-                        disclosure.locator('summary').tap()
-                        page.wait_for_function("!document.querySelector('.speaker-dsp-disclosure').open")
-                    disclosure.locator('summary').tap()
-                    disclosure.get_by_label('Улучшение',exact=True).wait_for(state='visible')
+                    processing=page.get_by_role('group',name='Обработка дорожки 1',exact=True)
+                    assert processing.is_visible()
+                    for role,label in (('switch','Улучшение'),('switch','Выравнивание громкости'),('slider','Компрессия')):
+                        control=processing.get_by_role(role,name=label,exact=True)
+                        assert control.is_visible() and control.is_enabled()
                     if output: page.screenshot(path=str(output/f'{mode}-long-name-dsp-{width}.png'),full_page=True)
-                    disclosure.locator('summary').focus();page.keyboard.press('Enter')
-                    assert not disclosure.evaluate('e=>e.open')
-                    assert disclosure.locator('summary').evaluate('e=>e===document.activeElement')
                 if output: page.screenshot(path=str(output/f'{mode}-long-name-{width}.png'),full_page=True)
             page.set_viewport_size({'width':320, 'height':450})
             transport=page.locator(root+' .speaker-transport,'+root+' .processor-source-player')
