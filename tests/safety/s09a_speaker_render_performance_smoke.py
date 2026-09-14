@@ -183,8 +183,7 @@ def check_speaker_render_performance(browser, base_url):
         page.locator("#open-local-speaker").click()
         if page.locator("#speaker-unsaved-discard").is_visible(): page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
-        if page.locator(".speaker-dsp-disclosure").get_attribute("open") is None:
-            page.locator(".speaker-dsp-disclosure summary").click()
+        assert page.locator(".speaker-dsp [data-dsp-field]").first.is_visible()
         page.locator('.speaker-track [data-dsp-field="leveling"]').check()
         for _ in range(2):
             before = page.evaluate("window.speakerRenderProbe.messages.length")
@@ -221,7 +220,7 @@ def check_speaker_parallel_equivalence(browser, base_url):
             page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
             for index in range(3):
                 row = page.locator(".speaker-track").nth(index)
-                row.locator(".speaker-dsp-disclosure summary").click()
+                assert row.locator(".speaker-dsp").is_visible()
                 row.locator('[data-dsp-field="enhancement"]').check()
                 row.locator('[data-dsp-field="leveling"]').check()
                 compression = row.locator('[data-dsp-field="compression"]')

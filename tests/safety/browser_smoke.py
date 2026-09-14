@@ -1795,8 +1795,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         second = page.locator(".speaker-track").nth(1)
         second.get_by_role("button", name="Исключить из микса", exact=True).click()
         assert "Не в финальном миксе" in page.locator(".speaker-track").nth(1).inner_text()
-        if not page.locator(".speaker-dsp input").first.is_visible():
-            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        assert page.locator(".speaker-dsp input").first.is_visible()
         page.locator(".speaker-dsp input").nth(0).check()
         page.locator(".speaker-dsp input").nth(2).fill("2"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         if screenshot_dir:
@@ -1929,8 +1928,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         # Monitoring does not invalidate; a render-affecting DSP edit does.
         page.locator('.speaker-track button[data-action="solo"]').first.click()
         assert page.locator("#speaker-editor-result").is_visible()
-        if not page.locator(".speaker-dsp input").first.is_visible():
-            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        assert page.locator(".speaker-dsp input").first.is_visible()
         page.locator(".speaker-dsp input").nth(0).uncheck()
         assert page.locator("#speaker-editor-result").is_hidden()
         page.locator("#speaker-editor-undo").click()
@@ -1944,8 +1942,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-390.png"))
         page.locator(".skip-link").evaluate("element => element.style.removeProperty('display')")
         # Exercise measured two-pass loudnorm in the real browser engine.
-        if not page.locator(".speaker-dsp input").first.is_visible():
-            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        assert page.locator(".speaker-dsp input").first.is_visible()
         page.locator(".speaker-dsp input").nth(0).uncheck()
         page.locator(".speaker-dsp input").nth(1).check()
         page.locator(".speaker-dsp input").nth(2).fill("0"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")

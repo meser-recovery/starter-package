@@ -196,6 +196,15 @@ def main():
             page.locator("#speaker-editor-tracks .speaker-track").first.wait_for(timeout=60_000)
             assert page.locator("#speaker-editor-tracks .speaker-track").count() == 3
             assert page.locator("#announcement-processor-card").is_hidden()
+            assert page.locator("#speaker-selection-heading").inner_text().casefold() == "редактирование"
+            assert page.locator("#speaker-editor .technical-details").count() == 0
+            assert page.locator("#speaker-editor-technical").is_hidden()
+            assert page.get_by_text("Технические сведения", exact=True).count() == 0
+            for row in page.locator("#speaker-editor-tracks .speaker-track").all():
+                assert row.locator('[data-dsp-field="enhancement"]').is_visible()
+                assert row.locator('[data-dsp-field="leveling"]').is_visible()
+                assert row.locator('[data-dsp-field="compression"]').is_visible()
+                assert row.locator(".speaker-dsp-disclosure > summary").count() == 0
             wave = page.locator("#speaker-editor-tracks .speaker-waveform").first
             box = wave.bounding_box()
             assert box and box["width"] > 100
@@ -208,9 +217,29 @@ def main():
             page.set_viewport_size({"width": 1680, "height": 932})
             page.evaluate("window.scrollTo(0, 0)")
             shot(page, "speaker-workspace-1680", full_page=False)
-            for width in (320, 390, 768, 1280):
+            for width in (320, 390, 768, 1280, 1680):
                 page.set_viewport_size({"width": width, "height": 900})
                 assert_no_page_overflow(page, f"speaker-workspace-{width}")
+                transport_layout = page.evaluate("""() => {
+                  const bounds = node => { const box=node.getBoundingClientRect(); return {name:node.id||node.className,left:box.left,right:box.right,top:box.top,bottom:box.bottom}; };
+                  const main=document.querySelector('#speaker-editor .studio-transport-main');
+                  const controls=document.querySelector('#speaker-editor .speaker-transport-controls');
+                  return {main:bounds(main),controls:bounds(controls),mainChildren:[...main.children].filter(node=>node.getBoundingClientRect().width).map(bounds),controlChildren:[...controls.children].filter(node=>node.getBoundingClientRect().width).map(bounds)};
+                }""")
+                main_box, controls_box = transport_layout["main"], transport_layout["controls"]
+                separated_horizontally = main_box["right"] <= controls_box["left"] + 1 or controls_box["right"] <= main_box["left"] + 1
+                separated_vertically = main_box["bottom"] <= controls_box["top"] + 1 or controls_box["bottom"] <= main_box["top"] + 1
+                assert separated_horizontally or separated_vertically, (width, transport_layout)
+                for main_child in transport_layout["mainChildren"]:
+                    for control_child in transport_layout["controlChildren"]:
+                        child_horizontal = main_child["right"] <= control_child["left"] + 1 or control_child["right"] <= main_child["left"] + 1
+                        child_vertical = main_child["bottom"] <= control_child["top"] + 1 or control_child["bottom"] <= main_child["top"] + 1
+                        assert child_horizontal or child_vertical, (width, main_child, control_child, transport_layout)
+                if width in (390, 1280, 1680):
+                    follow_box = page.locator("#speaker-editor-follow").bounding_box()
+                    transport_box = page.locator("#speaker-editor .speaker-transport").bounding_box()
+                    assert follow_box and transport_box
+                    assert follow_box["x"] >= transport_box["x"] and follow_box["x"] + follow_box["width"] <= transport_box["x"] + transport_box["width"], (width, follow_box, transport_box)
                 if width in (320, 390):
                     shot(page, f"speaker-workspace-{width}", full_page=False)
 
@@ -229,6 +258,7 @@ def main():
                 assert icon_button.evaluate("button => ![...button.childNodes].some(node => node.nodeType === Node.TEXT_NODE && node.textContent.trim())")
                 assert icon_button.locator("svg[aria-hidden=true]").count() == 1
                 assert icon_button.locator(".visually-hidden").count() == 1
+            if output: transport.screenshot(path=str(output / "speaker-transport-closeup-1280.png"))
 
             project_before_transport = page.evaluate("async () => JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)")
             zoom = page.locator("#speaker-editor-zoom")
@@ -243,11 +273,34 @@ def main():
             assert page.locator("#speaker-editor-scale-mode").get_attribute("aria-pressed") == "true"
             assert zoom.get_attribute("aria-label") == "Высота всех дорожек Спикерской"
             assert "Высота дорожек" in page.locator("#speaker-editor-scale-mode").get_attribute("aria-label")
-            zoom.fill("176"); zoom.dispatch_event("input")
-            page.wait_for_timeout(80)
-            assert abs(page.locator("#speaker-editor-tracks .speaker-waveform-scroll").first.bounding_box()["height"] - 176) < 2
-            shot(page, "speaker-scale-height-1280", full_page=False)
-            zoom.fill("112"); zoom.dispatch_event("input")
+            stable_controls = page.locator("#speaker-editor-tracks .speaker-track").first.evaluate("""row => {
+              const panel=row.querySelector('.speaker-track-controls').getBoundingClientRect();
+              const button=row.querySelector('.speaker-track__buttons button').getBoundingClientRect();
+              const dsp=row.querySelector('.speaker-dsp').getBoundingClientRect();
+              return {panelWidth:panel.width,buttonWidth:button.width,buttonHeight:button.height,dspWidth:dsp.width};
+            }""")
+            for height, name in ((168, "speaker-scale-height-min-1280"), (244, None), (320, "speaker-scale-height-max-1280"), (196, "speaker-scale-height-1280")):
+                zoom.fill(str(height)); zoom.dispatch_event("input"); page.wait_for_timeout(80)
+                geometry = page.locator("#speaker-editor-tracks .speaker-track").first.evaluate("""row => {
+                  const box=e=>e.getBoundingClientRect(); const panel=box(row.querySelector('.speaker-track-controls'));
+                  const lane=box(row.querySelector('.speaker-waveform-scroll')), wave=box(row.querySelector('.speaker-waveform'));
+                  const canvas=row.querySelector('canvas'), pixels=canvas.getContext('2d').getImageData(0,0,canvas.width,canvas.height).data;
+                  const bg=[pixels[0],pixels[1],pixels[2]], ys=[];
+                  for(let y=0;y<canvas.height;y++) for(let x=0;x<canvas.width;x++) { const i=(y*canvas.width+x)*4; if(pixels[i]!==bg[0]||pixels[i+1]!==bg[1]||pixels[i+2]!==bg[2]) { ys.push(y); break; } }
+                  const button=box(row.querySelector('.speaker-track__buttons button')), dsp=box(row.querySelector('.speaker-dsp'));
+                  return {row:box(row).height,panel:panel.height,lane:lane.height,wave:wave.height,canvasCss:box(canvas).height,
+                    canvasPixels:canvas.height,dpr:Math.max(1,Math.min(3,devicePixelRatio||1)),minY:Math.min(...ys),maxY:Math.max(...ys),
+                    panelWidth:panel.width,buttonWidth:button.width,buttonHeight:button.height,dspWidth:dsp.width};
+                }""")
+                for key in ("row", "panel", "lane", "wave", "canvasCss"):
+                    assert abs(geometry[key] - height) < 2, (height, geometry)
+                assert abs(geometry["canvasPixels"] - height * geometry["dpr"]) <= 2, geometry
+                assert geometry["minY"] > 1 and geometry["maxY"] < geometry["canvasPixels"] - 2, geometry
+                assert abs((geometry["minY"] + geometry["maxY"]) / 2 - geometry["canvasPixels"] / 2) <= 2, geometry
+                for key in ("panelWidth", "buttonWidth", "buttonHeight", "dspWidth"):
+                    assert abs(geometry[key] - stable_controls[key]) < 1, (key, height, geometry, stable_controls)
+                if name: shot(page, name, full_page=False)
+            if output: page.locator("#speaker-editor-tracks .speaker-track").first.screenshot(path=str(output / "speaker-track-enhancement-controls-1280.png"))
             page.locator("#speaker-editor-scale-mode").click()
             assert float(zoom.input_value()) == 4
             page.locator("#speaker-editor-zoom-in").focus(); page.keyboard.press("Tab")
@@ -255,6 +308,7 @@ def main():
             fit.click()
             page.wait_for_timeout(80)
             assert float(zoom.input_value()) == 1
+            assert page.evaluate("getComputedStyle(document.getElementById('speaker-editor')).getPropertyValue('--track-height').trim()") == "196px"
             assert wave.evaluate("element => element.getBoundingClientRect().width") < time_width
             shot(page, "speaker-fit-after-zoom-1280", full_page=False)
 
@@ -269,6 +323,39 @@ def main():
             page.keyboard.press("Space")
             assert follow.get_attribute("aria-pressed") == "false"
             assert page.evaluate("async () => JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)") == project_before_transport
+
+            help_box = page.locator("#speaker-editor .audio-help")
+            help_summary = help_box.locator("summary")
+            assert help_summary.get_attribute("aria-expanded") == "false"
+            if output: help_box.screenshot(path=str(output / "speaker-help-closed-1280.png"))
+            help_summary.press("Enter"); page.wait_for_function("document.querySelector('#speaker-editor .audio-help').open && document.querySelector('#speaker-editor .audio-help summary').getAttribute('aria-expanded') === 'true'")
+            assert help_box.get_attribute("open") is not None and help_summary.get_attribute("aria-expanded") == "true"
+            if output: help_box.screenshot(path=str(output / "speaker-help-open-1280.png"))
+            help_summary.press("Enter"); page.wait_for_function("!document.querySelector('#speaker-editor .audio-help').open && document.querySelector('#speaker-editor .audio-help summary').getAttribute('aria-expanded') === 'false'")
+            assert help_box.get_attribute("open") is None and help_summary.get_attribute("aria-expanded") == "false"
+            help_summary.press("Enter"); page.wait_for_function("document.querySelector('#speaker-editor .audio-help').open && document.querySelector('#speaker-editor .audio-help summary').getAttribute('aria-expanded') === 'true'")
+            assert help_box.get_attribute("open") is not None and help_summary.get_attribute("aria-expanded") == "true"
+            help_summary.press("Enter"); page.wait_for_function("!document.querySelector('#speaker-editor .audio-help').open && document.querySelector('#speaker-editor .audio-help summary').getAttribute('aria-expanded') === 'false'")
+
+            fullscreen_before = page.evaluate("""async () => ({payload:JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload),
+              selection:[document.getElementById('speaker-editor-selection-start').value,document.getElementById('speaker-editor-selection-end').value],
+              follow:document.getElementById('speaker-editor-follow').getAttribute('aria-pressed'),scroll:document.querySelector('#speaker-editor-tracks .speaker-waveform-scroll').scrollLeft})""")
+            expand = page.locator("#speaker-editor-expand")
+            assert expand.get_attribute("aria-label") == expand.get_attribute("title") == "На весь экран"
+            assert not expand.is_disabled()
+            expand.click(); page.wait_for_function("document.fullscreenElement === document.getElementById('speaker-editor')")
+            assert expand.get_attribute("aria-label") == expand.get_attribute("title") == "Выйти из полноэкранного режима"
+            assert expand.get_attribute("aria-pressed") == "true"
+            assert page.locator("#speaker-editor .speaker-dsp [data-dsp-field]").count() == 9
+            assert all(control.is_visible() for control in page.locator("#speaker-editor .speaker-dsp [data-dsp-field]").all())
+            shot(page, "speaker-fullscreen-1280", full_page=False)
+            page.keyboard.press("Escape"); page.wait_for_function("document.fullscreenElement === null")
+            assert expand.get_attribute("aria-label") == expand.get_attribute("title") == "На весь экран"
+            assert expand.get_attribute("aria-pressed") == "false"
+            fullscreen_after = page.evaluate("""async () => ({payload:JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload),
+              selection:[document.getElementById('speaker-editor-selection-start').value,document.getElementById('speaker-editor-selection-end').value],
+              follow:document.getElementById('speaker-editor-follow').getAttribute('aria-pressed'),scroll:document.querySelector('#speaker-editor-tracks .speaker-waveform-scroll').scrollLeft})""")
+            assert fullscreen_after == fullscreen_before, (fullscreen_before, fullscreen_after)
 
             page.locator("#speaker-editor-render").click()
             page.locator("#speaker-editor-result").wait_for(state="visible", timeout=120_000)

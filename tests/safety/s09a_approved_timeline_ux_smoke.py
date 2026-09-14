@@ -134,10 +134,12 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         assert page.locator("#speaker-editor-result-audio").evaluate("a=>a.paused && a.currentTime > 0")
 
         if output: page.locator("#speaker-editor").screenshot(path=str(output / "speaker-before-expand.png"))
-        page.locator("#speaker-editor-expand").click(); assert page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
+        page.locator("#speaker-editor-expand").click(); page.wait_for_function("document.fullscreenElement===document.getElementById('speaker-editor')")
+        assert page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
         assert page.evaluate(payload) != baseline  # only the intentional edits above changed it
         if output: page.screenshot(path=str(output / "speaker-expanded.png"))
-        page.keyboard.press("Escape"); assert not page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
+        page.keyboard.press("Escape"); page.wait_for_function("document.fullscreenElement===null")
+        assert not page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
 
         # Switch to the second editor, preserving its own display state and common selection.
         page.locator("#open-local-announcement").evaluate('element => element.click()')

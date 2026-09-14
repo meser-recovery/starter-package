@@ -25,7 +25,7 @@ const state = {
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
-  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 112, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
+  scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
   measurementCache: new LoudnessMeasurementCache(128), sourceIdentities: new SourceIdentityRegistry(), lastRenderProfile: null
 };
 let renderOperationSequence = 0;
@@ -655,13 +655,10 @@ function renderTracks() {
     const summary = element("p", "speaker-track__summary", processingLabel(setting));
     header.append(element("span", "speaker-track-selection"));
     const preview = state.ready ? waveform(track) : element("div", "speaker-source-pending", track.preparationError || (state.preparationError ? "Ожидает повторной подготовки." : "Подготовка формы сигнала…"));
-    const processing = element("details", "speaker-dsp-disclosure");
-    processing.open = track.controlsOpen ?? false;
-    const processingToggle = element("summary", "", "Обработка дорожки");
-    processingToggle.addEventListener("click", event => {
-      event.preventDefault(); track.controlsOpen = !processing.open; processing.open = track.controlsOpen;
-    });
-    processing.append(processingToggle, dsp);
+    const processing = element("div", "speaker-dsp-disclosure");
+    processing.setAttribute("role", "group");
+    processing.setAttribute("aria-label", `Обработка дорожки ${index + 1}`);
+    processing.append(dsp);
     const controls = element("div", "speaker-track-controls"); controls.append(header, processing, summary);
     item.append(controls, preview); list.append(item);
   });
@@ -908,6 +905,7 @@ function setSpeakerZoomAt(pixelsPerSecond, anchorTime, anchorOffset) {
 }
 
 function applyTrackHeight() {
+  state.trackHeight = Math.max(168, Math.min(320, Number(state.trackHeight) || 196));
   workspace.style.setProperty("--track-height", `${state.trackHeight}px`);
   workspace.classList.toggle("has-compact-tracks", state.trackHeight < 200);
   byId("scale-value").textContent = state.scaleMode === "height" ? `${state.trackHeight} px` : `${state.pixelsPerSecond.toFixed(state.pixelsPerSecond < 10 ? 1 : 0)} px/s`;
@@ -928,7 +926,7 @@ function setScaleMode(mode) {
   modeButton.title = modeLabel;
   modeButton.querySelector("span").textContent = height ? "Высота дорожек" : "Масштаб времени";
   modeButton.querySelector("path").setAttribute("d", height ? "M12 4v16M9 7l3-3 3 3m-6 10 3 3 3-3" : "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
-  if (height) { range.min = "96"; range.max = "300"; range.step = "4"; range.value = String(state.trackHeight); range.setAttribute("aria-label", "Высота всех дорожек Спикерской"); applyTrackHeight(); }
+  if (height) { range.min = "168"; range.max = "320"; range.step = "4"; range.value = String(state.trackHeight); range.setAttribute("aria-label", "Высота всех дорожек Спикерской"); applyTrackHeight(); }
   else { range.min = "1"; range.max = String(state.timeZoomMax); range.step = ".25"; range.value = String(state.timeZoomValue); range.setAttribute("aria-label", "Масштаб времени исходников Спикерской"); updateWaveWidths(true); }
 }
 
@@ -1583,7 +1581,7 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
   const select = byId("selection-track"); select.replaceChildren(); for (const track of orderedManifest) { const option = document.createElement("option"); option.value = track.trackId; option.textContent = track.originalName; select.append(option); }
-  state.selectionScope = "all"; state.scaleMode = "time"; state.timeZoomValue = 1; state.timeZoomMax = 8; state.trackHeight = 112;
+  state.selectionScope = "all"; state.scaleMode = "time"; state.timeZoomValue = 1; state.timeZoomMax = 8; state.trackHeight = 196;
   byId("zoom").min = "1"; byId("zoom").max = "8"; byId("zoom").step = ".25"; byId("zoom").value = "1"; byId("zoom").setAttribute("aria-label", "Горизонтальный масштаб времени");
   byId("scale-mode").setAttribute("aria-pressed", "false"); byId("scale-mode").setAttribute("aria-label", "Горизонтальный масштаб времени: переключить на высоту дорожек"); byId("scale-mode").title = "Горизонтальный масштаб времени: переключить на высоту дорожек"; byId("scale-mode").querySelector("span").textContent = "Масштаб времени"; byId("scale-mode").querySelector("path").setAttribute("d", "M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3");
   setSelection(0, "", orderedManifest[0]?.trackId, "all"); clearCandidate();
@@ -1623,7 +1621,7 @@ byId("close").addEventListener("click", () => closeSpeakerEditor(false)); byId("
 byId("zoom").addEventListener("input", () => { if (state.scaleMode === "height") { state.trackHeight = Number(byId("zoom").value); applyTrackHeight(); } else { state.timeZoomValue = Number(byId("zoom").value); updateWaveWidths(true); } });
 byId("scale-mode").addEventListener("click", () => setScaleMode(state.scaleMode === "time" ? "height" : "time"));
 byId("zoom-out").addEventListener("click", () => { state.timeZoomValue = Math.max(1, state.timeZoomValue / 2); if (state.scaleMode === "time") byId("zoom").value = String(state.timeZoomValue); updateWaveWidths(true); });
-byId("zoom-in").addEventListener("click", () => { state.timeZoomValue = Math.min(state.timeZoomMax, state.timeZoomValue * 2); if (state.scaleMode === "time") byId("zoom").value = String(state.timeZoomValue); updateWaveWidths(true); }); byId("zoom-fit").addEventListener("click", () => { state.timeZoomValue = 1; if (state.scaleMode === "time") byId("zoom").value = "1"; updateWaveWidths(); });
+byId("zoom-in").addEventListener("click", () => { state.timeZoomValue = Math.min(state.timeZoomMax, state.timeZoomValue * 2); if (state.scaleMode === "time") byId("zoom").value = String(state.timeZoomValue); updateWaveWidths(true); }); byId("zoom-fit").addEventListener("click", () => { state.timeZoomValue = 1; state.trackHeight = 196; if (state.scaleMode === "time") byId("zoom").value = "1"; else byId("zoom").value = "196"; applyTrackHeight(); updateWaveWidths(); });
 byId("follow").addEventListener("click", () => { state.follow = !state.follow; byId("follow").setAttribute("aria-pressed", String(state.follow)); });
 byId("source-audio").addEventListener("pause", stopOtherPlayback);
 byId("source-audio").addEventListener("ended", stopOtherPlayback);
@@ -1653,16 +1651,15 @@ document.addEventListener("keydown", (event) => {
 });
 window.addEventListener("resize", () => {
   if (!state.session) return;
-  for (const row of byId("tracks").querySelectorAll(".speaker-track")) {
-    const track = state.tracks.find(item => item.trackId === row.dataset.trackId);
-    row.querySelector(".speaker-dsp-disclosure").open = track.controlsOpen ?? window.innerWidth >= 768;
-  }
   updateWaveWidths(); updateResultWidth();
 });
 installSpaceTransport({ workspace, sourceAudio: byId("source-audio"), resultAudio: byId("result-audio"), sourceButton: byId("source-audio-play"), canHandle: () => Boolean(state.session) && state.ready && !editorBusy() });
 installEditorExpansion({ workspace, button: byId("expand"),
   captureAnchor: () => { const first = byId("tracks").querySelector(".speaker-waveform-scroll"); return first ? (first.scrollLeft + first.clientWidth / 2) / state.pixelsPerSecond : NaN; },
-  onGeometryChange: anchor => { updateWaveWidths(true, anchor); updateResultWidth(); }, isGestureActive: () => Boolean(state.cancelSelection || state.editTool || state.selectedRegion) });
+  onGeometryChange: anchor => { updateWaveWidths(true, anchor); applyTrackHeight(); updateResultWidth(); }, isGestureActive: () => Boolean(state.cancelSelection || state.editTool || state.selectedRegion), nativeFullscreen: true });
+const help = workspace.querySelector(".audio-help"), helpSummary = help?.querySelector("summary");
+const syncHelpDisclosure = () => helpSummary?.setAttribute("aria-expanded", String(help.open));
+help?.addEventListener("toggle", syncHelpDisclosure); syncHelpDisclosure();
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
 window.addEventListener("pagehide", () => teardown());
 

@@ -44,8 +44,7 @@ def check_compression_scale(browser, base_url, screenshot_dir=None):
         page.locator("#source-session-use-local").click()
         page.locator("#open-local-speaker").click()
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=180000)
-        for details in page.locator(".speaker-dsp-disclosure").all():
-            if details.get_attribute("open") is None: details.locator("summary").click()
+        assert all(control.is_visible() for control in page.locator(".speaker-dsp [data-dsp-field]").all())
         normal = geometry()
         if screenshot_dir:
             target = Path(screenshot_dir); target.mkdir(parents=True, exist_ok=True)
@@ -58,23 +57,20 @@ def check_compression_scale(browser, base_url, screenshot_dir=None):
             assert first.get_attribute("aria-valuetext") == label
             assert abs(first.locator("xpath=..").evaluate("node => node.getBoundingClientRect().width") - baseline_width) < 0.75
 
-        page.locator("#speaker-editor-expand").click(); page.wait_for_timeout(100)
+        page.locator("#speaker-editor-expand").click(); page.wait_for_function("document.fullscreenElement===document.getElementById('speaker-editor')")
         expanded = geometry()
         assert all(item["fieldHeight"] > 0 for item in expanded)
         if screenshot_dir:
             page.screenshot(path=str(target / "speaker-compression-expanded.png"), full_page=True)
 
-        page.locator("#speaker-editor-expand").click()
+        page.keyboard.press("Escape"); page.wait_for_function("document.fullscreenElement===null")
         for width in (767, 768):
             page.set_viewport_size({"width": width, "height": 900}); page.wait_for_timeout(50)
-            for details in page.locator(".speaker-dsp-disclosure").all():
-                if details.get_attribute("open") is None: details.locator("summary").click()
+            assert all(control.is_visible() for control in page.locator(".speaker-dsp [data-dsp-field]").all())
             geometry()
         page.set_viewport_size({"width": 390, "height": 844})
         page.locator("#speaker-editor-scale-mode").click()
-        page.locator("#speaker-editor-zoom").fill("148"); page.locator("#speaker-editor-zoom").dispatch_event("input")
-        for details in page.locator(".speaker-dsp-disclosure").all():
-            if details.get_attribute("open") is None: details.locator("summary").click()
+        page.locator("#speaker-editor-zoom").fill("168"); page.locator("#speaker-editor-zoom").dispatch_event("input")
         compact = geometry()
         assert all(item["fieldHeight"] > 0 for item in compact)
         for zoom in (1, 1.25, 1.5):

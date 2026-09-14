@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
     <link rel="stylesheet" href="styles/audio-workspace.css">
-    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-9">
+    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-10">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -95,7 +95,7 @@
         </section>
         <section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
           <div class="archive-card__heading">
-            <button id="speaker-editor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
+            <button id="speaker-editor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="На весь экран" title="На весь экран"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>На весь экран</span></button>
             <p class="archive-eyebrow">Спикерская · точный монтаж</p>
             <h2 id="speaker-editor-heading">Рабочая область спикерской</h2>
             <p id="speaker-editor-identity"></p>
@@ -126,7 +126,7 @@
             </div>
             <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
               <div class="speaker-selection-context">
-                <h3 id="speaker-selection-heading">Монтаж выделения</h3>
+                <h3 id="speaker-selection-heading">Редактирование</h3>
                 <p id="speaker-selection-summary" role="status">Выделите фрагмент на дорожке.</p>
               </div>
               <div class="speaker-selection__actions" role="group" aria-label="Инструменты монтажа выделения" aria-describedby="speaker-editor-selection-scope">
@@ -143,8 +143,8 @@
                 <label>Длительность, с<output id="speaker-editor-selection-duration">0.000000</output></label>
                 <label>Выбранная дорожка<select id="speaker-editor-selection-track"></select></label>
               </div><p>Координаты относятся к исходной записи. Глобальные вырезы не сдвигают следующие выделения.</p></details>
-              <details class="technical-details"><summary>Технические сведения</summary><p id="speaker-editor-technical"></p></details>
-              <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
+              <p id="speaker-editor-technical" hidden></p>
+              <details class="audio-help"><summary aria-expanded="false">Как работают Solo, Mute и обработка звука</summary>
 <p><strong>Solo.</strong> Слушать эту дорожку отдельно. На финальный результат не влияет.</p>
 <p><strong>Mute.</strong> Временно отключить эту дорожку при прослушивании. На финальный результат не влияет.</p>
 <p><strong>Исключить из микса.</strong> Дорожка останется в проекте, но не попадёт в создаваемую финальную версию.</p>

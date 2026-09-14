@@ -137,7 +137,7 @@ def check_s09a_editor_corrective(browser, base_url, screenshot_dir=None, device_
         page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').click()
         assert page.locator('.speaker-region-row').get_by_role('button', name='Применить границы').evaluate('e=>e===document.activeElement')
         page.locator('.speaker-regions > summary').click()
-        page.locator('.speaker-track').nth(1).locator('.speaker-dsp-disclosure > summary').click()
+        assert page.locator('.speaker-track').nth(1).locator('.speaker-dsp').is_visible()
         control=page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True)
         control.focus(); control.check()
         assert page.locator('.speaker-track').nth(1).get_by_label('Выравнивание громкости', exact=True).evaluate('e=>e===document.activeElement')
