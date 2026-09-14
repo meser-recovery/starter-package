@@ -115,12 +115,14 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900}); overflow(); shot(f'import-{width}')
         writes=len([t for t in trace if t[0]!='GET'])
+        page.locator('#source-session-use-local').click()
         page.locator('#open-local-announcement').click()
         page.locator('#processor-run').click(); page.wait_for_function("!document.getElementById('processor-result').hidden", timeout=60000)
         page.wait_for_function("document.getElementById('processor-download').href.startsWith('blob:')")
         assert page.locator('#speaker-editor').is_hidden()
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900}); overflow(); shot(f'announcement-{width}')
+        page.locator('#source-session-announcement-close').click()
         page.locator('#open-local-speaker').click(); page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
         assert page.locator('#announcement-processor-card').is_hidden()
         assert page.locator('#source-session-announcement-workspace').is_hidden()
@@ -128,8 +130,18 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         original=snapshot(); assert original['session'].get('id') is None
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Вверх',exact=True).click()
         page.locator('.speaker-track').nth(1).get_by_role('button',name='Исключить из микса',exact=True).click()
-        page.locator('.speaker-dsp input').nth(0).check()
-        page.get_by_text('Точное редактирование',exact=True).click()
+        first_track = page.locator('.speaker-track').first
+        first_dsp = first_track.get_by_role('group', name='Обработка дорожки 1', exact=True)
+        assert first_dsp.is_visible()
+        enhancement = first_dsp.get_by_role('switch', name='Улучшение', exact=True)
+        leveling = first_dsp.get_by_role('switch', name='Выравнивание громкости', exact=True)
+        compression = first_dsp.get_by_role('slider', name='Компрессия', exact=True)
+        for control in (enhancement, leveling, compression):
+            assert control.count() == 1 and control.is_visible() and control.is_enabled()
+        enhancement.check()
+        assert any(setting['enhancement'] == 'gentle' for setting in snapshot()['payload']['trackProcessing'])
+        exact_editing = page.locator('.speaker-selection > details').first
+        if exact_editing.get_attribute('open') is None: exact_editing.locator('summary').click()
         page.locator('#speaker-editor-selection-start').fill('.2');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-selection-end').fill('2.8');page.locator('#speaker-editor-set-end').click()
         page.locator('#speaker-editor-selection-start').fill('1');page.locator('#speaker-editor-selection-end').fill('1.2');apply_selection(page, 'silence')
@@ -201,11 +213,11 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         assert len([t for t in trace if t[0]!='GET'])==writes, trace
         local_url=page.locator('#speaker-editor-download').get_attribute('href')
         # Unsaved transition: cancel, failed save, then reconnect all preserve the same project.
-        page.locator('#open-local-announcement').click();page.locator('#speaker-unsaved-dialog').wait_for(state='visible');shot('unsaved-cancel')
+        page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-dialog').wait_for(state='visible');shot('unsaved-cancel')
         page.locator('#speaker-unsaved-cancel').click();unchanged(edited)
-        assert page.locator('#open-local-announcement').evaluate('e=>e===document.activeElement')
+        assert page.locator('#speaker-editor-close').evaluate('e=>e===document.activeElement')
         fault['draft']=503
-        page.locator('#open-local-announcement').click();page.locator('#speaker-unsaved-save').click();page.locator('#speaker-local-save-confirm').click()
+        page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-save').click();page.locator('#speaker-local-save-confirm').click()
         page.wait_for_function("document.getElementById('speaker-editor-status').textContent.includes('Не удалось сохранить')")
         unchanged(edited);assert page.locator('#speaker-editor').is_visible();shot('sources-finalized-project-failed')
         sessions=command('snapshot')['sessions'];assert len(sessions)==len(initial['sessions'])+1
@@ -265,15 +277,20 @@ def check_s09a(browser, base_url, screenshot_dir=None):
         for width in (320,390,768,1280):
             page.set_viewport_size({'width':width,'height':900});overflow();shot(f'project-reopened-{width}')
         # Save-and-continue waits for the confirmed project; explicit discard and close cancellation are distinct.
-        page.get_by_text('Точное редактирование',exact=True).click()
+        exact_editing = page.locator('.speaker-selection > details').first
+        if exact_editing.get_attribute('open') is None: exact_editing.locator('summary').click()
         page.locator('#speaker-editor-selection-start').fill('.3');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
-        page.locator('#open-local-announcement').click();page.locator('#speaker-unsaved-save').click()
+        page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-save').click()
+        page.wait_for_function("document.getElementById('speaker-editor').hidden")
+        page.locator('#open-local-announcement').click()
         page.wait_for_function("!document.getElementById('announcement-processor-card').hidden")
         assert page.locator('#speaker-editor').is_hidden()
         assert command('snapshot')['sessions'][-1] is not None
         page.goto(base_url+f'/Audio-Editor.html?session={source["id"]}&workflow=speaker')
         page.wait_for_function("document.getElementById('speaker-editor-status').textContent==='Все изменения сохранены'")
-        page.get_by_text('Точное редактирование',exact=True).click();page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
+        exact_editing = page.locator('.speaker-selection > details').first
+        if exact_editing.get_attribute('open') is None: exact_editing.locator('summary').click()
+        page.locator('#speaker-editor-selection-start').fill('.4');page.locator('#speaker-editor-selection-end').fill('.8');page.locator('#speaker-editor-set-start').click()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-cancel').click();assert page.locator('#speaker-editor').is_visible()
         page.locator('#speaker-editor-close').click();page.locator('#speaker-unsaved-discard').click();assert page.locator('#speaker-editor').is_hidden()
         page.goto(base_url+f'/Audio-Archive.html?session={source["id"]}')

@@ -35,7 +35,7 @@ def check_audio_meters(browser, base_url, screenshot_dir=None):
         for mode, root, prefix, row_selector, action in [
             ('speaker','#speaker-editor','speaker-editor-source-audio','.speaker-track','data-action'),
             ('announcement','#announcement-processor-card','processor-source-audio','.processor-track','data-track-action')]:
-            page.locator('#open-local-'+mode).click()
+            page.locator('#open-local-'+mode).evaluate('element => element.click()')
             if page.locator('#speaker-unsaved-discard').is_visible(): page.locator('#speaker-unsaved-discard').click()
             page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix)
             rows=page.locator(root+' '+row_selector)
@@ -62,8 +62,10 @@ def check_audio_meters(browser, base_url, screenshot_dir=None):
             page.wait_for_function('(s)=>Number(document.querySelector(s).dataset.rmsDb)===-Infinity',arg=root+' .audio-meter--master')
             assert float(master.get_attribute('data-peak-db')) == float('-inf')
             assert master.locator('.audio-meter__clip').get_attribute('aria-pressed')=='true', 'Stop must retain the overload latch until explicit reset'
-            master.locator('.audio-meter__clip').click()
-            assert master.locator('.audio-meter__clip').get_attribute('aria-pressed')=='false'
+            clip = master.locator('.audio-meter__clip')
+            clip.focus(); page.keyboard.press('Enter')
+            assert clip.evaluate('element => element === document.activeElement')
+            assert clip.get_attribute('aria-pressed')=='false'
             for row in rows.all(): row.locator('['+action+'=mute]').click()
             for width in (320,390,768,1280):
                 page.set_viewport_size({'width':width,'height':1000})

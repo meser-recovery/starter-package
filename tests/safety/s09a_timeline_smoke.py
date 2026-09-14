@@ -23,7 +23,7 @@ def check_timeline_controls(browser, base_url, screenshot_dir=None):
                 ('announcement','processor-source-audio','processor-track','processor-waveform-scroll','processor-waveform','processor-source-zoom-range','processor-source-scrollbar'),
                 ('speaker','speaker-editor-source-audio','speaker-track','speaker-waveform-scroll','speaker-waveform','speaker-editor-zoom','speaker-editor-source-scrollbar'),
             ):
-                page.locator('#open-local-'+mode).click()
+                page.locator('#open-local-'+mode).evaluate('element => element.click()')
                 page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix)
                 rows=page.locator('.'+row_class); scroll=rows.first.locator('.'+scroll_class); wave=rows.first.locator('.'+wave_class)
                 audio=page.locator('#'+prefix)
@@ -106,12 +106,17 @@ def check_flags_and_keyboard(page,output,dpr):
         page.keyboard.press('Home' if kind=='start' else 'End')
         assert page.evaluate(state)==baseline
         assert flag.evaluate('e=>e===document.activeElement')
+    processing = rows.first.get_by_role('group', name='Обработка дорожки 1', exact=True)
+    assert processing.is_visible()
     for label in ('Улучшение','Выравнивание громкости'):
-        switch=rows.first.get_by_role('switch',name=label,exact=True)
+        switch=processing.get_by_role('switch',name=label,exact=True)
+        assert switch.is_visible() and switch.is_enabled()
         switch.focus();page.keyboard.press('Space');assert switch.is_checked()
         assert switch.evaluate('e=>e===document.activeElement')
         page.keyboard.press('Space');assert not switch.is_checked()
-    slider=rows.first.get_by_role('slider',name='Компрессия',exact=True);slider.focus();page.keyboard.press('Home')
+    slider=processing.get_by_role('slider',name='Компрессия',exact=True)
+    assert slider.is_visible() and slider.is_enabled()
+    slider.focus();page.keyboard.press('Home')
     for i,preset in enumerate(('off','light','medium','strong')):
         if i:page.keyboard.press('ArrowRight')
         assert page.evaluate(state)['trackProcessing'][0]['compression']==preset

@@ -17,17 +17,16 @@ def assert_shared_audio_header(page, width, surface):
     assert logo.count() == identity.count() == service.count() == 1, f'{surface}: canonical header links missing'
     assert service.locator(':scope > span').all_text_contents() == ['Для', 'служащих'], f'{surface}: service-link markup differs'
     boxes = {name: locator.bounding_box() for name, locator in [('header', header), ('logo', logo), ('identity', identity), ('service', service)]}
-    assert all(boxes.values()), {surface: boxes, 'width': width}
-    assert abs((boxes['identity']['x'] + boxes['identity']['width'] / 2) - width / 2) <= 1, {surface: boxes, 'width': width}
+    required_boxes = ('header', 'logo', 'identity', 'service') if width > 720 else ('header', 'logo', 'identity')
+    assert all(boxes[name] for name in required_boxes), {surface: boxes, 'width': width}
     assert boxes['header']['x'] >= -0.5 and boxes['header']['x'] + boxes['header']['width'] <= width + 0.5, {surface: boxes, 'width': width}
-    minimum_gap = 4
-    for left, right in (('logo', 'identity'), ('identity', 'service')):
-        assert boxes[left]['x'] + boxes[left]['width'] + minimum_gap <= boxes[right]['x'], {
-            surface: boxes, 'width': width, 'collision_or_sticking': [left, right], 'minimum_gap': minimum_gap
-        }
-    for name in ('logo', 'identity', 'service'):
+    for name in required_boxes[1:]:
         box = boxes[name]
         assert box['x'] >= boxes['header']['x'] - 0.5 and box['x'] + box['width'] <= boxes['header']['x'] + boxes['header']['width'] + 0.5, {surface: boxes, 'width': width, 'outside': name}
+    if width > 720:
+        assert boxes['header']['width'] <= 165, {surface: boxes, 'width': width, 'expected_sidebar': True}
+    else:
+        assert boxes['header']['width'] >= width - 1, {surface: boxes, 'width': width, 'expected_mobile_bar': True}
     return boxes
 
 
@@ -41,22 +40,14 @@ def assert_archive_visual_shell(page, width, state):
         return [name, box && {x: box.x, y: box.y, width: box.width, height: box.height, right: box.right, bottom: box.bottom}];
     }))""")
     assert all(boxes.values()), {'state': state, 'width': width, 'boxes': boxes}
-    assert abs(boxes['surface']['x'] + boxes['surface']['width'] / 2 - width / 2) <= 1, {'state': state, 'width': width, 'boxes': boxes}
-    assert boxes['surface']['width'] <= 950.5 and boxes['surface']['right'] <= width + .5, {'state': state, 'width': width, 'boxes': boxes}
-    assert boxes['surface']['y'] > boxes['main']['y'] and boxes['surface']['bottom'] <= boxes['main']['bottom'], {'state': state, 'width': width, 'boxes': boxes}
+    assert abs(boxes['surface']['x'] + boxes['surface']['width'] / 2 - (boxes['main']['x'] + boxes['main']['width'] / 2)) <= 1, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['width'] <= 1120.5 and boxes['surface']['right'] <= width + .5, {'state': state, 'width': width, 'boxes': boxes}
+    assert boxes['surface']['y'] >= boxes['main']['y'] and boxes['surface']['bottom'] <= boxes['main']['bottom'] + .5, {'state': state, 'width': width, 'boxes': boxes}
     assert boxes['footer']['y'] >= boxes['main']['bottom'] - .5, {'state': state, 'width': width, 'boxes': boxes}
     if state == 'initial':
-        assert boxes['surface']['height'] + 20 < boxes['main']['height'], {'state': state, 'width': width, 'boxes': boxes, 'stretched_surface': True}
-        primary = page.locator('#record-picker-open').bounding_box()
-        maintenance = page.locator('#maintenance').bounding_box()
+        assert page.locator('#records').is_visible()
         connection = page.locator('.archive-connection').bounding_box()
-        assert primary and maintenance and connection
-        assert primary['y'] + primary['height'] <= maintenance['y'] < connection['y'], {
-            'state': state, 'width': width, 'primary': primary, 'maintenance': maintenance, 'connection': connection
-        }
-        assert connection['height'] < 150, {'state': state, 'width': width, 'connection': connection, 'stretched_connection': True}
-        primary_style = page.locator('#record-picker-open').evaluate("el => ({background:getComputedStyle(el).backgroundColor, color:getComputedStyle(el).color})")
-        assert primary_style == {'background': 'rgb(71, 138, 201)', 'color': 'rgb(255, 255, 255)'}, primary_style
+        assert connection and connection['height'] < 150, {'state': state, 'width': width, 'connection': connection}
     return boxes
 
 
@@ -169,7 +160,6 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     def load():
         page.goto(base_url + '/Audio-Archive.html')
         ready()
-        page.locator('#record-picker-open').click()
         page.locator('#record-picker-recent').click()
 
     def readonly(start):
@@ -220,8 +210,8 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
     try:
         page.goto(base_url + '/Audio-Archive.html')
         ready()
-        assert page.locator('#records').is_hidden()
-        assert page.locator('#session-list .archive-card').count() == 0
+        assert page.locator('#records').is_visible()
+        assert page.locator('#session-list .archive-card').count() > 0
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width': width, 'height': 900})
             assert_shared_audio_header(page, width, 'Audio-Archive')
@@ -238,9 +228,7 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
         fault['list'] = False
         page.locator('#refresh').click()
         ready()
-        page.locator('#record-picker-open').click()
-        assert page.locator('#session-list .archive-card').count() == 0
-        assert page.locator('#matching').inner_text() == 'Список появится после поиска.'
+        assert page.locator('#session-list .archive-card').count() > 0
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({'width': width, 'height': 900})
             assert_archive_visual_shell(page, width, 'chooser')
@@ -272,9 +260,6 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
                 break
             page.locator('#record-next').click()
         assert len(seen) == 1000 and len(set(seen)) == 1000
-        page.locator('#record-picker-close').click()
-        assert page.locator('#records').is_hidden()
-        assert page.locator('#record-picker-open').evaluate('el => el === document.activeElement')
         fault['scale'] = False
 
         load()

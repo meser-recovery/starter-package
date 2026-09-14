@@ -11,7 +11,7 @@
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
     <link rel="stylesheet" href="styles/audio-workspace.css">
-  <link rel="stylesheet" href="styles/audio-studio.css?v=s09b-progressive-3">
+    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-12">
     <script src="scripts/service-landing.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -20,22 +20,39 @@
   </head>
   <body class="audio-studio site-page">
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
-    <header class="site-header">
+    <header class="site-header portal-sidebar">
       <div class="container site-header__content">
-        <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
-        <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
-        <a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
+        <div class="portal-brand"><a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="./"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
+        <nav class="portal-nav" aria-label="Аудиопортал"><a class="is-current" href="Audio-Editor.html" aria-current="page"><span aria-hidden="true">⌁</span> Редактор</a><a href="Audio-Archive.html"><span aria-hidden="true">▣</span> Аудиоархив</a></nav>
+        <div class="portal-sidebar__footer"><a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a></div>
       </div>
     </header>
     <main id="main-content" class="audio-editor-main">
       <div class="container audio-editor-content">
-        <div class="editor-page-heading"><h1>Редактирование аудио</h1><a href="Audio-Archive.html">Аудиоархив ↗</a></div><div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
-        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading">
-          <div><p class="archive-eyebrow">Текущая запись</p><h2 id="current-recording-heading">Запись не выбрана</h2><p id="current-recording-state">Откройте запись из аудиоархива или выберите дорожки на устройстве.</p></div>
-          <div class="current-recording__actions"><button id="source-session-mode-archive" type="button" aria-pressed="true" aria-expanded="false" aria-controls="import-zone">Выбрать запись</button><button id="source-session-mode-device" type="button" aria-pressed="false">С устройства</button><a id="current-recording-archive-link" href="Audio-Archive.html" hidden>Открыть в аудиоархиве</a></div>
+        <div class="editor-page-heading">
+          <div><p class="portal-kicker">Редактор</p><h1>Редактирование аудио</h1><p class="portal-lead">С какой записью вы хотите работать?</p></div>
+        </div>
+        <div id="archive-reconnect" class="reconnect-banner" hidden><p id="archive-reconnect-message" role="status"></p><button id="archive-reconnect-login" type="button">Подключиться снова</button><button id="archive-reconnect-retry" type="button" hidden>Повторить действие</button></div>
+        <section id="current-recording" class="archive-card current-recording" aria-labelledby="current-recording-heading" data-recording-state="empty">
+          <div class="current-recording__copy">
+            <div class="current-recording__label"><p class="archive-eyebrow">Текущая запись Zoom</p><span id="current-recording-badge" class="recording-badge">Не выбрана</span></div>
+            <h2 id="current-recording-heading">Откуда взять запись?</h2>
+            <p id="current-recording-state">Выберите сохранённую запись из аудиоархива или несколько синхронизированных дорожек с этого устройства.</p>
+            <dl id="current-recording-facts" class="current-recording__facts" hidden>
+              <div><dt>Источник</dt><dd id="current-recording-source">—</dd></div>
+              <div><dt>Дорожки</dt><dd id="current-recording-tracks">—</dd></div>
+              <div><dt>Дальше</dt><dd id="current-recording-next">Выберите задачу</dd></div>
+            </dl>
+          </div>
+          <div class="current-recording__actions" aria-label="Выбор источника записи">
+            <button id="source-session-mode-archive" class="source-choice source-choice--archive" type="button" aria-pressed="true" aria-expanded="false" aria-controls="import-zone"><span class="source-choice__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12 3v10m-4-4 4 4 4-4M5 17.5A3.5 3.5 0 0 1 6.5 11a5.5 5.5 0 0 1 10.7 1.5A2.8 2.8 0 1 1 18 18H6"/></svg></span><span>Из аудиоархива</span><small>Открыть сохранённую Zoom-запись</small><span class="source-choice__action">Выбрать запись</span></button>
+            <button id="source-session-mode-device" class="source-choice source-choice--device" type="button" aria-pressed="false" aria-expanded="false" aria-controls="import-zone"><span class="source-choice__icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 7.5h7l2-2h9v13H3zM3 9h18"/></svg></span><span>С этого устройства</span><span hidden aria-hidden="true">С устройства</span><small>Загрузить локальные аудиодорожки</small><span class="source-choice__action source-choice__action--secondary">Выбрать файлы</span></button>
+            <a id="current-recording-archive-link" class="recording-detail-link" href="Audio-Archive.html" hidden>Открыть сведения о записи</a>
+          </div>
+          <p class="editor-entry-note"><span aria-hidden="true">i</span>Все функции обработки останутся доступны. Выбранные локальные файлы не покидают это устройство без вашей команды.</p>
         </section>
         <div id="source-session-recovery-list" class="contextual-recovery" aria-live="polite" hidden></div>
-        <details id="import-zone" class="archive-card source-session-card"><summary><h2 id="source-session-heading">Выбрать запись</h2><span id="import-summary">Запись не выбрана</span></summary>
+        <details id="import-zone" class="archive-card source-session-card" role="dialog" aria-modal="true" hidden><summary><span><strong id="source-session-heading">Выбор записи</strong><small id="import-summary">Запись не выбрана</small></span></summary>
           <div class="archive-card__heading">
             <p>Откройте сохранённую запись или создайте новую из файлов на этом устройстве.</p><p><strong>Важно:</strong> все выбранные дорожки должны относиться к одной и той же записи Zoom.</p>
           </div>
@@ -53,25 +70,34 @@
             <div id="source-session-list" class="source-session-list" aria-live="polite"></div><nav id="source-session-pagination" class="pagination" aria-label="Страницы результатов" hidden><button id="source-session-prev" type="button">← Назад</button><span id="source-session-page"></span><button id="source-session-next" type="button">Дальше →</button></nav>
 
           </div>
-          <div id="source-session-device-panel" hidden><h3>Новая запись Zoom</h3><p>Только на этом устройстве, пока вы явно не сохраните её в аудиоархив.</p><div id="processor-device-field" class="processor-field">
+          <div id="source-session-device-panel" hidden><h3>Выберите аудиодорожки</h3><p>Файлы останутся на этом устройстве, пока вы явно не сохраните запись в аудиоархив.</p><div id="processor-device-field" class="processor-field source-dropzone">
             <label for="processor-file">Выберите аудиодорожки</label>
             <p id="processor-file-help">MP3, M4A или WAV. Общий размер всех файлов — не более 500 МБ. Результат — MP3, 128 кбит/с.</p>
             <input id="processor-file" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-describedby="processor-file-help processor-privacy">
           </div>
 <div class="action-group"><button id="import-add" type="button">Добавить дорожки</button><button id="import-replace" type="button">Заменить дорожки</button></div>
 <input id="import-add-files" type="file" multiple accept=".mp3,.m4a,.wav" hidden>
-<ul id="import-files" aria-label="Выбранные файлы"></ul><div id="processor-device-ingest-actions" class="secondary-action-group">
+<ul id="import-files" aria-label="Выбранные файлы"></ul><button id="source-session-use-local" class="action-primary source-session-use-local" type="button" hidden disabled>Использовать эти дорожки</button><div class="device-import-feedback"><p id="device-import-status" role="status">Выберите аудиодорожки.</p><progress id="device-import-progress" aria-label="Подготовка локальных дорожек" hidden></progress><button id="device-import-cancel" type="button" hidden>Отменить подготовку</button></div><div id="processor-device-ingest-actions" class="secondary-action-group">
               <p>Сохраните исходные дорожки, если хотите открыть их позже или использовать на другом устройстве. Для обработки только на этом устройстве это не требуется.</p>
               <button id="processor-save-incoming" type="button" disabled>Сохранить запись Zoom в аудиоархив</button>
             </div></div>
         </details>
-        <section class="editing-modes" aria-labelledby="editing-heading"><h2 id="editing-heading">Редактирование</h2><div class="mode-options">
-<div><h3>Редактирование для анонс-мейкера</h3><p>Автоматически сокращает длинные паузы в записи. Если выбрано несколько дорожек, пауза сокращается только там, где одновременно молчат все участники.</p><p>Паузы от 2 секунд сокращаются примерно до 0,35 секунды.</p><button id="open-local-announcement" aria-controls="announcement-processor-card" type="button">Открыть редактор анонс-мейкера</button></div>
-<div><h3>Финальная обработка спикерской</h3><p>Подготовьте финальную версию спикерской вручную: задайте начало и конец записи, вырежьте ненужные фрагменты, замените фрагменты отдельных дорожек тишиной или исключите дорожки из финального микса.</p><button id="open-local-speaker" aria-controls="speaker-editor" type="button">Открыть финальную обработку спикерской</button></div></div><p id="active-editor-mode" role="status">Выберите исходники и режим редактирования.</p></section><section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
+        <section id="source-session-loading" class="portal-loading" role="dialog" aria-modal="true" aria-labelledby="source-session-loading-title" hidden>
+          <div class="portal-loading__card"><div class="portal-loading__mark" aria-hidden="true">↗</div><p class="portal-loading__title" id="source-session-loading-title" role="heading" aria-level="2">Открываем запись…</p><p id="source-session-loading-record">Подготавливаем дорожки и проект.</p><ol class="portal-loading__steps"><li data-loading-step="record">Получаем информацию о записи</li><li data-loading-step="tracks">Загружаем аудиодорожки</li><li data-loading-step="files">Проверяем файлы</li><li data-loading-step="editor">Подготавливаем редактор</li></ol><progress id="source-session-loading-progress" max="100" value="18" aria-label="Подготовка записи"></progress><p class="portal-loading__hint">Это может занять несколько секунд. Можно не закрывать страницу.</p></div>
+        </section>
+        <section id="workflow-choice" class="editing-modes" aria-labelledby="editing-heading" tabindex="-1" hidden>
+          <div class="workflow-choice__heading"><div><p class="archive-eyebrow">Выберите режим работы</p><h2 id="editing-heading">Что нужно сделать?</h2></div></div>
+          <div class="mode-options">
+            <article class="workflow-card workflow-card--announcement"><span class="workflow-card__icon" aria-hidden="true">◖))</span><p class="workflow-card__eyebrow">Быстрая обработка</p><h3>Анонс-мейкер</h3><p>Автоматически сократит длинные общие паузы. Просто и быстро.</p><button id="open-local-announcement" class="action-primary" aria-controls="announcement-processor-card" type="button">Открыть анонс-мейкер</button></article>
+            <article class="workflow-card workflow-card--speaker"><span class="workflow-card__icon" aria-hidden="true">▮▥▮</span><p class="workflow-card__eyebrow">Точный монтаж</p><h3>Спикерская</h3><p>Ручной монтаж, обработка дорожек и создание финальной версии.</p><button id="open-local-speaker" class="action-primary" aria-controls="speaker-editor" type="button">Открыть спикерскую</button></article>
+          </div>
+          <p id="active-editor-mode" class="workflow-current" role="status">Запись готова. Выберите одну задачу.</p>
+        </section>
+        <section id="speaker-editor" class="archive-card speaker-editor" aria-labelledby="speaker-editor-heading" hidden>
           <div class="archive-card__heading">
-            <button id="speaker-editor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
-            <p class="archive-eyebrow">Сейчас открыто: Финальная обработка спикерской</p>
-            <h2 id="speaker-editor-heading">Проект обработки спикерской</h2>
+            <button id="speaker-editor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="На весь экран" title="На весь экран"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>На весь экран</span></button>
+            <p class="archive-eyebrow">Спикерская · точный монтаж</p>
+            <h2 id="speaker-editor-heading">Рабочая область спикерской</h2>
             <p id="speaker-editor-identity"></p>
             <p id="speaker-editor-status" class="archive-status" role="status"></p><button id="speaker-editor-source-retry" type="button" hidden>Повторить подготовку дорожек</button>
           </div>
@@ -81,8 +107,6 @@
             <button id="speaker-editor-save" class="action-primary" type="button">Сохранить проект</button>
             <button id="speaker-editor-project-cancel" type="button" hidden>Остановить сохранение</button><button id="speaker-editor-close" type="button">Закрыть работу</button>
           </div>
-          <details class="technical-details"><summary>Технические сведения о записи</summary><p id="speaker-editor-technical"></p></details>
-
           <section class="speaker-source" aria-labelledby="speaker-source-heading">
             <div class="speaker-transport"><div class="speaker-source__heading">
               <div><h3 id="speaker-source-heading">Прослушивание монтажа</h3><p>Вырезы пропускаются на всех дорожках. В регионах тишины молчит выбранная дорожка. Solo и Mute относятся только к прослушиванию. «Исключить из микса» влияет на результат.</p></div>
@@ -90,10 +114,19 @@
             </div>
             <audio id="speaker-editor-source-audio" aria-labelledby="speaker-source-heading" controls preload="metadata"></audio>
             <div id="speaker-editor-preview-audios" hidden></div>
-
+            <div class="speaker-transport-controls" role="group" aria-label="Навигация и масштаб рабочей timeline">
+              <button id="speaker-editor-scale-mode" class="transport-icon-button scale-mode" type="button" aria-pressed="false" aria-label="Горизонтальный масштаб времени: переключить на высоту дорожек" title="Горизонтальный масштаб времени: переключить на высоту дорожек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3"/></svg><span class="visually-hidden">Масштаб времени</span></button>
+              <button id="speaker-editor-zoom-out" class="transport-icon-button" type="button" aria-label="Уменьшить горизонтальный масштаб времени" title="Уменьшить горизонтальный масштаб времени">−</button>
+              <input id="speaker-editor-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Горизонтальный масштаб времени">
+              <output id="speaker-editor-scale-value" class="scale-value">—</output>
+              <button id="speaker-editor-zoom-in" class="transport-icon-button" type="button" aria-label="Увеличить горизонтальный масштаб времени" title="Увеличить горизонтальный масштаб времени">+</button>
+              <button id="speaker-editor-zoom-fit" class="transport-icon-button" type="button" aria-label="Вписать timeline в доступную ширину" title="Вписать timeline в доступную ширину"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 4H4v4M16 4h4v4M4 16v4h4M20 16v4h-4M8 12h8M10 9l-3 3 3 3M14 9l3 3-3 3"/></svg><span class="visually-hidden">Вписать timeline</span></button>
+              <button id="speaker-editor-follow" class="transport-icon-button" type="button" aria-pressed="false" aria-label="Следовать за playhead при воспроизведении" title="Следовать за playhead при воспроизведении"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v18M4 8V5h4M20 8V5h-4M4 16v3h4M20 16v3h-4M9 12h6"/></svg><span class="visually-hidden">Следовать за playhead</span></button>
+            </div>
+            </div>
             <section class="speaker-selection" aria-labelledby="speaker-selection-heading">
               <div class="speaker-selection-context">
-                <h3 id="speaker-selection-heading">Монтаж выделения</h3>
+                <h3 id="speaker-selection-heading">Редактирование</h3>
                 <p id="speaker-selection-summary" role="status">Выделите фрагмент на дорожке.</p>
               </div>
               <div class="speaker-selection__actions" role="group" aria-label="Инструменты монтажа выделения" aria-describedby="speaker-editor-selection-scope">
@@ -102,32 +135,25 @@
                 <button id="speaker-editor-add-cut" class="edit-tool edit-tool--cut" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="5" cy="6" r="3"/><circle cx="5" cy="18" r="3"/><path d="m8 8 13 12M8 16 21 4"/></svg><span>Вырезать<small>На всех дорожках</small></span></button>
                 <button id="speaker-editor-add-silence" class="edit-tool edit-tool--silence" type="button" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M3 10h4l5-5v14l-5-5H3zM16 9l6 6m0-6-6 6"/></svg><span>Тишина<small>Выбранная дорожка</small></span></button>
               </div>
-            <div class="processor-zoom" role="group" aria-label="Масштаб исходников Спикерской">
-              <button id="speaker-editor-undo" type="button" disabled>Отменить</button><button id="speaker-editor-redo" type="button" disabled>Повторить</button><button id="speaker-editor-scale-mode" class="scale-mode" type="button" aria-pressed="false" aria-label="Переключить на высоту дорожек"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12h16M7 9l-3 3 3 3m10-6 3 3-3 3"/></svg><span>Время</span></button>
-              <button id="speaker-editor-zoom-out" type="button" aria-label="Уменьшить масштаб">−</button>
-              <input id="speaker-editor-zoom" type="range" min="1" max="8" step="0.25" value="1" aria-label="Масштаб исходников">
-              <output id="speaker-editor-scale-value" class="scale-value">—</output>
-              <button id="speaker-editor-zoom-in" type="button" aria-label="Увеличить масштаб">+</button>
-              <button id="speaker-editor-zoom-fit" type="button">Вписать</button>
-              <button id="speaker-editor-follow" type="button" aria-pressed="false">Следовать за воспроизведением</button>
-            </div>
+              <div class="speaker-history-controls" role="group" aria-label="История монтажных изменений"><button id="speaker-editor-undo" type="button" disabled>Отменить</button><button id="speaker-editor-redo" type="button" disabled>Повторить</button></div>
               <p id="speaker-editor-selection-scope">Протяните выделение по волне. Затем выберите инструмент.</p>
-              <details><summary>Точное редактирование</summary><div class="speaker-selection__fields">
+              <details open><summary>Точное редактирование</summary><div class="speaker-selection__fields">
                 <label>Начало, с<input id="speaker-editor-selection-start" type="number" min="0" step="0.000001" inputmode="decimal"></label>
                 <label>Конец, с<input id="speaker-editor-selection-end" type="number" min="0" step="0.000001" inputmode="decimal"></label>
                 <label>Длительность, с<output id="speaker-editor-selection-duration">0.000000</output></label>
                 <label>Выбранная дорожка<select id="speaker-editor-selection-track"></select></label>
               </div><p>Координаты относятся к исходной записи. Глобальные вырезы не сдвигают следующие выделения.</p></details>
-              <p id="speaker-editor-selection-error" class="speaker-error" role="status"></p>
-            </section>
-            </div>
-<div class="audio-timeline-row"><span>Исходная шкала</span><div class="timeline-ruler-stack"><div id="speaker-source-timeline" class="audio-timeline" aria-hidden="true"></div><div id="speaker-editor-global-regions" class="timeline-global-regions" aria-label="Общие интервалы шкалы"></div></div></div><ol id="speaker-editor-tracks" class="speaker-tracks"></ol><div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>            <details class="audio-help"><summary>Как работают Solo, Mute и обработка звука</summary>
+              <p id="speaker-editor-technical" hidden></p>
+              <details class="audio-help"><summary aria-expanded="false">Как работают Solo, Mute и обработка звука</summary>
 <p><strong>Solo.</strong> Слушать эту дорожку отдельно. На финальный результат не влияет.</p>
 <p><strong>Mute.</strong> Временно отключить эту дорожку при прослушивании. На финальный результат не влияет.</p>
 <p><strong>Исключить из микса.</strong> Дорожка останется в проекте, но не попадёт в создаваемую финальную версию.</p>
 <p><strong>Улучшение.</strong> Слегка очищает голос от очень низкого гула и лишних высоких частот. Монтаж и синхронизация не изменяются.</p>
 <p><strong>Выравнивание громкости.</strong> Автоматически приводит дорожку к более ровному уровню воспринимаемой громкости. Полезно, если один участник записан заметно тише или громче других.</p>
 <p><strong>Компрессия.</strong> Уменьшает разницу между тихими и громкими фрагментами речи.</p><p>Лёгкая — небольшое выравнивание; Средняя — более заметное; Сильная — плотная обработка неравномерной записи.</p></details>
+              <p id="speaker-editor-selection-error" class="speaker-error" role="status"></p>
+            </section>
+<div class="audio-timeline-row"><span>Исходная шкала</span><div class="timeline-ruler-stack"><div id="speaker-source-timeline" class="audio-timeline" aria-hidden="true"></div><div id="speaker-editor-global-regions" class="timeline-global-regions" aria-label="Общие интервалы шкалы"></div></div></div><ol id="speaker-editor-tracks" class="speaker-tracks"></ol><div id="speaker-editor-source-scrollbar" class="speaker-scrollbar" tabindex="0" role="scrollbar" aria-label="Горизонтальная навигация исходников" aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"><span></span></div>
           </section>
           <details class="speaker-regions"><summary id="speaker-regions-heading">Правки · 0</summary>
 
@@ -168,8 +194,8 @@
         <section hidden id="announcement-processor-card" class="archive-card processor-card" aria-labelledby="processor-heading">
           <div class="archive-card__heading">
             <button id="processor-expand" class="editor-expand" type="button" aria-pressed="false" aria-label="Развернуть редактор"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5"/></svg><span>Развернуть</span></button>
-            <p class="archive-eyebrow">Сейчас открыто: Редактирование для анонс-мейкера</p>
-            <h2 id="processor-heading">Редактирование для анонс-мейкера</h2>
+            <p class="archive-eyebrow">Анонс-мейкер · быстрая обработка</p>
+            <h2 id="processor-heading">Подготовка записи для анонс-мейкера</h2>
             <details class="daw-workflow-help"><summary>Как работает обработка пауз</summary>
             <p>Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.</p>
             <p>Выберите одну дорожку или несколько уже синхронизированных дорожек одной записи Zoom. Сокращаются только участки, где все выбранные дорожки одновременно молчат. Затем дорожки сводятся в один MP3.</p>

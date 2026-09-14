@@ -107,7 +107,8 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
     def open_editor():
         page.goto(base_url.rstrip('/')+f'/Audio-Editor.html?session={primary["id"]}&workflow=speaker')
         page.wait_for_function("!document.getElementById('speaker-editor-render').disabled")
-        page.locator('.speaker-selection details > summary').click()
+        editing = page.locator('.speaker-selection > details:first-of-type')
+        if not editing.evaluate('element => element.open'): editing.locator('summary').click()
         page.locator('#speaker-editor-selection-start').fill('0.05')
         page.locator('#speaker-editor-selection-end').fill('0.2')
         page.locator('#speaker-editor-set-start').click()
@@ -249,9 +250,8 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
             assert body.get_by_role('link', name='Продолжить обработку').count() == 0
             assert 'сохранённый проект не прошёл проверку' in body.inner_text()
             archive.goto(base_url.rstrip('/') + '/Audio-Archive.html'); ready()
-            archive.locator('#record-picker-open').click(); archive.locator('#record-picker-recent').click()
             row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
-            assert 'Сохранённый проект недоступен' in row.inner_text()
+            assert 'Сохранённый проект недоступен' in row.text_content()
             assert row.get_by_role('button', name='Открыть запись', exact=True).count() == 1
             shot('project-' + mode, '#records', archive)
         fault['draft'] = None
@@ -261,8 +261,6 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         for width in (320, 390, 768, 1280):
             archive.set_viewport_size({'width': width, 'height': 900})
             archive.goto(base_url.rstrip('/') + '/Audio-Archive.html'); ready()
-            archive.locator('#record-picker-open').click()
-            archive.locator('#record-picker-recent').click()
             row = archive.locator(f'#session-list .archive-card[data-session-id="{primary["id"]}"]')
             assert_no_visible_overflow(archive)
             if width == 1280:
@@ -370,7 +368,9 @@ def check_s09a_corrective_management(browser, base_url, screenshot_dir=None):
         # confirmed empty result set for the current recording.
         fault['list'] = True
         if not page.locator('#import-zone').evaluate('e=>e.open'):
-            page.locator('#import-zone > summary').click()
+            # S09C keeps the closed picker out of the focused-work layout; the
+            # persistent source-choice control is its supported entry point.
+            page.locator('#source-session-mode-archive').evaluate('element => element.click()')
         page.locator('#source-session-refresh').click()
         page.wait_for_function("document.getElementById('source-session-status').textContent.includes('временно недоступен')")
         assert page.locator('#source-session-results-speaker-count').inner_text() == '—'

@@ -32,21 +32,36 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         page.goto(base_url.rstrip("/") + "/Audio-Editor.html")
         page.locator("#source-session-mode-device").click()
         page.locator("#processor-file").set_input_files([fixture(330), fixture(660)])
+        page.locator("#source-session-use-local").click()
         page.locator("#open-local-speaker").click()
         page.wait_for_function("!document.getElementById('speaker-editor-source-audio-play').disabled", timeout=180000)
         rows = page.locator("#speaker-editor-tracks .speaker-track")
         assert page.locator(".speaker-selection-overlay[data-scope=all]").count() == rows.count()
+        transport = page.locator("#speaker-editor .speaker-transport")
+        for control_id in ("speaker-editor-scale-mode", "speaker-editor-zoom-out", "speaker-editor-zoom",
+            "speaker-editor-scale-value", "speaker-editor-zoom-in", "speaker-editor-zoom-fit", "speaker-editor-follow"):
+            assert transport.locator(f"#{control_id}").count() == 1
+            assert page.locator(f"#speaker-editor .speaker-selection #{control_id}").count() == 0
+        assert page.locator("#speaker-editor-zoom-fit").get_attribute("title") == "Вписать timeline в доступную ширину"
+        assert page.locator("#speaker-editor-follow").get_attribute("title") == "Следовать за playhead при воспроизведении"
+        page.locator("#speaker-editor-zoom-in").focus(); page.keyboard.press("Tab"); assert page.locator("#speaker-editor-zoom-fit").evaluate("e=>document.activeElement===e && e.matches(':focus-visible')")
+        page.keyboard.press("Tab"); assert page.locator("#speaker-editor-follow").evaluate("e=>document.activeElement===e && e.matches(':focus-visible')")
+        page.keyboard.press("Space"); assert page.locator("#speaker-editor-follow").get_attribute("aria-pressed") == "true"
+        page.keyboard.press("Space"); assert page.locator("#speaker-editor-follow").get_attribute("aria-pressed") == "false"
         payload = "async()=>JSON.stringify((await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload)"
         baseline = page.evaluate(payload)
 
         # The one slider retains independent time and height values and never mutates the recipe.
         zoom = page.locator("#speaker-editor-zoom")
-        zoom.fill("4"); zoom.dispatch_event("input")
-        page.locator("#speaker-editor-scale-mode").click(); assert zoom.input_value() == "196"
+        # Keep headroom for the gesture assertion even when S09C gives the
+        # workspace the full desktop viewport (a factor of 4 can hit 1000 px/s).
+        zoom.fill("2"); zoom.dispatch_event("input")
+        lane_height = rows.first.locator(".speaker-waveform-scroll").bounding_box()["height"]
+        page.locator("#speaker-editor-scale-mode").click(); assert abs(float(zoom.input_value()) - lane_height) < 2
         zoom.fill("180"); zoom.dispatch_event("input")
         assert abs(rows.first.locator(".speaker-waveform-scroll").bounding_box()["height"] - 180) < 2
         assert page.evaluate(payload) == baseline
-        page.locator("#speaker-editor-scale-mode").click(); assert float(zoom.input_value()) == 4
+        page.locator("#speaker-editor-scale-mode").click(); assert float(zoom.input_value()) == 2
 
         # Track color follows identity through reorder and leaves edit colors semantic.
         identity = rows.first.get_attribute("data-track-id")
@@ -57,7 +72,7 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         colored = page.locator(f'.speaker-track[data-track-id="{identity}"]')
         assert colored.evaluate("e=>getComputedStyle(e).getPropertyValue('--track-wave').trim()") == "#6a4fb3"
 
-        details = page.locator(".speaker-selection > details"); details.evaluate("e=>e.open=true")
+        details = page.locator(".speaker-selection > details:first-of-type"); details.evaluate("e=>e.open=true")
         for edge, value in (("start", ".3"), ("end", "3.7")):
             page.locator(f"#speaker-editor-selection-{edge}").fill(value)
             page.locator(f"#speaker-editor-set-{edge}").click()
@@ -119,13 +134,15 @@ def check_approved_timeline_ux(browser, base_url, screenshot_dir=None):
         assert page.locator("#speaker-editor-result-audio").evaluate("a=>a.paused && a.currentTime > 0")
 
         if output: page.locator("#speaker-editor").screenshot(path=str(output / "speaker-before-expand.png"))
-        page.locator("#speaker-editor-expand").click(); assert page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
+        page.locator("#speaker-editor-expand").click(); page.wait_for_function("document.fullscreenElement===document.getElementById('speaker-editor')")
+        assert page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
         assert page.evaluate(payload) != baseline  # only the intentional edits above changed it
         if output: page.screenshot(path=str(output / "speaker-expanded.png"))
-        page.keyboard.press("Escape"); assert not page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
+        page.keyboard.press("Escape"); page.wait_for_function("document.fullscreenElement===null")
+        assert not page.locator("#speaker-editor").evaluate("e=>e.classList.contains('is-expanded')")
 
         # Switch to the second editor, preserving its own display state and common selection.
-        page.locator("#open-local-announcement").click()
+        page.locator("#open-local-announcement").evaluate('element => element.click()')
         page.locator("#speaker-unsaved-discard").click()
         page.wait_for_function("document.querySelectorAll('#processor-file-info .processor-track').length===2 && !document.getElementById('processor-source-audio-play').disabled", timeout=60000)
         tracks = page.locator("#processor-file-info .processor-track")

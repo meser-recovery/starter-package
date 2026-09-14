@@ -85,7 +85,74 @@ export function installSpaceTransport({ workspace, sourceAudio, resultAudio, sou
 
 let expandedWorkspace = null;
 
-export function installEditorExpansion({ workspace, button, captureAnchor, onGeometryChange, isGestureActive = () => false }) {
+function installNativeFullscreen({ workspace, button, captureAnchor, onGeometryChange }) {
+  const enterPath = "M8 3H3v5M16 3h5v5M21 16v5h-5M3 16v5h5";
+  const exitPath = "M9 3v6H3M15 3v6h6M9 21v-6H3M15 21v-6h6";
+  const supported = typeof workspace.requestFullscreen === "function" && typeof document.exitFullscreen === "function";
+  let pageScroll = 0, geometryAnchor = NaN;
+  const label = expanded => expanded ? "Выйти из полноэкранного режима" : "На весь экран";
+  const updateButton = expanded => {
+    button.setAttribute("aria-pressed", String(expanded));
+    button.setAttribute("aria-label", label(expanded));
+    button.title = label(expanded);
+    button.querySelector("span").textContent = label(expanded);
+    button.querySelector("path")?.setAttribute("d", expanded ? exitPath : enterPath);
+  };
+  const unavailable = () => {
+    button.disabled = true;
+    button.setAttribute("aria-disabled", "true");
+    button.setAttribute("aria-label", "Полноэкранный режим недоступен");
+    button.title = "Полноэкранный режим недоступен";
+    button.querySelector("span").textContent = "Полноэкранный режим недоступен";
+  };
+  if (!supported) {
+    unavailable();
+    return { setExpanded: () => {}, isExpanded: () => false };
+  }
+  updateButton(false);
+  const refreshGeometry = () => {
+    const anchor = geometryAnchor;
+    geometryAnchor = NaN;
+    requestAnimationFrame(() => requestAnimationFrame(() => onGeometryChange?.(anchor)));
+  };
+  const sync = () => {
+    const expanded = document.fullscreenElement === workspace;
+    workspace.classList.toggle("is-expanded", expanded);
+    document.body.classList.toggle("has-expanded-editor", expanded);
+    updateButton(expanded);
+    if (!expanded) window.scrollTo({ top: pageScroll, behavior: "instant" });
+    refreshGeometry();
+  };
+  const setExpanded = async expanded => {
+    if (expanded === (document.fullscreenElement === workspace)) return;
+    geometryAnchor = captureAnchor?.();
+    try {
+      if (expanded) { pageScroll = window.scrollY; await workspace.requestFullscreen(); }
+      else if (document.fullscreenElement) await document.exitFullscreen();
+    } catch {
+      workspace.classList.remove("is-expanded");
+      document.body.classList.remove("has-expanded-editor");
+      unavailable();
+      refreshGeometry();
+    }
+  };
+  button.addEventListener("click", () => void setExpanded(document.fullscreenElement !== workspace));
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && document.fullscreenElement === workspace) {
+      geometryAnchor = captureAnchor?.();
+      void document.exitFullscreen();
+    }
+  }, { capture: true });
+  document.addEventListener("fullscreenchange", sync);
+  document.addEventListener("fullscreenerror", unavailable);
+  new MutationObserver(() => {
+    if (workspace.hidden && document.fullscreenElement === workspace) void document.exitFullscreen();
+  }).observe(workspace, { attributes: true, attributeFilter: ["hidden"] });
+  return { setExpanded, isExpanded: () => document.fullscreenElement === workspace };
+}
+
+export function installEditorExpansion({ workspace, button, captureAnchor, onGeometryChange, isGestureActive = () => false, nativeFullscreen = false }) {
+  if (nativeFullscreen) return installNativeFullscreen({ workspace, button, captureAnchor, onGeometryChange });
   let pageScroll = 0;
   const setExpanded = expanded => {
     if (expanded === workspace.classList.contains("is-expanded")) return;

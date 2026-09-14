@@ -23,6 +23,7 @@ class SyntheticGateway:
         self.lock = threading.Lock()
         self.snapshot = json.loads(self.process.stdout.readline())
         self.command('recovery')
+        self.command('multi-track-preview')
 
     def command(self, action, **data):
         with self.lock:

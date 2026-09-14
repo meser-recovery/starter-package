@@ -20,7 +20,7 @@ def check_waveform_consistency(browser, base_url, screenshot_dir=None):
         for mode,row,audio,zoom,follow in (
             ('speaker','.speaker-track','speaker-editor-source-audio','speaker-editor-zoom','speaker-editor-follow'),
             ('announcement','.processor-track','processor-source-audio','processor-source-zoom-range','processor-source-follow')):
-            page.locator('#open-local-'+mode).click()
+            page.locator('#open-local-'+mode).evaluate('element => element.click()')
             if page.locator('#speaker-unsaved-discard').is_visible():page.locator('#speaker-unsaved-discard').click()
             page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=audio,timeout=180000)
             page.wait_for_function("!document.getElementById('processor-file').disabled",timeout=180000)

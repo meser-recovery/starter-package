@@ -67,11 +67,12 @@ def check_waveform_motion(browser, base_url, screenshot_dir=None):
         page.goto(base_url.rstrip('/')+'/Audio-Editor.html')
         first=motion_fixture();second={**first,'name':'second-wave.wav'}
         page.locator('#processor-file').set_input_files([first,second])
+        page.locator('#source-session-use-local').evaluate('element => element.click()')
         for mode,row,prefix,zoom,follow in (
             ('speaker','.speaker-track','speaker-editor-source-audio','speaker-editor-zoom','speaker-editor-follow'),
             ('announcement','.processor-track','processor-source-audio','processor-source-zoom-range','processor-source-follow'),
         ):
-            page.locator('#open-local-'+mode).click()
+            page.locator('#open-local-'+mode).evaluate('element => element.click()')
             if page.locator('#speaker-unsaved-discard').is_visible():page.locator('#speaker-unsaved-discard').click()
             page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix,timeout=180000)
             if page.locator('#'+follow).get_attribute('aria-pressed')!='true':page.locator('#'+follow).click()

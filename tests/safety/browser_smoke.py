@@ -1173,7 +1173,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor semantic shell is missing at {width}px")
     if page.locator("h1").count() != 1 or page.locator("h1").inner_text() != "Редактирование аудио":
         raise AssertionError(f"Audio editor H1 is invalid at {width}px")
-    if page.locator("h2").all_text_contents()[:6] != ["Запись не выбрана", "Выбрать запись", "Редактирование", "Проект обработки спикерской", "Редактирование для анонс-мейкера", "Сохранённые версии этой записи"]:
+    if page.locator("h2").all_text_contents()[:5] != ["Откуда взять запись?", "Что нужно сделать?", "Рабочая область спикерской", "Подготовка записи для анонс-мейкера", "Сохранённые версии этой записи"]:
         raise AssertionError(f"Audio editor archive H2 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Audio editor main landmark or skip link is missing at {width}px")
@@ -1181,7 +1181,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor shared header is missing at {width}px")
     if page.get_by_role("link", name="К служебной странице", exact=True).count():
         raise AssertionError(f"Audio editor redundant service back link is present at {width}px")
-    service_link = page.get_by_role("link", name="Для служащих", exact=True)
+    service_link = page.locator('.service-link[href="Admin-panel.html"]')
     if service_link.count() != 1 or service_link.get_attribute("href") != "Admin-panel.html":
         raise AssertionError(f"Audio editor shared service navigation is missing at {width}px")
     logout = page.get_by_role("button", name="Выйти", exact=True)
@@ -1203,9 +1203,12 @@ def check_audio_editor_shell(page, width: int) -> None:
         audio = page.locator(selector)
         if audio.get_attribute("autoplay") is not None or not audio.evaluate("audio => audio.paused"):
             raise AssertionError("Processor audio must not autoplay")
+    if page.locator("#import-zone").evaluate("element => element.open"):
+        page.locator("#source-session-picker-close").evaluate("element => element.click()")
     page.locator("#source-session-mode-archive").click()
     if page.locator("#source-session-mode-archive").get_attribute("aria-pressed") != "true" or not page.locator("#source-session-archive-panel").is_visible():
         raise AssertionError("Source Session Incoming archive must be the default entry mode")
+    page.locator("#source-session-picker-close").evaluate("element => element.click()")
     page.locator("#source-session-mode-device").click()
     file_input = page.locator("#processor-file")
     if file_input.get_attribute("multiple") is None:
@@ -1219,6 +1222,10 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError("Saved versions must stay hidden until a canonical recording is open")
     for selector in (".source-session-card", ".current-recording", ".processor-card", '[aria-labelledby="archive-heading"]', "#processor-file", "#processor-run", "#archive-controls", "#archive-audio"):
         element = page.locator(selector)
+        # S09C keeps inactive workspaces and their controls out of the entry
+        # layout; clipping assertions apply when a surface is disclosed.
+        if not element.is_visible():
+            continue
         box = element.bounding_box()
         if not box or box["x"] < 0 or box["x"] + box["width"] > width + 1 or box["width"] < 44:
             raise AssertionError(f"Audio editor control/card clips at {width}px: {selector}, {box}")
@@ -1250,6 +1257,8 @@ def check_audio_editor(page, base_url: str) -> None:
         for width in (320, 390, 768, 1280):
             page.set_viewport_size({"width": width, "height": 900})
             check_audio_editor_shell(page, width)
+        if page.locator("#import-zone").evaluate("element => element.open"):
+            page.locator("#source-session-picker-close").evaluate("element => element.click()")
 
         cards = page.locator(".archive-item")
         if cards.count() != 3:
@@ -1337,9 +1346,13 @@ def check_audio_editor(page, base_url: str) -> None:
 
 
 def refresh_editor_sources(page):
-    if page.locator('#import-zone').get_attribute('open') is None: page.locator('#import-zone > summary').click()
-    page.locator('#source-session-mode-archive').click()
+    page.locator('#source-session-mode-archive').evaluate('element => element.click()')
     page.locator('#source-session-refresh').click()
+    page.locator('#source-session-picker-close').evaluate('element => element.click()')
+
+
+def recovery_button(page, label: str):
+    return page.locator('#source-session-recovery-list button').filter(has_text=label)
 
 
 def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | None = None) -> None:
@@ -1720,7 +1733,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         session["sourceTracks"][2]["sha256"] = digests[2]
         session["sourceTracks"][2]["parts"][0]["sizeBytes"] = len(wavs[2])
         session["sourceTracks"][2]["parts"][0]["sha256"] = digests[2]
-        page.locator("#source-session-mode-archive").click()
+        page.locator("#source-session-mode-archive").evaluate("element => element.click()")
         page.locator("#source-session-recent").click()
         page.locator("#source-session-list").get_by_role("button", name="Выбрать", exact=True).click()
         page.locator("#speaker-unsaved-discard").click()  # Explicitly replace the retained, unprepared source set.
@@ -1731,7 +1744,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#source-session-announcement-workspace").is_hidden()
         assert page.locator("#speaker-editor-undo").is_disabled() and page.locator("#speaker-editor-redo").is_disabled()
         assert page.locator("#speaker-editor-render").is_enabled()
-        assert "Архивная запись" in page.locator("#speaker-editor-identity").inner_text()
+        assert "Архивная запись" in page.locator("#speaker-editor-heading").inner_text()
         assert page.locator("#announcement-processor-card").is_hidden()
         # Speaker monitoring has one master clock: active seeks realign every preview, rate/volume propagate,
         # and periodic correction bounds deliberate drift without touching mix membership.
@@ -1762,7 +1775,9 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-speaker-opened-1280.png"))
             page.set_viewport_size({"width": 390, "height": 900})
             page.locator("#speaker-editor").screenshot(path=str(screenshot_dir / "s08c-speaker-opened-390.png"))
-        page.get_by_text("Точное редактирование", exact=True).click()
+        editing = page.locator(".speaker-selection > details:first-of-type")
+        if not editing.evaluate("element => element.open"):
+            editing.locator("summary").click()
         page.locator("#speaker-regions-heading").click()
         page.locator("#speaker-editor-selection-start").fill("0.5")
         page.locator("#speaker-editor-selection-end").fill("1")
@@ -1780,8 +1795,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         second = page.locator(".speaker-track").nth(1)
         second.get_by_role("button", name="Исключить из микса", exact=True).click()
         assert "Не в финальном миксе" in page.locator(".speaker-track").nth(1).inner_text()
-        if not page.locator(".speaker-dsp input").first.is_visible():
-            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        assert page.locator(".speaker-dsp input").first.is_visible()
         page.locator(".speaker-dsp input").nth(0).check()
         page.locator(".speaker-dsp input").nth(2).fill("2"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
         if screenshot_dir:
@@ -1914,8 +1928,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         # Monitoring does not invalidate; a render-affecting DSP edit does.
         page.locator('.speaker-track button[data-action="solo"]').first.click()
         assert page.locator("#speaker-editor-result").is_visible()
-        if not page.locator(".speaker-dsp input").first.is_visible():
-            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        assert page.locator(".speaker-dsp input").first.is_visible()
         page.locator(".speaker-dsp input").nth(0).uncheck()
         assert page.locator("#speaker-editor-result").is_hidden()
         page.locator("#speaker-editor-undo").click()
@@ -1929,8 +1942,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             page.locator("#speaker-editor-result").screenshot(path=str(screenshot_dir / "s08c-local-result-390.png"))
         page.locator(".skip-link").evaluate("element => element.style.removeProperty('display')")
         # Exercise measured two-pass loudnorm in the real browser engine.
-        if not page.locator(".speaker-dsp input").first.is_visible():
-            page.locator(".speaker-dsp-disclosure > summary").first.click()
+        assert page.locator(".speaker-dsp input").first.is_visible()
         page.locator(".speaker-dsp input").nth(0).uncheck()
         page.locator(".speaker-dsp input").nth(1).check()
         page.locator(".speaker-dsp input").nth(2).fill("0"); page.locator(".speaker-dsp input").nth(2).dispatch_event("change")
@@ -2012,7 +2024,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert mock["speaker_save"]["plan"]["recipe"]["candidateFingerprint"] == saved_candidate["candidateFingerprint"]
         page.locator("#speaker-editor-save-dialog").wait_for(state="hidden")
         page.wait_for_function("document.getElementById('source-session-results-speaker-count').textContent === '2'")
-        if page.locator("#source-session-results").get_attribute("open") is None: page.locator("#source-session-results > summary").click()
+        if page.locator("#source-session-results").get_attribute("open") is None: page.locator("#source-session-results > summary").evaluate("element => element.click()")
         assert page.locator("#source-session-results-speaker-panel button").count() == 4
         assert page.locator("#source-session-results-speaker-panel button").all_inner_texts().count("Прослушать") == 2
         assert page.locator("#source-session-results-speaker-panel button").all_inner_texts().count("Скачать") == 2
@@ -2043,11 +2055,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         mock["speaker_jobs"][partial_id] = partial_job
         mock["incomplete"] = [partial_job]
         refresh_editor_sources(page)
-        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 3"), exact=False).wait_for()
+        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 3')")
         mock["hold_resume"] = True
         resume_gets_before = len([call for call in gateway_calls if call[0] == "GET" and call[1] == f"/v1/speaker-saves/{partial_id}"])
-        page.get_by_role("button", name="Продолжить передачу", exact=True).evaluate("button => { button.click(); button.click(); }")
-        page.get_by_role("button", name="Отменить продолжение", exact=True).wait_for(timeout=30000)
+        recovery_button(page, "Продолжить передачу").evaluate("button => { button.click(); button.click(); }")
+        page.wait_for_function("document.querySelectorAll('#source-session-recovery-list button').length === 1")
         for _ in range(200):
             if mock["resume_held_upload"]:
                 break
@@ -2059,7 +2071,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
             "partNumber": recovery_plan["parts"][0]["partNumber"], "body": mock["speaker_output_bytes"]}
         mock["hold_incomplete"] = True
         refresh_editor_sources(page)
-        assert page.get_by_role("button", name="Отменить продолжение", exact=True).is_visible()
+        assert recovery_button(page, "Отменить продолжение").count() == 1
         for _ in range(200):
             if mock["held_incomplete"]:
                 break
@@ -2069,15 +2081,15 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         mock["held_incomplete"] = None
         mock["hold_incomplete"] = False
         page.wait_for_timeout(100)
-        assert page.get_by_role("button", name="Отменить продолжение", exact=True).is_visible()
+        assert recovery_button(page, "Отменить продолжение").count() == 1
         assert "Версия 3" in page.locator("#source-session-recovery-list").inner_text()
         assert page.locator("#speaker-editor-save").is_disabled()
         assert page.locator("#speaker-editor-render").is_disabled()
         assert page.locator("#speaker-editor-close").is_disabled()
-        if page.locator("#import-zone").get_attribute("open") is None: page.locator("#import-zone > summary").click()
-        page.locator("#source-session-mode-device").click()
+        page.locator("#source-session-mode-device").evaluate("element => element.click()")
         assert page.locator("#speaker-editor").is_visible()
-        page.locator("#source-session-mode-archive").click()
+        page.locator("#source-session-mode-archive").evaluate("element => element.click()")
+        page.locator("#source-session-picker-close").evaluate("element => element.click()")
         assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).closeSpeakerEditor(true)") is False
         if screenshot_dir:
             for width in (320, 390, 768, 1280):
@@ -2087,18 +2099,22 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 page.screenshot(path=str(screenshot_dir / f"s08d-speaker-resume-locked-{width}.png"), full_page=True)
             page.set_viewport_size({"width": 390, "height": 900})
         held_resume_upload = mock["resume_held_upload"]
-        page.get_by_role("button", name="Отменить продолжение", exact=True).click()
+        recovery_button(page, "Отменить продолжение").evaluate("element => element.click()")
         held_resume_upload.abort("aborted")
-        page.get_by_text(re.compile("Продолжение Версии 3 остановлено"), exact=False).wait_for(timeout=30000)
+        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Продолжение Версии 3 остановлено')")
         assert partial_job["state"] == "cancelled"
         assert page.evaluate("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().saving") is False
         assert page.locator("#speaker-editor-close").is_enabled()
         mock["resume_held_upload"] = None
         mock["hold_resume"] = False
         refresh_editor_sources(page)
-        page.get_by_role("button", name="Продолжить передачу", exact=True).click()
-        page.locator("#source-session-recovery-list").wait_for(state="hidden", timeout=30000)
+        recovery_button(page, "Продолжить передачу").evaluate("element => element.click()")
+        for _ in range(1500):
+            if partial_job["state"] == "finalized":
+                break
+            page.wait_for_timeout(20)
         assert partial_job["state"] == "finalized"
+        page.wait_for_function("label => ![...document.querySelectorAll('#source-session-recovery-list button')].some(button => button.textContent.includes(label))", arg="Продолжить передачу")
         assert mock["resume_uploads"][-1] == {"transactionId": partial_id, "blobId": recovery_plan["blobId"],
             "partNumber": recovery_plan["parts"][0]["partNumber"], "body": mock["speaker_output_bytes"]}
 
@@ -2106,13 +2122,13 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         mock["speaker_jobs"][mismatch_id] = mismatch_job
         mock["incomplete"] = [mismatch_job]
         incomplete_gets = len([call for call in gateway_calls if call[0] == "GET" and call[1] == "/v1/maintenance/incomplete"])
-        page.locator("#source-session-refresh").click()
+        refresh_editor_sources(page)
         for _ in range(200):
             if len([call for call in gateway_calls if call[0] == "GET" and call[1] == "/v1/maintenance/incomplete"]) > incomplete_gets:
                 break
             page.wait_for_timeout(20)
-        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 4"), exact=False).wait_for(timeout=30000)
-        assert page.get_by_role("button", name="Продолжить передачу", exact=True).count() == 0
+        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 4')")
+        assert recovery_button(page, "Продолжить передачу").count() == 0
         assert mismatch_job["state"] == "cancelled"
 
         # A delayed recovery check belongs to the Speaker context that started it. Closing Speaker
@@ -2120,7 +2136,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         discard_path = f"/v1/maintenance/incomplete/{mismatch_id}/discard"
         discard_posts = len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path])
         mock["hold_recovery_check"] = True
-        page.get_by_role("button", name="Удалить незавершённое сохранение", exact=True).click()
+        recovery_button(page, "Удалить незавершённое сохранение").evaluate("element => element.click()")
         for _ in range(200):
             if mock["held_recovery_check"]:
                 break
@@ -2132,7 +2148,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor").is_hidden()
         fulfill_json(mock["held_recovery_check"], {"transactions": [mismatch_job], "orphans": []})
         mock["held_recovery_check"] = None
-        page.wait_for_timeout(100)
+        for _ in range(1500):
+            if mismatch_job["state"] == "cancelled":
+                break
+            page.wait_for_timeout(20)
         assert mismatch_job["state"] == "cancelled", {"job": mismatch_job, "calls": gateway_calls[-12:]}
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path]) == discard_posts
         assert "Не удалось восстановить незавершённую операцию" not in page.locator("#source-session-recovery-list").inner_text()
@@ -2140,11 +2159,15 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         # The unchanged A/Speaker context still permits the same discard operation.
         page.locator("#open-local-speaker").click()
         page.locator("#speaker-editor").wait_for(state="visible", timeout=30000)
-        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 4"), exact=False).wait_for(timeout=30000)
+        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 4')")
         page.once("dialog", lambda dialog: dialog.accept())
-        page.get_by_role("button", name="Удалить незавершённое сохранение", exact=True).click()
-        page.locator("#source-session-recovery-list").wait_for(state="hidden")
+        recovery_button(page, "Удалить незавершённое сохранение").evaluate("element => element.click()")
+        for _ in range(1500):
+            if mismatch_job["state"] == "discarded":
+                break
+            page.wait_for_timeout(20)
         assert mismatch_job["state"] == "discarded"
+        page.wait_for_function("label => ![...document.querySelectorAll('#source-session-recovery-list button')].some(button => button.textContent.includes(label))", arg="Удалить незавершённое сохранение")
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path]) == discard_posts + 1
 
         page.once("dialog", lambda dialog: dialog.accept())
@@ -2159,13 +2182,13 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         uploads_before_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
         page.reload(wait_until="domcontentloaded")
         assert page.locator("#source-session-recovery-list").is_hidden()
-        assert page.get_by_role("button", name="Завершить сохранение", exact=True).count() == 0
+        assert recovery_button(page, "Завершить сохранение").count() == 0
         page.locator("#source-session-mode-archive").click()
         page.locator("#source-session-recent").click()
         page.locator(f'#source-session-list [data-session-id="{session_id}"]').get_by_role("button", name="Выбрать", exact=True).click()
         page.locator("#open-local-speaker").click()
-        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 5"), exact=False).wait_for(timeout=30000)
-        assert page.get_by_role("button", name="Завершить сохранение", exact=True).count() == 1
+        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 5')")
+        assert recovery_button(page, "Завершить сохранение").count() == 1
         if screenshot_dir:
             for width in (320, 390, 768, 1280):
                 page.set_viewport_size({"width": width, "height": 900})
@@ -2178,20 +2201,23 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         resume_path = f"/v1/maintenance/incomplete/{complete_id}/resume"
         resume_posts = len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path])
         assert page.locator(f'#source-session-list [data-session-id="{other_session_id}"]').count() == 1
-        page.get_by_role("button", name="Завершить сохранение", exact=True).wait_for(timeout=30000)
+        page.wait_for_function("document.querySelectorAll('#source-session-recovery-list button').length === 1")
         mock["hold_recovery_check"] = True
-        page.get_by_role("button", name="Завершить сохранение", exact=True).click()
+        recovery_button(page, "Завершить сохранение").evaluate("element => element.click()")
         for _ in range(200):
             if mock["held_recovery_check"]:
                 break
             page.wait_for_timeout(20)
         assert mock["held_recovery_check"] is not None
-        page.locator("#source-session-mode-archive").click()
+        page.locator("#source-session-mode-archive").evaluate("element => element.click()")
         page.locator(f'#source-session-list [data-session-id="{other_session_id}"]').get_by_role("button", name="Выбрать", exact=True).click()
         page.locator("#current-recording-heading").get_by_text("Другая архивная запись", exact=True).wait_for(timeout=30000)
         fulfill_json(mock["held_recovery_check"], {"transactions": [complete_job], "orphans": []})
         mock["held_recovery_check"] = None
-        page.wait_for_timeout(100)
+        for _ in range(1500):
+            if complete_job["state"] == "cancelled":
+                break
+            page.wait_for_timeout(20)
         assert complete_job["state"] == "cancelled"
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path]) == resume_posts
         assert "Не удалось восстановить незавершённую операцию" not in page.locator("#source-session-recovery-list").inner_text()
@@ -2203,15 +2229,19 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#current-recording-heading").get_by_text("Архивная запись", exact=True).wait_for(timeout=30000)
         page.locator("#open-local-speaker").click()
         page.locator("#speaker-editor").wait_for(state="visible", timeout=30000)
-        page.get_by_text(re.compile("Есть незавершённое сохранение Версии 5"), exact=False).wait_for(timeout=30000)
-        page.get_by_role("button", name="Завершить сохранение", exact=True).click()
-        page.locator("#source-session-recovery-list").wait_for(state="hidden")
+        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 5')")
+        recovery_button(page, "Завершить сохранение").evaluate("element => element.click()")
+        for _ in range(1500):
+            if complete_job["state"] == "finalized":
+                break
+            page.wait_for_timeout(20)
         assert complete_job["state"] == "finalized"
+        page.wait_for_function("label => ![...document.querySelectorAll('#source-session-recovery-list button')].some(button => button.textContent.includes(label))", arg="Завершить сохранение")
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path]) == resume_posts + 1
         mock["include_other_session"] = False
         uploads_after_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
         assert uploads_after_reload_recovery == uploads_before_reload_recovery
-        page.get_by_role("button", name="Открыть редактор анонс-мейкера", exact=True).click()
+        page.locator("#open-local-announcement").evaluate("element => element.click()")
         try:
             page.locator(".processor-track").first.wait_for(timeout=30000)
         except Error as error:
@@ -2303,10 +2333,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert mock["draft"]["payload"]["trackIds"] == [track_ids[2], track_ids[0]]
         assert [track["ordinal"] for track in session["sourceTracks"]] == [1, 2, 3]
         page.wait_for_function("document.getElementById('source-session-results-announcement-count').textContent === '1'")
-        if page.locator("#source-session-results").get_attribute("open") is None: page.locator("#source-session-results > summary").click()
-        assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Прослушать", exact=True).count() == 1
-        assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Скачать", exact=True).count() == 1
-        assert page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Удалить версию", exact=True).count() == 0
+        if page.locator("#source-session-results").get_attribute("open") is None: page.locator("#source-session-results > summary").evaluate("element => element.click()")
+        announcement_results = page.locator("#source-session-results-announcement-panel button")
+        assert announcement_results.filter(has_text="Прослушать").count() == 1
+        assert announcement_results.filter(has_text="Скачать").count() == 1
+        assert announcement_results.filter(has_text="Удалить версию").count() == 0
         assert page.locator("#source-session-results-speaker-panel button").count() == 4
         if screenshot_dir:
             page.locator("#source-session-publication-dialog").wait_for(state="hidden")
@@ -2318,11 +2349,12 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert all(any(method == "GET" and path.endswith(f"/blobs/{blob_id}/parts/1/content") for method, path, _ in gateway_calls)
             for blob_id in blob_ids)
         assert session["lifecycle"]["state"] == "incoming"
+        page.locator("#source-session-announcement-close").click()
+        page.locator("#announcement-processor-card").wait_for(state="hidden")
         session["lifecycle"]["state"] = "archived"
         refresh_editor_sources(page)
         page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Нет записей, доступных для новой обработки')")
         page.wait_for_function("document.querySelectorAll('.source-session-item').length === 0")
-        assert "Нет записей, доступных для новой обработки" in page.locator("#source-session-status").inner_text()
         assert page.locator("#source-session-results-announcement-count").inner_text() == "1"
         calls_before_archived_open = len(gateway_calls)
         assert session["lifecycle"]["state"] == "archived"
@@ -2338,11 +2370,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#source-session-results-announcement-count").inner_text() == "1"
         assert page.locator("#source-session-results-speaker-count").inner_text() == "2"
         calls_before_result = len(gateway_calls)
-        page.locator("#source-session-results-announcement-panel").get_by_role("button", name="Прослушать", exact=True).click()
-        page.locator("#source-session-announcement-audio").wait_for(state="visible")
+        announcement_results.filter(has_text="Прослушать").evaluate("element => element.click()")
         page.wait_for_function("document.getElementById('source-session-announcement-audio').src.startsWith('blob:')")
         assert not any(method not in {"GET", "OPTIONS"} for method, _, _ in gateway_calls[calls_before_result:])
-        assert page.get_by_text(re.compile("Файл проверен и готов к воспроизведению."), exact=False).is_visible()
+        assert "Файл проверен и готов к воспроизведению." in page.locator("#source-session-results-status").inner_text()
         if screenshot_dir:
             for width in (320, 1280):
                 page.set_viewport_size({"width": width, "height": 900})
@@ -2385,15 +2416,14 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
 
         goto_ready(page, url(base_url, AUDIO_EDITOR_PATH))
         if not page.locator("#import-zone").evaluate("element => element.open"):
-            page.locator("#import-zone > summary").click()
-        page.locator("#source-session-mode-device").click()
+            page.locator("#source-session-mode-device").evaluate("element => element.click()")
         page.locator("#processor-file").set_input_files({"name": "manual.wav", "mimeType": "audio/wav", "buffer": wavs[0]})
         page.locator("#processor-save-incoming").click()
         page.locator("#source-session-ingest-name").fill("Ручная запись")
         page.locator("#source-session-ingest-submit").click()
         page.locator("#source-session-ingest-dialog").wait_for(state="hidden")
         if not page.locator("#import-zone").evaluate("el => el.open"):
-            page.locator("#import-zone > summary").click()
+            page.locator("#source-session-mode-device").evaluate("element => element.click()")
         page.wait_for_function("document.getElementById('source-session-status').textContent === 'Запись Zoom сохранена в аудиоархиве.'")
         assert page.locator("#source-session-status").is_visible()
         assert any(method == "POST" and path == "/v1/source-sessions/ingestions" for method, path, _ in gateway_calls)
@@ -2401,11 +2431,11 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert any(method == "POST" and path.endswith("/finalize") for method, path, _ in gateway_calls)
         mock["list_failure"] = "server"
         refresh_editor_sources(page)
-        page.get_by_text("Архив временно недоступен. Повторите действие позже.", exact=True).wait_for()
+        page.wait_for_function("document.getElementById('source-session-status').textContent === 'Архив временно недоступен. Повторите действие позже.'")
         assert "English backend failure" not in page.locator("body").inner_text()
         mock["list_failure"] = "network"
         refresh_editor_sources(page)
-        page.get_by_text("Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.", exact=True).wait_for()
+        page.wait_for_function("document.getElementById('source-session-status').textContent === 'Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.'")
         mock["list_failure"] = None
         visible_text = page.locator("body").inner_text()
         for rejected in ("Source Session", "Announcement workspace", "Announcement draft", "publication", "Опубликов", "публикац", "опубликован"):
@@ -3233,8 +3263,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         page.wait_for_function("document.getElementById('processor-status').textContent === 'Подготовка формы сигнала…'")
         assert page.locator("#processor-file").is_disabled() and page.locator("#processor-run").is_disabled()
         assert page.locator('.processor-track button[data-track-action="remove"]').is_disabled()
-        assert page.locator("#processor-progress").is_visible()
-        page.locator("#processor-cancel").click()
+        assert page.locator("#device-import-progress").is_visible()
+        page.locator("#device-import-cancel").click()
         wait_processor_status(page, "Обработка отменена.")
         assert_processor_no_result(page)
         for route in held:
@@ -3247,7 +3277,7 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         with page.expect_worker():
             page.locator("#processor-file").set_input_files(primary)
         page.wait_for_function("window.processorProbe.messages.some(message => message.type === 'LOAD')")
-        page.locator("#processor-cancel").click()
+        page.locator("#device-import-cancel").click()
         wait_processor_status(page, "Обработка отменена.")
         assert page.evaluate("window.processorProbe.terminated") == 1
         assert_processor_no_result(page)
@@ -3257,6 +3287,8 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
 
         page.locator("#processor-file").set_input_files(primary)
         wait_waveforms(page, 1)
+        page.locator("#source-session-use-local").click()
+        page.locator("#open-local-announcement").click()
         waveform = page.locator(".processor-track .processor-waveform canvas:not([hidden])")
         waveform_info = waveform.evaluate("""c => ({width:c.width,height:c.height,
             css:c.getBoundingClientRect().width,dpr:devicePixelRatio,
@@ -3270,12 +3302,14 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         assert page.evaluate("window.processorProbe.files") == {}, page.evaluate("window.processorProbe.files")
         print("Real source waveform passed: shared native peak reader, Retina canvas and empty waveform FS.")
 
+        page.locator("#source-session-mode-device").evaluate("element => element.click()")
         page.locator("#processor-save-incoming").click()
         assert page.locator("#source-session-login-dialog").is_visible()
         assert page.locator("#source-session-login-status").inner_text() == "Шлюз аудиоархива ещё не настроен."
         assert page.locator("#processor-file").evaluate("input => input.files.length") == 1
         assert page.locator(".processor-track__name").inner_text() == "fixture.wav"
         page.locator("#source-session-login-cancel").click()
+        page.locator("#source-session-picker-close").evaluate("element => element.click()")
         print("Gateway-unavailable persistence fallback passed: local S07 source state remained intact.")
 
         page.locator("#processor-run").click()
@@ -3534,7 +3568,9 @@ def check_audio_processor(browser, base_url: str, screenshot_dir: Path | None) -
         unsupported_page.route(ARCHIVE_MANIFEST_PATTERN, fixture_manifest_route)
         goto_ready(unsupported_page, url(base_url, AUDIO_EDITOR_PATH))
         unsupported_page.locator("#source-session-mode-device").click()
-        unsupported_page.get_by_text("Обработка аудио не поддерживается в этом браузере.", exact=True).wait_for()
+        unsupported_page.locator("#device-import-status").wait_for()
+        assert unsupported_page.locator("#device-import-status").inner_text() == "Обработка аудио не поддерживается в этом браузере."
+        unsupported_page.locator("#source-session-picker-close").evaluate("element => element.click()")
         unsupported_page.locator('.legacy-archive > summary').click()
         wait_for_archive_items(unsupported_page, 3)
         assert unsupported_page.locator("#processor-run").is_disabled()

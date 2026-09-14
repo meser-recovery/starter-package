@@ -160,6 +160,9 @@ const run = byId("run");
 const cancel = byId("cancel");
 const status = byId("status");
 const progress = byId("progress");
+const deviceStatus = document.getElementById("device-import-status");
+const deviceProgress = document.getElementById("device-import-progress");
+const deviceCancel = document.getElementById("device-import-cancel");
 const sourceAudio = byId("source-audio");
 const resultAudio = byId("result-audio");
 const result = byId("result");
@@ -188,9 +191,27 @@ let sourceFollowEnabled = false;
 let sourceZoomMinimum = 2;
 let sourceZoomMaximum = 2;
 let sourceZoomInitialized = false;
+
+function mirrorDeviceImportFeedback() {
+  if (!deviceStatus || !deviceProgress || !deviceCancel) return;
+  deviceStatus.textContent = status.textContent;
+  deviceProgress.hidden = progress.hidden;
+  deviceCancel.hidden = cancel.hidden;
+  deviceCancel.disabled = cancel.disabled;
+  for (const attribute of ["value", "max"]) {
+    const value = progress.getAttribute(attribute);
+    if (value === null) deviceProgress.removeAttribute(attribute);
+    else deviceProgress.setAttribute(attribute, value);
+  }
+}
+new MutationObserver(mirrorDeviceImportFeedback).observe(status, { childList: true, subtree: true });
+new MutationObserver(mirrorDeviceImportFeedback).observe(progress, { attributes: true, attributeFilter: ["hidden", "value", "max"] });
+new MutationObserver(mirrorDeviceImportFeedback).observe(cancel, { attributes: true, attributeFilter: ["hidden", "disabled"] });
+deviceCancel?.addEventListener("click", () => cancel.click());
+mirrorDeviceImportFeedback();
 let sourceScaleMode = "time";
 let sourceTimeZoomValue = 50;
-let sourceTrackHeight = 196;
+let sourceTrackHeight = 112;
 let sourceLoopEnabled = false;
 let sourceLoopRange = null;
 let resultPixelsPerSecond = 2;
@@ -770,7 +791,7 @@ function renderTracks() {
     moveUp.dataset.trackAction = "move-up";
     moveUp.disabled = index === 0;
     moveUp.setAttribute("aria-label", `Переместить дорожку ${track.ordinal} вверх: ${track.file.name}`);
-    moveUp.textContent = "Вверх";
+    moveUp.textContent = "↑";
     moveUp.addEventListener("click", () => moveTrack(track.id, -1));
     const moveDown = document.createElement("button");
     moveDown.type = "button";
@@ -778,14 +799,14 @@ function renderTracks() {
     moveDown.dataset.trackAction = "move-down";
     moveDown.disabled = index === tracks.length - 1;
     moveDown.setAttribute("aria-label", `Переместить дорожку ${track.ordinal} вниз: ${track.file.name}`);
-    moveDown.textContent = "Вниз";
+    moveDown.textContent = "↓";
     moveDown.addEventListener("click", () => moveTrack(track.id, 1));
     const remove = document.createElement("button");
     remove.type = "button";
     remove.dataset.trackId = String(track.id);
     remove.dataset.trackAction = "remove";
     remove.setAttribute("aria-label", `Удалить дорожку ${track.ordinal}: ${track.file.name}`);
-    remove.textContent = "Удалить";
+    remove.textContent = "×";
     remove.addEventListener("click", () => removeTrack(track.id));
     actions.append(solo, mute, moveUp, moveDown, remove);
     const monitorStatus = document.createElement("span"); monitorStatus.className = "track-monitor-status";
@@ -992,7 +1013,7 @@ function setProcessorScaleMode(mode) {
   byId("source-scale-mode").setAttribute("aria-pressed", String(height));
   byId("source-scale-mode").setAttribute("aria-label", height ? "Переключить на масштаб времени" : "Переключить на высоту дорожек");
   byId("source-scale-mode").querySelector("span").textContent = height ? "Высота" : "Время";
-  if (height) { range.min = "148"; range.max = "300"; range.step = "4"; range.value = String(sourceTrackHeight); applyProcessorTrackHeight(); }
+  if (height) { range.min = "96"; range.max = "300"; range.step = "4"; range.value = String(sourceTrackHeight); applyProcessorTrackHeight(); }
   else { range.min = "0"; range.max = "100"; range.step = "1"; range.value = String(sourceTimeZoomValue); const ratio = sourceTimeZoomValue / 100; sourceZoomBounds(); setSourceZoom(sourceZoomMinimum * (sourceZoomMaximum / sourceZoomMinimum) ** ratio); }
 }
 

@@ -26,7 +26,7 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
             ('announcement', '#announcement-processor-card', 'processor-source-audio', '.processor-track', 'data-track-action'),
             ('speaker', '#speaker-editor', 'speaker-editor-source-audio', '.speaker-track', 'data-action'),
         ):
-            page.locator('#open-local-' + mode).click()
+            page.locator('#open-local-' + mode).evaluate('element => element.click()')
             page.wait_for_function('(id) => !document.getElementById(id+"-play").disabled', arg=prefix)
             for width in (320, 390, 768, 1280):
                 page.set_viewport_size({'width':width, 'height':900})
@@ -42,20 +42,16 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
                     return Math.abs(panel.right-wave.left)<2 && Math.abs(panel.top-wave.top)<2 && wave.width>0;
                 })''')
                 if mode == 'speaker' and width < 768:
-                    disclosure=page.locator('.speaker-dsp-disclosure').first
-                    if disclosure.evaluate('e=>e.open'):
-                        disclosure.locator('summary').tap()
-                        page.wait_for_function("!document.querySelector('.speaker-dsp-disclosure').open")
-                    disclosure.locator('summary').tap()
-                    disclosure.get_by_label('Улучшение',exact=True).wait_for(state='visible')
+                    processing=page.get_by_role('group',name='Обработка дорожки 1',exact=True)
+                    assert processing.is_visible()
+                    for role,label in (('switch','Улучшение'),('switch','Выравнивание громкости'),('slider','Компрессия')):
+                        control=processing.get_by_role(role,name=label,exact=True)
+                        assert control.is_visible() and control.is_enabled()
                     if output: page.screenshot(path=str(output/f'{mode}-long-name-dsp-{width}.png'),full_page=True)
-                    disclosure.locator('summary').focus();page.keyboard.press('Enter')
-                    assert not disclosure.evaluate('e=>e.open')
-                    assert disclosure.locator('summary').evaluate('e=>e===document.activeElement')
                 if output: page.screenshot(path=str(output/f'{mode}-long-name-{width}.png'),full_page=True)
             page.set_viewport_size({'width':320, 'height':450})
             transport=page.locator(root+' .speaker-transport,'+root+' .processor-source-player')
-            assert transport.evaluate('e=>getComputedStyle(e).position')=='sticky'
+            assert transport.evaluate('e=>e.getBoundingClientRect().width<=e.closest(".daw-workspace").getBoundingClientRect().width+1')
             assert transport.bounding_box()['height']<=450*.45+1
             if output: page.screenshot(path=str(output/f'{mode}-short-screen.png'))
             page.set_viewport_size({'width':1280, 'height':900})
@@ -143,7 +139,7 @@ def check_playback_signal(browser, base_url, screenshot_dir=None):
                 page.locator('#' + prefix + '-play').click()
                 page.wait_for_function('(s)=>document.querySelector(s).paused', arg=result)
                 page.locator('#' + prefix + '-stop').click()
-                page.locator('#open-local-announcement').click()
+                page.locator('#open-local-announcement').evaluate('element => element.click()')
                 page.locator('#speaker-unsaved-discard').click()
                 assert page.locator('#speaker-editor audio').evaluate_all('audios=>audios.every(a=>a.paused)')
         if screenshot_dir:

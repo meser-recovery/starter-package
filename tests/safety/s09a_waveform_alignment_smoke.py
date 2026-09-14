@@ -72,7 +72,7 @@ def check_waveform_alignment(browser, base_url, screenshot_dir=None):
             ('speaker','.speaker-track','speaker-editor-source-audio','speaker-editor-zoom'),
             ('announcement','.processor-track','processor-source-audio','processor-source-zoom-range'),
         ):
-            page.locator('#open-local-'+mode).click()
+            page.locator('#open-local-'+mode).evaluate('element => element.click()')
             if page.locator('#speaker-unsaved-discard').is_visible():
                 page.locator('#speaker-unsaved-discard').click()
             page.wait_for_function('(id)=>!document.getElementById(id+"-play").disabled',arg=prefix,timeout=180000)

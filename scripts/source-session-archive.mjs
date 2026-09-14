@@ -117,36 +117,74 @@ function renderCurrentRecording() {
   const summary = document.getElementById("current-recording-state");
   const link = document.getElementById("current-recording-archive-link");
   const picker = byId("mode-archive");
+  const workflowChoice = document.getElementById("workflow-choice");
+  const card = document.getElementById("current-recording");
+  const badge = document.getElementById("current-recording-badge");
+  const facts = document.getElementById("current-recording-facts");
+  const source = document.getElementById("current-recording-source");
+  const tracks = document.getElementById("current-recording-tracks");
+  const next = document.getElementById("current-recording-next");
+  const pickerLabel = picker.querySelector(":scope > span:not(.source-choice__icon):not(.source-choice__action):not(.visually-hidden)");
   if (manifest) {
     heading.textContent = manifest.title;
     summary.textContent = `${formatDate(manifest.recordedAt)} · ${manifest.sourceTracks.length} дорожек · Сохранена в аудиоархиве`;
     link.href = `Audio-Archive.html?session=${encodeURIComponent(manifest.id)}`; link.hidden = false;
-    picker.textContent = "Сменить запись";
+    pickerLabel.textContent = "Сменить запись";
+    card.dataset.recordingState = "archive"; badge.textContent = "В аудиоархиве";
+    source.textContent = manifest.sourceState === "available" ? "Аудиоархив · исходники доступны" : "Аудиоархив · исходники недоступны";
+    tracks.textContent = `${manifest.sourceTracks.length}`;
+    next.textContent = state.editorMode ? workflowLabel(state.editorMode) : "Выберите задачу";
+    facts.hidden = false; workflowChoice.hidden = false;
   } else if (local) {
     heading.textContent = "Новая запись Zoom";
     summary.textContent = `${local.sourceTracks.length} дорожек · Только на этом устройстве`;
     link.removeAttribute("href"); link.hidden = true;
-    picker.textContent = "Сменить запись";
+    pickerLabel.textContent = "Из аудиоархива";
+    card.dataset.recordingState = "device"; badge.textContent = "На устройстве";
+    source.textContent = "Локальные файлы · без сохранения в архив";
+    tracks.textContent = `${local.sourceTracks.length}`;
+    next.textContent = state.editorMode ? workflowLabel(state.editorMode) : "Выберите задачу";
+    facts.hidden = false; workflowChoice.hidden = false;
   } else {
-    heading.textContent = "Запись не выбрана";
-    summary.textContent = "Откройте запись из аудиоархива или выберите дорожки на устройстве.";
+    heading.textContent = "Откуда взять запись?";
+    summary.textContent = "Выберите сохранённую запись из аудиоархива или несколько синхронизированных дорожек с этого устройства.";
     link.removeAttribute("href"); link.hidden = true;
-    picker.textContent = "Выбрать запись";
+    pickerLabel.textContent = "Из аудиоархива";
+    card.dataset.recordingState = "empty"; badge.textContent = "Не выбрана";
+    facts.hidden = true; workflowChoice.hidden = true;
   }
 }
 
 function setMode(mode) {
   state.mode = mode;
-  if (mode === "device" && !state.editorMode) { activateMode("announcement"); document.getElementById("import-zone").open = true; }
   const archive = mode === "archive";
+  byId("heading").textContent = archive ? "Выберите запись" : "Выберите аудиодорожки";
   byId("archive-panel").hidden = !archive;
   byId("device-panel").hidden = archive;
   document.getElementById("processor-device-field").hidden = archive;
   document.getElementById("processor-device-ingest-actions").hidden = archive;
   byId("mode-archive").setAttribute("aria-pressed", String(archive));
   byId("mode-device").setAttribute("aria-pressed", String(!archive));
+  byId("mode-device").setAttribute("aria-expanded", String(!archive && document.getElementById("import-zone").open));
   updateSourceSaveState();
   renderCurrentRecording(); updatePublishState(); renderResultArchive(); void showIncomplete();
+}
+
+function setSourceLoading(visible, { title = "Открываем запись…", record = "Подготавливаем дорожки и проект.", progress = 18, step = "record" } = {}) {
+  const overlay = document.getElementById("source-session-loading");
+  if (!overlay) return;
+  overlay.hidden = !visible;
+  document.body.toggleAttribute("data-source-loading", visible);
+  document.getElementById("source-session-loading-title").textContent = title;
+  document.getElementById("source-session-loading-record").textContent = record;
+  document.getElementById("source-session-loading-progress").value = progress;
+  for (const item of overlay.querySelectorAll("[data-loading-step]")) {
+    const order = ["record", "tracks", "files", "editor"];
+    const itemIndex = order.indexOf(item.dataset.loadingStep);
+    const activeIndex = order.indexOf(step);
+    item.classList.toggle("is-complete", itemIndex < activeIndex);
+    item.classList.toggle("is-active", itemIndex === activeIndex);
+  }
 }
 
 function clearOutputPlayback() {
@@ -184,16 +222,37 @@ function renderAnnouncementWorkspace() {
   byId("announcement-status").textContent = "Исходники → Обработать запись → Прослушать → Сохранить / Скачать";
   updatePublishState(); renderCurrentRecording(); renderResultArchive();
 }
+function scrollToElement(element) {
+  element.scrollIntoView({
+    block: "start",
+    behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth",
+  });
+}
+function leaveAnnouncementWorkspace() {
+  state.editorMode = null;
+  delete document.body.dataset.editing;
+  document.getElementById("announcement-processor-card").hidden = true;
+  byId("announcement-workspace").hidden = true;
+  document.getElementById("active-editor-mode").textContent = "Запись готова. Выберите одну задачу.";
+  renderCurrentRecording(); renderResultArchive(); void showIncomplete();
+  document.getElementById("workflow-choice").focus({ preventScroll: true });
+  scrollToElement(document.getElementById("workflow-choice"));
+}
 function activateMode(mode) {
   state.editorMode = mode;
   document.getElementById("import-zone").open = false;
   document.body.dataset.editing = mode;
   document.getElementById("announcement-processor-card").hidden = mode !== "announcement";
   byId("announcement-workspace").hidden = mode !== "announcement";
-  document.getElementById("active-editor-mode").textContent = `Сейчас открыто: ${mode === "speaker" ? "Финальная обработка спикерской" : "Редактирование для анонс-мейкера"}`;
+  document.getElementById("active-editor-mode").textContent = `Открыта задача: ${workflowLabel(mode)}`;
   const inactiveEditor = document.getElementById(mode === "speaker" ? "announcement-processor-card" : "speaker-editor");
   for (const audio of inactiveEditor.querySelectorAll("audio")) audio.pause();
   state.resultArchive = mode; renderAnnouncementWorkspace(); renderImportFiles(); void showIncomplete();
+  const workspace = document.getElementById(mode === "speaker" ? "speaker-editor" : "announcement-processor-card");
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    workspace.focus?.({ preventScroll: true });
+  }));
 }
 
 function updatePublishState() {
@@ -365,7 +424,7 @@ async function loadSession(session) {
       loadProcessorFiles(files, provenance, { sessionId: complete.id, sourceSessionRevision: complete.revision });
       state.loadingArchive = false;
       setArchiveStatus(`Загружено дорожек: ${files.length}. Целостность исходников проверена; запись не изменена.`);
-      document.getElementById("processor-heading").scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToElement(document.getElementById("processor-heading"));
     } else {
       state.loadingArchive = true;
       clearProcessorFiles();
@@ -374,7 +433,7 @@ async function loadSession(session) {
       state.candidate = null;
       setArchiveStatus(complete.lifecycle.state === "archived" ? "Запись убрана из рабочего списка. Верните её для обработки." :
         "Исходники удалены; доступны сохранённые результаты и метаданные.");
-      byId("announcement-workspace").scrollIntoView({ behavior: "smooth", block: "start" });
+      scrollToElement(byId("announcement-workspace"));
     }
   } catch (error) {
     if (!current()) return;
@@ -772,21 +831,29 @@ function renderSessions() {
 
 async function selectSessionContext(session) {
   if (state.publicationController || state.uploadController || state.speakerSaveController || state.speakerResumeController) return;
-  const sequence = ++state.sessionSequence, auth = state.authSequence;
+  const sequence = ++state.sessionSequence, auth = state.authSequence, loadingStarted = performance.now();
+  setSourceLoading(true, { record: session.title, progress: 18, step: "record" });
   setArchiveStatus("Проверка выбранной записи…");
   try {
     const complete = await gateway.getSession(session.id);
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     if (!validateSessionManifest(complete) || complete.id !== session.id || !eligible(complete)) throw new Error("Запись больше не доступна для редактирования.");
+    setSourceLoading(true, { record: complete.title, progress: 68, step: "tracks" });
     if (!await closeSpeakerEditor(false, () => sequence === state.sessionSequence && auth === state.authSequence)) return;
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
     closeAnnouncementWorkspace(true);
     state.activeSession = complete; state.activeManifest = complete; state.editorMode = null; delete document.body.dataset.editing;
-    document.getElementById("import-zone").open = false; clearProcessorFiles(); state.processorProvenance = []; state.candidate = null;
+    document.getElementById("import-zone").open = false; document.getElementById("import-zone").hidden = true;
+    clearProcessorFiles(); state.processorProvenance = []; state.candidate = null;
     renderCurrentRecording(); renderResultArchive(); renderSessions(); await showIncomplete();
+    setSourceLoading(true, { record: complete.title, progress: 92, step: "editor" });
     setArchiveStatus(`Выбрана запись: ${complete.title}. Выберите тип обработки.`);
   } catch (error) {
     if (sequence === state.sessionSequence && auth === state.authSequence) onGatewayError(error, "Не удалось выбрать запись.");
+  } finally {
+    const remaining = 550 - (performance.now() - loadingStarted);
+    if (remaining > 0) await new Promise(resolve => setTimeout(resolve, remaining));
+    setSourceLoading(false);
   }
 }
 
@@ -855,6 +922,9 @@ function updateSourceSaveState() {
 function renderImportFiles() {
   updateSourceSaveState();
   const list = document.getElementById("import-files"); list.replaceChildren();
+  const useLocal = document.getElementById("source-session-use-local");
+  useLocal.hidden = !workingFiles().length;
+  useLocal.disabled = !workingFiles().length;
   document.getElementById("import-summary").textContent = workingFiles().length ? `Выбрано дорожек: ${workingFiles().length}` : "Запись не выбрана";
   for (const [index, file] of workingFiles().entries()) {
     const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${file.name.split('.').at(-1).toUpperCase()} · ${formatBytes(file.size)} `));
@@ -1364,10 +1434,32 @@ async function initialize() {
   await consumeEditorIntent();
 }
 
-byId("mode-archive").addEventListener("click", () => { setMode("archive"); document.getElementById("import-zone").open = true; byId("mode-archive").setAttribute("aria-expanded", "true"); byId("filters").elements.search.focus(); });
-byId("mode-device").addEventListener("click", () => { setMode("device"); document.getElementById("import-zone").open = true; byId("mode-device").focus(); });
-byId("picker-close").addEventListener("click", () => { document.getElementById("import-zone").open = false; byId("mode-archive").setAttribute("aria-expanded", "false"); byId("mode-archive").focus(); });
-document.getElementById("import-zone").addEventListener("toggle", event => byId("mode-archive").setAttribute("aria-expanded", String(event.currentTarget.open)));
+byId("mode-archive").addEventListener("click", () => {
+  setMode("archive"); document.getElementById("import-zone").hidden = false; document.getElementById("import-zone").open = true;
+  state.picker.requested = true; state.picker.page = 0; renderSessions();
+  byId("mode-archive").setAttribute("aria-expanded", "true"); byId("filters").elements.search.focus();
+});
+byId("mode-device").addEventListener("click", () => {
+  setMode("device"); document.getElementById("import-zone").hidden = false; document.getElementById("import-zone").open = true;
+  byId("mode-device").setAttribute("aria-expanded", "true"); byId("mode-device").focus();
+});
+byId("picker-close").addEventListener("click", () => {
+  const zone = document.getElementById("import-zone"); zone.open = false;
+  if (!state.activeManifest && !state.localContext && !workingFiles().length) zone.hidden = true;
+  byId("mode-archive").setAttribute("aria-expanded", "false"); byId("mode-device").setAttribute("aria-expanded", "false"); byId(`mode-${state.mode}`).focus();
+});
+document.getElementById("source-session-use-local").addEventListener("click", () => {
+  if (!workingFiles().length) return;
+  const zone = document.getElementById("import-zone");
+  zone.open = false;
+  byId("mode-device").setAttribute("aria-expanded", "false");
+  document.getElementById("workflow-choice").focus({ preventScroll: true });
+  scrollToElement(document.getElementById("workflow-choice"));
+});
+document.getElementById("import-zone").addEventListener("toggle", event => {
+  byId("mode-archive").setAttribute("aria-expanded", String(event.currentTarget.open && state.mode === "archive"));
+  byId("mode-device").setAttribute("aria-expanded", String(event.currentTarget.open && state.mode === "device"));
+});
 byId("filters").addEventListener("submit", event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderSessions(); });
 byId("recent").addEventListener("click", () => { byId("filters").elements.search.value = ""; byId("filters").elements.month.value = ""; state.picker.requested = true; state.picker.page = 0; renderSessions(); });
 byId("prev").addEventListener("click", () => { state.picker.page--; renderSessions(); });
@@ -1410,7 +1502,7 @@ speakerId("save-dialog").addEventListener("cancel", (event) => {
   cancelSpeakerSaveDialog();
 });
 
-byId("announcement-close").addEventListener("click", () => closeAnnouncementWorkspace(true));
+byId("announcement-close").addEventListener("click", leaveAnnouncementWorkspace);
 byId("publish-announcement").addEventListener("click", openPublicationDialog);
 byId("publication-form").addEventListener("submit", submitPublication);
 byId("publication-cancel").addEventListener("click", cancelPublicationDialog);
@@ -1503,7 +1595,13 @@ speakerId("close").addEventListener("click", () => {
   ++state.sessionSequence; state.retryAction = null; updateSessionStatus();
 });
 
-window.addEventListener("speaker-editor-closed", () => { if (state.editorMode === "speaker") { state.editorMode = null; delete document.body.dataset.editing; } });
+window.addEventListener("speaker-editor-closed", () => {
+  if (state.editorMode === "speaker") {
+    state.editorMode = null; delete document.body.dataset.editing;
+    document.getElementById("active-editor-mode").textContent = "Запись готова. Выберите одну задачу.";
+    renderCurrentRecording(); renderResultArchive();
+  }
+});
 
 document.getElementById("archive-reconnect-login").addEventListener("click", () => ensureAuthenticated().catch(() => {}));
 document.getElementById("archive-reconnect-retry").addEventListener("click", async () => {

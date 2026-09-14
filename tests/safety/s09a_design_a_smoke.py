@@ -46,14 +46,14 @@ def check_design_a(browser, base_url, screenshot_dir=None):
             assert page.evaluate("savedRows.every((r,i)=>r===document.querySelectorAll('.speaker-track')[i]&&savedCanvases[i]===r.querySelector('canvas')) && savedAudio.every((a,i)=>a===document.querySelectorAll('#speaker-editor audio[data-track-id]')[i])")
         page.locator('#speaker-editor-zoom-fit').click()
         def select(start,end):
-            detail=page.locator('.speaker-selection>details');detail.evaluate('e=>e.open=true')
+            detail=page.locator('.speaker-selection>details:first-of-type');detail.evaluate('e=>e.open=true')
             for suffix,value in [('start',start),('end',end)]:
                 page.locator('#speaker-editor-selection-'+suffix).fill(str(value))
                 page.locator('#speaker-editor-selection-'+suffix).dispatch_event('change')
         select(2,5);apply_selection(page,'silence')
         select(6,8);apply_selection(page,'cut')
         select(1,11);page.locator('#speaker-editor-set-start').click();page.locator('#speaker-editor-set-end').click()
-        page.locator('.speaker-selection>details').evaluate('e=>e.open=false')
+        page.locator('.speaker-selection>details:first-of-type').evaluate('e=>e.open=false')
         page.evaluate('''async()=>{
           const {getPlaybackTap}=await import('./scripts/audio-meters.mjs');
           window.observed=[...document.querySelectorAll('#speaker-editor audio[data-track-id]')].map(audio=>{
@@ -85,7 +85,7 @@ def check_design_a(browser, base_url, screenshot_dir=None):
                 assert page.locator('.studio-transport-main').first.evaluate('e=>e.scrollWidth<=e.clientWidth'),(scheme,width)
                 if output: page.screenshot(path=str(output/f'editor-{scheme}-{width}.png'),full_page=True)
         page.emulate_media(color_scheme='light');page.set_viewport_size({'width':1440,'height':1100})
-        page.locator('.speaker-selection>details').evaluate('e=>e.open=false')
+        page.locator('.speaker-selection>details:first-of-type').evaluate('e=>e.open=false')
         page.locator('#speaker-editor-source-audio-play').click()
         page.wait_for_timeout(600)
         page.locator('#speaker-editor').evaluate('e=>window.scrollTo(0,e.getBoundingClientRect().top+scrollY-12)')
@@ -94,7 +94,7 @@ def check_design_a(browser, base_url, screenshot_dir=None):
         # The Announcement result uses .processor-preview, not .processor-result.
         # Exercise a real rendered result so dark-theme text cannot disappear
         # against the old light preview background unnoticed.
-        page.locator('#open-local-announcement').click()
+        page.locator('#open-local-announcement').evaluate('element => element.click()')
         if page.locator('#speaker-unsaved-discard').is_visible():
             page.locator('#speaker-unsaved-discard').click()
         page.locator('#processor-run').click()
