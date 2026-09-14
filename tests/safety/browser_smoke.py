@@ -2109,8 +2109,12 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         mock["hold_resume"] = False
         refresh_editor_sources(page)
         recovery_button(page, "Продолжить передачу").evaluate("element => element.click()")
-        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText === ''")
+        for _ in range(1500):
+            if partial_job["state"] == "finalized":
+                break
+            page.wait_for_timeout(20)
         assert partial_job["state"] == "finalized"
+        page.wait_for_function("label => ![...document.querySelectorAll('#source-session-recovery-list button')].some(button => button.textContent.includes(label))", arg="Продолжить передачу")
         assert mock["resume_uploads"][-1] == {"transactionId": partial_id, "blobId": recovery_plan["blobId"],
             "partNumber": recovery_plan["parts"][0]["partNumber"], "body": mock["speaker_output_bytes"]}
 
@@ -2144,7 +2148,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         assert page.locator("#speaker-editor").is_hidden()
         fulfill_json(mock["held_recovery_check"], {"transactions": [mismatch_job], "orphans": []})
         mock["held_recovery_check"] = None
-        page.wait_for_timeout(100)
+        for _ in range(1500):
+            if mismatch_job["state"] == "cancelled":
+                break
+            page.wait_for_timeout(20)
         assert mismatch_job["state"] == "cancelled", {"job": mismatch_job, "calls": gateway_calls[-12:]}
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path]) == discard_posts
         assert "Не удалось восстановить незавершённую операцию" not in page.locator("#source-session-recovery-list").inner_text()
@@ -2155,8 +2162,12 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 4')")
         page.once("dialog", lambda dialog: dialog.accept())
         recovery_button(page, "Удалить незавершённое сохранение").evaluate("element => element.click()")
-        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText === ''")
+        for _ in range(1500):
+            if mismatch_job["state"] == "discarded":
+                break
+            page.wait_for_timeout(20)
         assert mismatch_job["state"] == "discarded"
+        page.wait_for_function("label => ![...document.querySelectorAll('#source-session-recovery-list button')].some(button => button.textContent.includes(label))", arg="Удалить незавершённое сохранение")
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == discard_path]) == discard_posts + 1
 
         page.once("dialog", lambda dialog: dialog.accept())
@@ -2203,7 +2214,10 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#current-recording-heading").get_by_text("Другая архивная запись", exact=True).wait_for(timeout=30000)
         fulfill_json(mock["held_recovery_check"], {"transactions": [complete_job], "orphans": []})
         mock["held_recovery_check"] = None
-        page.wait_for_timeout(100)
+        for _ in range(1500):
+            if complete_job["state"] == "cancelled":
+                break
+            page.wait_for_timeout(20)
         assert complete_job["state"] == "cancelled"
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path]) == resume_posts
         assert "Не удалось восстановить незавершённую операцию" not in page.locator("#source-session-recovery-list").inner_text()
@@ -2217,8 +2231,12 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         page.locator("#speaker-editor").wait_for(state="visible", timeout=30000)
         page.wait_for_function("document.getElementById('source-session-recovery-list').innerText.includes('Есть незавершённое сохранение Версии 5')")
         recovery_button(page, "Завершить сохранение").evaluate("element => element.click()")
-        page.wait_for_function("document.getElementById('source-session-recovery-list').innerText === ''")
+        for _ in range(1500):
+            if complete_job["state"] == "finalized":
+                break
+            page.wait_for_timeout(20)
         assert complete_job["state"] == "finalized"
+        page.wait_for_function("label => ![...document.querySelectorAll('#source-session-recovery-list button')].some(button => button.textContent.includes(label))", arg="Завершить сохранение")
         assert len([call for call in gateway_calls if call[0] == "POST" and call[1] == resume_path]) == resume_posts + 1
         mock["include_other_session"] = False
         uploads_after_reload_recovery = len([call for call in gateway_calls if call[0] == "PUT" and f"/speaker-saves/{complete_id}/" in call[1]])
