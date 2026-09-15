@@ -29,6 +29,20 @@ export function speakerRecoveryBinding(operation, context = {}) {
     (!operation.candidateFingerprint || candidate.candidateFingerprint === operation.candidateFingerprint));
   return { belongs, exactCandidate };
 }
+export function createSpeakerRecoveryAttempt(session, work, keyFactory = () => crypto.randomUUID()) {
+  return { session: structuredClone(session), work, files: null, target: null, controller: null,
+    ingestionKey: keyFactory(), continuationKey: keyFactory(), continuationRequest: null };
+}
+export function recoveryContinuationRequest(recovery, source, target) {
+  if (!recovery.continuationRequest) {
+    recovery.continuationRequest = { schemaVersion: 1,
+      expectedSourceSessionRevision: source.revision, expectedTargetSessionRevision: target.revision,
+      sourceDraftRevision: recovery.work.continuation.sourceDraftRevision,
+      sourceOutputId: recovery.work.continuation.sourceOutputId, targetSessionId: target.id,
+      idempotencyKey: recovery.continuationKey };
+  }
+  return structuredClone(recovery.continuationRequest);
+}
 const normalized = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
 const compareText = (a, b) => String(a).localeCompare(String(b), 'ru');
 const timestamp = value => value ? Date.parse(value) : NaN;
@@ -126,9 +140,26 @@ export function recoveryPolicy(operation) {
 export function parseEditorIntent(search) {
   const params = new URLSearchParams(search);
   if (!params.has('session') && !params.has('workflow')) return null;
+  const allowed = new Set(['session', 'workflow', 'projectRevision', 'speakerOutput']);
   if (params.getAll('session').length !== 1 || params.getAll('workflow').length !== 1 ||
+      [...params.keys()].some(key => !allowed.has(key)) ||
       !isUuid(params.get('session')) || !Object.hasOwn(workflows, params.get('workflow'))) throw new Error('Некорректная ссылка на обработку. Откройте запись из аудиоархива.');
-  return { sessionId: params.get('session'), workflow: params.get('workflow') };
+  const revisions = params.getAll('projectRevision'), outputs = params.getAll('speakerOutput');
+  if (revisions.length > 1 || outputs.length > 1 || (revisions.length && outputs.length) ||
+      ((revisions.length || outputs.length) && params.get('workflow') !== 'speaker')) {
+    throw new Error('Ссылка содержит конфликтующие намерения продолжения проекта.');
+  }
+  let projectRevision = null, speakerOutput = null;
+  if (revisions.length) {
+    if (!/^[1-9][0-9]*$/.test(revisions[0]) || !Number.isSafeInteger(Number(revisions[0]))) throw new Error('Некорректная версия состояния проекта.');
+    projectRevision = Number(revisions[0]);
+  }
+  if (outputs.length) {
+    if (!isUuid(outputs[0])) throw new Error('Некорректная финальная версия проекта.');
+    speakerOutput = outputs[0];
+  }
+  return { sessionId: params.get('session'), workflow: params.get('workflow'),
+    ...(projectRevision ? { projectRevision } : {}), ...(speakerOutput ? { speakerOutput } : {}) };
 }
 export function parseArchiveIntent(search) {
   const params = new URLSearchParams(search);
@@ -144,14 +175,15 @@ export function editorUrl(session, workflow) {
 }
 export function deletionImpact(preview, target) {
   const counts = { announcement: preview.announcementVersions, speaker: preview.speakerVersions };
-  const all = `Исходники: ${preview.sourceTracks}; версии «Анонс-мейкер»: ${counts.announcement}; версии «Спикерская»: ${counts.speaker}; сохранённые настройки обработки: ${preview.drafts}.`;
+  const states = Number.isSafeInteger(preview.speakerProjectStates) ? preview.speakerProjectStates : 0;
+  const all = `Исходники: ${preview.sourceTracks}; версии «Анонс-мейкер»: ${counts.announcement}; версии «Спикерская»: ${counts.speaker}; сохранённые настройки обработки: ${preview.drafts}; состояния проекта «Спикерская»: ${states}.`;
   if (target.kind === 'purge') return { removed: `Запись целиком. ${all}`, retained: 'Только служебная отметка об удалении; запись и её данные восстановить нельзя.' };
-  if (target.kind === 'sources') return { removed: `Исходные дорожки будут удалены: ${preview.sourceTracks}. Продолжение обработки проекта после удаления исходников может стать невозможным.`, retained: `Сохранённые готовые версии останутся доступны. Метаданные записи, сохранённые настройки обработки (${preview.drafts}), все сохранённые результаты: «Анонс-мейкер» ${counts.announcement}, «Спикерская» ${counts.speaker}.` };
+  if (target.kind === 'sources') return { removed: `Исходные дорожки будут удалены: ${preview.sourceTracks}. Каноническое редактирование станет недоступным.`, retained: `История проекта (${states}) и готовые версии останутся доступны. Метаданные записи, сохранённые настройки обработки (${preview.drafts}), все сохранённые результаты: «Анонс-мейкер» ${counts.announcement}, «Спикерская» ${counts.speaker}.` };
   const label = workflows[target.workflow];
   if (!label || !['output-version', 'output-series'].includes(target.kind)) throw new Error('Неизвестная цель удаления.');
   const removed = target.kind === 'output-version' ? 1 : counts[target.workflow];
   return { removed: target.kind === 'output-version' ? `«${label}», версия ${target.version}.` : `Все результаты «${label}»: ${removed}.`,
-    retained: `Исходники (${preview.sourceTracks}), сохранённые настройки обработки (${preview.drafts}), метаданные и результаты другого вида работы (${counts[target.workflow === 'speaker' ? 'announcement' : 'speaker']}); остальные версии «${label}»: ${counts[target.workflow] - removed}. Номера версий не переиспользуются.` };
+    retained: `Исходники (${preview.sourceTracks}), сохранённые настройки обработки (${preview.drafts}), состояния проекта «Спикерская» (${states}), метаданные и результаты другого вида работы (${counts[target.workflow === 'speaker' ? 'announcement' : 'speaker']}); остальные версии «${label}»: ${counts[target.workflow] - removed}. Удаление результата не удаляет состояние проекта; номера версий не переиспользуются.` };
 }
 // Independent generations fence authentication, listing, detail and playback completions.
 export class RequestGeneration {

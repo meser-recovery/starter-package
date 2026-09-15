@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 
 export const IDS = Object.freeze({
   session: "11111111-1111-4111-8111-111111111111",
@@ -41,7 +42,15 @@ export class MemoryRepository {
     if (expectedHead !== `h${this.head}`) {
       const error = new Error("Canonical state changed; reload and retry"); error.status = 409; throw error;
     }
-    for (const [path, value] of Object.entries(files)) value === null ? this.files.delete(path) : this.files.set(path, structuredClone(value));
+    for (const [path, value] of Object.entries(files)) {
+      if (value !== null && path.startsWith("project-states/") && this.files.has(path) && !isDeepStrictEqual(this.files.get(path), value)) {
+        const error = new Error("Immutable Speaker project state already exists with different content"); error.status = 409; throw error;
+      }
+    }
+    for (const [path, value] of Object.entries(files)) {
+      if (value !== null && path.startsWith("project-states/") && this.files.has(path)) continue;
+      value === null ? this.files.delete(path) : this.files.set(path, structuredClone(value));
+    }
     this.head++;
     this.commits.push({ message, files: structuredClone(files) });
     return `h${this.head}`;

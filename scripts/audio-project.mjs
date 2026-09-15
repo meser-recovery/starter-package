@@ -3,7 +3,27 @@ import { normalizeSpeakerPayload, resultDuration } from './speaker-editor-core.m
 
 export const RECONNECT_MESSAGE = 'Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.';
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
-const conflict = () => Object.assign(new Error('Запись изменилась. Сохранение остановлено; текущий монтаж остаётся в памяти.'), { status: 409 });
+export function exactProjectStateForDraft(projectState, session, draft) {
+  if (!projectState || !session || !draft || projectState.sessionId !== session.id ||
+      projectState.draftRevision !== draft.draftRevision || !equal(projectState.payload, draft.payload) ||
+      !Array.isArray(projectState.sources) || projectState.sources.length !== session.sourceTracks.length) return false;
+  return projectState.sources.every((source) => {
+    const track = session.sourceTracks.find((item) => item.trackId === source.trackId);
+    return track && source.blobId === track.blobId && source.ordinal === track.ordinal && source.originalName === track.originalName &&
+      source.mediaType === track.mediaType && source.sizeBytes === track.sizeBytes && source.sha256 === track.sha256;
+  });
+}
+export async function loadExactConflictProjectState(loadProjectState, session, draft, signal, isCurrent = () => true) {
+  if (!loadProjectState) return null;
+  const projectState = await loadProjectState({ session, draft, signal });
+  if (!isCurrent()) throw new DOMException('cancelled', 'AbortError');
+  if (!exactProjectStateForDraft(projectState, session, draft)) throw new Error('Последнее неизменяемое состояние не совпадает с текущим проектом.');
+  return projectState;
+}
+const conflict = (latestSession = null, latestDraft = null) => Object.assign(
+  new Error('Запись изменилась. Сохранение остановлено; текущий монтаж остаётся в памяти.'),
+  { status: 409, latestSession, latestDraft }
+);
 const localIds = new WeakMap();
 export function localSourceContext(files) {
   return { kind: 'local', title: files[0]?.name.replace(/\.[^.]+$/, '') || 'Новая запись', sourceTracks: files.map((file, index) => {
@@ -69,22 +89,35 @@ export class ProjectSave {
     const attempt = this.attempt;
     if (attempt.id !== id) throw conflict();
     const [fresh, saved] = await Promise.all([this.gateway.getSession(id), this.gateway.loadDraft(id, this.workflow)]);
-    if (!validateSessionManifest(fresh) || fresh.id !== id || fresh.lifecycle.state !== 'incoming' || fresh.sourceState !== 'available') throw conflict();
+    if (!validateSessionManifest(fresh) || fresh.id !== id || fresh.lifecycle.state !== 'incoming' || fresh.sourceState !== 'available') throw conflict(fresh, saved.draft);
     const current = saved.draft, envelope = attempt.envelope;
     if (current?.payloadSchema === `${this.workflow}/v1` && current.draftRevision === envelope.expectedDraftRevision + 1 && equal(current.payload, envelope.payload) &&
         fresh.revision === envelope.expectedSourceSessionRevision + 1) {
       this.attempt = null;
-      return equal(envelope.payload, payload) ? { session: fresh, draft: current } : this.save(fresh, current, payload, signal);
+      if (!equal(envelope.payload, payload)) return this.save(fresh, current, payload, signal);
+      const state = this.workflow === 'speaker' && this.gateway.speakerProjectHistoryVersion === 1 ?
+        await this.gateway.speakerProjectState(id, current.draftRevision, signal) : null;
+      return { session: fresh, draft: current, ...(state ? { state } : {}) };
     }
-    if (fresh.revision !== envelope.expectedSourceSessionRevision || (current?.draftRevision || 0) !== envelope.expectedDraftRevision) throw conflict();
+    if (fresh.revision !== envelope.expectedSourceSessionRevision || (current?.draftRevision || 0) !== envelope.expectedDraftRevision) throw conflict(fresh, current);
     if (!equal(envelope.payload, payload)) {
       this.attempt = null;
       return this.save(fresh, current, payload, signal);
     }
     signal?.throwIfAborted();
-    const result = await this.gateway.saveDraft(id, this.workflow, envelope, signal);
-    if (!validateSessionManifest(result.session) || result.session.id !== id || !equal(result.draft?.payload, payload) || result.draft?.payloadSchema !== `${this.workflow}/v1`) throw conflict();
+    let result;
+    try { result = await this.gateway.saveDraft(id, this.workflow, envelope, signal); }
+    catch (error) {
+      if (error?.status !== 409) throw error;
+      const [latestSession, latest] = await Promise.all([this.gateway.getSession(id), this.gateway.loadDraft(id, this.workflow)]);
+      throw conflict(latestSession, latest.draft);
+    }
+    if (!validateSessionManifest(result.session) || result.session.id !== id || !equal(result.draft?.payload, payload) || result.draft?.payloadSchema !== `${this.workflow}/v1`) throw conflict(result.session, result.draft);
     this.attempt = null; return result;
+  }
+  saveAsLatest(session, draft, payload, signal) {
+    this.attempt = null;
+    return this.save(session, draft, payload, signal);
   }
 }
 export function projectProjection(session, draft) {

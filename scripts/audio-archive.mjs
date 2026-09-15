@@ -15,6 +15,7 @@ const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY
 const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete'].map(key => [key, new RequestGeneration()]));
 const state = {
   authenticated: false, sessions: null, maintenance: null, detail: null, projects: new Map(), outputMeta: new Map(),
+  projectHistories: new Map(),
   url: null, target: null, returnFocus: null, busy: false, intentConsumed: false, detailInput: null, detailOpen: new Set(),
   resultSort: { announcement: 'newest', speaker: 'newest' },
   picker: { open: false, requested: false, page: 0, pageSize: 10 }
@@ -86,7 +87,7 @@ function closeDetail({ updateUrl = true } = {}) {
 function clearSession() {
   for (const generation of Object.values(generations)) generation.next();
   clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.detailInput = null; state.target = null;
-  state.projects.clear(); state.outputMeta.clear(); $('detail').hidden = true; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(); $('archive-index').hidden = false;
+  state.projects.clear(); state.projectHistories.clear(); state.outputMeta.clear(); $('detail').hidden = true; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(); $('archive-index').hidden = false;
   if ($('delete-dialog').open) $('delete-dialog').close(); updateControls(); render();
 }
 function updateControls() {
@@ -113,6 +114,8 @@ function currentFilters() {
 }
 function projectState(session) {
   if (!session.workflows.speaker.currentDraft) return { label: 'Проект ещё не сохранён', kind: '' };
+  const history = state.projectHistories.get(session.id);
+  if (history?.states?.length) return { label: session.sourceState === 'available' ? 'Проект спикерской сохранён' : 'Проект сохранён, исходники недоступны', kind: session.sourceState === 'available' ? 'is-ready' : 'is-warning' };
   const project = state.projects.get(session.id);
   if (!project) return { label: 'Проект проверяется…', kind: 'is-warning' };
   if (project.projection) return { label: 'Проект спикерской сохранён', kind: 'is-ready' };
@@ -207,6 +210,11 @@ function resultCard(session, output, workflow) {
   const play = button('Прослушать', () => loadOutput(session, output, workflow));
   const download = button('Скачать', () => loadOutput(session, output, workflow, true));
   play.disabled = !meta.valid; download.disabled = !meta.valid;
+  if (workflow === 'speaker' && gateway.speakerProjectHistoryVersion === 1 && meta.valid) {
+    const resume = element('a', 'Продолжить редактирование с этой финальной версии');
+    resume.href = `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=speaker&speakerOutput=${encodeURIComponent(output.outputId)}`;
+    actions.append(resume);
+  }
   actions.append(play, download, contextActions(`Версия ${output.version}`, button('Удалить версию', () => openDeletion(session.id, { kind: 'output-version', workflow, version: output.version }), 'danger')));
   card.append(actions); return card;
 }
@@ -264,8 +272,9 @@ function workflowChoice(session, workflow) {
     const count = session.workflows.announcement.outputs.length;
     card.append(element('p', count ? `Готовых версий: ${count}` : 'Готовых версий пока нет', count ? 'choice-state is-ready' : 'choice-state'));
   } else {
+    const history = state.projectHistories.get(session.id);
     if (!session.workflows.speaker.currentDraft) card.append(element('p', 'Проект ещё не начат', 'choice-state'));
-    else if (project?.projection) card.append(element('p', `Проект сохранён ${dateLabel(project.projection.savedAt)}`, 'choice-state is-ready'));
+    else if (project?.projection || history?.states?.length) card.append(element('p', session.sourceState === 'available' ? `Проект сохранён ${dateLabel(project?.projection?.savedAt || history.states[0].savedAt)}` : 'Проект сохранён, но исходные дорожки недоступны.', `choice-state ${session.sourceState === 'available' ? 'is-ready' : 'is-warning'}`));
     else card.append(element('p', 'Сохранённый проект сейчас недоступен', 'choice-state is-warning'));
   }
   const projectSafe = isAnnouncement || !session.workflows.speaker.currentDraft || Boolean(project?.projection);
@@ -295,9 +304,29 @@ function renderDetail() {
   const historyBody = element('div'); historyBody.append(workflowSection(session, 'announcement'), workflowSection(session, 'speaker')); history.append(historyBody); container.append(history);
   const project = element('details', undefined, 'detail-section project-disclosure'); project.open = disclosureState['project-disclosure']; project.append(element('summary', 'Проект обработки спикерской'));
   const speakerProject = state.projects.get(session.id);
+  const savedHistory = state.projectHistories.get(session.id);
   if (!session.workflows.speaker.currentDraft) project.append(element('p', 'Сохранённого проекта пока нет. Начать обработку можно в верхней части страницы.'));
-  else if (speakerProject?.projection) project.append(element('p', `Проект сохранён ${dateLabel(speakerProject.projection.savedAt)}. Продолжить его можно в верхней части страницы.`));
+  else if (speakerProject?.projection || savedHistory?.states?.length) project.append(element('p', session.sourceState === 'available' ? `Проект сохранён ${dateLabel(speakerProject?.projection?.savedAt || savedHistory.states[0].savedAt)}. Продолжить его можно в верхней части страницы.` : 'Проект сохранён, но исходные дорожки недоступны. История и финальные версии остаются доступны.'));
   else project.append(element('p', 'Сохранённый проект не прошёл проверку и не будет перезаписан. Продолжение обработки недоступно.'));
+  if (gateway.speakerProjectHistoryVersion === 1) {
+    const history = state.projectHistories.get(session.id);
+    project.append(element('h3', 'История проекта'));
+    if (history?.error) project.append(element('p', 'История проекта не прошла строгую проверку. Восстановление недоступно.'));
+    else if (!history?.states?.length) project.append(element('p', 'Явных сохранений с неизменяемой историей пока нет.'));
+    else for (const saved of history.states) {
+      const valid = Number.isSafeInteger(saved.draftRevision) && saved.draftRevision > 0 && typeof saved.savedAt === 'string' &&
+        typeof saved.current === 'boolean' && typeof saved.canonicalSourcesAvailable === 'boolean' && Array.isArray(saved.finalVersions);
+      if (!valid) { project.replaceChildren(element('summary', 'Проект обработки спикерской'), element('p', 'История проекта повреждена. Восстановление недоступно.')); break; }
+      const row = element('article', undefined, 'archive-card project-state-row');
+      row.append(element('h4', `Состояние ${saved.draftRevision}${saved.current ? ' · текущее' : ''}`),
+        element('p', dateLabel(saved.savedAt)),
+        element('p', saved.canonicalSourcesAvailable ? 'Исходники доступны' : 'Проект сохранён, но исходные дорожки недоступны.'),
+        element('p', saved.finalVersions.length ? `Связанные финальные версии: ${saved.finalVersions.map(item => item.version).join(', ')}` : 'Связанных финальных версий нет.'));
+      const resume = element('a', 'Продолжить с этого состояния');
+      resume.href = `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=speaker&projectRevision=${saved.draftRevision}`;
+      row.append(resume); project.append(row);
+    }
+  }
   container.append(project);
   const sources = element('details', undefined, 'detail-section source-section'); sources.open = true; sources.append(element('summary', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
   if (session.sourceState === 'available') for (const track of [...session.sourceTracks].sort((a, b) => a.ordinal - b.ordinal)) {
@@ -385,13 +414,19 @@ async function openDetail(id, { updateUrl = false } = {}) {
     const session = await gateway.getSession(id);
     if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
     if (!validateSessionManifest(session) || session.id !== id) throw new Error('Invalid session');
-    let project = null;
+    let project = null, projectHistory = null;
     if (session.workflows.speaker.currentDraft) {
       try { const result = await gateway.loadDraft(id, 'speaker'); project = { draft: result.draft, projection: projectProjection(session, result.draft) }; }
       catch (error) { if ([401, 403].includes(error?.status)) throw error; project = { error: true }; }
     }
+    if (gateway.speakerProjectHistoryVersion === 1) {
+      try { projectHistory = await gateway.speakerProjectHistory(id); }
+      catch (error) { if ([401, 403].includes(error?.status)) throw error; projectHistory = { error: true }; }
+    }
     if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
-    if (project) state.projects.set(id, project); else state.projects.delete(id); state.detail = session; renderDetail(); renderRecords();
+    if (project) state.projects.set(id, project); else state.projects.delete(id);
+    if (projectHistory) state.projectHistories.set(id, projectHistory); else state.projectHistories.delete(id);
+    state.detail = session; renderDetail(); renderRecords();
     await loadOutputMetadata(session, sequence, auth);
     if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
     renderDetail();
@@ -559,7 +594,7 @@ $('logout').addEventListener('click', async () => {
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
-  try { await gateway.sessionStatus(); if (!generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
+  try { await gateway.configuration(); await gateway.sessionStatus(); if (!generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();

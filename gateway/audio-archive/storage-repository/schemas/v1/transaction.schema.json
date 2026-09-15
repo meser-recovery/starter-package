@@ -4,7 +4,9 @@
   "title": "Recoverable audio archive transaction v1",
   "oneOf": [
     { "$ref": "#/$defs/ingestion" },
-    { "$ref": "#/$defs/pendingDelete" }
+    { "$ref": "#/$defs/pendingDelete" },
+    { "$ref": "#/$defs/speakerProjectSave" },
+    { "$ref": "#/$defs/speakerProjectContinuation" }
   ],
   "$defs": {
     "uuid": { "type": "string", "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89abAB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$" },
@@ -71,6 +73,31 @@
         "expectedRevision": { "type": "integer", "minimum": 1 }, "releaseId": { "type": "integer", "minimum": 1 }, "releaseTag": { "type": "string", "pattern": "^audio-session-[0-9a-f-]{36}$" },
         "action": { "$ref": "#/$defs/deleteAction" }, "assetIds": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "uniqueItems": true },
         "deletedAssetIds": { "type": "array", "items": { "type": "integer", "minimum": 1 }, "uniqueItems": true },
+        "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "speakerProjectSave": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "transactionId", "idempotencyHash", "requestFingerprint", "revision", "state", "sessionId", "workflow", "expectedSourceSessionRevision", "expectedDraftRevision", "savedSourceSessionRevision", "savedDraftRevision", "stateFingerprint", "createdAt", "updatedAt"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "kind": { "const": "speaker_project_save" }, "transactionId": { "$ref": "#/$defs/uuid" },
+        "idempotencyHash": { "$ref": "#/$defs/sha256" }, "requestFingerprint": { "$ref": "#/$defs/sha256" }, "revision": { "const": 1 }, "state": { "const": "complete" },
+        "sessionId": { "$ref": "#/$defs/uuid" }, "workflow": { "const": "speaker" }, "expectedSourceSessionRevision": { "type": "integer", "minimum": 1 },
+        "expectedDraftRevision": { "type": "integer", "minimum": 0 }, "savedSourceSessionRevision": { "type": "integer", "minimum": 2 },
+        "savedDraftRevision": { "type": "integer", "minimum": 1 }, "stateFingerprint": { "$ref": "#/$defs/sha256" },
+        "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }
+      }
+    },
+    "speakerProjectContinuation": {
+      "type": "object", "additionalProperties": false,
+      "required": ["schemaVersion", "kind", "transactionId", "idempotencyHash", "requestFingerprint", "revision", "state", "sessionId", "workflow", "sourceSessionId", "sourceDraftRevision", "sourceOutputId", "targetSessionId", "targetDraftRevision", "targetStateFingerprint", "createdAt", "updatedAt"],
+      "properties": {
+        "schemaVersion": { "const": 1 }, "kind": { "const": "speaker_project_continuation" }, "transactionId": { "$ref": "#/$defs/uuid" },
+        "idempotencyHash": { "$ref": "#/$defs/sha256" }, "requestFingerprint": { "$ref": "#/$defs/sha256" }, "revision": { "const": 1 }, "state": { "const": "complete" },
+        "sessionId": { "$ref": "#/$defs/uuid" }, "workflow": { "const": "speaker" }, "sourceSessionId": { "$ref": "#/$defs/uuid" },
+        "sourceDraftRevision": { "oneOf": [{ "type": "integer", "minimum": 1 }, { "type": "null" }] },
+        "sourceOutputId": { "oneOf": [{ "$ref": "#/$defs/uuid" }, { "type": "null" }] }, "targetSessionId": { "$ref": "#/$defs/uuid" },
+        "targetDraftRevision": { "const": 1 }, "targetStateFingerprint": { "$ref": "#/$defs/sha256" },
         "createdAt": { "type": "string", "format": "date-time" }, "updatedAt": { "type": "string", "format": "date-time" }
       }
     }

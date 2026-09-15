@@ -1120,7 +1120,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
 
     schema_dir = ROOT / "gateway/audio-archive/storage-repository/schemas/v1"
     expected_schemas = {"catalog.schema.json", "deletion-tombstone.schema.json", "draft.schema.json", "source-session.schema.json",
-        "speaker-recipe.schema.json", "transaction.schema.json"}
+        "speaker-project-state.schema.json", "speaker-recipe.schema.json", "transaction.schema.json"}
     if schema_dir.is_dir():
         actual_schemas = {path.name for path in schema_dir.glob("*.json")}
         if actual_schemas != expected_schemas:
@@ -1134,6 +1134,16 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
                 errors.append(f"S08A schema is invalid JSON: {path.relative_to(ROOT)}")
     else:
         errors.append("S08A storage schema directory is missing")
+    recipe_v2 = ROOT / "gateway/audio-archive/storage-repository/schemas/v2/speaker-recipe.schema.json"
+    if not recipe_v2.is_file():
+        errors.append("S09D Speaker recipe v2 schema is missing")
+    else:
+        try:
+            value = json.loads(recipe_v2.read_text(encoding="utf-8"))
+            if value.get("$schema") != "https://json-schema.org/draft/2020-12/schema" or value.get("properties", {}).get("schemaVersion", {}).get("const") != 2:
+                errors.append("S09D Speaker recipe v2 schema is invalid")
+        except (json.JSONDecodeError, AttributeError):
+            errors.append("S09D Speaker recipe v2 schema is invalid JSON")
 
 
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
