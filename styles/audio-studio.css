@@ -1303,7 +1303,13 @@
 .audio-studio dialog p,.audio-studio dialog label,.audio-studio dialog li,.audio-studio dialog dt,.audio-studio dialog dd { color:var(--portal-muted); font-size:.7rem; line-height:1.45; }
 .audio-studio dialog input { border-color:var(--portal-line); background:#fff; }
 .audio-studio dialog .toolbar,.audio-studio dialog .source-session-dialog__actions,.audio-studio dialog .action-group { margin-top:16px; display:flex; justify-content:flex-end; gap:8px; }
+.audio-studio #speaker-save-conflict-dialog .action-group { flex-wrap:wrap; }
+.audio-studio #speaker-save-conflict-dialog .action-group > button { min-width:0; max-width:100%; overflow-wrap:anywhere; }
 .audio-studio dialog .danger { color:#fff; background:#e33249; border-color:#e33249; }
+@media (max-width:520px) {
+  .audio-studio #speaker-save-conflict-dialog .action-group { flex-direction:column; align-items:stretch; }
+  .audio-studio #speaker-save-conflict-dialog .action-group > button { width:100%; }
+}
 
 @media (max-width:980px) {
   .audio-studio { grid-template-columns:142px minmax(0,1fr); }

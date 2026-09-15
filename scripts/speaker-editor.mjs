@@ -21,7 +21,7 @@ const workspace = document.getElementById("speaker-editor");
 const encoder = new TextEncoder();
 const sourceDetail = createWaveformDetail();
 const state = {
-  session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, savedFingerprint: "",
+  session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, projectState: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
@@ -71,6 +71,7 @@ export function getSpeakerSaveState() {
   return {
     session: state.session ? structuredClone(state.session) : null,
     draft: state.draft ? structuredClone(state.draft) : null,
+    projectState: state.projectState ? structuredClone(state.projectState) : null,
     payload: state.payload ? structuredClone(state.payload) : null,
     candidate: getSpeakerCandidate(),
     sourceEpoch: state.sourceEpoch,
@@ -1062,6 +1063,45 @@ export async function saveSpeakerProject() {
       payload: submitted, files: state.session.sourceTracks.map(t => state.filesById.get(t.trackId)), duration: state.originalDuration, signal: state.projectController.signal,
       onProgress: ({ uploadedBytes, totalBytes }) => { if (epoch === state.sourceEpoch) byId("status").textContent = `Сохранение исходных дорожек: ${Math.round(uploadedBytes / totalBytes * 100)}%`; } });
     if (epoch !== state.sourceEpoch || !result) return false;
+    applySavedProject(result, submitted);
+    state.onSaved?.(result); render();
+    return !currentDirty();
+  } catch (error) {
+    if (epoch === state.sourceEpoch && error?.status === 409 && error.latestSession && Object.hasOwn(error, "latestDraft")) {
+      const choice = await dialogChoice("speaker-save-conflict-dialog", {
+        "speaker-save-conflict-open": "open", "speaker-save-conflict-keep": "keep", "speaker-save-conflict-save": "save"
+      });
+      if (epoch !== state.sourceEpoch) return false;
+      if (choice === "open" && error.latestDraft) {
+        state.session = structuredClone(error.latestSession); state.draft = structuredClone(error.latestDraft); state.projectState = null;
+        state.payload = structuredClone(error.latestDraft.payload); state.history.reset(state.payload); state.savedFingerprint = fingerprint(state.payload); clearCandidate(); render();
+        byId("status").textContent = "Открыто последнее сохранённое состояние проекта.";
+        return true;
+      }
+      if (choice === "save") {
+        byId("status").textContent = "Повторная проверка актуальной ревизии и сохранение нового состояния…";
+        try {
+          const result = await state.saveDraft({ session: structuredClone(error.latestSession), draft: error.latestDraft,
+            payload: submitted, files: state.session.sourceTracks.map(t => state.filesById.get(t.trackId)), duration: state.originalDuration,
+            signal: state.projectController.signal, forceLatest: true });
+          if (epoch !== state.sourceEpoch || !result) return false;
+          applySavedProject(result, submitted); state.onSaved?.(result); render(); return !currentDirty();
+        } catch (retryError) {
+          if (epoch === state.sourceEpoch) byId("status").textContent = userMessage(retryError, "Актуальная ревизия снова изменилась. Локальные изменения сохранены в памяти.");
+          return false;
+        }
+      }
+      byId("status").textContent = "Локальные изменения оставлены на этом устройстве без записи на сервер.";
+      return false;
+    }
+    if (epoch === state.sourceEpoch) byId("status").textContent = userMessage(error, "Не удалось сохранить проект. Изменения и исходники остались в памяти.");
+    return false;
+  } finally {
+    if (epoch === state.sourceEpoch) { state.projectSaving = false; state.projectController = null; byId("project-cancel").hidden = true; updateRenderState(); notifyState(); }
+  }
+}
+
+function applySavedProject(result, submitted) {
     if (result.mapping) {
       const remap = id => result.mapping.get(id);
       state.tracks.forEach(t => { t.trackId = remap(t.trackId); t.manifest = result.session.sourceTracks.find(s => s.trackId === t.trackId); });
@@ -1076,18 +1116,10 @@ export async function saveSpeakerProject() {
       // Keep the local MP3 downloadable, but never relabel its source provenance.
       if (state.candidate) byId("render-status").textContent = "Проект сохранён. Создайте финальную версию заново, чтобы сохранить её в аудиоархив.";
     } else state.candidate = rebindSpeakerCandidate(state.candidate, submitted, result.session.revision, result.draft.draftRevision);
-    state.draft = result.draft; state.session = result.session;
+    state.draft = result.draft; state.session = result.session; state.projectState = result.state || null;
     state.savedFingerprint = fingerprint(result.draft.payload);
     const select = byId("selection-track"); select.replaceChildren();
     for (const t of state.tracks) { const option = element("option", "", t.file.name); option.value = t.trackId; select.append(option); }
-    state.onSaved?.(result); render();
-    return !currentDirty();
-  } catch (error) {
-    if (epoch === state.sourceEpoch) byId("status").textContent = userMessage(error, "Не удалось сохранить проект. Изменения и исходники остались в памяти.");
-    return false;
-  } finally {
-    if (epoch === state.sourceEpoch) { state.projectSaving = false; state.projectController = null; byId("project-cancel").hidden = true; updateRenderState(); notifyState(); }
-  }
 }
 
 function dialogChoice(id, choices) {
@@ -1547,7 +1579,7 @@ async function teardown() {
   await cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
-  state.draft = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
+  state.draft = null; state.projectState = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
   document.getElementById("announcement-processor-card").hidden = true;
   document.getElementById("active-editor-mode").textContent = "Выберите исходники и режим редактирования.";
   notifyState();
@@ -1566,7 +1598,7 @@ export async function closeSpeakerEditor(force = false, isCurrent = () => true) 
   await teardown(); return true;
 }
 
-export async function openSpeakerEditor({ session, files, draft = null, saveDraft: save, onSaved, isCurrent = () => true }) {
+export async function openSpeakerEditor({ session, files, draft = null, projectState = null, initialPayload = null, saveDraft: save, onSaved, isCurrent = () => true }) {
   if (session.kind !== "local" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) throw new Error("Для обработки спикерской нужны доступные исходники. Верните запись для обработки.");
   if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый проект имеет неподдерживаемую схему и не будет перезаписан.");
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
@@ -1575,8 +1607,8 @@ export async function openSpeakerEditor({ session, files, draft = null, saveDraf
   const epoch = ++state.sourceEpoch;
   state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null, color: defaultTrackColor(index) }));
-  state.payload = draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
-  state.history = new SpeakerHistory(state.payload); state.savedFingerprint = draft ? fingerprint(state.payload) : ""; state.draft = draft; state.saveDraft = save; state.onSaved = onSaved;
+  state.payload = initialPayload ? structuredClone(initialPayload) : draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
+  state.history = new SpeakerHistory(state.payload); state.savedFingerprint = initialPayload ? "" : draft ? fingerprint(state.payload) : ""; state.draft = draft; state.projectState = initialPayload ? null : projectState; state.saveDraft = save; state.onSaved = onSaved;
   document.getElementById("announcement-processor-card").hidden = true;
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;

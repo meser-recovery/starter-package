@@ -3,7 +3,8 @@ import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
   assertTimestamp, assertUuid, assetName, catalogEntry, hashIdempotencyKey, normalizeFilename, normalizeMediaType,
-  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, recipePath, validateAnnouncementDraftPayload, validateSpeakerDraftPayload, validateAnnouncementRecipe,
+  uuidFromIdempotencyKey, canonicalReleaseAssetUrl, recipePath, projectStatePath, computeProjectStateFingerprint,
+  validateProjectState, validateAnnouncementDraftPayload, validateSpeakerDraftPayload, validateAnnouncementRecipe,
   validateSpeakerRecipe, validateSpeakerPublicationPlan, validateCatalog, validateDraft, validateIngestionPlan, validatePublicationPlan,
   validateSourceSession, validateTombstone, validateTransaction
 } from "./validation.mjs";
@@ -96,10 +97,15 @@ function requestFingerprint(value) {
 }
 
 export class AudioArchiveDomain {
-  constructor(repository, { acceptedPartBytes, clock = () => Date.now() }) {
+  constructor(repository, { acceptedPartBytes, clock = () => Date.now(), speakerProjectHistory = false }) {
     this.repository = repository;
     this.acceptedPartBytes = acceptedPartBytes;
     this.clock = clock;
+    this.speakerProjectHistoryEnabled = Boolean(speakerProjectHistory);
+  }
+
+  requireSpeakerProjectHistory() {
+    if (!this.speakerProjectHistoryEnabled) throw notFound("Speaker project history is not enabled");
   }
 
   async snapshot() {
@@ -313,6 +319,18 @@ export class AudioArchiveDomain {
       if (!draft || draft.draftRevision !== body.expectedDraftRevision || draft.payloadSchema !== payloadSchema ||
           !isDeepStrictEqual(storedPayload, plan.recipe.draft.payload)) {
         throw conflict(`${workflow} draft does not match the processed candidate`);
+      }
+    }
+    if (workflow === "speaker" && this.speakerProjectHistoryEnabled) {
+      if (plan.recipe.schemaVersion !== 2) throw conflict("Save the Speaker project before creating a new final version");
+      const state = await this.readSpeakerProjectState(session.id, body.expectedDraftRevision, head);
+      const linked = plan.recipe.projectState;
+      const stateSources = state.sources.map(({ originalName, ...source }) => ({ ...source, originalFilename: originalName }));
+      if (linked.sessionId !== session.id || linked.draftRevision !== state.draftRevision || linked.stateFingerprint !== state.stateFingerprint ||
+          workflowState.currentDraft?.revision !== state.draftRevision || state.sourceSessionRevision !== session.revision ||
+          !isDeepStrictEqual(plan.recipe.draft.payload, state.payload) ||
+          !isDeepStrictEqual(plan.recipe.sources, stateSources)) {
+        throw conflict("Speaker final does not match the current immutable project state");
       }
     }
     const allOutputs = WORKFLOWS.flatMap((name) => session.workflows[name].outputs);
@@ -780,11 +798,269 @@ export class AudioArchiveDomain {
     return stored ? validateDraft(stored.data) : null;
   }
 
+  projectSources(session, trackOrder = session.sourceTracks.map((track) => track.trackId)) {
+    const byId = new Map(session.sourceTracks.map((track) => [track.trackId, track]));
+    return trackOrder.map((id) => byId.get(id)).map(({ trackId, blobId, ordinal, originalName, mediaType, sizeBytes, sha256 }) =>
+      ({ trackId, blobId, ordinal, originalName, mediaType, sizeBytes, sha256 }));
+  }
+
+  createSpeakerProjectState(session, draftRevision, sourceSessionRevision, savedAt, payload, sources = this.projectSources(session, payload.trackIds)) {
+    const state = {
+      schemaVersion: 1,
+      sessionId: session.id,
+      workflow: "speaker",
+      draftRevision,
+      sourceSessionRevision,
+      savedAt,
+      payloadSchema: "speaker/v1",
+      payload: validateSpeakerDraftPayload(payload, sources.map((source) => source.trackId)),
+      sources: structuredClone(sources),
+      stateFingerprint: "0".repeat(64)
+    };
+    state.stateFingerprint = computeProjectStateFingerprint(state);
+    return validateProjectState(state);
+  }
+
+  async readSpeakerProjectState(sessionId, draftRevision, head = null) {
+    const path = projectStatePath(sessionId, draftRevision);
+    const ref = head || await this.repository.getHead();
+    const stored = await this.repository.readJson(path, ref);
+    if (!stored) throw notFound("Speaker project state not found");
+    try {
+      const state = validateProjectState(stored.data);
+      if (state.sessionId !== sessionId || state.draftRevision !== draftRevision) throw new Error("identity mismatch");
+      return state;
+    } catch {
+      throw conflict("Speaker project state failed validation");
+    }
+  }
+
+  async speakerProjectHistory(sessionId) {
+    this.requireSpeakerProjectHistory();
+    const { head, session } = await this.sessionSnapshot(sessionId);
+    const prefix = `project-states/${session.id}/speaker/`;
+    const items = (await this.repository.listJson("project-states/", head)).filter((item) => item.path.startsWith(prefix));
+    const states = [];
+    for (const item of items) {
+      const match = new RegExp(`^project-states/${session.id}/speaker/([1-9][0-9]*)\\.json$`).exec(item.path);
+      if (!match || item.invalid) throw conflict("Speaker project history contains an invalid state");
+      let state;
+      try { state = validateProjectState(item.data); } catch { throw conflict("Speaker project history contains an invalid state"); }
+      if (state.sessionId !== session.id || state.draftRevision !== Number(match[1])) throw conflict("Speaker project state identity mismatch");
+      states.push(state);
+    }
+    states.sort((left, right) => right.draftRevision - left.draftRevision);
+    if (new Set(states.map((item) => item.draftRevision)).size !== states.length) throw conflict("Speaker project history contains duplicate revisions");
+    const finals = new Map(states.map((item) => [item.draftRevision, []]));
+    for (const output of session.workflows.speaker.outputs) {
+      const stored = await this.repository.readJson(recipePath(session.id, output.outputId, "speaker"), head);
+      if (!stored) throw conflict("Speaker recipe is missing");
+      let recipe;
+      try { recipe = validateSpeakerRecipe(stored.data); } catch { throw conflict("Speaker recipe failed validation"); }
+      if (recipe.schemaVersion === 2) {
+        const linked = states.find((item) => item.draftRevision === recipe.projectState.draftRevision);
+        if (!linked || recipe.projectState.sessionId !== session.id || recipe.projectState.stateFingerprint !== linked.stateFingerprint) {
+          throw conflict("Speaker final project-state lineage mismatch");
+        }
+        finals.get(linked.draftRevision).push({ outputId: output.outputId, version: output.version, createdAt: output.createdAt });
+      }
+    }
+    for (const linked of finals.values()) linked.sort((a, b) => b.version - a.version);
+    const currentDraftRevision = session.workflows.speaker.currentDraft?.revision || null;
+    return {
+      schemaVersion: 1,
+      sessionId: session.id,
+      workflow: "speaker",
+      currentDraftRevision,
+      lifecycle: session.lifecycle.state,
+      sourceState: session.sourceState,
+      states: states.map((item) => ({
+        draftRevision: item.draftRevision,
+        savedAt: item.savedAt,
+        current: item.draftRevision === currentDraftRevision,
+        canonicalSourcesAvailable: session.sourceState === "available",
+        canonicalEditingAvailable: session.sourceState === "available" && session.lifecycle.state === "incoming",
+        stateFingerprint: item.stateFingerprint,
+        finalVersions: finals.get(item.draftRevision)
+      }))
+    };
+  }
+
+  async getSpeakerProjectState(sessionId, draftRevision) {
+    this.requireSpeakerProjectHistory();
+    await this.sessionSnapshot(sessionId);
+    return this.readSpeakerProjectState(sessionId, draftRevision);
+  }
+
+  remapSpeakerPayload(payload, sourceIds, targetIds) {
+    if (sourceIds.length !== targetIds.length) throw conflict("Replacement source track count differs");
+    const mapping = new Map(sourceIds.map((id, index) => [id, targetIds[index]]));
+    const remap = (id) => {
+      const next = mapping.get(id);
+      if (!next) throw conflict("Speaker project references an unknown source track");
+      return next;
+    };
+    const next = structuredClone(payload);
+    next.trackIds = next.trackIds.map(remap);
+    next.excludedTrackIds = next.excludedTrackIds.map(remap);
+    for (const item of [...next.trackSilenceRegions, ...next.trackProcessing]) item.trackId = remap(item.trackId);
+    return validateSpeakerDraftPayload(next, targetIds);
+  }
+
+  async continuationSource(session, body, head) {
+    if (body.sourceDraftRevision !== null) {
+      const state = await this.readSpeakerProjectState(session.id, body.sourceDraftRevision, head);
+      return { payload: state.payload, sources: state.sources };
+    }
+    const metadata = await this.getSpeakerOutput(session.id, body.sourceOutputId);
+    const recipe = metadata.recipe;
+    if (recipe.schemaVersion === 2) {
+      const state = await this.readSpeakerProjectState(session.id, recipe.projectState.draftRevision, head);
+      if (state.stateFingerprint !== recipe.projectState.stateFingerprint) throw conflict("Speaker final project-state lineage mismatch");
+      return { payload: state.payload, sources: state.sources };
+    }
+    return {
+      payload: recipe.draft.payload,
+      sources: recipe.sources.map(({ trackId, blobId, ordinal, originalFilename: originalName, mediaType, sizeBytes, sha256 }) =>
+        ({ trackId, blobId, ordinal, originalName, mediaType, sizeBytes, sha256 }))
+    };
+  }
+
+  catalogWithSessions(catalog, sessions) {
+    const ids = new Set(sessions.map((session) => session.id));
+    const entries = catalog.entries.filter((entry) => !ids.has(entry.id));
+    entries.push(...sessions.map(catalogEntry));
+    entries.sort((left, right) => left.id.localeCompare(right.id));
+    return { schemaVersion: SCHEMA_VERSION, revision: catalog.revision + 1, updatedAt: nowIso(this.clock), entries };
+  }
+
+  async continueSpeakerProject(sessionId, body) {
+    this.requireSpeakerProjectHistory();
+    assertExactKeys(body, ["schemaVersion", "expectedSourceSessionRevision", "expectedTargetSessionRevision", "sourceDraftRevision", "sourceOutputId", "targetSessionId", "idempotencyKey"], "Speaker project continuation");
+    if (body.schemaVersion !== 1) throw new ValidationError("Unsupported Speaker project continuation schema");
+    assertInteger(body.expectedSourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "expectedSourceSessionRevision");
+    assertInteger(body.expectedTargetSessionRevision, 1, Number.MAX_SAFE_INTEGER, "expectedTargetSessionRevision");
+    if ((body.sourceDraftRevision === null) === (body.sourceOutputId === null)) throw new ValidationError("Exactly one continuation source intent is required");
+    if (body.sourceDraftRevision !== null) assertInteger(body.sourceDraftRevision, 1, Number.MAX_SAFE_INTEGER, "sourceDraftRevision");
+    if (body.sourceOutputId !== null) assertUuid(body.sourceOutputId, "sourceOutputId");
+    const targetSessionId = assertUuid(body.targetSessionId, "targetSessionId");
+    if (targetSessionId === sessionId) throw new ValidationError("Continuation target must be a different Source Session");
+    const idempotencyHash = hashIdempotencyKey(body.idempotencyKey);
+    const immutableRequest = { sessionId, expectedSourceSessionRevision: body.expectedSourceSessionRevision,
+      expectedTargetSessionRevision: body.expectedTargetSessionRevision, sourceDraftRevision: body.sourceDraftRevision,
+      sourceOutputId: body.sourceOutputId, targetSessionId };
+    const fingerprint = requestFingerprint(immutableRequest);
+    const transactionId = uuidFromIdempotencyKey(`speaker-project-continuation:${sessionId}:${body.idempotencyKey}`);
+    const receiptPath = transactionPath("project-continuation", transactionId);
+    let head = await this.repository.getHead();
+    const existing = await this.repository.readJson(receiptPath, head);
+    if (existing) {
+      let receipt;
+      try { receipt = validateTransaction(existing.data); } catch { throw conflict("Speaker project continuation receipt is invalid"); }
+      if (receipt.kind !== "speaker_project_continuation" || receipt.idempotencyHash !== idempotencyHash || receipt.requestFingerprint !== fingerprint) {
+        throw conflict("Idempotency project continuation request mismatch");
+      }
+      const sourceStored = await this.repository.readJson(sessionPath(sessionId), head);
+      const targetStored = await this.repository.readJson(sessionPath(targetSessionId), head);
+      const targetState = await this.readSpeakerProjectState(targetSessionId, receipt.targetDraftRevision, head);
+      if (!sourceStored || !targetStored || targetState.stateFingerprint !== receipt.targetStateFingerprint) throw conflict("Idempotent project continuation is incomplete");
+      const source = validateSourceSession(sourceStored.data); const target = validateSourceSession(targetStored.data);
+      if (source.relations.supersededBySessionId !== target.id || target.relations.supersedesSessionId !== source.id) {
+        throw conflict("Idempotent project continuation relations are incomplete");
+      }
+      return { sourceSession: publicSession(source), targetSession: publicSession(target), state: targetState, idempotent: true };
+    }
+    const sourceStored = await this.repository.readJson(sessionPath(sessionId), head);
+    const targetStored = await this.repository.readJson(sessionPath(targetSessionId), head);
+    if (!sourceStored || !targetStored || sourceStored.data?.kind === "deletion_tombstone" || targetStored.data?.kind === "deletion_tombstone") throw notFound();
+    const source = validateSourceSession(sourceStored.data); const target = validateSourceSession(targetStored.data);
+    if (source.revision !== body.expectedSourceSessionRevision || target.revision !== body.expectedTargetSessionRevision) throw conflict("Source Session changed before project continuation");
+    if (target.lifecycle.state !== "incoming" || target.sourceState !== "available") throw conflict("Replacement Source Session is not editable");
+    if (source.relations.supersededBySessionId !== null && source.relations.supersededBySessionId !== target.id) throw conflict("Source Session already has another replacement");
+    if (target.relations.supersedesSessionId !== null && target.relations.supersedesSessionId !== source.id) throw conflict("Replacement Source Session supersedes another recording");
+    if (target.workflows.speaker.currentDraft !== null || target.workflows.speaker.outputs.length || target.workflows.speaker.deletedVersions.length) {
+      throw conflict("Replacement Source Session already contains a Speaker project");
+    }
+    const origin = await this.continuationSource(source, body, head);
+    const targetByOrdinal = new Map(target.sourceTracks.map((track) => [track.ordinal, track]));
+    if (origin.sources.length !== target.sourceTracks.length || origin.sources.some((item) => {
+      const next = targetByOrdinal.get(item.ordinal);
+      return !next || item.sizeBytes !== next.sizeBytes || item.sha256 !== next.sha256;
+    })) throw conflict("Replacement Source Session does not contain the exact source set");
+    const targetIds = origin.sources.map((item) => targetByOrdinal.get(item.ordinal).trackId);
+    const payload = this.remapSpeakerPayload(origin.payload, origin.sources.map((item) => item.trackId), targetIds);
+    const timestamp = nowIso(this.clock);
+    const targetNext = structuredClone(target); const sourceNext = structuredClone(source);
+    targetNext.relations.supersedesSessionId = source.id;
+    sourceNext.relations.supersededBySessionId = target.id;
+    targetNext.workflows.speaker.currentDraft = { path: draftPath(target.id, "speaker"), revision: 1 };
+    targetNext.workflows.speaker.status = "in_progress";
+    targetNext.revision++; targetNext.updatedAt = timestamp;
+    sourceNext.revision++; sourceNext.updatedAt = timestamp;
+    const draft = validateDraft({ schemaVersion: 1, sessionId: target.id, workflow: "speaker", draftRevision: 1,
+      sourceSessionRevision: targetNext.revision, savedAt: timestamp, payloadSchema: "speaker/v1", payload });
+    const state = this.createSpeakerProjectState(target, 1, targetNext.revision, timestamp, payload, this.projectSources(target, payload.trackIds));
+    const receipt = validateTransaction({ schemaVersion: 1, kind: "speaker_project_continuation", transactionId,
+      idempotencyHash, requestFingerprint: fingerprint, revision: 1, state: "complete", sessionId: source.id, workflow: "speaker",
+      sourceSessionId: source.id, sourceDraftRevision: body.sourceDraftRevision, sourceOutputId: body.sourceOutputId,
+      targetSessionId: target.id, targetDraftRevision: 1, targetStateFingerprint: state.stateFingerprint,
+      createdAt: timestamp, updatedAt: timestamp });
+    const catalogStored = await this.repository.readJson("catalog.json", head);
+    const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
+    const nextCatalog = this.catalogWithSessions(catalog, [sourceNext, targetNext]);
+    try {
+      await this.repository.commitJson(head, {
+        [sessionPath(source.id)]: sourceNext,
+        [sessionPath(target.id)]: targetNext,
+        "catalog.json": nextCatalog,
+        [draftPath(target.id, "speaker")]: draft,
+        [projectStatePath(target.id, 1)]: state,
+        [receiptPath]: receipt
+      }, `Continue Speaker project ${source.id} in ${target.id}`);
+    } catch (error) {
+      if (error?.status === 409) return this.continueSpeakerProject(sessionId, body);
+      throw error;
+    }
+    return { sourceSession: publicSession(sourceNext), targetSession: publicSession(targetNext), state, idempotent: false };
+  }
+
   async saveDraft(sessionId, workflow, body) {
     assertExactKeys(body, ["schemaVersion", "expectedDraftRevision", "expectedSourceSessionRevision", "payloadSchema", "payload", "idempotencyKey"], "draft save");
     if (body.schemaVersion !== SCHEMA_VERSION) throw new ValidationError("Unsupported draft schema");
-    hashIdempotencyKey(body.idempotencyKey);
+    const idempotencyHash = hashIdempotencyKey(body.idempotencyKey);
     const path = draftPath(sessionId, workflow);
+    if (workflow === "speaker" && this.speakerProjectHistoryEnabled) {
+      if (body.payloadSchema !== "speaker/v1") throw new ValidationError("Speaker draft schema is invalid");
+      const normalizedPayload = validateSpeakerDraftPayload(body.payload);
+      const request = {
+        sessionId: assertUuid(sessionId, "sessionId"), workflow: "speaker", expectedDraftRevision: body.expectedDraftRevision,
+        expectedSourceSessionRevision: body.expectedSourceSessionRevision, payloadSchema: body.payloadSchema, payload: normalizedPayload
+      };
+      const requestHash = requestFingerprint(request);
+      const transactionId = uuidFromIdempotencyKey(`speaker-project-save:${sessionId}:${body.idempotencyKey}`);
+      const receiptPath = transactionPath("project-save", transactionId);
+      let replayHead = await this.repository.getHead();
+      const existingReceipt = await this.repository.readJson(receiptPath, replayHead);
+      if (existingReceipt) {
+        let receipt;
+        try { receipt = validateTransaction(existingReceipt.data); } catch { throw conflict("Speaker project save receipt is invalid"); }
+        if (receipt.kind !== "speaker_project_save" || receipt.idempotencyHash !== idempotencyHash || receipt.requestFingerprint !== requestHash) {
+          throw conflict("Idempotency project save request mismatch");
+        }
+        const storedSession = await this.repository.readJson(sessionPath(sessionId), replayHead);
+        if (!storedSession) throw conflict("Idempotent project save is incomplete");
+        const replaySession = validateSourceSession(storedSession.data);
+        const replayState = await this.readSpeakerProjectState(sessionId, receipt.savedDraftRevision, replayHead);
+        if (replayState.stateFingerprint !== receipt.stateFingerprint ||
+            replaySession.workflows.speaker.currentDraft?.revision < receipt.savedDraftRevision) throw conflict("Idempotent project save lineage mismatch");
+        const replayDraft = validateDraft({
+          schemaVersion: 1, sessionId, workflow: "speaker", draftRevision: replayState.draftRevision,
+          sourceSessionRevision: replayState.sourceSessionRevision, savedAt: replayState.savedAt,
+          payloadSchema: replayState.payloadSchema, payload: replayState.payload
+        });
+        return { draft: replayDraft, session: publicSession(replaySession), state: replayState, idempotent: true };
+      }
+    }
     const { head, session } = await this.sessionSnapshot(sessionId);
     if (session.revision !== body.expectedSourceSessionRevision) throw conflict("Source Session changed; reload before saving draft");
     if (workflow === "speaker" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) {
@@ -813,8 +1089,31 @@ export class AudioArchiveDomain {
     if (!next.workflows[workflow].outputs.length) next.workflows[workflow].status = "in_progress";
     next.revision++;
     next.updatedAt = nowIso(this.clock);
-    const committed = await this.commitSession(head, next, catalog, `Save ${workflow} draft ${sessionId}`, { [path]: draft });
-    return { draft, session: committed };
+    const extraFiles = { [path]: draft };
+    let projectState = null;
+    if (workflow === "speaker" && this.speakerProjectHistoryEnabled) {
+      const statePath = projectStatePath(sessionId, draft.draftRevision);
+      if (await this.repository.readJson(statePath, head)) throw conflict("Immutable Speaker project state revision already exists");
+      projectState = this.createSpeakerProjectState(session, draft.draftRevision, next.revision, draft.savedAt, body.payload);
+      const transactionId = uuidFromIdempotencyKey(`speaker-project-save:${sessionId}:${body.idempotencyKey}`);
+      const requestHash = requestFingerprint({ sessionId, workflow, expectedDraftRevision: body.expectedDraftRevision,
+        expectedSourceSessionRevision: body.expectedSourceSessionRevision, payloadSchema: body.payloadSchema, payload: body.payload });
+      extraFiles[statePath] = projectState;
+      extraFiles[transactionPath("project-save", transactionId)] = validateTransaction({
+        schemaVersion: 1, kind: "speaker_project_save", transactionId, idempotencyHash, requestFingerprint: requestHash,
+        revision: 1, state: "complete", sessionId, workflow: "speaker",
+        expectedSourceSessionRevision: body.expectedSourceSessionRevision, expectedDraftRevision: body.expectedDraftRevision,
+        savedSourceSessionRevision: next.revision, savedDraftRevision: draft.draftRevision,
+        stateFingerprint: projectState.stateFingerprint, createdAt: draft.savedAt, updatedAt: draft.savedAt
+      });
+    }
+    let committed;
+    try { committed = await this.commitSession(head, next, catalog, `Save ${workflow} draft ${sessionId}`, extraFiles); }
+    catch (error) {
+      if (projectState && error?.status === 409) return this.saveDraft(sessionId, workflow, body);
+      throw error;
+    }
+    return { draft, session: committed, ...(projectState ? { state: projectState } : {}) };
   }
 
   async dependencyPreview(sessionId) {
@@ -824,11 +1123,18 @@ export class AudioArchiveDomain {
     const pendingPublications = await this.activePublications(sessionId, head);
     const pendingAnnouncementPublications = pendingPublications.filter((job) => job.workflow === "announcement").length;
     const pendingSpeakerSaves = pendingPublications.filter((job) => job.workflow === "speaker").length;
+    let speakerProjectStates = 0;
+    for (const item of await this.repository.listJson("project-states/", head)) {
+      if (!item.path.startsWith(`project-states/${sessionId}/speaker/`)) continue;
+      if (item.invalid) throw conflict("Speaker project history contains an invalid state");
+      try { validateProjectState(item.data); } catch { throw conflict("Speaker project history contains an invalid state"); }
+      speakerProjectStates++;
+    }
     return {
       sessionId, revision: session.revision, sourceTracks: session.sourceTracks.length,
       announcementVersions: session.workflows.announcement.outputs.length,
       speakerVersions: session.workflows.speaker.outputs.length,
-      drafts: drafts.length, draftWorkflows: drafts, pendingAnnouncementPublications, pendingSpeakerSaves
+      drafts: drafts.length, draftWorkflows: drafts, speakerProjectStates, pendingAnnouncementPublications, pendingSpeakerSaves
     };
   }
 
@@ -913,6 +1219,9 @@ export class AudioArchiveDomain {
       }
       for (const recipe of await this.repository.listJson("recipes/", head)) {
         if (recipe.path.startsWith(`recipes/${session.id}/`)) files[recipe.path] = null;
+      }
+      for (const state of await this.repository.listJson("project-states/", head)) {
+        if (state.path.startsWith(`project-states/${session.id}/`)) files[state.path] = null;
       }
       await this.repository.commitJson(head, files, `Purge audio session ${session.id}`);
       return { completed: true, transactionId: transaction.transactionId, tombstone };

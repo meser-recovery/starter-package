@@ -45,7 +45,7 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   const domain = new Proxy({}, { get: (_target, name) => async (...args) => { calls.push([name, args]); return { revision: 0, sessions: [] }; } });
   const app = createApp({ config: {
     allowedOrigin: ORIGIN, acceptedPartBytes: 16 * 1024 * 1024, sessionSigningSecret: SECRET,
-    sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier
+    sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier, speakerProjectHistory: true
   }, domain, clock: () => 1_000_000 });
   let response = await app(new Request("https://gateway.test/healthz"));
   assert.equal(response.status, 200);
@@ -56,6 +56,7 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   assert.equal(response.status, 200);
   assert.equal(response.headers.get("access-control-allow-origin"), ORIGIN);
   assert.equal(response.headers.get("access-control-allow-credentials"), "true");
+  assert.equal((await response.clone().json()).speakerProjectHistory, 1);
   response = await app(new Request("https://gateway.test/v1/source-sessions", { headers: { Origin: ORIGIN } }));
   assert.equal(response.status, 401);
   response = await app(new Request("https://gateway.test/v1/session/login", {
@@ -117,4 +118,20 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   }));
   assert.equal(response.status, 200);
   assert.equal(calls.at(-1)[0], "cancelSpeakerPublication");
+  const projectPath = "/v1/source-sessions/11111111-1111-4111-8111-111111111111/projects/speaker";
+  response = await app(new Request(`https://gateway.test${projectPath}`, { headers: { Origin: ORIGIN, cookie } }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.at(-1)[0], "speakerProjectHistory");
+  response = await app(new Request(`https://gateway.test${projectPath}/states/2`, { headers: { Origin: ORIGIN, cookie } }));
+  assert.equal(response.status, 200);
+  assert.deepEqual(calls.at(-1), ["getSpeakerProjectState", ["11111111-1111-4111-8111-111111111111", 2]]);
+  response = await app(new Request(`https://gateway.test${projectPath}/continuations`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json" }, body: "{}"
+  }));
+  assert.equal(response.status, 403);
+  response = await app(new Request(`https://gateway.test${projectPath}/continuations`, {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json", "X-CSRF-Token": payload.csrfToken }, body: "{}"
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(calls.at(-1)[0], "continueSpeakerProject");
 });

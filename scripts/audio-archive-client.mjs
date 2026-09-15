@@ -168,6 +168,136 @@ export async function sha256Hex(value, signal) {
   return Array.from(new Uint8Array(digest), (byte) => byte.toString(16).padStart(2, "0")).join("");
 }
 
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (value && typeof value === "object") return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+  return value;
+}
+
+function projectStateIdentity(value) {
+  return canonicalValue({ sessionId: value.sessionId, workflow: value.workflow, draftRevision: value.draftRevision,
+    sourceSessionRevision: value.sourceSessionRevision, payloadSchema: value.payloadSchema, payload: value.payload, sources: value.sources });
+}
+
+function validateSpeakerStatePayload(payload, sourceIds) {
+  if (!hasExactKeys(payload, ["trackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"]) ||
+      !Array.isArray(payload.trackIds) || payload.trackIds.length !== sourceIds.length || payload.trackIds.some((id, index) => id !== sourceIds[index] || !isUuid(id)) ||
+      new Set(payload.trackIds).size !== payload.trackIds.length || !Array.isArray(payload.excludedTrackIds) ||
+      payload.excludedTrackIds.some(id => !payload.trackIds.includes(id)) || new Set(payload.excludedTrackIds).size !== payload.excludedTrackIds.length ||
+      JSON.stringify(payload.excludedTrackIds) !== JSON.stringify(payload.trackIds.filter(id => payload.excludedTrackIds.includes(id))) ||
+      !Array.isArray(payload.trackProcessing) || payload.trackProcessing.length !== payload.trackIds.length) return false;
+  if (payload.trackProcessing.some((item, index) => !hasExactKeys(item, ["trackId", "enhancement", "leveling", "compression"]) ||
+      item.trackId !== payload.trackIds[index] || !["off", "gentle"].includes(item.enhancement) ||
+      !["off", "on"].includes(item.leveling) || !["off", "light", "medium", "strong"].includes(item.compression))) return false;
+  const ids = new Set(), exactTime = value => Number.isFinite(value) && value >= 0 && value <= 604800 && Math.round(value * 1e6) / 1e6 === value;
+  if (!Array.isArray(payload.globalCuts) || payload.globalCuts.length > 10000 || !Array.isArray(payload.trackSilenceRegions) || payload.trackSilenceRegions.length > 10000) return false;
+  let previousEnd = -1;
+  for (const region of payload.globalCuts) {
+    if (!hasExactKeys(region, ["regionId", "startSeconds", "endSeconds"]) || !isUuid(region.regionId) || ids.has(region.regionId) ||
+        !exactTime(region.startSeconds) || !exactTime(region.endSeconds) || region.endSeconds <= region.startSeconds || region.startSeconds <= previousEnd) return false;
+    ids.add(region.regionId); previousEnd = region.endSeconds;
+  }
+  let previousTrack = -1;
+  const ends = new Map();
+  for (const region of payload.trackSilenceRegions) {
+    const trackIndex = payload.trackIds.indexOf(region?.trackId);
+    if (!hasExactKeys(region, ["regionId", "trackId", "startSeconds", "endSeconds"]) || !isUuid(region.regionId) || ids.has(region.regionId) ||
+        trackIndex < 0 || trackIndex < previousTrack || !exactTime(region.startSeconds) || !exactTime(region.endSeconds) ||
+        region.endSeconds <= region.startSeconds || region.startSeconds <= (ends.get(region.trackId) ?? -1)) return false;
+    ids.add(region.regionId); previousTrack = trackIndex; ends.set(region.trackId, region.endSeconds);
+  }
+  return true;
+}
+
+export async function verifySpeakerProjectState(value, signal) {
+  const keys = ["schemaVersion", "sessionId", "workflow", "draftRevision", "sourceSessionRevision", "savedAt", "payloadSchema", "payload", "sources", "stateFingerprint"];
+  if (!hasExactKeys(value, keys) || value.schemaVersion !== 1 || !isUuid(value.sessionId) || value.workflow !== "speaker" ||
+      !Number.isSafeInteger(value.draftRevision) || value.draftRevision < 1 || !Number.isSafeInteger(value.sourceSessionRevision) ||
+      value.sourceSessionRevision < 1 || !isIsoTimestamp(value.savedAt) || value.payloadSchema !== "speaker/v1" ||
+      !SHA256_PATTERN.test(value.stateFingerprint) || !Array.isArray(value.sources) || !value.sources.length || value.sources.length > 32) {
+    throw new Error("Состояние проекта «Спикерская» повреждено или имеет неизвестную версию.");
+  }
+  const payload = value.payload;
+  const seenOrdinals = new Set(), seenBlobs = new Set();
+  for (const [index, source] of value.sources.entries()) {
+    if (!hasExactKeys(source, ["trackId", "blobId", "ordinal", "originalName", "mediaType", "sizeBytes", "sha256"]) ||
+        !isUuid(source.trackId) || !isUuid(source.blobId) || source.trackId !== payload.trackIds[index] ||
+        !Number.isSafeInteger(source.ordinal) || source.ordinal < 1 || source.ordinal > value.sources.length || seenOrdinals.has(source.ordinal) || seenBlobs.has(source.blobId) ||
+        source.originalName !== normalizeAudioFilename(source.originalName) || !Object.values(MEDIA_TYPES).includes(source.mediaType) ||
+        !Number.isSafeInteger(source.sizeBytes) || source.sizeBytes < 1 || !SHA256_PATTERN.test(source.sha256)) {
+      throw new Error("Происхождение исходников состояния проекта не подтверждено.");
+    }
+    try { if (normalizedMediaType(source.originalName, source.mediaType) !== source.mediaType) throw new Error(); }
+    catch { throw new Error("Происхождение исходников состояния проекта не подтверждено."); }
+    seenOrdinals.add(source.ordinal); seenBlobs.add(source.blobId);
+  }
+  if (!validateSpeakerStatePayload(payload, value.sources.map(source => source.trackId))) throw new Error("Состояние проекта «Спикерская» повреждено.");
+  const expected = await sha256Hex(JSON.stringify(projectStateIdentity(value)), signal);
+  if (expected !== value.stateFingerprint) throw new Error("Fingerprint состояния проекта не совпадает.");
+  return structuredClone(value);
+}
+
+export function validateSpeakerProjectHistory(value, sessionId) {
+  if (!hasExactKeys(value, ["schemaVersion", "sessionId", "workflow", "currentDraftRevision", "lifecycle", "sourceState", "states"]) ||
+      value.schemaVersion !== 1 || value.sessionId !== sessionId || !isUuid(sessionId) || value.workflow !== "speaker" ||
+      !(value.currentDraftRevision === null || (Number.isSafeInteger(value.currentDraftRevision) && value.currentDraftRevision > 0)) ||
+      !["incoming", "archived"].includes(value.lifecycle) || !["available", "deleted"].includes(value.sourceState) || !Array.isArray(value.states)) {
+    throw new Error("История проекта «Спикерская» повреждена.");
+  }
+  let previous = Number.MAX_SAFE_INTEGER, currentCount = 0;
+  for (const item of value.states) {
+    if (!hasExactKeys(item, ["draftRevision", "savedAt", "current", "canonicalSourcesAvailable", "canonicalEditingAvailable", "stateFingerprint", "finalVersions"]) ||
+        !Number.isSafeInteger(item.draftRevision) || item.draftRevision < 1 || item.draftRevision >= previous || !isIsoTimestamp(item.savedAt) ||
+        typeof item.current !== "boolean" || typeof item.canonicalSourcesAvailable !== "boolean" || typeof item.canonicalEditingAvailable !== "boolean" ||
+        item.canonicalSourcesAvailable !== (value.sourceState === "available") || item.canonicalEditingAvailable !== (value.sourceState === "available" && value.lifecycle === "incoming") ||
+        !SHA256_PATTERN.test(item.stateFingerprint) || !Array.isArray(item.finalVersions)) throw new Error("История проекта «Спикерская» повреждена.");
+    if (item.current) { currentCount++; if (item.draftRevision !== value.currentDraftRevision) throw new Error("Текущее состояние проекта не подтверждено."); }
+    let priorVersion = Number.MAX_SAFE_INTEGER;
+    for (const linked of item.finalVersions) {
+      if (!hasExactKeys(linked, ["outputId", "version", "createdAt"]) || !isUuid(linked.outputId) || !Number.isSafeInteger(linked.version) ||
+          linked.version < 1 || linked.version >= priorVersion || !isIsoTimestamp(linked.createdAt)) throw new Error("Связь финальной версии с проектом повреждена.");
+      priorVersion = linked.version;
+    }
+    previous = item.draftRevision;
+  }
+  if (currentCount > 1 || (value.states.some(item => item.draftRevision === value.currentDraftRevision) && currentCount !== 1)) {
+    throw new Error("Текущее состояние проекта неоднозначно.");
+  }
+  return structuredClone(value);
+}
+
+async function hashLocalFile(file, signal) {
+  const hasher = new Sha256();
+  for (let offset = 0; offset < file.size; offset += DEFAULT_AUDIO_PART_BYTES) {
+    throwIfAborted(signal);
+    hasher.update(new Uint8Array(await file.slice(offset, Math.min(file.size, offset + DEFAULT_AUDIO_PART_BYTES)).arrayBuffer()));
+  }
+  return hasher.digestHex();
+}
+
+// Filename is presentation only. A complete set is matched exclusively by byte size and SHA-256.
+export async function verifyLocalSourceAttachment(files, sources, signal) {
+  const selected = Array.from(files || []);
+  if (!Array.isArray(sources) || !sources.length || selected.length !== sources.length) {
+    throw new Error("Подключите полный набор исходных дорожек.");
+  }
+  const expected = new Map();
+  for (const source of sources) {
+    const identity = `${source.sizeBytes}:${source.sha256}`;
+    if (expected.has(identity)) throw new Error("Набор содержит неоднозначные одинаковые дорожки; соответствие нельзя доказать.");
+    expected.set(identity, source);
+  }
+  const matched = new Map();
+  for (const file of selected) {
+    if (!file || !Number.isSafeInteger(file.size) || file.size < 1) throw new Error("Подключённый файл повреждён.");
+    const identity = `${file.size}:${await hashLocalFile(file, signal)}`;
+    if (!expected.has(identity) || matched.has(identity)) throw new Error("Подключённые дорожки не совпадают с сохранённым происхождением.");
+    matched.set(identity, file);
+  }
+  if (matched.size !== expected.size) throw new Error("Подключите полный точный набор исходных дорожек.");
+  return [...sources].sort((a, b) => a.ordinal - b.ordinal).map((source) => matched.get(`${source.sizeBytes}:${source.sha256}`));
+}
+
 async function stableUuid(idempotencyKey, label, signal) {
   const hex = (await sha256Hex(`audio-archive\u0000${idempotencyKey}\u0000${label}`, signal)).slice(0, 32).split("");
   hex[12] = "8";
@@ -424,10 +554,12 @@ export async function reconstructAnnouncementOutput(metadata, fetchImpl = fetch)
 export function validateSpeakerOutput(output, recipe, sessionId) {
   const workflow = { workflow: "speaker", status: "result_ready", currentDraft: null,
     outputs: [output], deletedVersions: [], nextVersion: (output?.version || 0) + 1 };
+  const recipeKeys = recipe?.schemaVersion === 2 ?
+    ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result", "projectState"] :
+    ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"];
   if (!isUuid(sessionId) || !validateWorkflow(workflow, sessionId) ||
       output.recipeSnapshotRef !== `recipes/${sessionId}/speaker/${output.outputId}.json` ||
-      !hasExactKeys(recipe, ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"]) ||
-      recipe.schemaVersion !== 1 || recipe.workflow !== "speaker" || recipe.sessionId !== sessionId || recipe.outputId !== output.outputId ||
+      !hasExactKeys(recipe, recipeKeys) || ![1, 2].includes(recipe.schemaVersion) || recipe.workflow !== "speaker" || recipe.sessionId !== sessionId || recipe.outputId !== output.outputId ||
       recipe.version !== output.version || recipe.processorVersion !== "speaker-editor-v1" || output.processorVersion !== "speaker-editor-v1" ||
       !isIsoTimestamp(recipe.createdAt) || !isIsoTimestamp(recipe.renderedAt) || !Number.isSafeInteger(recipe.sourceSessionRevision) || recipe.sourceSessionRevision < 1 ||
       !SHA256_PATTERN.test(recipe.candidateFingerprint) || !hasExactKeys(recipe.draft, ["revision", "payloadSchema", "payload"]) ||
@@ -437,6 +569,9 @@ export function validateSpeakerOutput(output, recipe, sessionId) {
       !hasExactKeys(recipe.result, ["mediaType", "presentationFilename", "sizeBytes", "sha256", "originalDurationSeconds", "resultDurationSeconds", "globallyRemovedDurationSeconds"]) ||
       recipe.result.mediaType !== "audio/mpeg" || recipe.result.presentationFilename !== normalizeAudioFilename(recipe.result.presentationFilename) ||
       recipe.result.sizeBytes !== output.sizeBytes || recipe.result.sha256 !== output.sha256) return false;
+  if (recipe.schemaVersion === 2 && (!hasExactKeys(recipe.projectState, ["sessionId", "draftRevision", "stateFingerprint"]) ||
+      recipe.projectState.sessionId !== sessionId || recipe.projectState.draftRevision !== recipe.draft.revision ||
+      !SHA256_PATTERN.test(recipe.projectState.stateFingerprint))) return false;
   const payload = recipe.draft.payload;
   if (!hasExactKeys(payload, ["trackIds", "excludedTrackIds", "globalCuts", "trackSilenceRegions", "trackProcessing"]) ||
       JSON.stringify(recipe.editState.orderedTrackIds) !== JSON.stringify(payload.trackIds) ||
@@ -549,6 +684,7 @@ export class AudioArchiveGateway {
     this.fetchImpl = fetchImpl.bind(globalThis);
     this.csrfToken = null;
     this.acceptedPartSize = DEFAULT_AUDIO_PART_BYTES;
+    this.speakerProjectHistoryVersion = 0;
   }
 
   async request(path, options = {}) {
@@ -581,6 +717,7 @@ export class AudioArchiveGateway {
     if (Number.isSafeInteger(result?.acceptedPartSize) && result.acceptedPartSize > 0 && result.acceptedPartSize <= MAX_AUDIO_PART_BYTES) {
       this.acceptedPartSize = Math.min(DEFAULT_AUDIO_PART_BYTES, result.acceptedPartSize);
     }
+    this.speakerProjectHistoryVersion = result?.speakerProjectHistory === 1 ? 1 : 0;
     return result;
   }
   sessionStatus() { return this.request("/v1/session"); }
@@ -606,6 +743,21 @@ export class AudioArchiveGateway {
   }
   getSpeakerOutput(sessionId, outputId) {
     return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/speaker/${encodeURIComponent(outputId)}`);
+  }
+  async speakerProjectHistory(sessionId, signal) {
+    if (this.speakerProjectHistoryVersion !== 1) throw new Error("История проекта не поддерживается этим шлюзом.");
+    return validateSpeakerProjectHistory(await this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/projects/speaker`, { signal }), sessionId);
+  }
+  async speakerProjectState(sessionId, draftRevision, signal) {
+    if (this.speakerProjectHistoryVersion !== 1 || !Number.isSafeInteger(draftRevision) || draftRevision < 1) {
+      throw new Error("Некорректная версия состояния проекта.");
+    }
+    const state = await this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/projects/speaker/states/${draftRevision}`, { signal });
+    return verifySpeakerProjectState(state, signal);
+  }
+  continueSpeakerProject(sessionId, envelope, signal) {
+    if (this.speakerProjectHistoryVersion !== 1) throw new Error("Продолжение проекта не поддерживается этим шлюзом.");
+    return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/projects/speaker/continuations`, { method: "POST", body: envelope, signal });
   }
   announcementPartFetch(metadata) {
     const { output, recipe } = metadata || {};

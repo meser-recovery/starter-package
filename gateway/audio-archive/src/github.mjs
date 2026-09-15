@@ -2,8 +2,8 @@ import { createSign } from "node:crypto";
 import { MAX_PART_BYTES, UUID_PATTERN } from "./validation.mjs";
 
 const API_VERSION = "2026-03-10";
-const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|recipes\/[0-9a-f-]{36}\/(?:announcement|speaker)\/[0-9a-f-]{36}\.json|transactions\/(?:ingest|delete|publish)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
-const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|recipes\/([0-9a-f-]{36})\/(?:announcement|speaker)\/([0-9a-f-]{36})\.json|transactions\/(?:ingest|delete|publish)-([0-9a-f-]{36})\.json)$/;
+const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|project-states\/[0-9a-f-]{36}\/speaker\/[1-9][0-9]*\.json|recipes\/[0-9a-f-]{36}\/(?:announcement|speaker)\/[0-9a-f-]{36}\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
+const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|project-states\/([0-9a-f-]{36})\/speaker\/[1-9][0-9]*\.json|recipes\/([0-9a-f-]{36})\/(?:announcement|speaker)\/([0-9a-f-]{36})\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-([0-9a-f-]{36})\.json)$/;
 
 export class GitHubError extends Error {
   constructor(message, status, responseBody = null) {
@@ -116,7 +116,7 @@ export class GitHubArchiveRepository {
   }
 
   async listJson(prefix, ref) {
-    if (!/^(sessions|transactions|drafts|recipes)\/$/.test(prefix)) throw new Error("Unsafe internal list prefix");
+    if (!/^(sessions|transactions|drafts|project-states|recipes)\/$/.test(prefix)) throw new Error("Unsafe internal list prefix");
     const tree = await this.api(`/git/trees/${encodeURIComponent(ref)}?recursive=1`);
     const items = [];
     for (const entry of tree.tree || []) {
