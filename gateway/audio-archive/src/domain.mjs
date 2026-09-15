@@ -926,6 +926,16 @@ export class AudioArchiveDomain {
     };
   }
 
+  projectSourcesBelongToSession(sources, session) {
+    const canonical = session.sourceState === "available" ? session.sourceTracks : session.deletedSources?.tracks;
+    if (!Array.isArray(sources) || !Array.isArray(canonical) || sources.length !== canonical.length) return false;
+    return sources.every((source) => {
+      const track = canonical.find((item) => item.trackId === source.trackId);
+      if (!track || source.blobId !== track.blobId || source.sizeBytes !== track.sizeBytes || source.sha256 !== track.sha256) return false;
+      return session.sourceState === "deleted" || (source.ordinal === track.ordinal && source.originalName === track.originalName && source.mediaType === track.mediaType);
+    });
+  }
+
   catalogWithSessions(catalog, sessions) {
     const ids = new Set(sessions.map((session) => session.id));
     const entries = catalog.entries.filter((entry) => !ids.has(entry.id));
@@ -981,7 +991,12 @@ export class AudioArchiveDomain {
     if (target.workflows.speaker.currentDraft !== null || target.workflows.speaker.outputs.length || target.workflows.speaker.deletedVersions.length) {
       throw conflict("Replacement Source Session already contains a Speaker project");
     }
+    const targetStatePath = projectStatePath(target.id, 1);
+    if (await this.repository.readJson(targetStatePath, head)) throw conflict("Replacement Source Session already contains an immutable Speaker project state");
     const origin = await this.continuationSource(source, body, head);
+    if (!this.projectSourcesBelongToSession(origin.sources, source)) {
+      throw conflict("Speaker project state does not belong to the source Zoom recording");
+    }
     const targetByOrdinal = new Map(target.sourceTracks.map((track) => [track.ordinal, track]));
     if (origin.sources.length !== target.sourceTracks.length || origin.sources.some((item) => {
       const next = targetByOrdinal.get(item.ordinal);
@@ -1014,7 +1029,7 @@ export class AudioArchiveDomain {
         [sessionPath(target.id)]: targetNext,
         "catalog.json": nextCatalog,
         [draftPath(target.id, "speaker")]: draft,
-        [projectStatePath(target.id, 1)]: state,
+        [targetStatePath]: state,
         [receiptPath]: receipt
       }, `Continue Speaker project ${source.id} in ${target.id}`);
     } catch (error) {

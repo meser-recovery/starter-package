@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { AudioArchiveDomain } from "../src/domain.mjs";
-import { assetName } from "../src/validation.mjs";
+import { assetName, computeProjectStateFingerprint, projectStatePath } from "../src/validation.mjs";
 import { MemoryRepository, sha } from "./helpers.mjs";
 
 const CLOCK = () => Date.parse("2026-09-15T10:00:00.000Z");
@@ -17,11 +17,12 @@ function payload(trackId, excluded = false) {
     trackProcessing: [{ trackId, enhancement: "off", leveling: "on", compression: "off" }] };
 }
 
-async function ingest(domain, key, trackId, blobId, supersedesSessionId = null) {
-  const chunks = [SOURCE.subarray(0, 6), SOURCE.subarray(6, 12), SOURCE.subarray(12)];
+async function ingest(domain, key, trackId, blobId, supersedesSessionId = null, bytes = SOURCE) {
+  const chunks = [];
+  for (let offset = 0; offset < bytes.length; offset += 6) chunks.push(bytes.subarray(offset, Math.min(bytes.length, offset + 6)));
   const started = await domain.beginIngestion({ schemaVersion: 1, idempotencyKey: key, title: "Speaker source", recordedAt: null,
-    origin: "device", supersedesSessionId, plan: { totalBytes: SOURCE.length, tracks: [{ trackId, blobId, ordinal: 1,
-      originalName: "source.wav", mediaType: "audio/wav", sizeBytes: SOURCE.length, sha256: sha(SOURCE),
+    origin: "device", supersedesSessionId, plan: { totalBytes: bytes.length, tracks: [{ trackId, blobId, ordinal: 1,
+      originalName: "source.wav", mediaType: "audio/wav", sizeBytes: bytes.length, sha256: sha(bytes),
       parts: chunks.map((bytes, index) => ({ partNumber: index + 1, sizeBytes: bytes.length, sha256: sha(bytes), assetName: assetName(blobId, index + 1) })) }] } });
   for (const [index, bytes] of chunks.entries()) await domain.uploadPart(started.transactionId, blobId, index + 1, bytes, sha(bytes), `${key}:part:${index + 1}`);
   return (await domain.finalizeIngestion(started.transactionId)).session;
@@ -98,6 +99,47 @@ test("S09D a pre-existing immutable revision path cannot be overwritten", async 
   await assert.rejects(() => domain.saveDraft(session.id, "speaker", saveEnvelope(first.session, 1, payload(ids.trackA, true), "s09d-collision-two-0123456789")),
     error => error.status === 409 && /already exists/.test(error.message));
   assert.deepEqual(repository.files.get(`project-states/${session.id}/speaker/2.json`), first.state);
+});
+
+test("S09D continuation binds state provenance to available sources and deleted-source tombstones", async () => {
+  const { repository, domain, session } = await fixture();
+  const saved = await domain.saveDraft(session.id, "speaker", saveEnvelope(session, 0, payload(ids.trackA), "s09d-bind-save-0123456789"));
+  const substitutedBytes = Buffer.from("substituted-speaker-source");
+  const path = projectStatePath(session.id, 1);
+  const substituted = structuredClone(saved.state);
+  substituted.sources[0].sizeBytes = substitutedBytes.length;
+  substituted.sources[0].sha256 = sha(substitutedBytes);
+  substituted.stateFingerprint = computeProjectStateFingerprint(substituted);
+  repository.files.set(path, substituted);
+  const target = await ingest(domain, "s09d-bind-target-0123456789", ids.trackB, ids.blobB, session.id, substitutedBytes);
+  const request = { schemaVersion: 1, expectedSourceSessionRevision: saved.session.revision, expectedTargetSessionRevision: target.revision,
+    sourceDraftRevision: 1, sourceOutputId: null, targetSessionId: target.id, idempotencyKey: "s09d-bind-available-0123456789" };
+  await assert.rejects(() => domain.continueSpeakerProject(session.id, request),
+    error => error.status === 409 && /does not belong/.test(error.message));
+
+  const deleted = await domain.deleteSources(session.id, { expectedRevision: saved.session.revision, idempotencyKey: "s09d-bind-delete-0123456789",
+    confirmation: "Удалить исходники, сохранить результаты" });
+  await assert.rejects(() => domain.continueSpeakerProject(session.id, { ...request, expectedSourceSessionRevision: deleted.session.revision,
+    idempotencyKey: "s09d-bind-deleted-0123456789" }), error => error.status === 409 && /does not belong/.test(error.message));
+  assert.equal((await domain.getSession(session.id)).relations.supersededBySessionId, null);
+  assert.equal((await domain.getSession(target.id)).relations.supersedesSessionId, session.id);
+});
+
+test("S09D continuation cannot overwrite an orphan immutable state in the target session", async () => {
+  const { repository, domain, session } = await fixture();
+  const saved = await domain.saveDraft(session.id, "speaker", saveEnvelope(session, 0, payload(ids.trackA), "s09d-target-state-save-0123456789"));
+  const target = await ingest(domain, "s09d-target-state-ingest-0123456789", ids.trackB, ids.blobB, session.id);
+  const path = projectStatePath(target.id, 1);
+  const orphan = domain.createSpeakerProjectState(target, 1, target.revision, "2026-09-15T10:00:00.000Z", payload(ids.trackB));
+  repository.files.set(path, structuredClone(orphan));
+  const beforeHead = await repository.getHead();
+  await assert.rejects(() => domain.continueSpeakerProject(session.id, { schemaVersion: 1,
+    expectedSourceSessionRevision: saved.session.revision, expectedTargetSessionRevision: target.revision,
+    sourceDraftRevision: 1, sourceOutputId: null, targetSessionId: target.id, idempotencyKey: "s09d-target-state-continue-0123456789" }),
+  error => error.status === 409 && /immutable Speaker project state/.test(error.message));
+  assert.equal(await repository.getHead(), beforeHead);
+  assert.equal(repository.files.get(path).stateFingerprint, orphan.stateFingerprint);
+  assert.equal((await domain.getSession(session.id)).relations.supersededBySessionId, null);
 });
 
 test("S09D deleted-source recovery continues exact bytes in a new session with remapped IDs and bidirectional relations", async () => {

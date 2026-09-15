@@ -3,6 +3,23 @@ import { normalizeSpeakerPayload, resultDuration } from './speaker-editor-core.m
 
 export const RECONNECT_MESSAGE = 'Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.';
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+export function exactProjectStateForDraft(projectState, session, draft) {
+  if (!projectState || !session || !draft || projectState.sessionId !== session.id ||
+      projectState.draftRevision !== draft.draftRevision || !equal(projectState.payload, draft.payload) ||
+      !Array.isArray(projectState.sources) || projectState.sources.length !== session.sourceTracks.length) return false;
+  return projectState.sources.every((source) => {
+    const track = session.sourceTracks.find((item) => item.trackId === source.trackId);
+    return track && source.blobId === track.blobId && source.ordinal === track.ordinal && source.originalName === track.originalName &&
+      source.mediaType === track.mediaType && source.sizeBytes === track.sizeBytes && source.sha256 === track.sha256;
+  });
+}
+export async function loadExactConflictProjectState(loadProjectState, session, draft, signal, isCurrent = () => true) {
+  if (!loadProjectState) return null;
+  const projectState = await loadProjectState({ session, draft, signal });
+  if (!isCurrent()) throw new DOMException('cancelled', 'AbortError');
+  if (!exactProjectStateForDraft(projectState, session, draft)) throw new Error('Последнее неизменяемое состояние не совпадает с текущим проектом.');
+  return projectState;
+}
 const conflict = (latestSession = null, latestDraft = null) => Object.assign(
   new Error('Запись изменилась. Сохранение остановлено; текущий монтаж остаётся в памяти.'),
   { status: 409, latestSession, latestDraft }

@@ -1,9 +1,11 @@
 import { createSign } from "node:crypto";
+import { isDeepStrictEqual } from "node:util";
 import { MAX_PART_BYTES, UUID_PATTERN } from "./validation.mjs";
 
 const API_VERSION = "2026-03-10";
 const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|project-states\/[0-9a-f-]{36}\/speaker\/[1-9][0-9]*\.json|recipes\/[0-9a-f-]{36}\/(?:announcement|speaker)\/[0-9a-f-]{36}\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
 const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|project-states\/([0-9a-f-]{36})\/speaker\/[1-9][0-9]*\.json|recipes\/([0-9a-f-]{36})\/(?:announcement|speaker)\/([0-9a-f-]{36})\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-([0-9a-f-]{36})\.json)$/;
+const IMMUTABLE_PROJECT_STATE_PATH = /^project-states\/[0-9a-f-]{36}\/speaker\/[1-9][0-9]*\.json$/;
 
 export class GitHubError extends Error {
   constructor(message, status, responseBody = null) {
@@ -138,9 +140,22 @@ export class GitHubArchiveRepository {
       error.status = 409;
       throw error;
     }
+    const pendingFiles = { ...files };
+    for (const [path, value] of Object.entries(pendingFiles)) {
+      if (!IMMUTABLE_PROJECT_STATE_PATH.test(path) || value === null) continue;
+      const existing = await this.readJson(path, currentHead);
+      if (!existing) continue;
+      if (!isDeepStrictEqual(existing.data, value)) {
+        const error = new Error("Immutable Speaker project state already exists with different content");
+        error.status = 409;
+        throw error;
+      }
+      delete pendingFiles[path];
+    }
+    if (!Object.keys(pendingFiles).length) return currentHead;
     const commit = await this.api(`/git/commits/${currentHead}`);
     const treeEntries = [];
-    for (const [path, value] of Object.entries(files)) {
+    for (const [path, value] of Object.entries(pendingFiles)) {
       assertStoragePath(path);
       if (value === null) {
         treeEntries.push({ path, mode: "100644", type: "blob", sha: null });

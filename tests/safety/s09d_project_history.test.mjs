@@ -2,7 +2,9 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { webcrypto } from "node:crypto";
 import { AudioArchiveGateway, sha256Hex, validateSpeakerProjectHistory, verifySpeakerProjectState, verifyLocalSourceAttachment } from "../../scripts/audio-archive-client.mjs";
-import { parseEditorIntent, deletionImpact, RequestGeneration } from "../../scripts/audio-archive-core.mjs";
+import { parseEditorIntent, deletionImpact, RequestGeneration, createSpeakerRecoveryAttempt,
+  recoveryContinuationRequest } from "../../scripts/audio-archive-core.mjs";
+import { exactProjectStateForDraft, loadExactConflictProjectState } from "../../scripts/audio-project.mjs";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 const sessionId = "11111111-1111-4111-8111-111111111111";
@@ -37,6 +39,35 @@ test("S09D deep links accept exactly one strict Speaker recovery intent", () => 
     `?session=${sessionId}&workflow=announcement&projectRevision=1`,
     `?session=${sessionId}&workflow=speaker&identity=unknown`
   ]) assert.throws(() => parseEditorIntent(query));
+});
+
+test("S09D recovery retries preserve ingestion key and the exact continuation request", () => {
+  const source = { id: sessionId, revision: 7 };
+  const target = { id: "44444444-4444-4444-8444-444444444444", revision: 3 };
+  const keys = ["stable-ingestion-key", "stable-continuation-key"];
+  const recovery = createSpeakerRecoveryAttempt(source, { continuation: { sourceDraftRevision: 4, sourceOutputId: null } }, () => keys.shift());
+  assert.equal(recovery.ingestionKey, "stable-ingestion-key");
+  assert.equal(recovery.ingestionKey, "stable-ingestion-key");
+  const first = recoveryContinuationRequest(recovery, source, target);
+  const retry = recoveryContinuationRequest(recovery, { ...source, revision: 8 }, { ...target, revision: 4 });
+  assert.deepEqual(retry, first);
+  assert.equal(retry.idempotencyKey, "stable-continuation-key");
+  assert.equal(retry.expectedSourceSessionRevision, 7);
+  assert.equal(retry.expectedTargetSessionRevision, 3);
+});
+
+test("S09D conflict-open retains only an exact immutable state and fences a late response", async () => {
+  const { value: projectState } = await stateFixture();
+  const session = { id: sessionId, sourceTracks: projectState.sources.map(source => ({ ...source })) };
+  const draft = { draftRevision: projectState.draftRevision, payload: structuredClone(projectState.payload) };
+  assert.equal(exactProjectStateForDraft(projectState, session, draft), true);
+  assert.deepEqual(await loadExactConflictProjectState(async () => structuredClone(projectState), session, draft, null), projectState);
+  assert.equal(exactProjectStateForDraft({ ...projectState, sources: [{ ...projectState.sources[0], sha256: "0".repeat(64) }] }, session, draft), false);
+
+  let resolve;
+  const pending = loadExactConflictProjectState(() => new Promise(done => { resolve = done; }), session, draft, null, () => false);
+  resolve(structuredClone(projectState));
+  await assert.rejects(pending, error => error.name === "AbortError");
 });
 
 test("S09D project states fail closed on fingerprint, identity and unknown fields", async () => {

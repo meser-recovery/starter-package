@@ -1,7 +1,8 @@
 import { contextActions } from "./audio-actions.mjs";
 import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
 import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ProjectSave } from "./audio-project.mjs";
-import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding } from './audio-archive-core.mjs';
+import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding,
+  createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
 import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
@@ -482,7 +483,7 @@ async function resolveSpeakerWork(session, intent = {}) {
 }
 
 function showSpeakerRecovery(session, work) {
-  state.speakerRecovery = { session: structuredClone(session), work, files: null, target: null, controller: null };
+  state.speakerRecovery = createSpeakerRecoveryAttempt(session, work);
   const panel = document.getElementById("speaker-project-recovery"); panel.hidden = false;
   document.getElementById("speaker-project-recovery-status").textContent = session.lifecycle.state !== "incoming" ?
     "Запись убрана из рабочего списка. Сначала верните её в обработку." : "Проект сохранён, но исходные дорожки недоступны.";
@@ -546,6 +547,9 @@ async function loadSpeakerSession(session, intent = {}) {
       initialPayload: work.initialPayload,
       isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && (!newerSpeakerSession(complete) || ownsSources()),
       saveDraft: ({ session, draft, payload, signal, forceLatest }) => withReconnect(() => forceLatest ? project.saveAsLatest(session, draft, payload, signal) : project.save(session, draft, payload, signal)),
+      loadProjectState: gateway.speakerProjectHistoryVersion === 1 ? async ({ session: latest, draft: latestDraft, signal }) => {
+        return gateway.speakerProjectState(latest.id, latestDraft.draftRevision, signal);
+      } : null,
       onSaved: ({ session: updated }) => {
         state.activeSession = updated; state.activeManifest = updated;
         const index = state.sessions.findIndex((item) => item.id === updated.id);
@@ -1523,10 +1527,13 @@ document.getElementById("speaker-project-recovery-attach").addEventListener("cli
   const input = document.getElementById("speaker-project-recovery-files");
   try {
     status.textContent = "Проверка SHA-256 и размера полного набора дорожек…";
-    recovery.files = await verifyLocalSourceAttachment(input.files, recovery.work.sources);
+    const files = await verifyLocalSourceAttachment(input.files, recovery.work.sources);
+    if (state.speakerRecovery !== recovery) return;
+    recovery.files = files;
     status.textContent = "Точные локальные исходники подключены в каноническом порядке. Старые удалённые bytes и tombstone не изменены.";
     document.getElementById("speaker-project-recovery-ingest").hidden = false;
   } catch (error) {
+    if (state.speakerRecovery !== recovery) return;
     recovery.files = null; document.getElementById("speaker-project-recovery-ingest").hidden = true;
     status.textContent = error.message || "Набор дорожек не прошёл проверку.";
   }
@@ -1539,12 +1546,13 @@ document.getElementById("speaker-project-recovery-ingest").addEventListener("cli
   try {
     status.textContent = "Сохранение точных исходников как новой записи Zoom…";
     const result = await gateway.ingestFiles({ files: recovery.files, title: `${recovery.session.title} — восстановлено`, origin: "device",
-      supersedesSessionId: recovery.session.id, idempotencyKey: crypto.randomUUID() });
+      supersedesSessionId: recovery.session.id, idempotencyKey: recovery.ingestionKey });
+    if (state.speakerRecovery !== recovery) return;
     recovery.target = result.session || result;
     status.textContent = "Новая запись Zoom сохранена. Теперь проект можно атомарно продолжить в ней.";
     document.getElementById("speaker-project-recovery-ingest").hidden = true;
     document.getElementById("speaker-project-recovery-continue").hidden = false;
-  } catch (error) { status.textContent = userError(error, "Не удалось сохранить восстановленные исходники."); }
+  } catch (error) { if (state.speakerRecovery === recovery) status.textContent = userError(error, "Не удалось сохранить восстановленные исходники."); }
 });
 
 document.getElementById("speaker-project-recovery-continue").addEventListener("click", async () => {
@@ -1553,17 +1561,19 @@ document.getElementById("speaker-project-recovery-continue").addEventListener("c
   const status = document.getElementById("speaker-project-recovery-status");
   try {
     status.textContent = "Проверка исходников, переназначение дорожек и подтверждение связей…";
-    const [source, target] = await Promise.all([gateway.getSession(recovery.session.id), gateway.getSession(recovery.target.id)]);
-    const result = await gateway.continueSpeakerProject(source.id, { schemaVersion: 1,
-      expectedSourceSessionRevision: source.revision, expectedTargetSessionRevision: target.revision,
-      sourceDraftRevision: recovery.work.continuation.sourceDraftRevision,
-      sourceOutputId: recovery.work.continuation.sourceOutputId, targetSessionId: target.id, idempotencyKey: crypto.randomUUID() });
+    if (!recovery.continuationRequest) {
+      const [source, target] = await Promise.all([gateway.getSession(recovery.session.id), gateway.getSession(recovery.target.id)]);
+      if (state.speakerRecovery !== recovery) return;
+      recoveryContinuationRequest(recovery, source, target);
+    }
+    const result = await gateway.continueSpeakerProject(recovery.session.id, recoveryContinuationRequest(recovery, recovery.session, recovery.target));
+    if (state.speakerRecovery !== recovery) return;
     if (result.sourceSession.relations.supersededBySessionId !== result.targetSession.id ||
         result.targetSession.relations.supersedesSessionId !== result.sourceSession.id || !result.state) throw new Error("Связи продолжения не подтверждены.");
     status.textContent = "Проект продолжен в новой записи Zoom.";
     document.getElementById("speaker-project-recovery").hidden = true; state.speakerRecovery = null;
     await refreshSessions(); await loadSpeakerSession(result.targetSession);
-  } catch (error) { status.textContent = userError(error, "Не удалось подтвердить продолжение проекта. Повтор безопасен."); }
+  } catch (error) { if (state.speakerRecovery === recovery) status.textContent = userError(error, "Не удалось подтвердить продолжение проекта. Повтор безопасен."); }
 });
 
 byId("mode-archive").addEventListener("click", () => {

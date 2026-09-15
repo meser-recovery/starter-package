@@ -206,6 +206,26 @@ test("S09D project-state and idempotency receipt paths are narrowly allowlisted"
   await assert.rejects(() => repository.readJson(`transactions/project-save-11111111-1111-0111-8111-111111111111.json`, "head-1"), /Unsafe/);
 });
 
+test("S09D GitHub commits allow exact state replay but reject immutable project-state replacement", async () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const path = `project-states/${sessionId}/speaker/1.json`;
+  const stored = { schemaVersion: 1, stateFingerprint: "a".repeat(64) };
+  const seen = [];
+  const repository = new GitHubArchiveRepository(config(), async (url, options = {}) => {
+    seen.push({ url, method: options.method || "GET" });
+    if (url.endsWith("/git/ref/heads/main")) return jsonResponse({ object: { sha: "head-1" } });
+    if (url.includes(`/contents/${path}?ref=head-1`)) return jsonResponse({ type: "file", encoding: "base64",
+      content: Buffer.from(JSON.stringify(stored)).toString("base64"), sha: "state-blob" });
+    throw new Error(`unexpected ${url}`);
+  });
+  repository.installationToken = { value: "installation-token", expiresAt: Number.MAX_SAFE_INTEGER };
+
+  assert.equal(await repository.commitJson("head-1", { [path]: structuredClone(stored) }, "exact replay"), "head-1");
+  await assert.rejects(() => repository.commitJson("head-1", { [path]: { ...stored, stateFingerprint: "b".repeat(64) } }, "replace"),
+    error => error.status === 409 && /different content/.test(error.message));
+  assert.equal(seen.filter(({ url }) => url.includes("/git/commits/")).length, 0);
+});
+
 test("release asset upload uses opaque deterministic name and fixed upload host", async () => {
   let seen;
   const repository = new GitHubArchiveRepository(config(), async (url, options) => {

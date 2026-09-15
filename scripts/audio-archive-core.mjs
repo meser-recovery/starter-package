@@ -29,6 +29,20 @@ export function speakerRecoveryBinding(operation, context = {}) {
     (!operation.candidateFingerprint || candidate.candidateFingerprint === operation.candidateFingerprint));
   return { belongs, exactCandidate };
 }
+export function createSpeakerRecoveryAttempt(session, work, keyFactory = () => crypto.randomUUID()) {
+  return { session: structuredClone(session), work, files: null, target: null, controller: null,
+    ingestionKey: keyFactory(), continuationKey: keyFactory(), continuationRequest: null };
+}
+export function recoveryContinuationRequest(recovery, source, target) {
+  if (!recovery.continuationRequest) {
+    recovery.continuationRequest = { schemaVersion: 1,
+      expectedSourceSessionRevision: source.revision, expectedTargetSessionRevision: target.revision,
+      sourceDraftRevision: recovery.work.continuation.sourceDraftRevision,
+      sourceOutputId: recovery.work.continuation.sourceOutputId, targetSessionId: target.id,
+      idempotencyKey: recovery.continuationKey };
+  }
+  return structuredClone(recovery.continuationRequest);
+}
 const normalized = value => String(value || '').normalize('NFKC').toLocaleLowerCase('ru');
 const compareText = (a, b) => String(a).localeCompare(String(b), 'ru');
 const timestamp = value => value ? Date.parse(value) : NaN;
