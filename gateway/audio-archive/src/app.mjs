@@ -71,7 +71,8 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
       requireOrigin(request, config.allowedOrigin);
       if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), config.allowedOrigin);
       if (url.pathname === "/v1/config" && request.method === "GET") {
-        return cors(json({ schemaVersion: 1, acceptedPartSize: config.acceptedPartBytes, maximumPartSize: 64 * 1024 * 1024, maximumSessionSize: 500 * 1024 * 1024 }), config.allowedOrigin);
+        return cors(json({ schemaVersion: 1, acceptedPartSize: config.acceptedPartBytes, maximumPartSize: 64 * 1024 * 1024,
+          maximumSessionSize: 500 * 1024 * 1024, ...(config.speakerProjectHistory ? { speakerProjectHistory: 1 } : {}) }), config.allowedOrigin);
       }
       if (url.pathname === "/v1/session/login" && request.method === "POST") {
         throttle.check(request);
@@ -198,6 +199,15 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
         const sessionId = assertUuid(match[0], "sessionId");
         if (request.method === "GET") return cors(json({ draft: await domain.loadDraft(sessionId, match[1]) }), config.allowedOrigin);
         if (request.method === "PUT") return cors(json(await domain.saveDraft(sessionId, match[1], await jsonBody(request))), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/projects\/speaker$/)) && request.method === "GET") {
+        return cors(json(await domain.speakerProjectHistory(assertUuid(match[0], "sessionId"))), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/projects\/speaker\/states\/(\d+)$/)) && request.method === "GET") {
+        return cors(json(await domain.getSpeakerProjectState(assertUuid(match[0], "sessionId"), Number(match[1]))), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/projects\/speaker\/continuations$/)) && request.method === "POST") {
+        return cors(json(await domain.continueSpeakerProject(assertUuid(match[0], "sessionId"), await jsonBody(request))), config.allowedOrigin);
       }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/(archive|restore)$/)) && request.method === "POST") {
         return cors(json(await domain.setLifecycle(assertUuid(match[0], "sessionId"), match[1] === "archive" ? "archived" : "incoming", await jsonBody(request))), config.allowedOrigin);

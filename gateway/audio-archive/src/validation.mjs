@@ -109,6 +109,12 @@ export function recipePath(sessionId, outputId, workflow = "announcement") {
   return `recipes/${session}/${workflow}/${output}.json`;
 }
 
+export function projectStatePath(sessionId, draftRevision) {
+  const session = assertUuid(sessionId, "sessionId");
+  assertInteger(draftRevision, 1, Number.MAX_SAFE_INTEGER, "draftRevision");
+  return `project-states/${session}/speaker/${draftRevision}.json`;
+}
+
 export function hashIdempotencyKey(value) {
   if (typeof value !== "string" || value.length < 16 || value.length > 200) throw new ValidationError("Invalid idempotency key");
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -311,6 +317,70 @@ function validateSpeakerRecipeSources(sources) {
   }
 }
 
+function validateProjectStateSources(sources) {
+  if (!Array.isArray(sources) || !sources.length || sources.length > 32) throw new ValidationError("Project state sources are invalid");
+  const trackIds = new Set();
+  const blobIds = new Set();
+  const ordinals = new Set();
+  for (const source of sources) {
+    assertExactKeys(source, ["trackId", "blobId", "ordinal", "originalName", "mediaType", "sizeBytes", "sha256"], "project state source");
+    const trackId = assertUuid(source.trackId, "project state trackId");
+    const blobId = assertUuid(source.blobId, "project state blobId");
+    if (trackIds.has(trackId) || blobIds.has(blobId)) throw new ValidationError("Project state source identities must be unique");
+    trackIds.add(trackId); blobIds.add(blobId);
+    assertInteger(source.ordinal, 1, sources.length, "project state source ordinal");
+    if (ordinals.has(source.ordinal) || source.originalName !== normalizeFilename(source.originalName)) {
+      throw new ValidationError("Project state source order or filename is invalid");
+    }
+    ordinals.add(source.ordinal);
+    if (!Object.values(MEDIA_TYPES).includes(source.mediaType)) throw new ValidationError("Project state source media type is invalid");
+    assertInteger(source.sizeBytes, 1, MAX_SESSION_BYTES, "project state source sizeBytes");
+    assertSha256(source.sha256, "project state source sha256");
+  }
+  return structuredClone(sources);
+}
+
+function canonicalValue(value) {
+  if (Array.isArray(value)) return value.map(canonicalValue);
+  if (isPlainObject(value)) return Object.fromEntries(Object.keys(value).sort().map((key) => [key, canonicalValue(value[key])]));
+  return value;
+}
+
+export function computeProjectStateFingerprint(value) {
+  const identity = {
+    sessionId: value.sessionId,
+    workflow: value.workflow,
+    draftRevision: value.draftRevision,
+    sourceSessionRevision: value.sourceSessionRevision,
+    payloadSchema: value.payloadSchema,
+    payload: value.payload,
+    sources: value.sources
+  };
+  return createHash("sha256").update(JSON.stringify(canonicalValue(identity)), "utf8").digest("hex");
+}
+
+export function validateProjectState(value) {
+  assertExactKeys(value, ["schemaVersion", "sessionId", "workflow", "draftRevision", "sourceSessionRevision", "savedAt", "payloadSchema", "payload", "sources", "stateFingerprint"], "Speaker project state");
+  if (value.schemaVersion !== 1 || value.workflow !== "speaker" || value.payloadSchema !== "speaker/v1") {
+    throw new ValidationError("Unsupported Speaker project state schema");
+  }
+  assertUuid(value.sessionId, "project state sessionId");
+  assertInteger(value.draftRevision, 1, Number.MAX_SAFE_INTEGER, "project state draftRevision");
+  assertInteger(value.sourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "project state sourceSessionRevision");
+  assertTimestamp(value.savedAt, "project state savedAt");
+  const sources = validateProjectStateSources(value.sources);
+  const payload = validateSpeakerDraftPayload(value.payload, sources.map((source) => source.trackId));
+  if (!isDeepEqual(payload.trackIds, sources.map((source) => source.trackId))) {
+    throw new ValidationError("Project state sources must follow payload track order");
+  }
+  assertSha256(value.stateFingerprint, "project state fingerprint");
+  const normalized = { ...structuredClone(value), payload, sources };
+  if (computeProjectStateFingerprint(normalized) !== normalized.stateFingerprint) {
+    throw new ValidationError("Speaker project state fingerprint mismatch");
+  }
+  return normalized;
+}
+
 function validateLoudnormMeasurement(value, expectedTrackId) {
   assertExactKeys(value, ["trackId", "measured_I", "measured_TP", "measured_LRA", "measured_thresh", "offset"], "speaker loudnorm measurement");
   if (assertUuid(value.trackId, "speaker loudnorm trackId") !== expectedTrackId) throw new ValidationError("Speaker loudnorm measurements must follow track order");
@@ -359,8 +429,10 @@ function validateSpeakerRecipeResult(value) {
 }
 
 export function validateSpeakerRecipe(recipe) {
-  assertExactKeys(recipe, ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"], "speaker recipe");
-  if (recipe.schemaVersion !== SCHEMA_VERSION || recipe.workflow !== "speaker" || recipe.processorVersion !== "speaker-editor-v1") {
+  const keys = ["schemaVersion", "workflow", "sessionId", "outputId", "version", "processorVersion", "createdAt", "renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"];
+  if (recipe?.schemaVersion === 2) keys.push("projectState");
+  assertExactKeys(recipe, keys, "speaker recipe");
+  if (![1, 2].includes(recipe.schemaVersion) || recipe.workflow !== "speaker" || recipe.processorVersion !== "speaker-editor-v1") {
     throw new ValidationError("Speaker recipe identity is invalid");
   }
   assertUuid(recipe.sessionId, "speaker recipe sessionId");
@@ -388,6 +460,12 @@ export function validateSpeakerRecipe(recipe) {
   validateSpeakerRenderer(recipe.renderer, payload);
   assertSha256(recipe.candidateFingerprint, "speaker candidateFingerprint");
   validateSpeakerRecipeResult(recipe.result);
+  if (recipe.schemaVersion === 2) {
+    assertExactKeys(recipe.projectState, ["sessionId", "draftRevision", "stateFingerprint"], "speaker recipe project state");
+    if (assertUuid(recipe.projectState.sessionId, "speaker recipe project state sessionId") !== recipe.sessionId ||
+        recipe.projectState.draftRevision !== recipe.draft.revision) throw new ValidationError("Speaker recipe project state identity is invalid");
+    assertSha256(recipe.projectState.stateFingerprint, "speaker recipe project state fingerprint");
+  }
   return structuredClone(recipe);
 }
 
@@ -485,9 +563,13 @@ export function validateSpeakerPublicationPlan(plan, acceptedPartBytes = DEFAULT
   if (!Array.isArray(plan.parts) || !plan.parts.length || plan.parts.length > 9999) throw new ValidationError("Speaker save parts are invalid");
   const total = plan.parts.reduce((sum, part, index) => sum + validatePlannedPart(part, blobId, index + 1, acceptedPartBytes), 0);
   if (total !== plan.sizeBytes) throw new ValidationError("Speaker save part sizes do not match logical size");
-  assertExactKeys(plan.recipe, ["renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"], "speaker recipe template");
-  const candidate = validateSpeakerRecipe({ schemaVersion: SCHEMA_VERSION, workflow: "speaker", sessionId: "11111111-1111-4111-8111-111111111111",
-    outputId, version: 1, processorVersion: plan.processorVersion, createdAt: "2000-01-01T00:00:00.000Z", ...plan.recipe });
+  const recipeVersion = plan.recipe?.schemaVersion === 2 ? 2 : 1;
+  const recipeKeys = ["renderedAt", "sourceSessionRevision", "draft", "sources", "editState", "renderer", "candidateFingerprint", "result"];
+  if (recipeVersion === 2) recipeKeys.push("schemaVersion", "projectState");
+  assertExactKeys(plan.recipe, recipeKeys, "speaker recipe template");
+  const candidate = validateSpeakerRecipe({ schemaVersion: recipeVersion, workflow: "speaker", sessionId: "11111111-1111-4111-8111-111111111111",
+    outputId, version: 1, processorVersion: plan.processorVersion, createdAt: "2000-01-01T00:00:00.000Z", ...plan.recipe,
+    ...(recipeVersion === 2 ? { projectState: { ...plan.recipe.projectState, sessionId: "11111111-1111-4111-8111-111111111111" } } : {}) });
   if (candidate.result.sizeBytes !== plan.sizeBytes || candidate.result.sha256 !== plan.sha256) throw new ValidationError("Speaker result does not match its save plan");
   return structuredClone(plan);
 }
@@ -668,6 +750,35 @@ function validateTransactionBase(value, kind, states) {
 
 export function validateTransaction(value) {
   if (!isPlainObject(value)) throw new ValidationError("Transaction must be an object");
+  if (value.kind === "speaker_project_save") {
+    assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "requestFingerprint", "revision", "state", "sessionId", "workflow", "expectedSourceSessionRevision", "expectedDraftRevision", "savedSourceSessionRevision", "savedDraftRevision", "stateFingerprint", "createdAt", "updatedAt"], "Speaker project save transaction");
+    validateTransactionBase(value, "speaker_project_save", ["complete"]);
+    if (value.revision !== 1) throw new ValidationError("Project save receipt revision is invalid");
+    assertSha256(value.requestFingerprint, "project save requestFingerprint");
+    if (value.workflow !== "speaker") throw new ValidationError("Project save workflow is invalid");
+    assertInteger(value.expectedSourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "project save expectedSourceSessionRevision");
+    assertInteger(value.expectedDraftRevision, 0, Number.MAX_SAFE_INTEGER, "project save expectedDraftRevision");
+    if (value.savedSourceSessionRevision !== value.expectedSourceSessionRevision + 1 || value.savedDraftRevision !== value.expectedDraftRevision + 1) {
+      throw new ValidationError("Project save revision lineage is invalid");
+    }
+    assertSha256(value.stateFingerprint, "project save stateFingerprint");
+    return structuredClone(value);
+  }
+  if (value.kind === "speaker_project_continuation") {
+    assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "requestFingerprint", "revision", "state", "sessionId", "workflow", "sourceSessionId", "sourceDraftRevision", "sourceOutputId", "targetSessionId", "targetDraftRevision", "targetStateFingerprint", "createdAt", "updatedAt"], "Speaker project continuation transaction");
+    validateTransactionBase(value, "speaker_project_continuation", ["complete"]);
+    if (value.revision !== 1) throw new ValidationError("Project continuation receipt revision is invalid");
+    assertSha256(value.requestFingerprint, "project continuation requestFingerprint");
+    if (value.workflow !== "speaker" || value.sessionId !== value.sourceSessionId) throw new ValidationError("Project continuation identity is invalid");
+    assertUuid(value.sourceSessionId, "project continuation sourceSessionId");
+    assertUuid(value.targetSessionId, "project continuation targetSessionId");
+    if ((value.sourceDraftRevision === null) === (value.sourceOutputId === null)) throw new ValidationError("Project continuation must have exactly one source intent");
+    if (value.sourceDraftRevision !== null) assertInteger(value.sourceDraftRevision, 1, Number.MAX_SAFE_INTEGER, "project continuation sourceDraftRevision");
+    if (value.sourceOutputId !== null) assertUuid(value.sourceOutputId, "project continuation sourceOutputId");
+    if (value.targetDraftRevision !== 1) throw new ValidationError("Project continuation target revision is invalid");
+    assertSha256(value.targetStateFingerprint, "project continuation targetStateFingerprint");
+    return structuredClone(value);
+  }
   if (value.kind === "ingestion") {
     assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "revision", "state", "sessionId", "releaseId", "releaseTag", "title", "recordedAt", "origin", "supersedesSessionId", "plan", "uploadedParts", "stagedManifest", "createdAt", "updatedAt"], "ingestion transaction");
     validateTransactionBase(value, "ingestion", ["uploading", "staged", "finalized", "discarded"]);

@@ -14,9 +14,9 @@ export function wav() {
 }
 export async function managementHarness() {
   const repository = new MemoryRepository(), trace = [], clock = () => Date.parse('2026-09-10T12:00:00Z');
-  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4096, clock });
+  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4096, clock, speakerProjectHistory: true });
   const verifier = await createPasswordVerifier('local-test-password', Buffer.alloc(16, 8), { N: 16384, r: 8, p: 1 });
-  const app = createApp({ config: { allowedOrigin: 'https://site.test', acceptedPartBytes: 4096, sessionSigningSecret: '0123456789abcdef0123456789abcdef', sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier }, domain, clock });
+  const app = createApp({ config: { allowedOrigin: 'https://site.test', acceptedPartBytes: 4096, sessionSigningSecret: '0123456789abcdef0123456789abcdef', sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier, speakerProjectHistory: true }, domain, clock });
   let cookie = '';
   const gateway = new AudioArchiveGateway('https://gateway.test', async (input, init = {}) => {
     const url = new URL(input);
@@ -46,6 +46,8 @@ export async function managementHarness() {
       recipe.processing = { mode: 'passthrough', silenceThresholdDb: -45, minimumSilenceSeconds: 2, retainedSilenceSeconds: .35, detectedIntervals: [], removalRanges: [], mix: null, limiter: null, codec: null };
       Object.assign(recipe.result, { removedDurationSeconds: 0, pauseCount: 0 });
     } else {
+      recipe.schemaVersion = 2;
+      recipe.projectState = { sessionId: session.id, draftRevision: saved.state.draftRevision, stateFingerprint: saved.state.stateFingerprint };
       recipe.renderedAt = '2026-09-10T11:00:00Z'; recipe.sources[0].originalFilename = track.originalName;
       recipe.editState = { orderedTrackIds: trackIds, includedTrackIds: trackIds, excludedTrackIds: [], globalCuts: [], trackSilenceRegions: [], trackProcessing: payload.trackProcessing };
       recipe.renderer = { sampleRate: 48000, enhancement: 'highpass=f=80,lowpass=f=16000', loudnorm: { integratedLufs: -19, truePeakDb: -3, loudnessRangeLufs: 11, measurements: [] },

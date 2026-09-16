@@ -52,6 +52,13 @@
           <p class="editor-entry-note"><span aria-hidden="true">i</span>Все функции обработки останутся доступны. Выбранные локальные файлы не покидают это устройство без вашей команды.</p>
         </section>
         <div id="source-session-recovery-list" class="contextual-recovery" aria-live="polite" hidden></div>
+        <section id="speaker-project-recovery" class="archive-card contextual-recovery" aria-labelledby="speaker-project-recovery-heading" hidden>
+          <h3 id="speaker-project-recovery-heading">Восстановление проекта «Спикерская»</h3>
+          <p id="speaker-project-recovery-status" role="status" aria-live="polite">Проект сохранён, но исходные дорожки недоступны.</p>
+          <label for="speaker-project-recovery-files">Подключить исходные дорожки с устройства</label>
+          <input id="speaker-project-recovery-files" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav">
+          <div class="action-group"><button id="speaker-project-recovery-attach" type="button">Подключить исходные дорожки с устройства</button><button id="speaker-project-recovery-ingest" type="button" hidden>Сохранить восстановленные исходники как новую запись Zoom</button><button id="speaker-project-recovery-continue" type="button" hidden>Продолжить проект в новой записи</button></div>
+        </section>
         <details id="import-zone" class="archive-card source-session-card" role="dialog" aria-modal="true" hidden><summary><span><strong id="source-session-heading">Выбор записи</strong><small id="import-summary">Запись не выбрана</small></span></summary>
           <div class="archive-card__heading">
             <p>Откройте сохранённую запись или создайте новую из файлов на этом устройстве.</p><p><strong>Важно:</strong> все выбранные дорожки должны относиться к одной и той же записи Zoom.</p>
@@ -101,6 +108,7 @@
             <p id="speaker-editor-identity"></p>
             <p id="speaker-editor-status" class="archive-status" role="status"></p><button id="speaker-editor-source-retry" type="button" hidden>Повторить подготовку дорожек</button>
           </div>
+          <details id="speaker-editor-project-history" class="detail-section project-disclosure" hidden><summary>История проекта</summary><div id="speaker-editor-project-history-list"></div></details>
           <div class="speaker-toolbar" role="group" aria-label="Проект обработки спикерской">
 
 
@@ -436,6 +444,7 @@
       </div>
     </main><dialog id="speaker-unsaved-dialog" aria-labelledby="speaker-unsaved-heading"><h2 id="speaker-unsaved-heading">В проекте есть несохранённые изменения.</h2><p id="speaker-unsaved-status" role="status"></p><div class="action-group"><button id="speaker-unsaved-save" type="button">Сохранить и продолжить</button><button id="speaker-unsaved-discard" type="button">Не сохранять</button><button id="speaker-unsaved-cancel" type="button">Отмена</button></div></dialog>
 <dialog id="speaker-local-save-dialog" aria-labelledby="speaker-local-save-heading"><h2 id="speaker-local-save-heading">Сохранить проект</h2><p>Эта запись пока существует только на этом устройстве. Чтобы проект можно было открыть позже, нужно сохранить исходные дорожки в аудиоархиве.</p><div class="action-group"><button id="speaker-local-save-confirm" type="button">Сохранить запись Zoom и проект</button><button id="speaker-local-save-cancel" type="button">Отмена</button></div></dialog>
+<dialog id="speaker-save-conflict-dialog" aria-labelledby="speaker-save-conflict-heading"><h2 id="speaker-save-conflict-heading">На другом устройстве сохранено новое состояние</h2><p>Ваши локальные изменения остаются на этом устройстве и не были перезаписаны.</p><p id="speaker-save-conflict-status" role="status">Чтобы сохранить их как новое текущее состояние, сначала используется актуальная ревизия и сервер повторно проверяет её перед записью.</p><div class="action-group"><button id="speaker-save-conflict-open" type="button">Открыть последнее сохранённое состояние</button><button id="speaker-save-conflict-keep" type="button">Оставить мои изменения на этом устройстве</button><button id="speaker-save-conflict-save" type="button" class="action-primary">Сохранить мои изменения как новое состояние проекта</button></div></dialog>
     <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
   </body>
 </html>
