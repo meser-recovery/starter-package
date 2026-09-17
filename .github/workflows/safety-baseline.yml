@@ -23,8 +23,12 @@ jobs:
           python-version: '3.x'
       - name: Check repository contract
         run: python3 tests/safety/check_site.py
-      - name: Check shared audio transport behavior
-        run: node --test tests/safety/audio_transport.test.mjs tests/safety/audio_waveform_view.test.mjs tests/safety/audio_waveform_detail.test.mjs tests/safety/speaker_render_cache.test.mjs tests/safety/speaker_analysis_queue.test.mjs
+      - name: Check gateway syntax
+        run: npm --prefix gateway/audio-archive run check
+      - name: Run gateway test suite
+        run: npm --prefix gateway/audio-archive test
+      - name: Run frontend Node safety suite
+        run: node --test tests/safety/*.test.mjs
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
       - name: Install Chromium

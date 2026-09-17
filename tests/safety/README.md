@@ -6,6 +6,16 @@ When intentionally adding or removing a stable public URL, update `stable_paths`
 
 Run the local static check with `python3 tests/safety/check_site.py`. Run browser smoke tests after installing `pip install -r requirements-test.txt` and `python3 -m playwright install chromium`, then serve the repository over HTTP (for example `python3 -m http.server 8000`) and run `python3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000`.
 
+The complete pull-request gate also runs gateway syntax and all gateway tests plus every current Node safety test:
+
+```sh
+npm --prefix gateway/audio-archive run check
+npm --prefix gateway/audio-archive test
+node --test tests/safety/*.test.mjs
+```
+
+Speaker project history is canonical. The safety tests assert that the current gateway always advertises capability version 1, every new project save creates an immutable state, and every new final uses recipe v2. Missing, malformed, or unsupported capability values block Speaker archive mutations before any `PUT` or `POST`; local File/Blob/project/result objects, Announcement writes, and compatible archive reads remain available. Legacy recipe-v1 and draft URL readers stay covered as read-only compatibility contracts.
+
 Third-party sites are not blocking dependencies: the checks verify contracted external href values and our JavaScript's generated embed URLs, but never require external services to respond. This keeps the baseline focused on the site's own behavior.
 
 ## S09 audio archive management

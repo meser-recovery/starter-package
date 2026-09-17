@@ -1,6 +1,6 @@
-# S09D Speaker project history contracts
+# Canonical Speaker project history contracts
 
-S09D keeps one current Speaker draft and `speaker/v1`. Its existing `draftRevision` is the only project-state counter.
+The current gateway always exposes `/v1/config.speakerProjectHistory: 1`. Project history is not a rollout mode. It keeps one current Speaker draft and `speaker/v1`; the existing `draftRevision` is the only project-state counter.
 
 ## Immutable state
 
@@ -20,4 +20,4 @@ Continuation verifies the complete replacement set by ordinal, size, and SHA-256
 
 `schemas/v2/speaker-recipe.schema.json` preserves every self-contained v1 field and adds required `projectState: {sessionId, draftRevision, stateFingerprint}`. A new final is accepted only when this link, the current draft/payload, full source provenance, Source Session revision, and local candidate all agree. Final save never creates a state. Deleting a final leaves its project state; full Source Session purge removes drafts, states, recipes, and owned storage under the existing purge contract.
 
-The capability is absent when the feature flag is disabled. Such gateways retain pre-S09D draft and recipe-v1 behavior, and compatible frontends do not call these routes.
+Recipe v1 and existing `speaker/v1` records remain strict read-compatibility boundaries. They are verified, reconstructed, played, downloaded, and—where the accepted recovery contract permits—opened locally without rewriting stored history. They are never used for a new final or as a fallback write path. A browser connected to a gateway that omits capability version 1 blocks Speaker archive mutations with a visible incompatibility message while retaining local files, edits, and rendered output. Local-only work does not require an archive mutation.
