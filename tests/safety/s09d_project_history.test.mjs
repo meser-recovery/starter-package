@@ -4,7 +4,7 @@ import { webcrypto } from "node:crypto";
 import { AudioArchiveGateway, sha256Hex, validateSpeakerProjectHistory, verifySpeakerProjectState, verifyLocalSourceAttachment } from "../../scripts/audio-archive-client.mjs";
 import { parseEditorIntent, deletionImpact, RequestGeneration, createSpeakerRecoveryAttempt,
   recoveryContinuationRequest } from "../../scripts/audio-archive-core.mjs";
-import { exactProjectStateForDraft, loadExactConflictProjectState } from "../../scripts/audio-project.mjs";
+import { exactProjectStateForDraft, ingestSpeakerRecoverySources, loadExactConflictProjectState, ProjectSave } from "../../scripts/audio-project.mjs";
 
 if (!globalThis.crypto) globalThis.crypto = webcrypto;
 const sessionId = "11111111-1111-4111-8111-111111111111";
@@ -100,13 +100,80 @@ test("S09D exact local reattachment ignores filenames but rejects wrong, incompl
   await assert.rejects(() => verifyLocalSourceAttachment([renamed, renamed], [value.sources[0], { ...value.sources[0], trackId: blobId, blobId: trackId, ordinal: 2 }]), /неоднозначные/);
 });
 
-test("S09D capability gate preserves old gateway mode and enables only exact version 1", async () => {
-  const configurations = [{ acceptedPartSize: 4 }, { acceptedPartSize: 4, speakerProjectHistory: 1 }];
-  const fetchImpl = async () => new Response(JSON.stringify(configurations.shift()), { status: 200, headers: { "Content-Type": "application/json" } });
+test("S10 capability gate blocks every new Speaker mutation while retaining local work and safe reads", async () => {
+  for (const capability of [undefined, 0, 2, "1", null]) {
+    const calls = [];
+    const fetchImpl = async (input, options = {}) => {
+      calls.push({ url: String(input), method: options.method || "GET" });
+      const payload = String(input).endsWith("/v1/config") ? { acceptedPartSize: 4, ...(capability === undefined ? {} : { speakerProjectHistory: capability }) } : {};
+      return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+    };
+    const gateway = new AudioArchiveGateway("https://archive.example", fetchImpl);
+    await gateway.configuration();
+    const localFile = new Blob(["source"]), localResult = new Blob(["result"], { type: "audio/mpeg" });
+    const localProject = { cuts: [{ start: 1, end: 2 }] };
+    assert.throws(() => gateway.saveDraft(sessionId, "speaker", {}), /несовместима/);
+    await assert.rejects(() => gateway.saveSpeaker({ sessionId, blob: localResult, recipe: { schemaVersion: 1 } }), /несовместима/);
+    assert.throws(() => gateway.continueSpeakerProject(sessionId, {}), /несовместима/);
+    await assert.rejects(() => new ProjectSave(gateway).sources({ title: "local" }, [localFile]), /несовместима/);
+    assert.equal(localFile.size, 6); assert.equal(localResult.size, 6); assert.deepEqual(localProject, { cuts: [{ start: 1, end: 2 }] });
+    await gateway.getSpeakerOutput(sessionId, blobId);
+    await gateway.saveDraft(sessionId, "announcement", {});
+    assert.equal(calls.filter(call => call.method === "POST" || call.method === "PUT").length, 1);
+    assert.match(calls.find(call => call.method === "PUT").url, /drafts\/announcement$/);
+  }
+});
+
+test("S10 deleted-source recovery ingestion fails before archive mutation and retains exact local state", async () => {
+  const { value, bytes } = await stateFixture();
+  const calls = [];
+  const fetchImpl = async (input, options = {}) => {
+    calls.push({ url: String(input), method: options.method || "GET" });
+    const payload = String(input).endsWith("/v1/config") ? { acceptedPartSize: 4, speakerProjectHistory: 2 } : {};
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
+  const gateway = new AudioArchiveGateway("https://incompatible.example", fetchImpl);
+  await gateway.configuration();
+  const localFile = new Blob([bytes], { type: "audio/wav" });
+  Object.defineProperty(localFile, "name", { value: "reattached-source.wav" });
+  const work = { sources: structuredClone(value.sources), continuation: { sourceDraftRevision: value.draftRevision, sourceOutputId: null },
+    initialPayload: structuredClone(value.payload) };
+  const recovery = createSpeakerRecoveryAttempt({ id: sessionId, title: "Deleted source", revision: 9 }, work,
+    (() => { const keys = ["recovery-ingestion-key", "recovery-continuation-key"]; return () => keys.shift(); })());
+  recovery.files = await verifyLocalSourceAttachment([localFile], recovery.work.sources);
+  const retained = { files: recovery.files, work: structuredClone(recovery.work), ingestionKey: recovery.ingestionKey,
+    continuationKey: recovery.continuationKey, continuationRequest: recovery.continuationRequest };
+
+  await assert.rejects(() => ingestSpeakerRecoverySources(gateway, recovery), error => {
+    assert.equal(error.code, "incompatible_speaker_gateway");
+    assert.match(error.userMessage, /Версия шлюза несовместима/);
+    return true;
+  });
+
+  assert.equal(calls.some(call => call.method === "POST" || call.method === "PUT"), false);
+  assert.equal(recovery.files, retained.files);
+  assert.equal(recovery.files[0], localFile);
+  assert.deepEqual(recovery.work, retained.work);
+  assert.equal(recovery.ingestionKey, retained.ingestionKey);
+  assert.equal(recovery.continuationKey, retained.continuationKey);
+  assert.equal(recovery.continuationRequest, retained.continuationRequest);
+  assert.equal(recovery.target, null);
+  await gateway.getSpeakerOutput(sessionId, blobId);
+  assert.equal(calls.at(-1).method, "GET");
+});
+
+test("S10 exact capability enables canonical Speaker writes but never recipe v1 finals", async () => {
+  const calls = [];
+  const fetchImpl = async (input, options = {}) => {
+    calls.push({ url: String(input), method: options.method || "GET" });
+    const payload = String(input).endsWith("/v1/config") ? { acceptedPartSize: 4, speakerProjectHistory: 1 } : {};
+    return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
+  };
   const gateway = new AudioArchiveGateway("https://archive.example", fetchImpl);
-  await gateway.configuration(); assert.equal(gateway.speakerProjectHistoryVersion, 0);
-  await assert.rejects(() => gateway.speakerProjectHistory(sessionId), /не поддерживается/);
-  await gateway.configuration(); assert.equal(gateway.speakerProjectHistoryVersion, 1);
+  await gateway.configuration();
+  assert.equal(gateway.speakerProjectHistoryVersion, 1);
+  await assert.rejects(() => gateway.saveSpeaker({ sessionId, blob: new Blob(["result"]), recipe: { schemaVersion: 1 } }), /неизменяемое состояние/);
+  assert.equal(calls.some(call => call.method === "POST" || call.method === "PUT"), false);
 });
 
 test("S09D deletion copy retains project states and request generation fences late responses", () => {

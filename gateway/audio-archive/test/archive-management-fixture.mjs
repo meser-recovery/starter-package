@@ -14,9 +14,9 @@ export function wav() {
 }
 export async function managementHarness() {
   const repository = new MemoryRepository(), trace = [], clock = () => Date.parse('2026-09-10T12:00:00Z');
-  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4096, clock, speakerProjectHistory: true });
+  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 4096, clock });
   const verifier = await createPasswordVerifier('local-test-password', Buffer.alloc(16, 8), { N: 16384, r: 8, p: 1 });
-  const app = createApp({ config: { allowedOrigin: 'https://site.test', acceptedPartBytes: 4096, sessionSigningSecret: '0123456789abcdef0123456789abcdef', sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier, speakerProjectHistory: true }, domain, clock });
+  const app = createApp({ config: { allowedOrigin: 'https://site.test', acceptedPartBytes: 4096, sessionSigningSecret: '0123456789abcdef0123456789abcdef', sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier }, domain, clock });
   let cookie = '';
   const gateway = new AudioArchiveGateway('https://gateway.test', async (input, init = {}) => {
     const url = new URL(input);

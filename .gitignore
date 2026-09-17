@@ -1,4 +1,5 @@
 venv/
+.DS_Store
 gateway/audio-archive/node_modules/
 gateway/audio-archive/.env
 gateway/audio-archive/.env.*

@@ -4,9 +4,11 @@ Stateless Node.js gateway for the S08A Source Session archive and S08B Announcem
 
 ## Speaker project history
 
-When `SPEAKER_PROJECT_HISTORY=1`, `/v1/config` advertises `speakerProjectHistory: 1`. Each explicit Speaker project save atomically advances the existing `draftRevision`, updates the current draft, and creates one immutable `project-states/<sessionId>/speaker/<draftRevision>.json` record in the same archive commit. The server fingerprints canonical JSON containing project identity, source revision, normalized `speaker/v1` payload, and full ordered source provenance. Persisted idempotency receipts make a lost-response retry return the original state without advancing the revision.
+Speaker project history is the gateway's canonical runtime behavior. `/v1/config` always advertises `speakerProjectHistory: 1` as the protocol-version contract. Each explicit Speaker project save atomically advances the existing `draftRevision`, updates the current draft, and creates one immutable `project-states/<sessionId>/speaker/<draftRevision>.json` record in the same archive commit. The server fingerprints canonical JSON containing project identity, source revision, normalized `speaker/v1` payload, and full ordered source provenance. Persisted idempotency receipts make a lost-response retry return the original state without advancing the revision.
 
 Authenticated history routes return a newest-first summary and one strictly verified state at a time. Continuation into a newly ingested exact source set remaps track IDs by ordinal and cryptographic identity, creates revision 1 in the replacement recording, and confirms both supersession relations atomically. New Speaker finals use recipe v2 and must link the exact current state revision and fingerprint; recipe v1 remains readable without migration. See [S09D-SCHEMAS.md](S09D-SCHEMAS.md).
+
+The browser treats a missing, malformed, or unsupported capability as an incompatible gateway for Speaker mutations. It does not fall back to legacy draft or recipe-v1 writes. Existing compatible records remain readable and downloadable, and local files, browser-only editing, the local project, and a locally rendered MP3 remain available without an archive mutation. Announcement behavior is independent of this Speaker capability.
 
 ## Announcement publication
 
@@ -62,7 +64,6 @@ Non-secret environment variables:
 - `STORAGE_BRANCH`: defaults to `main`;
 - `ACCEPTED_PART_BYTES`: defaults to 16 MiB and cannot exceed 64 MiB;
 - `SESSION_LIFETIME_SECONDS`: defaults to four hours and cannot exceed 24 hours;
-- `SPEAKER_PROJECT_HISTORY`: `0` by default; set to `1` only during the separately authorized S09D gateway rollout;
 - `PORT`: defaults to `8080`.
 
 Sensitive values are read once at startup from read-only files:

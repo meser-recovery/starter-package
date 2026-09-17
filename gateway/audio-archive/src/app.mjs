@@ -72,7 +72,7 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
       if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), config.allowedOrigin);
       if (url.pathname === "/v1/config" && request.method === "GET") {
         return cors(json({ schemaVersion: 1, acceptedPartSize: config.acceptedPartBytes, maximumPartSize: 64 * 1024 * 1024,
-          maximumSessionSize: 500 * 1024 * 1024, ...(config.speakerProjectHistory ? { speakerProjectHistory: 1 } : {}) }), config.allowedOrigin);
+          maximumSessionSize: 500 * 1024 * 1024, speakerProjectHistory: 1 }), config.allowedOrigin);
       }
       if (url.pathname === "/v1/session/login" && request.method === "POST") {
         throttle.check(request);

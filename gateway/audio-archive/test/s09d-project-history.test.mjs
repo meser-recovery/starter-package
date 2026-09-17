@@ -35,7 +35,7 @@ function saveEnvelope(session, draftRevision, nextPayload, key) {
 
 async function fixture() {
   const repository = new MemoryRepository();
-  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 8, clock: CLOCK, speakerProjectHistory: true });
+  const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 8, clock: CLOCK });
   const session = await ingest(domain, "s09d-source-a-0123456789", ids.trackA, ids.blobA);
   return { repository, domain, session };
 }

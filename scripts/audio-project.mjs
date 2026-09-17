@@ -70,10 +70,19 @@ export function setRecordingBoundary(payload, duration, kind, value) {
   if (resultDuration(duration, normalized.globalCuts) <= 0) throw new Error('В записи должен остаться звук.');
   return normalized;
 }
+export async function ingestSpeakerRecoverySources(gateway, recovery, onStarted = () => {}) {
+  gateway.assertCanonicalSpeakerWrites();
+  if (!recovery?.files?.length || !recovery.session?.id || !recovery.ingestionKey) throw new Error('Точные локальные исходники для восстановления не подтверждены.');
+  onStarted();
+  const result = await gateway.ingestFiles({ files: recovery.files, title: `${recovery.session.title} — восстановлено`, origin: 'device',
+    supersedesSessionId: recovery.session.id, idempotencyKey: recovery.ingestionKey });
+  return result.session || result;
+}
 // One in-memory attempt; no second project store. Preserve keys and finalized sources on every error/cancellation.
 export class ProjectSave {
   constructor(gateway, workflow = "speaker") { this.workflow = workflow; this.gateway = gateway; this.ingestionKey = crypto.randomUUID(); this.finalized = null; this.plan = null; this.attempt = null; }
   async sources(context, files, options = {}) {
+    if (this.workflow === 'speaker') this.gateway.assertCanonicalSpeakerWrites();
     if (!this.finalized) {
       const result = await this.gateway.ingestFiles({ files, title: context.title, origin: 'device', ...options,
         idempotencyKey: this.ingestionKey, onPlan: plan => { this.plan = plan; } });
@@ -83,6 +92,7 @@ export class ProjectSave {
   }
   async save(session, draft, payload, signal) {
     signal?.throwIfAborted();
+    if (this.workflow === 'speaker') this.gateway.assertCanonicalSpeakerWrites();
     const id = session.id;
     if (!this.attempt) this.attempt = { id, envelope: { schemaVersion: 1, payloadSchema: `${this.workflow}/v1`, payload: structuredClone(payload),
       expectedSourceSessionRevision: session.revision, expectedDraftRevision: draft?.draftRevision || 0, idempotencyKey: crypto.randomUUID() } };
@@ -95,8 +105,7 @@ export class ProjectSave {
         fresh.revision === envelope.expectedSourceSessionRevision + 1) {
       this.attempt = null;
       if (!equal(envelope.payload, payload)) return this.save(fresh, current, payload, signal);
-      const state = this.workflow === 'speaker' && this.gateway.speakerProjectHistoryVersion === 1 ?
-        await this.gateway.speakerProjectState(id, current.draftRevision, signal) : null;
+      const state = this.workflow === 'speaker' ? await this.gateway.speakerProjectState(id, current.draftRevision, signal) : null;
       return { session: fresh, draft: current, ...(state ? { state } : {}) };
     }
     if (fresh.revision !== envelope.expectedSourceSessionRevision || (current?.draftRevision || 0) !== envelope.expectedDraftRevision) throw conflict(fresh, current);

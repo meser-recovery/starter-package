@@ -45,7 +45,7 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   const domain = new Proxy({}, { get: (_target, name) => async (...args) => { calls.push([name, args]); return { revision: 0, sessions: [] }; } });
   const app = createApp({ config: {
     allowedOrigin: ORIGIN, acceptedPartBytes: 16 * 1024 * 1024, sessionSigningSecret: SECRET,
-    sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier, speakerProjectHistory: true
+    sessionLifetimeSeconds: 3600, sharedPasswordVerifier: verifier
   }, domain, clock: () => 1_000_000 });
   let response = await app(new Request("https://gateway.test/healthz"));
   assert.equal(response.status, 200);

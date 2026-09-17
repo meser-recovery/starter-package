@@ -97,15 +97,10 @@ function requestFingerprint(value) {
 }
 
 export class AudioArchiveDomain {
-  constructor(repository, { acceptedPartBytes, clock = () => Date.now(), speakerProjectHistory = false }) {
+  constructor(repository, { acceptedPartBytes, clock = () => Date.now() }) {
     this.repository = repository;
     this.acceptedPartBytes = acceptedPartBytes;
     this.clock = clock;
-    this.speakerProjectHistoryEnabled = Boolean(speakerProjectHistory);
-  }
-
-  requireSpeakerProjectHistory() {
-    if (!this.speakerProjectHistoryEnabled) throw notFound("Speaker project history is not enabled");
   }
 
   async snapshot() {
@@ -321,7 +316,7 @@ export class AudioArchiveDomain {
         throw conflict(`${workflow} draft does not match the processed candidate`);
       }
     }
-    if (workflow === "speaker" && this.speakerProjectHistoryEnabled) {
+    if (workflow === "speaker") {
       if (plan.recipe.schemaVersion !== 2) throw conflict("Save the Speaker project before creating a new final version");
       const state = await this.readSpeakerProjectState(session.id, body.expectedDraftRevision, head);
       const linked = plan.recipe.projectState;
@@ -836,7 +831,6 @@ export class AudioArchiveDomain {
   }
 
   async speakerProjectHistory(sessionId) {
-    this.requireSpeakerProjectHistory();
     const { head, session } = await this.sessionSnapshot(sessionId);
     const prefix = `project-states/${session.id}/speaker/`;
     const items = (await this.repository.listJson("project-states/", head)).filter((item) => item.path.startsWith(prefix));
@@ -887,7 +881,6 @@ export class AudioArchiveDomain {
   }
 
   async getSpeakerProjectState(sessionId, draftRevision) {
-    this.requireSpeakerProjectHistory();
     await this.sessionSnapshot(sessionId);
     return this.readSpeakerProjectState(sessionId, draftRevision);
   }
@@ -945,7 +938,6 @@ export class AudioArchiveDomain {
   }
 
   async continueSpeakerProject(sessionId, body) {
-    this.requireSpeakerProjectHistory();
     assertExactKeys(body, ["schemaVersion", "expectedSourceSessionRevision", "expectedTargetSessionRevision", "sourceDraftRevision", "sourceOutputId", "targetSessionId", "idempotencyKey"], "Speaker project continuation");
     if (body.schemaVersion !== 1) throw new ValidationError("Unsupported Speaker project continuation schema");
     assertInteger(body.expectedSourceSessionRevision, 1, Number.MAX_SAFE_INTEGER, "expectedSourceSessionRevision");
@@ -1044,7 +1036,7 @@ export class AudioArchiveDomain {
     if (body.schemaVersion !== SCHEMA_VERSION) throw new ValidationError("Unsupported draft schema");
     const idempotencyHash = hashIdempotencyKey(body.idempotencyKey);
     const path = draftPath(sessionId, workflow);
-    if (workflow === "speaker" && this.speakerProjectHistoryEnabled) {
+    if (workflow === "speaker") {
       if (body.payloadSchema !== "speaker/v1") throw new ValidationError("Speaker draft schema is invalid");
       const normalizedPayload = validateSpeakerDraftPayload(body.payload);
       const request = {
@@ -1106,7 +1098,7 @@ export class AudioArchiveDomain {
     next.updatedAt = nowIso(this.clock);
     const extraFiles = { [path]: draft };
     let projectState = null;
-    if (workflow === "speaker" && this.speakerProjectHistoryEnabled) {
+    if (workflow === "speaker") {
       const statePath = projectStatePath(sessionId, draft.draftRevision);
       if (await this.repository.readJson(statePath, head)) throw conflict("Immutable Speaker project state revision already exists");
       projectState = this.createSpeakerProjectState(session, draft.draftRevision, next.revision, draft.savedAt, body.payload);

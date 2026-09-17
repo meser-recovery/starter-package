@@ -720,6 +720,13 @@ export class AudioArchiveGateway {
     this.speakerProjectHistoryVersion = result?.speakerProjectHistory === 1 ? 1 : 0;
     return result;
   }
+  assertCanonicalSpeakerWrites() {
+    if (this.speakerProjectHistoryVersion === 1) return;
+    const error = new Error("Версия шлюза несовместима с текущим сохранением «Спикерская». Локальные файлы, монтаж и готовый MP3 сохранены; можно продолжить локальную работу и скачать результат.");
+    error.code = "incompatible_speaker_gateway";
+    error.userMessage = error.message;
+    throw error;
+  }
   sessionStatus() { return this.request("/v1/session"); }
   login(password) { return this.request("/v1/session/login", { method: "POST", body: { password } }); }
   logout() { return this.request("/v1/session/logout", { method: "POST" }); }
@@ -745,18 +752,19 @@ export class AudioArchiveGateway {
     return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/outputs/speaker/${encodeURIComponent(outputId)}`);
   }
   async speakerProjectHistory(sessionId, signal) {
-    if (this.speakerProjectHistoryVersion !== 1) throw new Error("История проекта не поддерживается этим шлюзом.");
+    this.assertCanonicalSpeakerWrites();
     return validateSpeakerProjectHistory(await this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/projects/speaker`, { signal }), sessionId);
   }
   async speakerProjectState(sessionId, draftRevision, signal) {
-    if (this.speakerProjectHistoryVersion !== 1 || !Number.isSafeInteger(draftRevision) || draftRevision < 1) {
+    this.assertCanonicalSpeakerWrites();
+    if (!Number.isSafeInteger(draftRevision) || draftRevision < 1) {
       throw new Error("Некорректная версия состояния проекта.");
     }
     const state = await this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/projects/speaker/states/${draftRevision}`, { signal });
     return verifySpeakerProjectState(state, signal);
   }
   continueSpeakerProject(sessionId, envelope, signal) {
-    if (this.speakerProjectHistoryVersion !== 1) throw new Error("Продолжение проекта не поддерживается этим шлюзом.");
+    this.assertCanonicalSpeakerWrites();
     return this.request(`/v1/source-sessions/${encodeURIComponent(sessionId)}/projects/speaker/continuations`, { method: "POST", body: envelope, signal });
   }
   announcementPartFetch(metadata) {
@@ -791,6 +799,7 @@ export class AudioArchiveGateway {
   }
   loadDraft(id, workflow) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/drafts/${workflow}`); }
   saveDraft(id, workflow, envelope, signal) {
+    if (workflow === "speaker") this.assertCanonicalSpeakerWrites();
     return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/drafts/${workflow}`, { method: "PUT", body: envelope, signal });
   }
   dependencyPreview(id) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}/deletion-preview`); }
@@ -834,6 +843,8 @@ export class AudioArchiveGateway {
 
   async saveSpeaker({ sessionId, expectedRevision, expectedDraftRevision, blob, recipe,
     idempotencyKey = crypto.randomUUID(), signal, onPhase = () => {}, onProgress = () => {}, onStarted = () => {} }) {
+    this.assertCanonicalSpeakerWrites();
+    if (recipe?.schemaVersion !== 2) throw new Error("Новая финальная версия «Спикерская» должна ссылаться на точное неизменяемое состояние проекта.");
     onPhase("preparing");
     const plan = await createSpeakerSavePlan(blob, recipe, this.acceptedPartSize, { idempotencyKey, signal });
     onPhase("reserving");
@@ -872,10 +883,12 @@ export class AudioArchiveGateway {
   }
 
   finalizeSpeakerSave(transactionId, idempotencyKey = crypto.randomUUID(), signal) {
+    this.assertCanonicalSpeakerWrites();
     return this.request(`/v1/speaker-saves/${encodeURIComponent(transactionId)}/finalize`, { method: "POST", signal, body: { idempotencyKey } });
   }
 
   async resumeSpeakerSave(transactionId, { blob, candidateFingerprint, signal, onProgress = () => {} } = {}) {
+    this.assertCanonicalSpeakerWrites();
     signal?.throwIfAborted();
     const job = await this.speakerSaveJob(transactionId, signal);
     signal?.throwIfAborted();

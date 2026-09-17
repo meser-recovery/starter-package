@@ -166,6 +166,32 @@ def check_legacy_runtime_contract(errors: list[str]) -> None:
                 errors.append(f"{html_path.name}: Nicepage generator metadata remains")
 
 
+def check_s10_cleanup_contract(errors: list[str]) -> None:
+    for path in ROOT.rglob(".DS_Store"):
+        if ".git" not in path.parts:
+            errors.append(f"repository platform metadata is prohibited: {path.relative_to(ROOT)}")
+    if (ROOT / "test").exists():
+        errors.append("unreferenced empty root test file remains")
+
+    retired_switch = "SPEAKER_" + "PROJECT_HISTORY"
+    active_paths = [
+        ROOT / "gateway/audio-archive/src",
+        ROOT / "gateway/audio-archive/deploy",
+        ROOT / "scripts",
+        ROOT / ".github/workflows",
+    ]
+    for parent in active_paths:
+        if not parent.exists():
+            continue
+        for path in parent.rglob("*"):
+            if path.is_file() and retired_switch in path.read_text(encoding="utf-8", errors="replace"):
+                errors.append(f"retired Speaker rollout switch remains active: {path.relative_to(ROOT)}")
+
+    app_source = (ROOT / "gateway/audio-archive/src/app.mjs").read_text(encoding="utf-8")
+    if app_source.count("speakerProjectHistory: 1") != 1:
+        errors.append("gateway config must advertise exactly one unconditional Speaker project-history capability")
+
+
 def check_literature_contract(errors: list[str]) -> None:
     literature = ROOT / "Literature.html"
     if not literature.is_file():
@@ -1150,6 +1176,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
     check_legacy_runtime_contract(errors)
+    check_s10_cleanup_contract(errors)
     index = ROOT / "index.html"
     if not index.is_file():
         errors.append("index.html is missing")

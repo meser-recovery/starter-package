@@ -1416,7 +1416,7 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
     mock = {"draft": None, "speaker_draft": None, "publication": None, "output": None, "output_recipe": None,
             "output_bytes": None, "held_upload": None, "speaker_save": None, "speaker_output": None,
             "speaker_output_recipe": None, "speaker_output_bytes": None, "speaker_held_upload": None,
-            "speaker_jobs": {}, "resume_held_upload": None, "resume_uploads": [], "hold_resume": False,
+            "speaker_jobs": {}, "speaker_states": {}, "resume_held_upload": None, "resume_uploads": [], "hold_resume": False,
             "speaker_output_corrupt": False, "hold_incomplete": False, "held_incomplete": None,
             "hold_recovery_check": False, "held_recovery_check": None,
             "include_other_session": False, "incomplete": [], "list_failure": None}
@@ -1457,7 +1457,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 "Access-Control-Allow-Credentials": "true", "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token, X-Part-SHA256, Idempotency-Key",
                 "Access-Control-Allow-Methods": "GET, POST, PUT, PATCH, OPTIONS"})
         elif parsed.path == "/v1/config":
-            fulfill_json(route, {"schemaVersion": 1, "acceptedPartSize": 16777216, "maximumPartSize": 67108864, "maximumSessionSize": 524288000})
+            fulfill_json(route, {"schemaVersion": 1, "acceptedPartSize": 16777216, "maximumPartSize": 67108864,
+                "maximumSessionSize": 524288000, "speakerProjectHistory": 1})
         elif parsed.path == "/v1/session":
             fulfill_json(route, {"authenticated": True, "expiresAt": 2000000000, "csrfToken": "mock-csrf"})
         elif parsed.path == "/v1/maintenance/incomplete" and request.method == "GET":
@@ -1503,7 +1504,26 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
                 "draftRevision": draft_revision, "sourceSessionRevision": session["revision"],
                 "savedAt": "2026-01-02T03:04:05.000Z", "payloadSchema": "speaker/v1", "payload": body["payload"]}
             session["workflows"]["speaker"]["currentDraft"] = {"path": f"drafts/{session_id}/speaker.json", "revision": draft_revision}
-            fulfill_json(route, {"draft": mock["speaker_draft"], "session": session})
+            source_keys = ("trackId", "blobId", "ordinal", "originalName", "mediaType", "sizeBytes", "sha256")
+            sources = [{key: track[key] for key in source_keys} for track in session["sourceTracks"]]
+            identity = {"sessionId": session_id, "workflow": "speaker", "draftRevision": draft_revision,
+                "sourceSessionRevision": session["revision"], "payloadSchema": "speaker/v1", "payload": body["payload"], "sources": sources}
+            fingerprint = hashlib.sha256(json.dumps(identity, sort_keys=True, separators=(",", ":"), ensure_ascii=False).encode()).hexdigest()
+            state_record = {"schemaVersion": 1, **identity, "savedAt": mock["speaker_draft"]["savedAt"], "stateFingerprint": fingerprint}
+            mock["speaker_states"][draft_revision] = state_record
+            fulfill_json(route, {"draft": mock["speaker_draft"], "session": session, "state": state_record})
+        elif parsed.path == f"/v1/source-sessions/{session_id}/projects/speaker" and request.method == "GET":
+            states = [{"draftRevision": item["draftRevision"], "savedAt": item["savedAt"],
+                "current": item["draftRevision"] == session["workflows"]["speaker"]["currentDraft"]["revision"],
+                "canonicalSourcesAvailable": True, "canonicalEditingAvailable": True,
+                "stateFingerprint": item["stateFingerprint"], "finalVersions": []}
+                for item in sorted(mock["speaker_states"].values(), key=lambda value: -value["draftRevision"])]
+            fulfill_json(route, {"schemaVersion": 1, "sessionId": session_id, "workflow": "speaker",
+                "currentDraftRevision": session["workflows"]["speaker"]["currentDraft"]["revision"] if session["workflows"]["speaker"]["currentDraft"] else None,
+                "lifecycle": session["lifecycle"]["state"], "sourceState": session["sourceState"], "states": states})
+        elif (match := re.fullmatch(rf"/v1/source-sessions/{session_id}/projects/speaker/states/(\d+)", parsed.path)) and request.method == "GET":
+            state_record = mock["speaker_states"].get(int(match.group(1)))
+            fulfill_json(route, state_record if state_record else {"error": "missing"}, 200 if state_record else 404)
         elif parsed.path == f"/v1/source-sessions/{session_id}/deletion-preview" and request.method == "GET":
             fulfill_json(route, {"sessionId": session_id, "revision": session["revision"], "sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
                 "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0, "pendingSpeakerSaves": 0})
