@@ -1,9 +1,10 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import {
-  LoginThrottle, clearSessionCookie, createPasswordVerifier, createSession, readSession, requireCsrf, verifyPassword
+  LoginThrottle, PARTITIONED_COOKIE_NAME, STORAGE_ACCESS_COOKIE_NAME, clearSessionCookie, createPasswordVerifier, createSession, readSession, requireCsrf, verifyPassword
 } from "../src/auth.mjs";
 import { createApp } from "../src/app.mjs";
+import { nodeResponseHeaders } from "../src/http-adapter.mjs";
 
 const ORIGIN = "https://meser-recovery.github.io";
 const SECRET = "0123456789abcdef0123456789abcdef";
@@ -17,7 +18,11 @@ test("scrypt password verifier accepts only the original password", async () => 
 
 test("session cookie is signed, HttpOnly cross-site capable, expiring, and CSRF bound", () => {
   const created = createSession(SECRET, 3600, 1_000_000);
+  assert.equal(created.cookies.length, 2);
   for (const attribute of ["Path=/", "Secure", "HttpOnly", "SameSite=None", "Partitioned", "Max-Age=3600"]) assert.match(created.cookie, new RegExp(attribute));
+  assert.match(created.cookies[1], new RegExp(`^${STORAGE_ACCESS_COOKIE_NAME}=`));
+  assert.doesNotMatch(created.cookies[1], /Partitioned/);
+  assert.equal(created.cookies[0].split("=", 2)[1].split(";", 1)[0], created.cookies[1].split("=", 2)[1].split(";", 1)[0]);
   const cookie = created.cookie.split(";", 1)[0];
   const request = new Request("https://gateway.test/v1/session", { headers: { cookie } });
   const session = readSession(request, SECRET, 1_000_001);
@@ -26,7 +31,23 @@ test("session cookie is signed, HttpOnly cross-site capable, expiring, and CSRF 
   assert.equal(readSession(new Request(request.url, { headers: { cookie: `${cookie}x` } }), SECRET, 1_000_001), null);
   assert.throws(() => requireCsrf(new Request(request.url), session), /CSRF/);
   assert.doesNotThrow(() => requireCsrf(new Request(request.url, { headers: { "X-CSRF-Token": created.csrfToken } }), session));
-  assert.match(clearSessionCookie(), /Max-Age=0/);
+  assert.equal(clearSessionCookie().length, 2);
+  for (const cleared of clearSessionCookie()) assert.match(cleared, /Max-Age=0/);
+
+  const value = created.cookie.split(";", 1)[0].split("=")[1];
+  const storage = `${STORAGE_ACCESS_COOKIE_NAME}=${value}`;
+  assert.equal(readSession(new Request(request.url, { headers: { cookie: storage } }), SECRET, 1_000_001).csrfToken, created.csrfToken);
+  assert.equal(readSession(new Request(request.url, { headers: { cookie: `${cookie}; ${storage}` } }), SECRET, 1_000_001).csrfToken, created.csrfToken);
+  assert.equal(readSession(new Request(request.url, { headers: { cookie: `${cookie}; ${STORAGE_ACCESS_COOKIE_NAME}=${value}x` } }), SECRET, 1_000_001), null);
+});
+
+test("Node adapter preserves two independent Set-Cookie headers", () => {
+  const headers = new Headers();
+  headers.append("Set-Cookie", `${PARTITIONED_COOKIE_NAME}=a; Path=/; Partitioned`);
+  headers.append("Set-Cookie", `${STORAGE_ACCESS_COOKIE_NAME}=a; Path=/`);
+  const adapted = nodeResponseHeaders(headers);
+  assert.deepEqual(adapted["Set-Cookie"], headers.getSetCookie());
+  assert.equal(adapted["Set-Cookie"].length, 2);
 });
 
 test("login throttle is bounded and blocks repeated failures", () => {
@@ -68,6 +89,7 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   }));
   assert.equal(response.status, 200);
   const payload = await response.json();
+  assert.equal(response.headers.getSetCookie().length, 2);
   const cookie = response.headers.get("set-cookie").split(";", 1)[0];
   response = await app(new Request("https://gateway.test/v1/source-sessions/11111111-1111-4111-8111-111111111111/archive", {
     method: "POST", headers: { Origin: ORIGIN, cookie, "Content-Type": "application/json" },
@@ -134,4 +156,50 @@ test("gateway enforces exact origin, authentication, CORS, cookie and CSRF", asy
   }));
   assert.equal(response.status, 200);
   assert.equal(calls.at(-1)[0], "continueSpeakerProject");
+
+  response = await app(new Request("https://gateway.test/v1/session/logout", {
+    method: "POST", headers: { Origin: ORIGIN, cookie, "X-CSRF-Token": payload.csrfToken }
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.getSetCookie().length, 2);
+  assert.ok(response.headers.getSetCookie().every(value => value.includes("Max-Age=0")));
+
+  response = await app(new Request("https://gateway.test/v1/session/logout", {
+    method: "POST", headers: { Origin: ORIGIN, cookie: `${cookie}; ${STORAGE_ACCESS_COOKIE_NAME}=conflict` }
+  }));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.getSetCookie().length, 2);
+
+  response = await app(new Request("https://gateway.test/safari-bootstrap"));
+  assert.equal(response.status, 200);
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  assert.match(response.headers.get("content-security-policy"), /connect-src 'self'/);
+  assert.doesNotMatch(await response.text(), /csrfToken|sessionId/);
+  response = await app(new Request("https://gateway.test/storage-access-bridge"));
+  assert.equal(response.status, 200);
+  assert.match(response.headers.get("content-security-policy"), /frame-ancestors https:\/\/meser-recovery\.github\.io/);
+  const bridge = await response.text();
+  assert.match(bridge, /document\.hasStorageAccess/);
+  assert.match(bridge, /document\.requestStorageAccess/);
+  assert.doesNotMatch(bridge, /postMessage\([^,]+,\s*["']\*["']/);
+
+  response = await app(new Request("https://gateway.test/safari-bootstrap", {
+    method: "POST", headers: { Origin: "https://evil.example", "Content-Type": "application/x-www-form-urlencoded" }, body: "password=correct+horse+battery+staple"
+  }));
+  assert.equal(response.status, 403);
+  response = await app(new Request("https://gateway.test/safari-bootstrap", {
+    method: "POST", headers: { Origin: "https://meserproject.duckdns.org", "Content-Type": "application/x-www-form-urlencoded" }, body: "password=correct+horse+battery+staple"
+  }));
+  assert.equal(response.status, 303);
+  assert.equal(response.headers.getSetCookie().length, 2);
+  assert.equal(response.headers.get("location"), "/safari-bootstrap?verify=1");
+  assert.equal(response.headers.get("cache-control"), "no-store");
+  assert.match(response.headers.get("content-security-policy"), /frame-ancestors 'none'/);
+  const bootstrapCookies = response.headers.getSetCookie().map(value => value.split(";", 1)[0]).join("; ");
+  response = await app(new Request("https://gateway.test/v1/session", {
+    headers: { Origin: "https://meserproject.duckdns.org", cookie: bootstrapCookies }
+  }));
+  assert.equal(response.status, 200);
+  assert.equal((await response.json()).authenticated, true);
 });

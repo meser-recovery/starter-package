@@ -11,6 +11,9 @@ const compose = read(resolve(deploy, "compose.yaml"));
 const caddy = read(resolve(deploy, "Caddyfile"));
 const haproxy = read(resolve(deploy, "haproxy.cfg"));
 const runbook = read(resolve(root, "PROVISIONING.md"));
+const s10aActivation = read(resolve(root, "deploy/s10a/activate-reviewed-gateway.sh"));
+const s10aRollback = read(resolve(root, "deploy/s10a/rollback-reviewed-gateway.sh"));
+const s10aChecklist = read(resolve(root, "deploy/s10a/OPERATOR-CHECKLIST.md"));
 
 function serviceBlock(name, next) {
   const end = next ? `\n  ${next}:` : "\nnetworks:";
@@ -88,4 +91,18 @@ test("all frontend gateway hooks contain the exact production origin", () => {
     const html = read(resolve(repositoryRoot, relative));
     assert.equal((html.match(/<meta name="audio-archive-gateway" content="https:\/\/meserproject\.duckdns\.org">/g) || []).length, 1, relative);
   }
+});
+
+test("S10A activation package is inert, gateway-only, checksum guarded, and rollback bound", () => {
+  assert.match(s10aActivation, /S10A_PRODUCTION_AUTHORIZED=false/);
+  assert.match(s10aActivation, /S10A_INDEPENDENT_REVIEW_COMPLETE=false/);
+  assert.match(s10aActivation, /sha256sum "\$artifact"/);
+  assert.match(s10aActivation, /up -d --no-deps --no-build gateway/);
+  assert.match(s10aActivation, /rollback-reviewed-gateway\.sh/);
+  assert.match(s10aActivation, /__Host-meser_audio_session/);
+  assert.match(s10aActivation, /__Host-meser_audio_storage_session/);
+  assert.doesNotMatch(s10aActivation, /ssh |haproxy\.cfg|Caddyfile|systemctl|docker compose down/);
+  assert.match(s10aRollback, /prior-image-id/);
+  assert.match(s10aRollback, /--no-deps --no-build gateway/);
+  assert.match(s10aChecklist, /No command.*executed against production/);
 });

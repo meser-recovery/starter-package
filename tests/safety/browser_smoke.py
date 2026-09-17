@@ -1527,7 +1527,8 @@ def check_source_session_archive(browser, base_url: str, screenshot_dir: Path | 
         elif parsed.path == f"/v1/source-sessions/{session_id}/deletion-preview" and request.method == "GET":
             fulfill_json(route, {"sessionId": session_id, "revision": session["revision"], "sourceTracks": 3, "announcementVersions": len(session["workflows"]["announcement"]["outputs"]),
                 "speakerVersions": 1, "drafts": 1 if mock["draft"] else 0, "pendingAnnouncementPublications": 0, "pendingSpeakerSaves": 0})
-        elif parsed.path in {f"/v1/source-sessions/{session_id}/blobs/{blob_id}/parts/1/content" for blob_id in blob_ids} and request.method == "GET":
+        elif parsed.path in {f"/v1/source-sessions/{source_session_id}/blobs/{blob_id}/parts/1/content"
+                             for source_session_id in (session_id, other_session_id) for blob_id in blob_ids} and request.method == "GET":
             source_index = blob_ids.index(parsed.path.split("/blobs/")[1].split("/")[0])
             route.fulfill(status=200, content_type="application/octet-stream", headers={
                 "Access-Control-Allow-Origin": site_origin, "Access-Control-Allow-Credentials": "true",

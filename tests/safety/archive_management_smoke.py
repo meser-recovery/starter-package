@@ -603,11 +603,20 @@ def check_archive_management(browser, base_url, screenshot_dir=None):
             page.locator('#source-session-authenticate').click()
             page.locator('#source-session-password').fill('local-test-password')
             page.locator('#source-session-login-form').get_by_role('button', name='Подключить', exact=True).click()
-            expected = 'Открыта работа «Спикерская»' if workflow == 'speaker' else 'Загружено дорожек:'
-            page.wait_for_function('text => document.getElementById("source-session-status").textContent.includes(text)', arg=expected)
+            page.wait_for_function("workflow => document.body.dataset.editing === workflow", arg=workflow)
+            editor_status = page.locator('#source-session-status').inner_text()
+            assert 'не удалось' not in editor_status.lower(), (workflow, editor_status)
+            page.wait_for_function("!new URL(location.href).searchParams.has('session')")
             assert 'session=' not in page.url
-            assert all(method == 'GET' or path == '/v1/session/login' for method, path, _ in trace[start:]), trace[start:]
             shot(f'editor-arrival-{workflow}-390')
+            if workflow == 'announcement':
+                source_gets = [path for method, path, _ in trace[start:] if method == 'GET' and '/blobs/' in path and path.endswith('/content')]
+                page.locator('#source-session-announcement-close').click()
+                page.locator('#open-local-speaker').click()
+                page.wait_for_function("document.body.dataset.editing === 'speaker'")
+                reused_gets = [path for method, path, _ in trace[start:] if method == 'GET' and '/blobs/' in path and path.endswith('/content')]
+                assert reused_gets == source_gets, (source_gets, reused_gets)
+            assert all(method == 'GET' or path == '/v1/session/login' for method, path, _ in trace[start:]), trace[start:]
             start = len(trace)
             page.reload()
             page.wait_for_function("document.getElementById('source-session-count').textContent.includes('Список появится')")
