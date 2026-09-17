@@ -15,6 +15,7 @@ This record is completed from commands run on the final branch HEAD. S10 changes
 - strict legacy recipe-v1 and `speaker/v1` reads remain supported;
 - tracked platform junk and the unreferenced empty root file are removed;
 - pull-request CI runs the complete static, gateway, frontend Node, and browser gate.
+- deleted-source/cross-device recovery checks capability before ingestion and retains exact reattached files and recovery state on incompatibility.
 
 ## Local results
 
@@ -26,9 +27,9 @@ All commands ran against the final runtime/test tree on branch `codex/s10-final-
 | `python3 tests/safety/check_site.py` | PASS |
 | `npm --prefix gateway/audio-archive run check` | PASS |
 | `npm --prefix gateway/audio-archive test` | PASS, 92/92 |
-| `node --test tests/safety/*.test.mjs` | PASS, 59/59 |
+| `node --test tests/safety/*.test.mjs` | PASS, 60/60 including the focused recovery-ingestion regression |
 | `venv/bin/python tests/safety/s09c_portal_smoke.py` | PASS, synthetic local gateway, zero outbound requests |
-| `venv/bin/python tests/safety/s09d_project_history_smoke.py --base-url http://127.0.0.1:8000` | PASS at 1280/768/390/320 px; incompatible capability blocks Speaker writes and retains local objects |
+| `venv/bin/python tests/safety/s09d_project_history_smoke.py --base-url http://127.0.0.1:8000` | PASS at 1280/768/390/320 px; incompatible capability blocks recovery ingestion and other Speaker writes while retaining exact local files and recovery state |
 | `venv/bin/python -B tests/safety/archive_management_cors_regression.py` | PASS at root and `/starter-package/` with default Chromium web security |
 | `venv/bin/python tests/safety/s09a_waveform_motion_smoke.py --base-url http://127.0.0.1:8000` | PASS |
 | `venv/bin/python tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000` | PASS; full suite, including 320/390/768/1280 Editor/Archive coverage and blocked outbound archive access |

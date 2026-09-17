@@ -70,6 +70,14 @@ export function setRecordingBoundary(payload, duration, kind, value) {
   if (resultDuration(duration, normalized.globalCuts) <= 0) throw new Error('В записи должен остаться звук.');
   return normalized;
 }
+export async function ingestSpeakerRecoverySources(gateway, recovery, onStarted = () => {}) {
+  gateway.assertCanonicalSpeakerWrites();
+  if (!recovery?.files?.length || !recovery.session?.id || !recovery.ingestionKey) throw new Error('Точные локальные исходники для восстановления не подтверждены.');
+  onStarted();
+  const result = await gateway.ingestFiles({ files: recovery.files, title: `${recovery.session.title} — восстановлено`, origin: 'device',
+    supersedesSessionId: recovery.session.id, idempotencyKey: recovery.ingestionKey });
+  return result.session || result;
+}
 // One in-memory attempt; no second project store. Preserve keys and finalized sources on every error/cancellation.
 export class ProjectSave {
   constructor(gateway, workflow = "speaker") { this.workflow = workflow; this.gateway = gateway; this.ingestionKey = crypto.randomUUID(); this.finalized = null; this.plan = null; this.attempt = null; }

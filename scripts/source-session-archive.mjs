@@ -1,6 +1,6 @@
 import { contextActions } from "./audio-actions.mjs";
 import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
-import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ProjectSave } from "./audio-project.mjs";
+import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ingestSpeakerRecoverySources, ProjectSave } from "./audio-project.mjs";
 import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding,
   createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSessionTracks, reconstructSpeakerOutput } from "./audio-archive-client.mjs";
@@ -1550,11 +1550,11 @@ document.getElementById("speaker-project-recovery-ingest").addEventListener("cli
   if (!recovery?.files) return;
   const status = document.getElementById("speaker-project-recovery-status");
   try {
-    status.textContent = "Сохранение точных исходников как новой записи Zoom…";
-    const result = await gateway.ingestFiles({ files: recovery.files, title: `${recovery.session.title} — восстановлено`, origin: "device",
-      supersedesSessionId: recovery.session.id, idempotencyKey: recovery.ingestionKey });
+    const target = await ingestSpeakerRecoverySources(gateway, recovery, () => {
+      status.textContent = "Сохранение точных исходников как новой записи Zoom…";
+    });
     if (state.speakerRecovery !== recovery) return;
-    recovery.target = result.session || result;
+    recovery.target = target;
     status.textContent = "Новая запись Zoom сохранена. Теперь проект можно атомарно продолжить в ней.";
     document.getElementById("speaker-project-recovery-ingest").hidden = true;
     document.getElementById("speaker-project-recovery-continue").hidden = false;
