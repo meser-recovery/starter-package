@@ -4,6 +4,7 @@ import { createApp } from "./app.mjs";
 import { loadConfig } from "./config.mjs";
 import { AudioArchiveDomain } from "./domain.mjs";
 import { GitHubArchiveRepository } from "./github.mjs";
+import { nodeResponseHeaders } from "./http-adapter.mjs";
 
 const config = loadConfig();
 const repository = new GitHubArchiveRepository(config);
@@ -20,7 +21,7 @@ const server = http.createServer(async (incoming, outgoing) => {
       duplex: "half"
     });
     const response = await app(request);
-    outgoing.writeHead(response.status, Object.fromEntries(response.headers));
+    outgoing.writeHead(response.status, nodeResponseHeaders(response.headers));
     if (response.body) Readable.fromWeb(response.body).pipe(outgoing);
     else outgoing.end();
   } catch {

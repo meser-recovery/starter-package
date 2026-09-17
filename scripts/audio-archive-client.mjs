@@ -642,40 +642,93 @@ export function validateSessionManifest(session) {
     session.relations[key] === null || isUuid(session.relations[key]));
 }
 
-export async function reconstructTrack(track, sessionId, fetchImpl = fetch) {
+export async function reconstructTrack(track, sessionId, fetchImpl = fetch, { signal, onProgress } = {}) {
+  throwIfAborted(signal);
   if (!validateTrackManifest(track, sessionId)) throw new Error("Манифест дорожки повреждён.");
   const ordered = [...track.parts].sort((left, right) => left.partNumber - right.partNumber);
   const chunks = [];
   const logicalHasher = new Sha256();
   let totalBytes = 0;
   for (const [index, part] of ordered.entries()) {
+    throwIfAborted(signal);
     if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей аудиофайла.");
-    const response = await fetchImpl(part.downloadUrl, { cache: "no-store" });
+    const response = await fetchImpl(part.downloadUrl, { cache: "no-store", signal });
     if (!response.ok) throw Object.assign(new Error("Не удалось загрузить часть аудиофайла."), { status: response.status });
     const bytes = new Uint8Array(await response.arrayBuffer());
-    if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes) !== part.sha256) {
+    throwIfAborted(signal);
+    if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes, signal) !== part.sha256) {
       throw new Error("Проверка целостности части аудиофайла не пройдена.");
     }
     totalBytes += bytes.byteLength;
     logicalHasher.update(bytes);
     chunks.push(bytes);
+    onProgress?.({ verifiedBytes: bytes.byteLength, partNumber: part.partNumber, partCount: ordered.length, track });
   }
+  throwIfAborted(signal);
   if (totalBytes !== track.sizeBytes || logicalHasher.digestHex() !== track.sha256) {
     throw new Error("Проверка целостности аудиодорожки не пройдена.");
   }
   return new File(chunks, track.originalName, { type: track.mediaType, lastModified: 0 });
 }
 
-export async function reconstructSessionTracks(session, fetchImpl = fetch) {
+export async function reconstructSessionTracks(session, fetchImpl = fetch, { signal, onProgress } = {}) {
+  throwIfAborted(signal);
   if (!validateSessionManifest(session)) throw new Error("Данные архивной записи повреждены.");
   if (session.sourceState !== "available") throw new Error("Исходники этой записи были удалены.");
   const ordered = [...(session.sourceTracks || [])].sort((left, right) => left.ordinal - right.ordinal);
   const files = [];
-  for (const track of ordered) files.push(await reconstructTrack(track, session.id, fetchImpl));
+  const totalBytes = ordered.reduce((sum, track) => sum + track.sizeBytes, 0);
+  const totalParts = ordered.reduce((sum, track) => sum + track.parts.length, 0);
+  let verifiedBytes = 0; let verifiedParts = 0;
+  for (const [trackIndex, track] of ordered.entries()) {
+    files.push(await reconstructTrack(track, session.id, fetchImpl, { signal, onProgress: (progress) => {
+      verifiedBytes += progress.verifiedBytes; verifiedParts++;
+      onProgress?.({ verifiedBytes, totalBytes, verifiedParts, totalParts, trackIndex: trackIndex + 1,
+        trackCount: ordered.length, partNumber: progress.partNumber, trackPartCount: progress.partCount });
+    } }));
+  }
+  throwIfAborted(signal);
   if (files.reduce((sum, file) => sum + file.size, 0) > MAX_AUDIO_SESSION_BYTES) {
     throw new Error("Исходная сессия превышает лимит 500 МБ.");
   }
   return files;
+}
+
+function sourceDescriptor(session) {
+  return (session.sourceTracks || []).map((track) => ({
+    trackId: track.trackId, blobId: track.blobId, ordinal: track.ordinal, originalName: track.originalName,
+    mediaType: track.mediaType, sizeBytes: track.sizeBytes, sha256: track.sha256,
+    parts: track.parts.map((part) => ({ partNumber: part.partNumber, sizeBytes: part.sizeBytes,
+      sha256: part.sha256, assetName: part.assetName, assetId: part.assetId, downloadUrl: part.downloadUrl }))
+  }));
+}
+
+export function remoteSourceFingerprint(session) {
+  if (!validateSessionManifest(session)) throw new Error("Данные архивной записи повреждены.");
+  return JSON.stringify(sourceDescriptor(session));
+}
+
+export async function prepareRemoteSourceBatch({ gateway, sessionId, signal, onProgress } = {}) {
+  if (!gateway || !isUuid(sessionId)) throw new Error("Некорректная архивная запись.");
+  throwIfAborted(signal);
+  const initial = await gateway.getSession(sessionId, signal);
+  throwIfAborted(signal);
+  if (!validateSessionManifest(initial) || initial.id !== sessionId || initial.lifecycle.state !== "incoming" || initial.sourceState !== "available") {
+    throw new Error("Запись больше не доступна для редактирования.");
+  }
+  const fingerprint = remoteSourceFingerprint(initial);
+  const files = await reconstructSessionTracks(initial, gateway.sourcePartFetch(initial), { signal, onProgress });
+  throwIfAborted(signal);
+  const fresh = await gateway.getSession(sessionId, signal);
+  throwIfAborted(signal);
+  if (!validateSessionManifest(fresh) || fresh.id !== sessionId || fresh.lifecycle.state !== "incoming" || fresh.sourceState !== "available" ||
+      remoteSourceFingerprint(fresh) !== fingerprint) {
+    const error = new Error("Состав или доступность исходников изменились во время загрузки.");
+    error.code = "remote_source_changed";
+    throw error;
+  }
+  return Object.freeze({ session: fresh, files: Object.freeze(files), fingerprint,
+    readinessIdentity: `${fresh.id}:${fingerprint}` });
 }
 
 export class AudioArchiveGateway {
@@ -688,15 +741,16 @@ export class AudioArchiveGateway {
   }
 
   async request(path, options = {}) {
-    throwIfAborted(options.signal);
+    const { captureCsrf = true, ...fetchOptions } = options;
+    throwIfAborted(fetchOptions.signal);
     if (!this.baseUrl) throw new Error("Шлюз аудиоархива ещё не настроен.");
-    const headers = new Headers(options.headers || {});
-    if (options.body && !(options.body instanceof Blob) && typeof options.body !== "string") {
+    const headers = new Headers(fetchOptions.headers || {});
+    if (fetchOptions.body && !(fetchOptions.body instanceof Blob) && typeof fetchOptions.body !== "string") {
       headers.set("Content-Type", "application/json");
-      options.body = JSON.stringify(options.body);
+      fetchOptions.body = JSON.stringify(fetchOptions.body);
     }
-    if (!/^(GET|HEAD|OPTIONS)$/i.test(options.method || "GET") && this.csrfToken) headers.set("X-CSRF-Token", this.csrfToken);
-    const response = await this.fetchImpl(`${this.baseUrl}${path}`, { credentials: "include", ...options, headers });
+    if (!/^(GET|HEAD|OPTIONS)$/i.test(fetchOptions.method || "GET") && this.csrfToken) headers.set("X-CSRF-Token", this.csrfToken);
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, { credentials: "include", ...fetchOptions, headers });
     const contentType = response.headers.get("Content-Type") || "";
     if (response.status !== 204 && !contentType.toLowerCase().startsWith("application/json")) {
       throw Object.assign(new Error("Шлюз вернул ответ в неожиданном формате."), { status: response.status });
@@ -708,7 +762,7 @@ export class AudioArchiveGateway {
       error.details = payload?.details;
       throw error;
     }
-    if (payload?.csrfToken) this.csrfToken = payload.csrfToken;
+    if (captureCsrf && payload?.csrfToken) this.csrfToken = payload.csrfToken;
     return payload;
   }
 
@@ -728,10 +782,29 @@ export class AudioArchiveGateway {
     throw error;
   }
   sessionStatus() { return this.request("/v1/session"); }
-  login(password) { return this.request("/v1/session/login", { method: "POST", body: { password } }); }
+  async login(password, { onState } = {}) {
+    this.csrfToken = null;
+    onState?.("checking-password");
+    try {
+      await this.request("/v1/session/login", { method: "POST", body: { password }, captureCsrf: false });
+    } catch (error) {
+      if (error?.status === 401) error.code = "invalid_password";
+      throw error;
+    }
+    try {
+      onState?.("verifying-session");
+      const proof = await this.sessionStatus();
+      if (proof?.authenticated !== true || typeof proof.csrfToken !== "string" || !proof.csrfToken) throw new Error("Шлюз не подтвердил защищённый сеанс.");
+      return proof;
+    } catch (error) {
+      this.csrfToken = null;
+      if ([401, 403].includes(error?.status)) error.code = "storage_access_required";
+      throw error;
+    }
+  }
   logout() { return this.request("/v1/session/logout", { method: "POST" }); }
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
-  getSession(id) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`); }
+  getSession(id, signal) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`, { signal }); }
   sourcePartFetch(session) {
     if (!validateSessionManifest(session) || session.sourceState !== "available") throw new Error("Данные архивной записи повреждены.");
     const parts = new Map();

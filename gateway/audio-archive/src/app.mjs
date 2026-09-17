@@ -4,9 +4,51 @@ import { ValidationError, assertUuid, hashIdempotencyKey } from "./validation.mj
 
 const JSON_LIMIT = 1024 * 1024;
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const GATEWAY_ORIGIN = "https://meserproject.duckdns.org";
+
+const PRESENTATION_HEADERS = Object.freeze({
+  "Cache-Control": "no-store",
+  "Content-Type": "text/html; charset=utf-8",
+  "Referrer-Policy": "no-referrer",
+  "X-Content-Type-Options": "nosniff"
+});
 
 function json(value, status = 200, headers = {}) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...headers } });
+}
+
+function withCookies(response, cookies) {
+  const headers = new Headers(response.headers);
+  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+  return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+}
+
+function presentation(body, frameAncestors) {
+  return new Response(body, { headers: { ...PRESENTATION_HEADERS,
+    "Content-Security-Policy": `default-src 'none'; script-src 'nonce-meser-s10a'; connect-src 'self'; form-action 'self'; base-uri 'none'; frame-ancestors ${frameAncestors}`
+  } });
+}
+
+function bootstrapPage({ verify = false, denied = false } = {}) {
+  const status = denied ? "Пароль не подошёл. Повторите ввод." : verify ? "Проверяем защищённый сеанс…" : "Введите служебный пароль непосредственно на защищённом шлюзе.";
+  return presentation(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Подключение аудиоархива</title><body><main><h1>Подключение Safari к аудиоархиву</h1><p>Safari требует отдельного подтверждения на стороне архива. Пароль останется на этой странице.</p><form method="post" action="/safari-bootstrap"><label>Общий служебный пароль <input name="password" type="password" autocomplete="current-password" required maxlength="256"></label><button type="submit">Подтвердить подключение</button></form><p id="status" role="status">${status}</p><button id="close" type="button">Вернуться в портал / закрыть вкладку</button></main><script nonce="meser-s10a">const status=document.getElementById("status");document.getElementById("close").addEventListener("click",()=>window.close());${verify ? `fetch("/v1/session",{credentials:"include",cache:"no-store"}).then(async response=>{if(!response.ok)throw new Error();const value=await response.json();if(value?.authenticated!==true)throw new Error();status.textContent="Защищённый сеанс готов. Вернитесь в портал и разрешите доступ в появившемся окне.";}).catch(()=>{status.textContent="Safari не подтвердил сеанс. Введите пароль ещё раз.";});` : ""}</script></body></html>`, "'none'");
+}
+
+function bootstrapRedirect(location, cookies = []) {
+  const headers = new Headers({ ...PRESENTATION_HEADERS, Location: location,
+    "Content-Security-Policy": "default-src 'none'; form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
+  });
+  for (const cookie of cookies) headers.append("Set-Cookie", cookie);
+  return new Response(null, { status: 303, headers });
+}
+
+function storageAccessBridgePage(allowedOrigin) {
+  return presentation(`<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width"><title>Доступ Safari</title><body><p id="status" role="status">Проверяем доступ Safari…</p><button id="grant" type="button" hidden>Разрешить доступ к архиву</button><script nonce="meser-s10a">const parentOrigin=${JSON.stringify(allowedOrigin)};const status=document.getElementById("status");const grant=document.getElementById("grant");const send=value=>parent.postMessage({type:"meser-storage-access",version:1,status:value},parentOrigin);async function inspect(){if(typeof document.hasStorageAccess!=="function"||typeof document.requestStorageAccess!=="function"){status.textContent="Этот браузер не поддерживает запрос доступа.";send("unsupported");return;}try{if(await document.hasStorageAccess()){status.textContent="Доступ подтверждён.";send("granted");return;}status.textContent="Нажмите кнопку, чтобы разрешить Safari доступ к аудиоархиву.";grant.hidden=false;send("required");}catch{status.textContent="Не удалось проверить доступ.";send("error");}}grant.addEventListener("click",async()=>{grant.disabled=true;try{await document.requestStorageAccess();status.textContent="Доступ подтверждён.";send("granted");}catch{status.textContent="Доступ не разрешён. Можно повторить после подключения в отдельной вкладке.";grant.disabled=false;send("denied");}});inspect();</script></body></html>`, allowedOrigin);
+}
+
+function isGatewaySessionProof(request) {
+  return request.headers.get("origin") === GATEWAY_ORIGIN ||
+    (request.headers.get("sec-fetch-site") === "same-origin" && request.headers.get("sec-fetch-mode") === "cors");
 }
 
 async function jsonBody(request, maximum = JSON_LIMIT) {
@@ -68,6 +110,31 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
     const started = clock();
     try {
       if (url.pathname === "/healthz" && request.method === "GET") return json({ ok: true, service: "audio-archive-gateway" });
+      if (url.pathname === "/safari-bootstrap" && request.method === "GET") {
+        return bootstrapPage({ verify: url.searchParams.get("verify") === "1", denied: url.searchParams.get("denied") === "1" });
+      }
+      if (url.pathname === "/storage-access-bridge" && request.method === "GET") return storageAccessBridgePage(config.allowedOrigin);
+      if (url.pathname === "/safari-bootstrap" && request.method === "POST") {
+        if (request.headers.get("origin") !== GATEWAY_ORIGIN) { const error = new Error("Origin is not allowed"); error.status = 403; throw error; }
+        throttle.check(request);
+        if (!(request.headers.get("content-type") || "").toLowerCase().startsWith("application/x-www-form-urlencoded")) {
+          const error = new ValidationError("Content-Type must be application/x-www-form-urlencoded"); error.status = 415; throw error;
+        }
+        const bytes = Buffer.from(await request.arrayBuffer());
+        if (bytes.byteLength > 4096) { const error = new ValidationError("Request body is too large"); error.status = 413; throw error; }
+        const password = new URLSearchParams(bytes.toString("utf8")).get("password");
+        if (!await verifyPassword(password, config.sharedPasswordVerifier)) {
+          throttle.failure(request);
+          return bootstrapRedirect("/safari-bootstrap?denied=1");
+        }
+        throttle.success(request);
+        const session = createSession(config.sessionSigningSecret, config.sessionLifetimeSeconds, clock());
+        return bootstrapRedirect("/safari-bootstrap?verify=1", session.cookies);
+      }
+      if (url.pathname === "/v1/session" && request.method === "GET" && isGatewaySessionProof(request)) {
+        const session = requireSession(request, config, clock);
+        return json({ authenticated: true, expiresAt: session.expiresAt, csrfToken: session.csrfToken }, 200, { "Cache-Control": "no-store" });
+      }
       requireOrigin(request, config.allowedOrigin);
       if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }), config.allowedOrigin);
       if (url.pathname === "/v1/config" && request.method === "GET") {
@@ -84,14 +151,16 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
         }
         throttle.success(request);
         const session = createSession(config.sessionSigningSecret, config.sessionLifetimeSeconds, clock());
-        return cors(json({ authenticated: true, csrfToken: session.csrfToken }, 200, { "Set-Cookie": session.cookie }), config.allowedOrigin);
+        return cors(withCookies(json({ authenticated: true, csrfToken: session.csrfToken }, 200), session.cookies), config.allowedOrigin);
+      }
+      if (url.pathname === "/v1/session/logout" && request.method === "POST") {
+        const existing = readSession(request, config.sessionSigningSecret, clock());
+        if (existing) requireCsrf(request, existing);
+        return cors(withCookies(json({ authenticated: false }, 200), clearSessionCookie()), config.allowedOrigin);
       }
       const session = requireSession(request, config, clock);
       if (url.pathname === "/v1/session" && request.method === "GET") {
         return cors(json({ authenticated: true, expiresAt: session.expiresAt, csrfToken: session.csrfToken }), config.allowedOrigin);
-      }
-      if (url.pathname === "/v1/session/logout" && request.method === "POST") {
-        return cors(json({ authenticated: false }, 200, { "Set-Cookie": clearSessionCookie() }), config.allowedOrigin);
       }
       if (url.pathname === "/v1/source-sessions" && request.method === "GET") {
         return cors(json(await domain.listSessions(url.searchParams.get("lifecycle") || "incoming")), config.allowedOrigin);

@@ -1449,3 +1449,7 @@
   .audio-studio #import-zone[open] { max-height:90dvh; }
   .audio-studio #session-list .source-row > button { font-size:.59rem; }
 }
+.archive-storage-help { margin-block: .8rem; padding: .8rem; border: 1px solid #d0dae4; border-radius: .65rem; background: #f7fafc; }
+.archive-storage-help h3 { margin-top: 0; }
+.archive-storage-frame { margin-top: .75rem; }
+.archive-storage-access-frame { box-sizing: border-box; width: 100%; min-height: 150px; border: 1px solid #8197ad; border-radius: .5rem; background: #fff; }

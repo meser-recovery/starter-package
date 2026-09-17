@@ -90,7 +90,7 @@
             </div></div>
         </details>
         <section id="source-session-loading" class="portal-loading" role="dialog" aria-modal="true" aria-labelledby="source-session-loading-title" hidden>
-          <div class="portal-loading__card"><div class="portal-loading__mark" aria-hidden="true">↗</div><p class="portal-loading__title" id="source-session-loading-title" role="heading" aria-level="2">Открываем запись…</p><p id="source-session-loading-record">Подготавливаем дорожки и проект.</p><ol class="portal-loading__steps"><li data-loading-step="record">Получаем информацию о записи</li><li data-loading-step="tracks">Загружаем аудиодорожки</li><li data-loading-step="files">Проверяем файлы</li><li data-loading-step="editor">Подготавливаем редактор</li></ol><progress id="source-session-loading-progress" max="100" value="18" aria-label="Подготовка записи"></progress><p class="portal-loading__hint">Это может занять несколько секунд. Можно не закрывать страницу.</p></div>
+          <div class="portal-loading__card"><div class="portal-loading__mark" aria-hidden="true">↗</div><p class="portal-loading__title" id="source-session-loading-title" role="heading" aria-level="2">Открываем запись…</p><p id="source-session-loading-record">Подготавливаем дорожки и проект.</p><ol class="portal-loading__steps"><li data-loading-step="record">Получаем информацию о записи</li><li data-loading-step="tracks">Загружаем аудиодорожки</li><li data-loading-step="files">Проверяем файлы</li><li data-loading-step="editor">Подготавливаем редактор</li></ol><progress id="source-session-loading-progress" max="100" value="0" aria-label="Подготовка записи"></progress><p class="portal-loading__hint">Прогресс учитывает только полностью загруженные и проверенные части.</p><button id="source-session-loading-cancel" type="button">Отменить загрузку</button></div>
         </section>
         <section id="workflow-choice" class="editing-modes" aria-labelledby="editing-heading" tabindex="-1" hidden>
           <div class="workflow-choice__heading"><div><p class="archive-eyebrow">Выберите режим работы</p><h2 id="editing-heading">Что нужно сделать?</h2></div></div>
@@ -353,6 +353,13 @@
               <input id="source-session-password" type="password" autocomplete="current-password" required>
             </div>
             <p id="source-session-login-status" role="status"></p>
+            <section id="source-session-storage-help" class="archive-storage-help" aria-labelledby="source-session-storage-title" hidden>
+              <h3 id="source-session-storage-title">Дополнительное подтверждение Safari</h3>
+              <p>Откройте защищённую вкладку архива, повторно введите пароль там, затем разрешите доступ в блоке ниже.</p>
+              <button id="source-session-bootstrap" type="button">Открыть защищённую вкладку</button>
+              <button id="source-session-storage-retry" type="button">Повторить запрос доступа</button>
+              <div id="source-session-storage-frame" class="archive-storage-frame" hidden></div>
+            </section>
             <div class="source-session-dialog__actions">
               <button type="submit">Подключить</button>
               <button id="source-session-login-cancel" type="button">Отмена</button>

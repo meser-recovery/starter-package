@@ -3,7 +3,8 @@ import { promisify } from "node:util";
 import { ValidationError } from "./validation.mjs";
 
 const scrypt = promisify(scryptCallback);
-const COOKIE_NAME = "__Host-meser_audio_session";
+export const PARTITIONED_COOKIE_NAME = "__Host-meser_audio_session";
+export const STORAGE_ACCESS_COOKIE_NAME = "__Host-meser_audio_storage_session";
 
 function base64url(value) {
   return Buffer.from(value).toString("base64url");
@@ -60,16 +61,24 @@ export function createSession(sessionSecret, lifetimeSeconds, now = Date.now()) 
     expiresAt: Math.floor(now / 1000) + lifetimeSeconds
   }));
   const value = `${payload}.${signature(payload, sessionSecret)}`;
-  const cookie = `${COOKIE_NAME}=${value}; Path=/; Max-Age=${lifetimeSeconds}; Secure; HttpOnly; SameSite=None; Partitioned`;
-  return { cookie, csrfToken };
+  const partitionedCookie = `${PARTITIONED_COOKIE_NAME}=${value}; Path=/; Max-Age=${lifetimeSeconds}; Secure; HttpOnly; SameSite=None; Partitioned`;
+  const storageAccessCookie = `${STORAGE_ACCESS_COOKIE_NAME}=${value}; Path=/; Max-Age=${lifetimeSeconds}; Secure; HttpOnly; SameSite=None`;
+  return { cookie: partitionedCookie, cookies: [partitionedCookie, storageAccessCookie], csrfToken };
 }
 
 export function clearSessionCookie() {
-  return `${COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=None; Partitioned`;
+  return [
+    `${PARTITIONED_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=None; Partitioned`,
+    `${STORAGE_ACCESS_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=None`
+  ];
 }
 
 export function readSession(request, sessionSecret, now = Date.now()) {
-  const value = parseCookies(request.headers.get("cookie"))[COOKIE_NAME];
+  const cookies = parseCookies(request.headers.get("cookie"));
+  const partitioned = cookies[PARTITIONED_COOKIE_NAME];
+  const storageAccess = cookies[STORAGE_ACCESS_COOKIE_NAME];
+  if (partitioned && storageAccess && !fixedTimeEqual(partitioned, storageAccess)) return null;
+  const value = partitioned || storageAccess;
   if (!value) return null;
   const [payload, suppliedSignature, ...extra] = value.split(".");
   if (!payload || !suppliedSignature || extra.length || !fixedTimeEqual(suppliedSignature, signature(payload, sessionSecret))) return null;
