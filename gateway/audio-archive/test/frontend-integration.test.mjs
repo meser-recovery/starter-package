@@ -191,7 +191,8 @@ test("real frontend and gateway save, retrieve, and verify one Speaker output", 
   const outputBytes = Uint8Array.of(9, 8, 7, 6, 5, 4);
   const outputHash = await sha256Hex(outputBytes);
   const recipe = {
-    renderedAt: "2026-01-02T03:00:00.000Z", sourceSessionRevision: session.revision,
+    schemaVersion: 2, projectState: { sessionId: session.id, draftRevision: saved.state.draftRevision,
+      stateFingerprint: saved.state.stateFingerprint }, renderedAt: "2026-01-02T03:00:00.000Z", sourceSessionRevision: session.revision,
     draft: { revision: saved.draft.draftRevision, payloadSchema: "speaker/v1", payload },
     sources: [{ trackId: track.trackId, blobId: track.blobId, ordinal: 1, originalFilename: track.originalName,
       mediaType: track.mediaType, sizeBytes: track.sizeBytes, sha256: track.sha256 }],

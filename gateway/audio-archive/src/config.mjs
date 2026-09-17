@@ -13,12 +13,6 @@ function positiveInteger(value, fallback, maximum, name) {
   return parsed;
 }
 
-function featureFlag(value, name) {
-  if (value === undefined || value === "0") return false;
-  if (value === "1") return true;
-  throw new Error(`${name} must be 0 or 1`);
-}
-
 function secretFromFile(env, variable, readTextFile) {
   const filename = required(env, variable);
   let value;
@@ -50,7 +44,6 @@ export function loadConfig(env = process.env, readTextFile = readFileSync) {
     storageBranch: env.STORAGE_BRANCH || "main",
     acceptedPartBytes: positiveInteger(env.ACCEPTED_PART_BYTES, DEFAULT_PART_BYTES, MAX_PART_BYTES, "ACCEPTED_PART_BYTES"),
     sessionLifetimeSeconds: positiveInteger(env.SESSION_LIFETIME_SECONDS, 4 * 60 * 60, 24 * 60 * 60, "SESSION_LIFETIME_SECONDS"),
-    speakerProjectHistory: featureFlag(env.SPEAKER_PROJECT_HISTORY, "SPEAKER_PROJECT_HISTORY"),
     githubAppId: required(env, "GITHUB_APP_ID"),
     githubAppInstallationId: required(env, "GITHUB_APP_INSTALLATION_ID"),
     githubAppPrivateKey: secretFromFile(env, "GITHUB_APP_PRIVATE_KEY_FILE", readTextFile),

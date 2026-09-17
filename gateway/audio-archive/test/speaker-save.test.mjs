@@ -8,6 +8,7 @@ const KEY = "speaker-save-key-0123456789";
 const CLOCK = () => Date.parse("2026-09-08T12:00:00.000Z");
 const OUTPUT = "77777777-7777-4777-8777-777777777777";
 const OUTPUT_BLOB = "88888888-8888-4888-8888-888888888888";
+const projectStates = new Map();
 
 function draftPayload() {
   return { trackIds: [IDS.track], excludedTrackIds: [], globalCuts: [], trackSilenceRegions: [],
@@ -27,7 +28,16 @@ async function fixture(repository = new MemoryRepository()) {
   const ingested = await domain.finalizeIngestion(start.transactionId);
   const saved = await domain.saveDraft(ingested.session.id, "speaker", { schemaVersion: 1, expectedDraftRevision: 0,
     expectedSourceSessionRevision: ingested.session.revision, payloadSchema: "speaker/v1", payload: draftPayload(), idempotencyKey: `${KEY}:draft` });
+  projectStates.set(saved.session.id, saved.state);
   return { repository, domain, session: saved.session, draft: saved.draft, source };
+}
+
+async function saveCurrentProject(domain, session, key) {
+  const draftRevision = session.workflows.speaker.currentDraft?.revision || 0;
+  const saved = await domain.saveDraft(session.id, "speaker", { schemaVersion: 1, expectedDraftRevision: draftRevision,
+    expectedSourceSessionRevision: session.revision, payloadSchema: "speaker/v1", payload: draftPayload(), idempotencyKey: key });
+  projectStates.set(saved.session.id, saved.state);
+  return saved.session;
 }
 
 function deferred() {
@@ -94,11 +104,13 @@ function saveBody(session, bytes = Buffer.from("speaker-result"), key = `${KEY}:
       strong: "acompressor=threshold=0.089125:ratio=4:attack=10:release=350:knee=3:makeup=1.75"
     }, mix: "amix=duration=longest:normalize=0", limiter: "alimiter=limit=0.95:level=0:latency=1",
     codec: { name: "libmp3lame", bitrate: "128k" } };
-  return { chunks, body: { schemaVersion: 1, expectedRevision: session.revision, expectedDraftRevision: 1, idempotencyKey: key,
+  const projectState = projectStates.get(session.id);
+  return { chunks, body: { schemaVersion: 1, expectedRevision: session.revision, expectedDraftRevision: projectState.draftRevision, idempotencyKey: key,
     plan: { outputId, blobId, processorVersion: "speaker-editor-v1", sizeBytes: bytes.length, sha256: sha(bytes),
       parts: chunks.map((chunk, index) => ({ partNumber: index + 1, sizeBytes: chunk.length, sha256: sha(chunk), assetName: assetName(blobId, index + 1) })),
-      recipe: { renderedAt: "2026-09-08T11:59:00.000Z", sourceSessionRevision: session.revision,
-        draft: { revision: 1, payloadSchema: "speaker/v1", payload }, sources,
+      recipe: { schemaVersion: 2, projectState: { sessionId: session.id, draftRevision: projectState.draftRevision,
+          stateFingerprint: projectState.stateFingerprint }, renderedAt: "2026-09-08T11:59:00.000Z", sourceSessionRevision: session.revision,
+        draft: { revision: projectState.draftRevision, payloadSchema: "speaker/v1", payload }, sources,
         editState: { orderedTrackIds: payload.trackIds, includedTrackIds: payload.trackIds, excludedTrackIds: [], globalCuts: [],
           trackSilenceRegions: [], trackProcessing: payload.trackProcessing }, renderer, candidateFingerprint: sha(Buffer.from("candidate")), result } } } };
 }
@@ -107,9 +119,10 @@ test("Speaker recipe and save plan are strict, versioned, and require a non-zero
   const { domain, session } = await fixture();
   const save = saveBody(session);
   assert.equal(validateSpeakerPublicationPlan(save.body.plan, 4).processorVersion, "speaker-editor-v1");
-  const recipe = { schemaVersion: 1, workflow: "speaker", sessionId: session.id, outputId: OUTPUT, version: 1,
+  const recipe = { workflow: "speaker", sessionId: session.id, outputId: OUTPUT, version: 1,
     processorVersion: "speaker-editor-v1", createdAt: "2026-09-08T12:00:00.000Z", ...save.body.plan.recipe };
-  assert.equal(validateSpeakerRecipe(recipe).draft.revision, 1);
+  const legacyRecipe = { ...structuredClone(recipe), schemaVersion: 1 }; delete legacyRecipe.projectState;
+  assert.equal(validateSpeakerRecipe(legacyRecipe).draft.revision, 1);
   await assert.rejects(async () => validateSpeakerRecipe({ ...recipe, unexpected: true }), /unsupported fields/);
   await assert.rejects(async () => validateSpeakerPublicationPlan({ ...save.body.plan,
     recipe: { ...save.body.plan.recipe, draft: { ...save.body.plan.recipe.draft, revision: 0 } } }, 4), /revision/);
@@ -168,7 +181,8 @@ test("Speaker cancelled jobs recover only when complete; discard removes attribu
   assert.equal(discarded.job.state, "discarded");
   assert.equal(repository.releases.get(1).assets.some((asset) => asset.name.startsWith(`blob-${OUTPUT_BLOB}`)), false);
   assert.equal(discarded.session.workflows.speaker.nextVersion, 2);
-  const next = saveBody(discarded.session, Buffer.from("second-result"), `${KEY}:second`,
+  const nextSession = await saveCurrentProject(domain, discarded.session, `${KEY}:second-project`);
+  const next = saveBody(nextSession, Buffer.from("second-result"), `${KEY}:second`,
     "99999999-9999-4999-8999-999999999999", "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
   assert.equal((await domain.beginSpeakerPublication(session.id, next.body)).reservedVersion, 2);
 });
@@ -253,6 +267,7 @@ test("Speaker series deletion removes only its recipes and assets while retainin
   ];
   let current = session;
   for (const [index, [outputId, blobId]] of identities.entries()) {
+    if (index) current = await saveCurrentProject(domain, current, `${KEY}:series-project:${index}`);
     const save = saveBody(current, Buffer.from(`speaker-${index + 1}`), `${KEY}:series:${index}`, outputId, blobId);
     const started = await domain.beginSpeakerPublication(session.id, save.body);
     for (const [partIndex, chunk] of save.chunks.entries()) {
@@ -267,7 +282,7 @@ test("Speaker series deletion removes only its recipes and assets while retainin
   assert.deepEqual(deleted.session.workflows.speaker.deletedVersions, [1, 2]);
   assert.equal(deleted.session.workflows.speaker.nextVersion, 3);
   assert.equal(deleted.session.sourceState, "available");
-  assert.equal((await domain.loadDraft(session.id, "speaker")).draftRevision, 1);
+  assert.equal((await domain.loadDraft(session.id, "speaker")).draftRevision, 2);
   for (const [outputId, blobId] of identities) {
     assert.equal(repository.files.has(`recipes/${session.id}/speaker/${outputId}.json`), false);
     assert.equal(repository.releases.get(1).assets.some((asset) => asset.name.startsWith(`blob-${blobId}`)), false);

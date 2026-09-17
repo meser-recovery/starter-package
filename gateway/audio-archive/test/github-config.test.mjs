@@ -49,9 +49,8 @@ test("configuration fixes GitHub scope and accepts one exact HTTPS Pages origin"
   const env = configEnvironment();
   const loaded = loadConfig(env, secretReader());
   assert.equal(`${loaded.storageOwner}/${loaded.storageRepository}`, "meser-recovery/audio-archive");
-  assert.equal(loaded.speakerProjectHistory, false);
-  assert.equal(loadConfig({ ...env, SPEAKER_PROJECT_HISTORY: "1" }, secretReader()).speakerProjectHistory, true);
-  assert.throws(() => loadConfig({ ...env, SPEAKER_PROJECT_HISTORY: "true" }, secretReader()), /must be 0 or 1/);
+  assert.equal(Object.hasOwn(loaded, "speakerProjectHistory"), false);
+  assert.equal(Object.hasOwn(loadConfig({ ...env, UNRELATED_ROLLOUT_SWITCH: "0" }, secretReader()), "speakerProjectHistory"), false);
   assert.throws(() => loadConfig({ ...env, STORAGE_REPOSITORY: "starter-package" }, secretReader()), /must remain/);
   assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "http://localhost:8000" }, secretReader()), /HTTPS origin/);
   assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test/path" }, secretReader()), /HTTPS origin/);

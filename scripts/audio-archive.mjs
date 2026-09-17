@@ -210,7 +210,7 @@ function resultCard(session, output, workflow) {
   const play = button('Прослушать', () => loadOutput(session, output, workflow));
   const download = button('Скачать', () => loadOutput(session, output, workflow, true));
   play.disabled = !meta.valid; download.disabled = !meta.valid;
-  if (workflow === 'speaker' && gateway.speakerProjectHistoryVersion === 1 && meta.valid) {
+  if (workflow === 'speaker' && meta.valid) {
     const resume = element('a', 'Продолжить редактирование с этой финальной версии');
     resume.href = `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=speaker&speakerOutput=${encodeURIComponent(output.outputId)}`;
     actions.append(resume);
@@ -326,7 +326,7 @@ function renderDetail() {
       resume.href = `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=speaker&projectRevision=${saved.draftRevision}`;
       row.append(resume); project.append(row);
     }
-  }
+  } else project.append(element('p', 'Версия шлюза несовместима с историей проекта. Просмотр и скачивание совместимых записей доступны; изменения «Спикерская» заблокированы.'));
   container.append(project);
   const sources = element('details', undefined, 'detail-section source-section'); sources.open = true; sources.append(element('summary', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
   if (session.sourceState === 'available') for (const track of [...session.sourceTracks].sort((a, b) => a.ordinal - b.ordinal)) {
