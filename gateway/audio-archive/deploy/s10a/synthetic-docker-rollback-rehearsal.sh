@@ -3,10 +3,15 @@ set -Eeuo pipefail
 
 die() { printf 'SYNTHETIC ROLLBACK REHEARSAL FAILED: %s\n' "$*" >&2; exit 1; }
 [[ $# -eq 3 ]] || die 'usage: synthetic-docker-rollback-rehearsal.sh <release-dir> <config-root> <runtime-input>'
+runtime_schema="$(dirname "$0")/../recovery/runtime-env.sh"
+[[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || die 'canonical runtime schema is missing or unsafe'
+# shellcheck source=../recovery/runtime-env.sh
+source "$runtime_schema"
 release_dir=$1
 config_root=$2
 runtime_input=$3
 for path in "$release_dir" "$config_root" "$runtime_input"; do [[ -e "$path" && ! -L "$path" ]] || die "unsafe input: $path"; done
+meser_validate_runtime_env_shape "$runtime_input" || die 'runtime input is not the canonical 11-key schema'
 manifest="$release_dir/release-manifest.txt"
 value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$manifest"; }
 source_sha=$(value source_sha)
@@ -36,22 +41,14 @@ prior_gateway_id=$(docker image inspect -f '{{.Id}}' "$prior_gateway")
 prior_caddy_id=$(docker image inspect -f '{{.Id}}' "$prior_caddy")
 [[ "$prior_gateway_id" != "$candidate_gateway_id" && "$prior_caddy_id" != "$candidate_caddy_id" ]] || die 'synthetic prior images are not distinct candidates'
 
-runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$runtime_input"; }
+runtime_value() { meser_runtime_value "$runtime_input" "$1"; }
 write_runtime() {
   gateway=$1 caddy=$2 output=$3
-  cat >"$output" <<EOF
-SOURCE_SHA=$source_sha
-GATEWAY_IMAGE=$gateway
-CADDY_IMAGE=$caddy
-GITHUB_APP_ID=$(runtime_value GITHUB_APP_ID)
-GITHUB_APP_INSTALLATION_ID=$(runtime_value GITHUB_APP_INSTALLATION_ID)
-ALLOWED_ORIGIN=$(runtime_value ALLOWED_ORIGIN)
-MESER_SITE_ADDRESS=$(runtime_value MESER_SITE_ADDRESS)
-MESER_HTTP_BIND=$(runtime_value MESER_HTTP_BIND)
-MESER_TLS_BIND=$(runtime_value MESER_TLS_BIND)
-MESER_RUNTIME_UID=$(runtime_value MESER_RUNTIME_UID)
-MESER_SYNTHETIC_RUNTIME=$(runtime_value MESER_SYNTHETIC_RUNTIME)
-EOF
+  meser_write_runtime_env "$output" "$source_sha" "$gateway" "$caddy" \
+    "$(runtime_value GITHUB_APP_ID)" "$(runtime_value GITHUB_APP_INSTALLATION_ID)" "$(runtime_value ALLOWED_ORIGIN)" \
+    "$(runtime_value MESER_SITE_ADDRESS)" "$(runtime_value MESER_HTTP_BIND)" "$(runtime_value MESER_TLS_BIND)" \
+    "$(runtime_value MESER_RUNTIME_UID)" "$(runtime_value MESER_SYNTHETIC_RUNTIME)" \
+    || die 'failed to write canonical synthetic rollback runtime'
 }
 write_runtime "$prior_gateway" "$prior_caddy" "$work/runtime.env"
 MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/runtime.env" -f "$release_dir/compose.yaml" up -d --no-build gateway caddy

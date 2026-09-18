@@ -63,7 +63,10 @@ jobs:
           service/tools/package-reviewed-service.sh "$source_sha" "$first"
           service/tools/package-reviewed-service.sh "$source_sha" "$second"
           cmp "$first/meser-service-s10a-$source_sha.tar.gz" "$second/meser-service-s10a-$source_sha.tar.gz"
-          test "$(sha256sum "$first/meser-service-s10a-$source_sha.tar.gz" | awk '{print $1}')" = "$(sha256sum "$second/meser-service-s10a-$source_sha.tar.gz" | awk '{print $1}')"
+          artifact_sha=$(sha256sum "$first/meser-service-s10a-$source_sha.tar.gz" | awk '{print $1}')
+          test "$artifact_sha" = "$(sha256sum "$second/meser-service-s10a-$source_sha.tar.gz" | awk '{print $1}')"
+          printf 'SOURCE_ARTIFACT_SHA256=%s\n' "$artifact_sha"
+          printf 'Exact-HEAD source artifact SHA-256: `%s`\n' "$artifact_sha" >>"$GITHUB_STEP_SUMMARY"
       - name: Validate same-origin Compose and pinned Caddy configuration
         env:
           SOURCE_SHA: ${{ github.event.pull_request.head.sha || github.sha }}

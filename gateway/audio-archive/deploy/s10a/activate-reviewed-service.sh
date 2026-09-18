@@ -10,6 +10,10 @@ die() { printf 'S10A ACTIVATION REFUSED: %s\n' "$*" >&2; exit 1; }
 [[ "$S10A_PRODUCTION_AUTHORIZED" == true ]] || die 'production authorization gate is false'
 [[ "$S10A_INDEPENDENT_REVIEW_COMPLETE" == true ]] || die 'independent review gate is false'
 [[ $# -eq 9 ]] || die 'usage: activate-reviewed-service.sh <release-dir> <precutover-recovery-bundle> <smoke-password-file> <source-smoke-record> <secret-dir> <backup-destination> <age-recipient> <backup-mount-id> <failure-domain-note>'
+runtime_schema="$(dirname "$0")/../recovery/runtime-env.sh"
+[[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || die 'canonical runtime schema is missing or unsafe'
+# shellcheck source=../recovery/runtime-env.sh
+source "$runtime_schema"
 
 release_dir=$1
 precutover_bundle=$2
@@ -119,19 +123,9 @@ runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' 
 github_app_id=$(runtime_value GITHUB_APP_ID)
 github_installation_id=$(runtime_value GITHUB_APP_INSTALLATION_ID)
 [[ "$github_app_id" =~ ^[0-9]+$ && "$github_installation_id" =~ ^[0-9]+$ ]] || die 'runtime GitHub App identities are invalid'
-cat >"$candidate_runtime" <<EOF
-SOURCE_SHA=$source_sha
-GATEWAY_IMAGE=$gateway_ref
-CADDY_IMAGE=$caddy_ref
-GITHUB_APP_ID=$github_app_id
-GITHUB_APP_INSTALLATION_ID=$github_installation_id
-ALLOWED_ORIGIN=$service_origin
-MESER_SITE_ADDRESS=meserproject.duckdns.org
-MESER_HTTP_BIND=80
-MESER_TLS_BIND=127.0.0.1:9443
-MESER_RUNTIME_UID=1000
-MESER_SYNTHETIC_RUNTIME=false
-EOF
+meser_write_runtime_env "$candidate_runtime" "$source_sha" "$gateway_ref" "$caddy_ref" \
+  "$github_app_id" "$github_installation_id" "$service_origin" meserproject.duckdns.org 80 127.0.0.1:9443 1000 false \
+  || die 'failed to write canonical candidate runtime environment'
 chmod 600 "$candidate_runtime"
 
 docker load -i "$release_dir/gateway-image.tar" >/dev/null

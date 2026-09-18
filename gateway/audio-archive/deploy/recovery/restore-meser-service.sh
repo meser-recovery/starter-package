@@ -5,6 +5,10 @@ MESER_RESTORE_AUTHORIZED=false
 MESER_ISOLATED_ENVIRONMENT_CONFIRMED=false
 die() { printf 'RESTORE REFUSED: %s\n' "$*" >&2; exit 1; }
 [[ $# -eq 3 ]] || die 'usage: restore-meser-service.sh <recovery-bundle> <off-vm-age-identity> <service-root>'
+runtime_schema="$(dirname "$0")/runtime-env.sh"
+[[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || die 'canonical runtime schema is missing or unsafe'
+# shellcheck source=runtime-env.sh
+source "$runtime_schema"
 bundle=$1
 identity=$2
 service_root=$3
@@ -25,10 +29,10 @@ done
 for file in runtime.env release-manifest.txt compose.yaml Caddyfile gateway-image.tar caddy-frontend-image.tar; do
   [[ -f "$bundle/$file" && ! -L "$bundle/$file" ]] || die "required restore input is missing: $file"
 done
-expected_runtime_keys=$'ALLOWED_ORIGIN\nCADDY_IMAGE\nGATEWAY_IMAGE\nGITHUB_APP_ID\nGITHUB_APP_INSTALLATION_ID\nMESER_HTTP_BIND\nMESER_RUNTIME_UID\nMESER_SITE_ADDRESS\nMESER_SYNTHETIC_RUNTIME\nMESER_TLS_BIND\nSOURCE_SHA'
-actual_runtime_keys=$(awk -F= 'NF >= 2 && $1 !~ /^#/ { print $1 }' "$bundle/runtime.env" | LC_ALL=C sort)
-[[ "$actual_runtime_keys" == "$expected_runtime_keys" ]] || die 'runtime environment contains missing or unknown keys'
-bundle_runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$bundle/runtime.env"; }
+meser_validate_runtime_env_shape "$bundle/runtime.env" || die 'runtime environment contains malformed, missing, duplicate or unknown keys'
+bundle_runtime_value() { meser_runtime_value "$bundle/runtime.env" "$1"; }
+[[ "$(bundle_runtime_value GITHUB_APP_ID)" =~ ^[0-9]+$ && "$(bundle_runtime_value GITHUB_APP_INSTALLATION_ID)" =~ ^[0-9]+$ ]] || die 'runtime GitHub App identities are invalid'
+[[ "$(bundle_runtime_value MESER_RUNTIME_UID)" =~ ^[0-9]+$ ]] || die 'runtime UID is invalid'
 if [[ "$synthetic" == true ]]; then
   [[ "$(bundle_runtime_value MESER_SYNTHETIC_RUNTIME)" == true && "$(bundle_runtime_value ALLOWED_ORIGIN)" =~ ^http://127\.0\.0\.1:[0-9]+$ && "$(bundle_runtime_value MESER_SITE_ADDRESS)" == http:// ]] || die 'synthetic runtime origin is invalid'
   [[ "$(bundle_runtime_value MESER_HTTP_BIND)" =~ ^127\.0\.0\.1:[0-9]+$ && "$(bundle_runtime_value MESER_TLS_BIND)" =~ ^127\.0\.0\.1:[0-9]+$ ]] || die 'synthetic runtime bind is invalid'
@@ -36,6 +40,15 @@ else
   [[ "$(bundle_runtime_value MESER_SYNTHETIC_RUNTIME)" == false && "$(bundle_runtime_value ALLOWED_ORIGIN)" == https://meserproject.duckdns.org && "$(bundle_runtime_value MESER_SITE_ADDRESS)" == meserproject.duckdns.org ]] || die 'production runtime origin is invalid'
   [[ "$(bundle_runtime_value MESER_HTTP_BIND)" == 80 && "$(bundle_runtime_value MESER_TLS_BIND)" == 127.0.0.1:9443 && "$(bundle_runtime_value MESER_RUNTIME_UID)" == 1000 ]] || die 'production runtime identity/binds are invalid'
 fi
+release_manifest_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$bundle/release-manifest.txt"; }
+recovery_manifest_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$bundle/recovery-manifest.txt"; }
+gateway_ref=$(release_manifest_value gateway_image_ref)
+caddy_ref=$(release_manifest_value caddy_frontend_image_ref)
+gateway_id=$(release_manifest_value gateway_image_id)
+caddy_id=$(release_manifest_value caddy_frontend_image_id)
+[[ "$gateway_ref" == "$(recovery_manifest_value gateway_image_ref)" && "$caddy_ref" == "$(recovery_manifest_value caddy_frontend_image_ref)" ]] || die 'recovery and release image references disagree'
+[[ "$gateway_id" == "$(recovery_manifest_value gateway_image_id)" && "$caddy_id" == "$(recovery_manifest_value caddy_frontend_image_id)" ]] || die 'recovery and release image IDs disagree'
+[[ "$(bundle_runtime_value SOURCE_SHA)" == "$(recovery_manifest_value source_sha)" && "$(bundle_runtime_value GATEWAY_IMAGE)" == "$gateway_ref" && "$(bundle_runtime_value CADDY_IMAGE)" == "$caddy_ref" ]] || die 'runtime configuration does not bind exact manifest source/images'
 for pair in 'compose_sha256 compose.yaml' 'caddy_sha256 Caddyfile'; do
   read -r key filename <<<"$pair"
   expected_hash=$(awk -F= -v key="$key" '$1 == key { print $2 }' "$bundle/release-manifest.txt")
@@ -64,15 +77,7 @@ install -m 600 "$bundle/runtime.env" "$config_root/runtime.env"
 
 docker load -i "$bundle/gateway-image.tar" >/dev/null
 docker load -i "$bundle/caddy-frontend-image.tar" >/dev/null
-gateway_ref=$(awk -F= '$1 == "gateway_image_ref" { print $2 }' "$bundle/release-manifest.txt")
-caddy_ref=$(awk -F= '$1 == "caddy_frontend_image_ref" { print $2 }' "$bundle/release-manifest.txt")
-gateway_id=$(awk -F= '$1 == "gateway_image_id" { print $2 }' "$bundle/release-manifest.txt")
-caddy_id=$(awk -F= '$1 == "caddy_frontend_image_id" { print $2 }' "$bundle/release-manifest.txt")
-runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$config_root/runtime.env"; }
-manifest_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$bundle/recovery-manifest.txt"; }
-[[ "$gateway_ref" == "$(manifest_value gateway_image_ref)" && "$caddy_ref" == "$(manifest_value caddy_frontend_image_ref)" ]] || die 'recovery and release image references disagree'
-[[ "$gateway_id" == "$(manifest_value gateway_image_id)" && "$caddy_id" == "$(manifest_value caddy_frontend_image_id)" ]] || die 'recovery and release image IDs disagree'
-[[ "$(runtime_value SOURCE_SHA)" == "$(manifest_value source_sha)" && "$(runtime_value GATEWAY_IMAGE)" == "$gateway_ref" && "$(runtime_value CADDY_IMAGE)" == "$caddy_ref" ]] || die 'runtime configuration does not bind exact manifest source/images'
+runtime_value() { meser_runtime_value "$config_root/runtime.env" "$1"; }
 [[ "$(docker image inspect -f '{{.Id}}' "$gateway_ref")" == "$gateway_id" ]] || die 'loaded gateway image ID does not match release manifest'
 [[ "$(docker image inspect -f '{{.Id}}' "$caddy_ref")" == "$caddy_id" ]] || die 'loaded Caddy/frontend image ID does not match release manifest'
 
