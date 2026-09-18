@@ -27,6 +27,15 @@ Vendored WASM byte size: **32232419**.
 Vendored WASM SHA-256:
 `9f57947a5bd530d8f00c5b3f2cb2a3492faa7e5d823315342d6a8656d0a6b7b7`
 
+The committed-range whitespace policy is disabled only for the two unchanged
+upstream files that contain upstream trailing spaces. Byte identity is guarded
+by these SHA-256 values:
+
+| Upstream file | SHA-256 |
+| --- | --- |
+| `core/ffmpeg-core.js` | `67a48f11645f85439f3fde4f2119042c16b374b910206b7a7a24f342e28dcae3` |
+| `ffmpeg/classes.js` | `7a829c898bdbc3a8806652a5502d9101178ce4e988a2c50b3abc1306ce4fc919` |
+
 The upstream `const.js` includes an unused default CDN URL/core version. It is
 preserved verbatim, not edited. The application always passes explicit same-origin
 `coreURL` and `wasmURL` and imports the wrapper only on the user's Run action.

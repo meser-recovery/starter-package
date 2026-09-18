@@ -948,7 +948,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         if tag in {"script", "link"} and "ffmpeg" in (attrs.get("src") or attrs.get("href") or "").lower():
             errors.append("Audio-Editor.html: FFmpeg must not load/preload on page open")
     scripts = [attrs for tag, attrs in tags if tag == "script"]
-    if ([attrs.get("src") for attrs in scripts] != ["scripts/origin-guard.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/speaker-editor.mjs", "scripts/source-session-archive.mjs"] or
+    if ([attrs.get("src") for attrs in scripts] != ["scripts/origin-guard.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/speaker-editor.mjs", "scripts/source-session-archive.mjs", "scripts/service-editor-session.mjs"] or
             not scripts or any(key in scripts[0] for key in ("async", "defer", "type"))):
         errors.append("Audio-Editor.html: early blocking guard/archive/module order changed")
     for text in ("Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.",
@@ -1084,7 +1084,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         ),
         "gateway/audio-archive/Dockerfile": ("node:24-alpine", "USER node",),
         "gateway/audio-archive/deploy/self-hosted/compose.yaml": (
-            '"80:80/tcp"', '"127.0.0.1:9443:443/tcp"', "service_private", "/etc/meser-audio-archive/", "Caddy.Dockerfile",
+            "MESER_HTTP_BIND:-80", "MESER_TLS_BIND:-127.0.0.1:9443", "service_private", "MESER_CONFIG_ROOT:-/etc/meser-audio-archive", "Caddy.Dockerfile",
         ),
         "gateway/audio-archive/deploy/self-hosted/Caddyfile": (
             "meserproject.duckdns.org", "proxy_protocol", "reverse_proxy gateway:8080",

@@ -81,6 +81,19 @@ test("same-origin service login requires replay; config/data, mutations, auth-ch
   assert.equal((await app(new Request(`${ORIGIN}/healthz`))).status, 200);
   assert.equal((await app(new Request(`${ORIGIN}/v1/config`))).status, 401);
   assert.equal((await app(new Request(`${ORIGIN}/internal/auth-check`))).status, 401);
+  let documentAuth = await app(new Request(`${ORIGIN}/internal/document-auth`, {
+    headers: { "X-Forwarded-Uri": "/Audio-Editor.html?workflow=speaker&projectRevision=7" }
+  }));
+  assert.equal(documentAuth.status, 303);
+  assert.equal(documentAuth.headers.get("location"), "/login?return=%2FAudio-Editor.html%3Fworkflow%3Dspeaker%26projectRevision%3D7");
+  for (const unsafe of [
+    "https://evil.example/Audio-Editor.html", "/Calendar.html?next=https://evil.example",
+    "/Audio-Archive.html?session=bad", "/Audio-Editor.html?workflow=speaker&workflow=announcement"
+  ]) {
+    documentAuth = await app(new Request(`${ORIGIN}/internal/document-auth`, { headers: { "X-Forwarded-Uri": unsafe } }));
+    assert.equal(documentAuth.status, 303);
+    assert.ok(["/login?return=%2F", "/login?return=%2FAudio-Archive.html", "/login?return=%2FAudio-Editor.html"].includes(documentAuth.headers.get("location")), unsafe);
+  }
 
   let response = await app(new Request(`${ORIGIN}/v1/session/login`, {
     method: "POST", headers: { Origin: "https://meser-recovery.github.io", "Content-Type": "application/json" },
@@ -105,6 +118,11 @@ test("same-origin service login requires replay; config/data, mutations, auth-ch
   response = await app(new Request(`${ORIGIN}/internal/auth-check`, { headers: { cookie } }));
   assert.equal(response.status, 200);
   assert.equal(await response.text(), "");
+  assert.equal(response.headers.get("x-service-authenticated"), "true");
+  response = await app(new Request(`${ORIGIN}/internal/document-auth`, {
+    headers: { cookie, "X-Forwarded-Uri": "/Audio-Editor.html?workflow=speaker" }
+  }));
+  assert.equal(response.status, 200);
   assert.equal(response.headers.get("x-service-authenticated"), "true");
 
   response = await app(new Request(`${ORIGIN}/v1/session`, { headers: { cookie } }));

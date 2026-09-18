@@ -4,6 +4,10 @@ import { ValidationError, assertUuid, hashIdempotencyKey } from "./validation.mj
 
 const JSON_LIMIT = 1024 * 1024;
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
+const ORDINARY_SERVICE_DOCUMENTS = new Set([
+  "/", "/index.html", "/Calendar.html", "/Google-Drive.html",
+  "/Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html"
+]);
 
 function json(value, status = 200, headers = {}) {
   return new Response(JSON.stringify(value), { status, headers: { "Content-Type": "application/json; charset=utf-8", ...headers } });
@@ -45,6 +49,38 @@ function requireSession(request, config, sessions, clock) {
   return session;
 }
 
+function canonicalDocumentReturn(value, allowedOrigin) {
+  let target;
+  try { target = new URL(value || "/", allowedOrigin); } catch { return "/"; }
+  if (target.origin !== allowedOrigin || target.hash || target.username || target.password) return "/";
+  if (ORDINARY_SERVICE_DOCUMENTS.has(target.pathname)) return target.search ? "/" : target.pathname;
+  const keys = [...target.searchParams.keys()];
+  if (new Set(keys).size !== keys.length) return target.pathname;
+  const uuid = input => typeof input === "string" && /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input);
+  if (target.pathname === "/Audio-Archive.html") {
+    if (keys.some(key => key !== "session")) return target.pathname;
+    const session = target.searchParams.get("session");
+    return session && uuid(session) ? `${target.pathname}?session=${encodeURIComponent(session)}` : target.pathname;
+  }
+  if (target.pathname === "/Audio-Editor.html") {
+    const allowed = new Set(["session", "workflow", "projectRevision", "speakerOutput"]);
+    if (keys.some(key => !allowed.has(key))) return target.pathname;
+    const session = target.searchParams.get("session");
+    const workflow = target.searchParams.get("workflow");
+    const revision = target.searchParams.get("projectRevision");
+    const output = target.searchParams.get("speakerOutput");
+    if ((session && !uuid(session)) || (workflow && !["announcement", "speaker"].includes(workflow)) ||
+        (revision && (!/^\d+$/.test(revision) || Number(revision) < 1)) || (output && !uuid(output))) return target.pathname;
+    const clean = new URLSearchParams();
+    if (session) clean.set("session", session);
+    if (workflow) clean.set("workflow", workflow);
+    if (revision) clean.set("projectRevision", revision);
+    if (output) clean.set("speakerOutput", output);
+    return `${target.pathname}${clean.size ? `?${clean}` : ""}`;
+  }
+  return "/";
+}
+
 function routeMatch(pathname, pattern) {
   const match = pathname.match(pattern);
   if (!match) return null;
@@ -72,6 +108,16 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
         const session = readSession(request, config.sessionSigningSecret, sessions, clock());
         return new Response(null, { status: session ? 200 : 401, headers: {
           "Cache-Control": "no-store", "X-Service-Authenticated": session ? "true" : "false", "X-Service-Login": "/login"
+        } });
+      }
+      if (url.pathname === "/internal/document-auth" && request.method === "GET") {
+        const session = readSession(request, config.sessionSigningSecret, sessions, clock());
+        if (session) return new Response(null, { status: 200, headers: {
+          "Cache-Control": "no-store", "X-Service-Authenticated": "true"
+        } });
+        const intent = canonicalDocumentReturn(request.headers.get("x-forwarded-uri"), config.allowedOrigin);
+        return new Response(null, { status: 303, headers: {
+          "Cache-Control": "no-store", Location: `/login?return=${encodeURIComponent(intent)}`
         } });
       }
       if (url.pathname === "/v1/session/login" && request.method === "POST") {

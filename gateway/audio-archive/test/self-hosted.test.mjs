@@ -30,7 +30,8 @@ function serviceBlock(name, next) {
 test("self-hosted Compose isolates gateway ports, networks, and file secrets", () => {
   const gateway = serviceBlock("gateway", "caddy");
   const proxy = serviceBlock("caddy");
-  assert.match(gateway, /user: "1000:0"/);
+  assert.match(gateway, /user: "\$\{MESER_RUNTIME_UID:-1000\}:0"/);
+  assert.match(gateway, /image: \$\{GATEWAY_IMAGE:\?GATEWAY_IMAGE/);
   assert.match(gateway, /expose:\n\s+- "8080"/);
   assert.doesNotMatch(gateway, /\n\s+ports:/);
   assert.doesNotMatch(gateway, /network_mode|privileged:/);
@@ -38,31 +39,37 @@ test("self-hosted Compose isolates gateway ports, networks, and file secrets", (
   assert.match(gateway, /service_private/);
   assert.match(gateway, /SOURCE_SHA/);
   assert.match(proxy, /Caddy\.Dockerfile/);
-  assert.match(proxy, /- "80:80\/tcp"/);
-  assert.match(proxy, /- "127\.0\.0\.1:9443:443\/tcp"/);
+  assert.match(proxy, /image: \$\{CADDY_IMAGE:\?CADDY_IMAGE/);
+  assert.match(proxy, /MESER_HTTP_BIND:-80\}:80\/tcp/);
+  assert.match(proxy, /MESER_TLS_BIND:-127\.0\.0\.1:9443\}:443\/tcp/);
   assert.doesNotMatch(proxy, /- "443:443/);
   assert.match(proxy, /service_private/);
   assert.doesNotMatch(proxy, /\n\s+secrets:/);
   assert.doesNotMatch(proxy, /Caddyfile:\/etc\/caddy/);
   assert.doesNotMatch(compose, /network_mode:\s*host/);
   for (const path of ["github-app.pem", "shared-password-verifier", "session-signing-secret"]) {
-    assert.match(compose, new RegExp(`/etc/meser-audio-archive/${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+    assert.match(compose, new RegExp(`MESER_CONFIG_ROOT:-/etc/meser-audio-archive\\}/${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
     assert.match(gateway, new RegExp(`/run/secrets/${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   }
   assert.doesNotMatch(compose, /GITHUB_APP_PRIVATE_KEY:\s|SHARED_PASSWORD_VERIFIER:\s|SESSION_SIGNING_SECRET:\s/);
 });
 
 test("Caddy terminates one hostname behind loopback HAProxy and replaces forwarding headers", () => {
-  assert.equal((caddy.match(/^meserproject\.duckdns\.org\s*\{/gm) || []).length, 1);
+  assert.equal((caddy.match(/^\{\$MESER_SITE_ADDRESS:meserproject\.duckdns\.org\}\s*\{/gm) || []).length, 1);
   assert.match(caddy, /proxy_protocol[\s\S]*fallback_policy reject[\s\S]*\n\s*tls/);
   assert.match(caddy, /strict_sni_host on/);
   assert.match(caddy, /reverse_proxy gateway:8080/);
   assert.match(caddy, /forward_auth gateway:8080[\s\S]*uri \/internal\/auth-check/);
+  assert.match(caddy, /@document path[^\n]+Audio-Editor\.html[^\n]+Audio-Archive\.html/);
+  assert.match(caddy, /handle @document[\s\S]*uri \/internal\/document-auth[\s\S]*file_server/);
+  assert.doesNotMatch(caddy, /handle_errors/);
   assert.match(caddy, /@login path \/login/);
   assert.match(caddy, /scripts\/service-session-client\.mjs/);
   assert.doesNotMatch(caddy.match(/@login path[^\n]+/)?.[0] || "", /audio-archive-client/);
   assert.match(caddy, /@internal path \/internal\/\*/);
   assert.match(caddy, /Content-Security-Policy/);
+  assert.match(caddy, /script-src 'self' 'wasm-unsafe-eval'/);
+  assert.doesNotMatch(caddy, /(?:^|[ ;])'unsafe-eval'(?:[ ;]|$)/);
   for (const header of ["X-Forwarded-For", "X-Forwarded-Proto", "X-Forwarded-Host"]) {
     assert.match(caddy, new RegExp(`header_up -${header}`));
     assert.match(caddy, new RegExp(`header_up ${header}`));
@@ -112,15 +119,21 @@ test("protected frontend is repository-owned and Pages entry points are forward-
 test("S10A activation package is inert, full-stack, checksum guarded, recovery-gated and rollback bound", () => {
   assert.match(s10aActivation, /S10A_PRODUCTION_AUTHORIZED=false/);
   assert.match(s10aActivation, /S10A_INDEPENDENT_REVIEW_COMPLETE=false/);
-  assert.match(s10aActivation, /sha256sum "\$artifact"/);
-  assert.match(s10aActivation, /tar -tzf "\$artifact" >"\$listing"/);
-  assert.match(s10aActivation, /build --pull=false gateway caddy/);
+  assert.match(s10aActivation, /gateway-image\.tar/);
+  assert.match(s10aActivation, /docker load -i/);
+  assert.match(s10aActivation, /loaded gateway image ID differs from manifest/);
   assert.match(s10aActivation, /up -d --no-build gateway caddy/);
   assert.match(s10aActivation, /rollback-reviewed-service\.sh/);
   assert.match(s10aActivation, /__Host-meser_service_session/);
-  assert.match(s10aActivation, /recovery bundle integrity failed/);
+  assert.match(s10aActivation, /precutover recovery bundle integrity failed/);
+  assert.match(s10aActivation, /source smoke integrity failed/);
+  assert.match(s10aActivation, /deployment-record\.txt/);
+  assert.match(s10aActivation, /post_activation_recovery_bundle/);
   assert.doesNotMatch(s10aActivation, /ssh |systemctl|docker compose down/);
-  assert.match(s10aRollback, /gateway caddy/);
+  assert.match(s10aRollback, /prior-gateway\.image-id/);
+  assert.match(s10aRollback, /prior-caddy\.image-id/);
+  assert.match(s10aRollback, /--force-recreate gateway caddy/);
+  assert.match(s10aRollback, /exact prior image ID/);
   assert.doesNotMatch(s10aRollback, /docker compose down|volume rm|haproxy\.cfg.*>/);
   assert.match(legacyActivation, /permanently disabled/);
   assert.match(s10aChecklist, /No command.*executed against production/);
@@ -136,6 +149,9 @@ test("recovery tooling uses age, exact secret allowlist, off-VM marker and inert
   assert.match(recoveryRestore, /MESER_RESTORE_AUTHORIZED=false/);
   assert.match(recoveryRestore, /sha256sum -c SHA256SUMS/);
   assert.match(recoveryRestore, /age -d -i/);
+  assert.match(recoveryCreate, /runtime\.env/);
+  assert.match(recoveryRestore, /loaded gateway image ID does not match release manifest/);
+  assert.match(recoveryRestore, /restored Caddy container does not use exact manifest image ID/);
 });
 
 test("S10A artifact layout check consumes the complete tar listing under pipefail", () => {

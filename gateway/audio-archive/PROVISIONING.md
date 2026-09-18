@@ -17,7 +17,7 @@ node service/tools/verify-frontend.mjs
 git diff --check
 ```
 
-When Docker is available, render Compose with validation-only identifiers and validate Caddy using the pinned image. This must not start the stack or use production secrets.
+When Docker is available, render Compose with validation-only identifiers and exact candidate image references, then validate Caddy using the pinned image. CI additionally starts the restored synthetic stack and tests the actual Caddy response path; no production secret or archive is used.
 
 Evidence must show:
 
@@ -31,9 +31,9 @@ Evidence must show:
 
 ## Reviewed release creation
 
-`service/tools/create-release.sh <exact-sha> <empty-output-directory>` is the future offline release entry point. It refuses a dirty checkout, packages reviewed source only, builds both images with exact-SHA OCI labels, saves immutable image archives and writes `release-manifest.txt` with the source tree, image IDs, base digests and Compose/Caddy/HAProxy checksums.
+`service/tools/create-release.sh <exact-sha> <empty-output-directory>` is the future offline release entry point. It refuses a dirty checkout, packages reviewed source only, builds both images with exact-SHA OCI labels, saves immutable image archives and writes `release-manifest.txt` with exact image refs/IDs, source tree, base digests and Compose/Caddy/HAProxy checksums. `service/tools/PACKAGING-ENVIRONMENT.md` defines the canonical packaging environment; CI builds twice in independent empty directories and requires byte-identical source archives and SHA-256 records.
 
-Do not build a release from mutable `/opt` state. Do not include environment files, credentials, runtime data or logs.
+Do not build a release from mutable `/opt` state. Do not include credentials, runtime data or logs. The recovery bundle separately creates an allowlisted non-secret `runtime.env` containing only exact image/source identities, GitHub App public identifiers, origin/bind settings and the runtime UID.
 
 ## Pre-cutover recovery gate
 
@@ -47,21 +47,21 @@ Validate the bundle's `SHA256SUMS`, record its failure domain and follow `deploy
 
 1. verifies exact source and artifact hashes;
 2. verifies a completed off-VM encrypted recovery bundle;
-3. captures current gateway/Caddy image, container, Compose and Caddy identities plus the unchanged HAProxy checksum without printing secrets;
+3. captures current gateway/Caddy image IDs, uniquely tagged preserved rollback references, containers, Compose, Caddy and runtime identities plus the unchanged HAProxy checksum without printing secrets;
 4. validates candidate Compose and Caddy;
-5. builds/loads exact reviewed gateway and Caddy/frontend images;
+5. loads the exact reviewed gateway and Caddy/frontend archives and verifies both tags resolve to manifest image IDs;
 6. replaces only those two application containers while preserving Caddy volumes;
-7. runs health, protected-denial, login/replay, landing, protected pages, automatic Archive, Editor/config and logout checks with zero archive writes;
-8. records the deployment and post-activation recovery identities.
+7. runs health, canonical unauthenticated redirect, login/replay, landing, protected pages, automatic Archive, Editor/config, exact read-only source-part size/SHA and logout checks with zero archive writes;
+8. creates and verifies a post-activation off-VM bundle, then records exact deployment, rollback, source-smoke and recovery identities in the authoritative deployment record.
 
 It must not use `docker compose down`, edit HAProxy/Xray/x-ui/MTProxy/n8n/router/DNS/firewall, rotate secrets or mutate archive data.
 
 ## Rollback
 
-Any failed activation invokes `rollback-reviewed-service.sh` with the captured directory. Rollback restores both prior application services together using their exact prior Compose/image references, preserves volumes, verifies HAProxy stayed unchanged and does not touch GitHub archive records. If the captured identities or checksums are incomplete, rollback fails closed for operator intervention.
+Any failed activation invokes `rollback-reviewed-service.sh` with the captured directory. Before candidate load, both prior image IDs are protected by unique rollback tags. Rollback uses an exact-image Compose override, force-recreates both services, verifies both running container image IDs and service health, preserves volumes, verifies HAProxy stayed unchanged and does not touch GitHub archive records. If any captured identity, preserved tag or checksum differs, rollback fails closed for operator intervention.
 
 ## Clean-machine restore
 
-The supported target is a clean Ubuntu 24.04 LTS VM. Restore validates the recovery bundle before decrypting/loading, requires the off-VM age identity explicitly, restores mode-0600 secrets without printing them, loads exact images, brings up only the Meser application stack and performs read-only validation. The old VM filesystem and an application database are not inputs; `meser-recovery/audio-archive` and Releases remain canonical data.
+The supported target is a clean Ubuntu 24.04 LTS VM. Restore validates the recovery bundle before decrypting/loading, requires the off-VM age identity explicitly, restores mode-0600 secrets without printing them, installs the allowlisted non-secret runtime configuration, loads both image archives, verifies their refs resolve to the manifest IDs, verifies the running containers use those exact IDs, brings up only the Meser application stack and checks health. The CI rehearsal then runs the Caddy-backed redirect/login/protected API/internal denial/logout and real FFmpeg/WASM flow. The old VM filesystem and an application database are not inputs; `meser-recovery/audio-archive` and Releases remain canonical data.
 
 Real decryptability, off-VM placement, isolated restore, production identities and real-device tests are separate authorized operational acceptance gates and are not claimed by repository work.

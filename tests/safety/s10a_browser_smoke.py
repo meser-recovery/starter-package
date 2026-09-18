@@ -131,9 +131,23 @@ def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
                 name = path.strip("/").replace(".", "-") or "landing"
                 page.screenshot(path=screenshot_dir / f"s10a-{browser_type.name}-{name}-{width}.png", full_page=True)
 
-    page.goto(base_url + "/", wait_until="domcontentloaded")
+    page.goto(base_url + "/Audio-Editor.html", wait_until="domcontentloaded")
+    page.locator("#processor-file").set_input_files({
+        "name": "unsaved-speaker.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
+    })
+    page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
+    page.locator("#open-local-speaker").click()
+    page.wait_for_function("document.getElementById('speaker-editor-status').dataset.dirty === 'true'", timeout=30_000)
     page.locator("#service-logout").click()
+    page.locator("#speaker-unsaved-dialog").wait_for(state="visible")
+    page.locator("#speaker-unsaved-cancel").click()
+    assert "/Audio-Editor.html" in page.url
+    assert page.evaluate("async () => (await fetch('/v1/session')).status") == 200
+    page.locator("#service-logout").click()
+    page.locator("#speaker-unsaved-dialog").wait_for(state="visible")
+    page.locator("#speaker-unsaved-discard").click()
     page.wait_for_url("**/login", timeout=5000)
+    assert page.evaluate("async () => (await fetch('/v1/session')).status") == 401
     page.goto(base_url + "/Audio-Archive.html", wait_until="domcontentloaded")
     page.wait_for_url("**/login?return=*", timeout=5000)
 

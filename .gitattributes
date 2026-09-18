@@ -1,3 +1,4 @@
-# Preserve verbatim upstream whitespace; Safety pins the full SHA-256 of both files.
-vendor/ffmpeg/ffmpeg/classes.js -whitespace
-vendor/ffmpeg/core/ffmpeg-core.js -whitespace
+# Official ffmpeg.wasm distribution files remain byte-for-byte upstream. Their
+# hashes are recorded in service/frontend/vendor/ffmpeg/README.md.
+service/frontend/vendor/ffmpeg/core/ffmpeg-core.js whitespace=-trailing-space
+service/frontend/vendor/ffmpeg/ffmpeg/classes.js whitespace=-trailing-space

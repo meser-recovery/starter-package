@@ -2,6 +2,7 @@ name: meser-audio-archive
 
 services:
   gateway:
+    image: ${GATEWAY_IMAGE:?GATEWAY_IMAGE must name the reviewed gateway image}
     build:
       context: ../..
       dockerfile: Dockerfile
@@ -9,7 +10,7 @@ services:
         SOURCE_SHA: ${SOURCE_SHA:?SOURCE_SHA must be set}
     restart: unless-stopped
     init: true
-    user: "1000:0"
+    user: "${MESER_RUNTIME_UID:-1000}:0"
     read_only: true
     cap_drop:
       - ALL
@@ -17,7 +18,7 @@ services:
       - no-new-privileges:true
     environment:
       PORT: "8080"
-      ALLOWED_ORIGIN: https://meserproject.duckdns.org
+      ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-https://meserproject.duckdns.org}
       STORAGE_OWNER: meser-recovery
       STORAGE_REPOSITORY: audio-archive
       STORAGE_BRANCH: main
@@ -47,6 +48,7 @@ services:
       start_period: 10s
 
   caddy:
+    image: ${CADDY_IMAGE:?CADDY_IMAGE must name the reviewed Caddy/frontend image}
     build:
       context: ../../../..
       dockerfile: gateway/audio-archive/deploy/self-hosted/Caddy.Dockerfile
@@ -60,12 +62,14 @@ services:
       - NET_BIND_SERVICE
     security_opt:
       - no-new-privileges:true
+    environment:
+      MESER_SITE_ADDRESS: ${MESER_SITE_ADDRESS:-meserproject.duckdns.org}
     depends_on:
       gateway:
         condition: service_healthy
     ports:
-      - "80:80/tcp"
-      - "127.0.0.1:9443:443/tcp"
+      - "${MESER_HTTP_BIND:-80}:80/tcp"
+      - "${MESER_TLS_BIND:-127.0.0.1:9443}:443/tcp"
     volumes:
       - caddy_data:/data
       - caddy_config:/config
@@ -82,8 +86,8 @@ volumes:
 
 secrets:
   github_app_private_key:
-    file: /etc/meser-audio-archive/github-app.pem
+    file: ${MESER_CONFIG_ROOT:-/etc/meser-audio-archive}/github-app.pem
   shared_password_verifier:
-    file: /etc/meser-audio-archive/shared-password-verifier
+    file: ${MESER_CONFIG_ROOT:-/etc/meser-audio-archive}/shared-password-verifier
   session_signing_secret:
-    file: /etc/meser-audio-archive/session-signing-secret
+    file: ${MESER_CONFIG_ROOT:-/etc/meser-audio-archive}/session-signing-secret

@@ -29,6 +29,7 @@ service/frontend/scripts/service-landing.mjs
 service/frontend/scripts/service-login.mjs
 service/frontend/scripts/service-session.mjs
 service/frontend/scripts/service-session-client.mjs
+service/frontend/scripts/service-editor-session.mjs
 service/frontend/scripts/source-session-archive.mjs
 service/frontend/scripts/speaker-analysis-queue.mjs
 service/frontend/scripts/speaker-editor-core.mjs

@@ -1,0 +1,81 @@
+#!/usr/bin/env python3
+"""Caddy-backed S10A runtime proof with synthetic data and no archive writes."""
+
+from __future__ import annotations
+
+import argparse
+from io import BytesIO
+import struct
+import wave
+
+from playwright.sync_api import sync_playwright
+
+
+PASSWORD = "synthetic-caddy-password"
+
+
+def wav_fixture() -> bytes:
+    output = BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(struct.pack("<" + "h" * 24_000, *([0] * 24_000)))
+    return output.getvalue()
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--base-url", required=True)
+    args = parser.parse_args()
+    base = args.base_url.rstrip("/")
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch()
+        context = browser.new_context()
+        request = context.request
+
+        redirect = request.get(base + "/Audio-Editor.html?workflow=announcement", max_redirects=0)
+        assert redirect.status == 303, redirect.status
+        assert redirect.headers["location"] == "/login?return=%2FAudio-Editor.html%3Fworkflow%3Dannouncement"
+        assert request.get(base + "/scripts/audio-processor.mjs", max_redirects=0).status == 401
+        assert request.get(base + "/v1/config", max_redirects=0).status == 401
+        assert request.get(base + "/internal/auth-check", max_redirects=0).status == 404
+
+        page = context.new_page()
+        response = page.goto(base + redirect.headers["location"], wait_until="domcontentloaded")
+        assert response is not None
+        csp = response.headers.get("content-security-policy", "")
+        assert "'wasm-unsafe-eval'" in csp
+        assert "'unsafe-eval'" not in csp
+        page.locator("#admin-password").fill(PASSWORD)
+        page.locator("#admin-access-form button[type=submit]").click()
+        page.wait_for_url("**/Audio-Editor.html?workflow=announcement")
+        page.get_by_role("heading", name="Редактирование аудио", exact=True).wait_for()
+        api = page.evaluate("async () => { const r = await fetch('/v1/config'); return [r.status, await r.json()]; }")
+        assert api[0] == 200 and api[1]["schemaVersion"] == 1
+
+        page.locator("#processor-file").set_input_files({
+            "name": "caddy-wasm.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
+        })
+        page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
+        page.locator("#open-local-announcement").click()
+        page.locator("#processor-run").wait_for(state="visible")
+        page.wait_for_function("!document.getElementById('processor-run').disabled", timeout=30_000)
+        page.locator("#processor-run").click()
+        page.locator("#processor-result").wait_for(state="visible", timeout=120_000)
+        result = page.evaluate("() => window.__lastCaddyWasmResult || ({ href: document.getElementById('processor-download').href, status: document.getElementById('processor-status').textContent })")
+        assert result["href"].startswith("blob:"), result
+        assert result["status"] in ("Готово.", "Длинные паузы не найдены. Файл не изменён."), result
+
+        page.locator("#service-logout").click()
+        page.wait_for_url("**/login")
+        assert request.get(base + "/v1/session", max_redirects=0).status == 401
+        assert request.get(base + "/Audio-Editor.html", max_redirects=0).status == 303
+        context.close()
+        browser.close()
+    print("Caddy-backed auth, protected routes, logout and FFmpeg/WASM processing: PASS")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

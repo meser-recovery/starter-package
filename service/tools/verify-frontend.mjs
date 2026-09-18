@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { dirname, extname, relative, resolve } from "node:path";
 
@@ -17,6 +18,14 @@ function walk(directory) {
 const allowed = readFileSync(allowlistPath, "utf8").trim().split("\n").sort();
 const actual = walk(frontendRoot).sort();
 assert.deepEqual(actual, allowed, "protected frontend tree must exactly match asset-allowlist.txt");
+
+for (const [path, expected] of Object.entries({
+  "service/frontend/vendor/ffmpeg/core/ffmpeg-core.js": "67a48f11645f85439f3fde4f2119042c16b374b910206b7a7a24f342e28dcae3",
+  "service/frontend/vendor/ffmpeg/ffmpeg/classes.js": "7a829c898bdbc3a8806652a5502d9101178ce4e988a2c50b3abc1306ce4fc919"
+})) {
+  const digest = createHash("sha256").update(readFileSync(resolve(repositoryRoot, path))).digest("hex");
+  assert.equal(digest, expected, `vendored upstream bytes changed: ${path}`);
+}
 
 const entryPoints = actual.filter(path => extname(path) === ".html");
 assert.deepEqual(entryPoints, [

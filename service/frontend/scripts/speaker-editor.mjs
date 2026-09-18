@@ -49,6 +49,7 @@ const clock = (seconds) => {
 };
 const durationText = (seconds) => !Number.isFinite(seconds) ? "Длительность ещё не определена" : `${new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 3 }).format(seconds)} с`;
 const bytesText = (bytes) => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} КБ` : `${(bytes / 1024 / 1024).toFixed(1)} МБ`;
+let confirmedUnload = false;
 
 function userMessage(error, fallback) {
   if (error?.name === "AbortError" || error?.message === "cancelled") return "Создание финальной версии отменено. Проект и исходники сохранены в памяти.";
@@ -1157,6 +1158,12 @@ export async function protectSpeakerTransition() {
   return choice === "discard" || (choice === "save" && await saveSpeakerProject());
 }
 
+export async function prepareSpeakerLogout() {
+  if (!await protectSpeakerTransition()) return false;
+  confirmedUnload = true;
+  return true;
+}
+
 function operation() {
   const controller = new AbortController();
   controller.operationIdentity = ++renderOperationSequence;
@@ -1711,7 +1718,7 @@ for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click
   try { const value = Number(byId(`selection-${kind}`).value); commitPayload(setRecordingBoundary(state.payload, state.originalDuration, kind, value), "граница записи"); }
   catch (error) { byId("selection-error").textContent = error.message; }
 });
-window.addEventListener("beforeunload", event => { if (currentDirty()) { event.preventDefault(); event.returnValue = ""; } });
+window.addEventListener("beforeunload", event => { if (!confirmedUnload && currentDirty()) { event.preventDefault(); event.returnValue = ""; } });
 
 byId("project-cancel").addEventListener("click", () => state.projectController?.abort());
 

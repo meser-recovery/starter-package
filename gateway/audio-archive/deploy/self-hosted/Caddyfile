@@ -14,7 +14,7 @@
 	}
 }
 
-meserproject.duckdns.org {
+{$MESER_SITE_ADDRESS:meserproject.duckdns.org} {
 	root * /srv/service
 	encode zstd gzip
 
@@ -22,7 +22,7 @@ meserproject.duckdns.org {
 		X-Content-Type-Options nosniff
 		Referrer-Policy no-referrer
 		Permissions-Policy "camera=(), geolocation=(), microphone=()"
-		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; frame-src https://calendar.google.com; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self'; style-src 'self'; worker-src 'self' blob:"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; frame-src https://calendar.google.com; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; worker-src 'self' blob:"
 		Cache-Control "no-store"
 	}
 
@@ -59,17 +59,20 @@ meserproject.duckdns.org {
 		file_server
 	}
 
+	@document path / /index.html /Calendar.html /Google-Drive.html /Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html /Audio-Editor.html /Audio-Archive.html
+	handle @document {
+		forward_auth gateway:8080 {
+			uri /internal/document-auth
+			copy_headers X-Service-Authenticated
+		}
+		file_server
+	}
+
 	handle {
 		forward_auth gateway:8080 {
 			uri /internal/auth-check
 			copy_headers X-Service-Authenticated X-Service-Login
 		}
 		file_server
-	}
-
-	handle_errors {
-		@unauthorized expression {http.error.status_code} == 401
-		redir @unauthorized /login?return={http.request.uri} 303
-		respond "Service unavailable" {http.error.status_code}
 	}
 }
