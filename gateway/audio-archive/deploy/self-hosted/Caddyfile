@@ -27,7 +27,9 @@
 	}
 
 	@internal path /internal/*
-	respond @internal 404
+	handle @internal {
+		respond 404
+	}
 
 	@health path /healthz
 	handle @health {

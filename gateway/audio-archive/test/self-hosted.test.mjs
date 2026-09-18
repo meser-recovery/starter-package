@@ -67,7 +67,7 @@ test("Caddy terminates one hostname behind loopback HAProxy and replaces forward
   assert.match(caddy, /@login path \/login/);
   assert.match(caddy, /scripts\/service-session-client\.mjs/);
   assert.doesNotMatch(caddy.match(/@login path[^\n]+/)?.[0] || "", /audio-archive-client/);
-  assert.match(caddy, /@internal path \/internal\/\*/);
+  assert.match(caddy, /@internal path \/internal\/\*[\s\S]*handle @internal \{[\s\S]*respond 404[\s\S]*\}/);
   assert.match(caddy, /Content-Security-Policy/);
   assert.match(caddy, /script-src 'self' 'wasm-unsafe-eval'/);
   assert.doesNotMatch(caddy, /(?:^|[ ;])'unsafe-eval'(?:[ ;]|$)/);
