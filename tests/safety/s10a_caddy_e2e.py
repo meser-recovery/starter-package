@@ -57,9 +57,12 @@ def main() -> int:
         page.locator("#processor-file").set_input_files({
             "name": "caddy-wasm.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
         })
+        page.locator("#source-session-use-local").wait_for(state="visible", timeout=30_000)
+        expect(page.locator("#source-session-use-local")).to_be_enabled(timeout=30_000)
+        page.locator("#source-session-use-local").click()
         page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
         page.locator("#open-local-announcement").click()
-        page.locator("#processor-run").wait_for(state="visible")
+        page.locator("#processor-run").wait_for(state="visible", timeout=30_000)
         expect(page.locator("#processor-run")).to_be_enabled(timeout=30_000)
         page.locator("#processor-run").click()
         page.locator("#processor-result").wait_for(state="visible", timeout=120_000)
