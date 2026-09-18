@@ -23,7 +23,7 @@ caddy_id=$(<"$state/prior-caddy.image-id")
 gateway_ref=$(<"$state/prior-gateway.image-ref")
 caddy_ref=$(<"$state/prior-caddy.image-ref")
 [[ "$gateway_id" =~ ^sha256:[0-9a-f]{64}$ && "$caddy_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die 'captured image ID is invalid'
-[[ "$gateway_ref" =~ ^meser-s10a-rollback-[0-9TZ-]+-gateway:preserved$ && "$caddy_ref" =~ ^meser-s10a-rollback-[0-9TZ-]+-caddy:preserved$ ]] || die 'captured rollback image reference is invalid'
+[[ "$gateway_ref" =~ ^meser-s10a-rollback-[0-9-]+-gateway:preserved$ && "$caddy_ref" =~ ^meser-s10a-rollback-[0-9-]+-caddy:preserved$ ]] || die 'captured rollback image reference is invalid'
 [[ "$(docker image inspect -f '{{.Id}}' "$gateway_ref")" == "$gateway_id" ]] || die 'preserved gateway rollback reference changed'
 [[ "$(docker image inspect -f '{{.Id}}' "$caddy_ref")" == "$caddy_id" ]] || die 'preserved Caddy rollback reference changed'
 

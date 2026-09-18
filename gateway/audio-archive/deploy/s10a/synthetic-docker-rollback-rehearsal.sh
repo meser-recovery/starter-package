@@ -61,7 +61,7 @@ cp "$release_dir/compose.yaml" "$work/compose.yaml"
 cp "$release_dir/Caddyfile" "$work/Caddyfile"
 printf 'synthetic haproxy invariant\n' >"$work/haproxy.cfg"
 sha256sum "$work/haproxy.cfg" >"$work/haproxy.sha256"
-timestamp=20260918T000000Z
+timestamp=20260918-000000
 gateway_rollback_ref="meser-s10a-rollback-$timestamp-gateway:preserved"
 caddy_rollback_ref="meser-s10a-rollback-$timestamp-caddy:preserved"
 docker image tag "$prior_gateway_id" "$gateway_rollback_ref"

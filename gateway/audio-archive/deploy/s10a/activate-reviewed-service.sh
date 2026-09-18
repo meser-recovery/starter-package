@@ -60,6 +60,7 @@ done
 [[ "$(sha256sum "$haproxy_config" | awk '{ print $1 }')" == "$(manifest_value haproxy_sha256)" ]] || die 'deployed HAProxy differs from reviewed release reference'
 
 timestamp=$(date -u +%Y%m%dT%H%M%SZ)
+tag_timestamp=$(date -u +%Y%m%d-%H%M%S)
 rollback_dir="$rollback_root/$timestamp-$source_sha"
 work_dir=$(mktemp -d /var/tmp/meser-service-activate.XXXXXX)
 candidate_runtime="$work_dir/runtime.env"
@@ -97,7 +98,7 @@ for service in gateway caddy; do
   [[ -n "$container" ]] || die "current $service container is unavailable"
   prior_id=$(docker inspect -f '{{.Image}}' "$container")
   [[ "$prior_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "current $service image ID is invalid"
-  rollback_ref="meser-s10a-rollback-$timestamp-$service:preserved"
+  rollback_ref="meser-s10a-rollback-$tag_timestamp-$service:preserved"
   docker image tag "$prior_id" "$rollback_ref"
   printf '%s\n' "$prior_id" >"$rollback_dir/prior-$service.image-id"
   printf '%s\n' "$rollback_ref" >"$rollback_dir/prior-$service.image-ref"
