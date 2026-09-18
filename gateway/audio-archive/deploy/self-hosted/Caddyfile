@@ -15,12 +15,61 @@
 }
 
 meserproject.duckdns.org {
-	reverse_proxy gateway:8080 {
-		header_up -X-Forwarded-For
-		header_up X-Forwarded-For {remote_host}
-		header_up -X-Forwarded-Proto
-		header_up X-Forwarded-Proto {scheme}
-		header_up -X-Forwarded-Host
-		header_up X-Forwarded-Host {host}
+	root * /srv/service
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; frame-src https://calendar.google.com; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self'; style-src 'self'; worker-src 'self' blob:"
+		Cache-Control "no-store"
+	}
+
+	@internal path /internal/*
+	respond @internal 404
+
+	@health path /healthz
+	handle @health {
+		reverse_proxy gateway:8080 {
+			header_up -X-Forwarded-For
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Forwarded-Proto
+			header_up X-Forwarded-Proto {scheme}
+			header_up -X-Forwarded-Host
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	@api path /v1/*
+	handle @api {
+		reverse_proxy gateway:8080 {
+			header_up -X-Forwarded-For
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Forwarded-Proto
+			header_up X-Forwarded-Proto {scheme}
+			header_up -X-Forwarded-Host
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	@login path /login /login.html /scripts/origin-guard.js /scripts/service-login.mjs /scripts/service-session.mjs /scripts/service-session-client.mjs /styles/foundation.css /styles/components.css /styles/admin-access.css /images/favicon.png /images/NALogo.png
+	handle @login {
+		try_files {path} /login.html
+		file_server
+	}
+
+	handle {
+		forward_auth gateway:8080 {
+			uri /internal/auth-check
+			copy_headers X-Service-Authenticated X-Service-Login
+		}
+		file_server
+	}
+
+	handle_errors {
+		@unauthorized expression {http.error.status_code} == 401
+		redir @unauthorized /login?return={http.request.uri} 303
+		respond "Service unavailable" {http.error.status_code}
 	}
 }

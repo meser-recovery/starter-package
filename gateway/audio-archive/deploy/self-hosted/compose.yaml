@@ -5,6 +5,8 @@ services:
     build:
       context: ../..
       dockerfile: Dockerfile
+      args:
+        SOURCE_SHA: ${SOURCE_SHA:?SOURCE_SHA must be set}
     restart: unless-stopped
     init: true
     user: "1000:0"
@@ -15,7 +17,7 @@ services:
       - no-new-privileges:true
     environment:
       PORT: "8080"
-      ALLOWED_ORIGIN: https://meser-recovery.github.io
+      ALLOWED_ORIGIN: https://meserproject.duckdns.org
       STORAGE_OWNER: meser-recovery
       STORAGE_REPOSITORY: audio-archive
       STORAGE_BRANCH: main
@@ -34,7 +36,7 @@ services:
       - source: session_signing_secret
         target: session-signing-secret
     networks:
-      - archive_private
+      - service_private
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
     healthcheck:
@@ -45,7 +47,11 @@ services:
       start_period: 10s
 
   caddy:
-    image: caddy:2.11.4-alpine
+    build:
+      context: ../../../..
+      dockerfile: gateway/audio-archive/deploy/self-hosted/Caddy.Dockerfile
+      args:
+        SOURCE_SHA: ${SOURCE_SHA:?SOURCE_SHA must be set}
     restart: unless-stopped
     init: true
     cap_drop:
@@ -61,14 +67,13 @@ services:
       - "80:80/tcp"
       - "127.0.0.1:9443:443/tcp"
     volumes:
-      - ./Caddyfile:/etc/caddy/Caddyfile:ro
       - caddy_data:/data
       - caddy_config:/config
     networks:
-      - archive_private
+      - service_private
 
 networks:
-  archive_private:
+  service_private:
     driver: bridge
 
 volumes:
