@@ -54,6 +54,7 @@ def main() -> int:
         api = page.evaluate("async () => { const r = await fetch('/v1/config'); return [r.status, await r.json()]; }")
         assert api[0] == 200 and api[1]["schemaVersion"] == 1
 
+        page.locator("#source-session-mode-device").click()
         page.locator("#processor-file").set_input_files({
             "name": "caddy-wasm.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
         })
