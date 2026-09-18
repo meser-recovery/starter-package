@@ -1,7 +1,9 @@
 import test from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { spawnSync } from "node:child_process";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dirname, "..");
 const repositoryRoot = resolve(root, "../..");
@@ -97,6 +99,8 @@ test("S10A activation package is inert, gateway-only, checksum guarded, and roll
   assert.match(s10aActivation, /S10A_PRODUCTION_AUTHORIZED=false/);
   assert.match(s10aActivation, /S10A_INDEPENDENT_REVIEW_COMPLETE=false/);
   assert.match(s10aActivation, /sha256sum "\$artifact"/);
+  assert.match(s10aActivation, /tar -tzf "\$artifact" \| grep -E /);
+  assert.doesNotMatch(s10aActivation, /tar -tzf "\$artifact" \| grep -Eq /);
   assert.match(s10aActivation, /up -d --no-deps --no-build gateway/);
   assert.match(s10aActivation, /rollback-reviewed-gateway\.sh/);
   assert.match(s10aActivation, /__Host-meser_audio_session/);
@@ -105,4 +109,47 @@ test("S10A activation package is inert, gateway-only, checksum guarded, and roll
   assert.match(s10aRollback, /prior-image-id/);
   assert.match(s10aRollback, /--no-deps --no-build gateway/);
   assert.match(s10aChecklist, /No command.*executed against production/);
+});
+
+test("S10A artifact layout check consumes the complete tar listing under pipefail", () => {
+  const fixture = mkdtempSync(join(tmpdir(), "s10a-layout-"));
+  const sourceSha = "a".repeat(40);
+  const packageRoot = `meser-audio-archive-s10a-${sourceSha}`;
+  const dockerfile = `${packageRoot}/gateway/audio-archive/Dockerfile`;
+  const archive = resolve(fixture, "artifact.tar.gz");
+  const fileList = resolve(fixture, "files.txt");
+
+  try {
+    mkdirSync(resolve(fixture, packageRoot, "gateway/audio-archive"), { recursive: true });
+    mkdirSync(resolve(fixture, packageRoot, "padding"), { recursive: true });
+    writeFileSync(resolve(fixture, dockerfile), "FROM scratch\n");
+
+    const entries = [dockerfile];
+    for (let index = 0; index < 4096; index += 1) {
+      const name = `${packageRoot}/padding/${String(index).padStart(4, "0")}-${"x".repeat(64)}`;
+      writeFileSync(resolve(fixture, name), "");
+      entries.push(name);
+    }
+    writeFileSync(fileList, `${entries.join("\n")}\n`);
+
+    const packed = spawnSync("tar", ["-czf", archive, "-C", fixture, "-T", fileList], { encoding: "utf8" });
+    assert.equal(packed.status, 0, packed.stderr);
+
+    const pattern = `^${packageRoot}/gateway/audio-archive/Dockerfile$`;
+    const legacy = spawnSync(
+      "bash",
+      ["-o", "pipefail", "-c", 'tar -tzf "$1" | grep -Eq "$2"', "layout-check", archive, pattern],
+      { encoding: "utf8" },
+    );
+    assert.notEqual(legacy.status, 0, "legacy grep -q pipeline unexpectedly avoided tar SIGPIPE");
+
+    const pipeSafe = spawnSync(
+      "bash",
+      ["-o", "pipefail", "-c", 'tar -tzf "$1" | grep -E "$2" >/dev/null', "layout-check", archive, pattern],
+      { encoding: "utf8" },
+    );
+    assert.equal(pipeSafe.status, 0, pipeSafe.stderr);
+  } finally {
+    rmSync(fixture, { recursive: true, force: true });
+  }
 });

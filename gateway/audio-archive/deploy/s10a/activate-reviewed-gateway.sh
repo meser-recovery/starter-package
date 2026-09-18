@@ -71,7 +71,7 @@ printf '%s\n' "$source_sha" >"$rollback_dir/candidate-source-sha"
 docker inspect -f '{{.Name}} {{.Config.Image}} {{.Image}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$current_container" >"$rollback_dir/prior-runtime-identity.txt"
 chmod 600 "$rollback_dir"/*
 
-tar -tzf "$artifact" | grep -Eq "^meser-audio-archive-s10a-${source_sha}/gateway/audio-archive/Dockerfile$" || die 'artifact layout is invalid'
+tar -tzf "$artifact" | grep -E "^meser-audio-archive-s10a-${source_sha}/gateway/audio-archive/Dockerfile$" >/dev/null || die 'artifact layout is invalid'
 tar -xzf "$artifact" -C "$work_dir" --no-same-owner --no-same-permissions
 candidate="$work_dir/meser-audio-archive-s10a-${source_sha}/gateway/audio-archive"
 [[ -f "$candidate/Dockerfile" && -f "$candidate/deploy/self-hosted/compose.yaml" ]] || die 'candidate gateway is incomplete'
