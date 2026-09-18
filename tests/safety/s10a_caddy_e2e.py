@@ -8,7 +8,7 @@ from io import BytesIO
 import struct
 import wave
 
-from playwright.sync_api import sync_playwright
+from playwright.sync_api import expect, sync_playwright
 
 
 PASSWORD = "synthetic-caddy-password"
@@ -60,7 +60,7 @@ def main() -> int:
         page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
         page.locator("#open-local-announcement").click()
         page.locator("#processor-run").wait_for(state="visible")
-        page.wait_for_function("!document.getElementById('processor-run').disabled", timeout=30_000)
+        expect(page.locator("#processor-run")).to_be_enabled(timeout=30_000)
         page.locator("#processor-run").click()
         page.locator("#processor-result").wait_for(state="visible", timeout=120_000)
         result = page.evaluate("() => window.__lastCaddyWasmResult || ({ href: document.getElementById('processor-download').href, status: document.getElementById('processor-status').textContent })")
