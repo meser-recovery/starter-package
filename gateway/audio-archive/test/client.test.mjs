@@ -152,6 +152,56 @@ test("ordered parts reconstruct byte-identically and corruption fails closed", a
   }, sessionId }), error => error?.status === 401);
 });
 
+test("duplicate canonical source identities fail before any source-part GET or partial batch", async () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const firstTrackId = "22222222-2222-4222-8222-222222222222";
+  const secondTrackId = "44444444-4444-4444-8444-444444444444";
+  const firstBlobId = "33333333-3333-4333-8333-333333333333";
+  const secondBlobId = "55555555-5555-4555-8555-555555555555";
+  const bytes = Uint8Array.of(1, 2, 3);
+  const digest = nodeSha(bytes);
+  const workflow = (name) => ({ workflow: name, status: "new", currentDraft: null, outputs: [], deletedVersions: [], nextVersion: 1 });
+  const track = ({ trackId, blobId, ordinal, assetId }) => {
+    const name = assetName(blobId, 1);
+    return { trackId, blobId, ordinal, originalName: `track-${ordinal}.wav`, mediaType: "audio/wav",
+      sizeBytes: bytes.length, sha256: digest, parts: [{ partNumber: 1, sizeBytes: bytes.length, sha256: digest,
+        assetName: name, assetId, downloadUrl: `https://github.com/meser-recovery/audio-archive/releases/download/audio-session-${sessionId}/${name}` }] };
+  };
+  const base = {
+    schemaVersion: 1, revision: 1, id: sessionId, title: "Запись", recordedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    origin: { kind: "manual", externalId: null }, storage: { releaseId: 1, tag: `audio-session-${sessionId}` },
+    lifecycle: { state: "incoming" }, sourceState: "available", deletedSources: null,
+    sourceTracks: [track({ trackId: firstTrackId, blobId: firstBlobId, ordinal: 1, assetId: 10 }),
+      track({ trackId: secondTrackId, blobId: secondBlobId, ordinal: 2, assetId: 20 })],
+    workflows: { announcement: workflow("announcement"), speaker: workflow("speaker") },
+    relations: { supersedesSessionId: null, supersededBySessionId: null }, transaction: { state: "finalized", id: sessionId }
+  };
+  assert.equal(validateSessionManifest(base), true);
+
+  const duplicateTrack = structuredClone(base);
+  duplicateTrack.sourceTracks[1].trackId = firstTrackId;
+  const duplicateBlob = structuredClone(base);
+  duplicateBlob.sourceTracks[1] = track({ trackId: secondTrackId, blobId: firstBlobId, ordinal: 2, assetId: 20 });
+  const duplicatePartIdentity = structuredClone(base);
+  duplicatePartIdentity.sourceTracks[1].parts[0].assetId = 10;
+
+  for (const malformed of [duplicateTrack, duplicateBlob, duplicatePartIdentity]) {
+    assert.equal(validateSessionManifest(malformed), false);
+    let partFactoryCalls = 0; let partGets = 0; let batch = null; let manifestReads = 0;
+    await assert.rejects(async () => {
+      batch = await prepareRemoteSourceBatch({ gateway: {
+        async getSession() { manifestReads++; return malformed; },
+        sourcePartFetch() { partFactoryCalls++; return async () => { partGets++; return new Response(bytes); }; }
+      }, sessionId });
+    }, /Запись больше не доступна/);
+    assert.equal(manifestReads, 1);
+    assert.equal(partFactoryCalls, 0);
+    assert.equal(partGets, 0);
+    assert.equal(batch, null);
+  }
+});
+
 test("Announcement publication planning is deterministic and reconstructed output uses recipe presentation metadata", async () => {
   const sessionId = "11111111-1111-4111-8111-111111111111";
   const trackId = "22222222-2222-4222-8222-222222222222";

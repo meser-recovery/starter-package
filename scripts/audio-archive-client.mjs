@@ -634,6 +634,25 @@ export function validateSessionManifest(session) {
   }
   if (session.sourceTracks.reduce((sum, track) => sum + (track?.sizeBytes || 0), 0) > MAX_AUDIO_SESSION_BYTES) return false;
   if (!session.sourceTracks.every((track, index) => track.ordinal === index + 1 && validateTrackManifest(track, session.id))) return false;
+  const trackIds = new Set();
+  const blobIds = new Set();
+  const partKeys = new Set();
+  const partAssetIds = new Set();
+  const partAssetNames = new Set();
+  const partUrls = new Set();
+  for (const track of session.sourceTracks) {
+    if (trackIds.has(track.trackId) || blobIds.has(track.blobId)) return false;
+    trackIds.add(track.trackId);
+    blobIds.add(track.blobId);
+    for (const part of track.parts) {
+      const partKey = `${track.blobId}:${part.partNumber}`;
+      if (partKeys.has(partKey) || partAssetIds.has(part.assetId) || partAssetNames.has(part.assetName) || partUrls.has(part.downloadUrl)) return false;
+      partKeys.add(partKey);
+      partAssetIds.add(part.assetId);
+      partAssetNames.add(part.assetName);
+      partUrls.add(part.downloadUrl);
+    }
+  }
   for (const workflow of WORKFLOWS) {
     if (!session.workflows[workflow] || session.workflows[workflow].workflow !== workflow ||
         !validateWorkflow(session.workflows[workflow], session.id)) return false;

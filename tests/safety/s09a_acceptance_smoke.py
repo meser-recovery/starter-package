@@ -21,7 +21,31 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
     seed = json.loads(bridge.stdout.readline())
     primary, other = seed['primary'], seed['empty']
     context = browser.new_context(viewport={'width': 390, 'height': 900})
-    context.add_init_script("sessionStorage.setItem('meser_service_access_v1','granted');window.__MESER_AUDIO_ARCHIVE_GATEWAY__='https://gateway.test';")
+    context.add_init_script("""(() => {
+      sessionStorage.setItem('meser_service_access_v1','granted');
+      window.__MESER_AUDIO_ARCHIVE_GATEWAY__='https://gateway.test';
+      const nativeFetch = window.fetch.bind(window);
+      let heldPart = null;
+      window.__s10aHoldPartResponse = sessionId => {
+        let release;
+        const gate = new Promise(resolve => { release = resolve; });
+        heldPart = {sessionId, gate, release, armed: true, held: false};
+      };
+      window.__s10aPartResponseHeld = () => Boolean(heldPart?.held);
+      window.__s10aReleasePartResponse = () => heldPart?.release();
+      window.fetch = async (input, options = {}) => {
+        const url = String(typeof input === 'string' ? input : input.url);
+        if (heldPart?.armed && url.includes(`/v1/source-sessions/${heldPart.sessionId}/blobs/`) && url.includes('/parts/')) {
+          heldPart.armed = false;
+          const {signal: _ignoredSignal, ...detachedOptions} = options;
+          const response = await nativeFetch(input, detachedOptions);
+          heldPart.held = true;
+          await heldPart.gate;
+          return response;
+        }
+        return nativeFetch(input, options);
+      };
+    })();""")
     trace, blocked, errors, held = [], [], [], []
     fault = {'match': None, 'status': None, 'hold': False}
     headers = {'Access-Control-Allow-Origin': origin, 'Access-Control-Allow-Credentials': 'true',
@@ -130,6 +154,83 @@ def check_s09a_acceptance(browser, base_url, screenshot_dir=None, scenario='all'
         assert not [(m,p) for m,p in trace[start:] if m != 'GET' and p not in ('/v1/session/login','/v1/session/logout')]
 
     try:
+        if scenario in ('all', 'rapid-selection'):
+            page.goto(base_url.rstrip('/')+'/Audio-Editor.html')
+            page.wait_for_function("document.getElementById('source-session-recent').disabled === false")
+            activate('#source-session-mode-archive'); page.locator('#source-session-recent').click()
+            page.wait_for_function('(id) => Boolean(document.querySelector(`.source-session-item[data-session-id="${id}"]`))', arg=other['id'])
+            start = len(trace)
+
+            # A deliberately late response ignores AbortSignal so generation fencing, not
+            # transport cooperation, must keep A from replacing the newer completed B.
+            page.evaluate('(id) => window.__s10aHoldPartResponse(id)', primary['id'])
+            page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]').get_by_role('button', name='Выбрать', exact=True).evaluate('button => button.click()')
+            page.wait_for_function('window.__s10aPartResponseHeld()')
+            page.locator(f'.source-session-item[data-session-id="{other["id"]}"]').get_by_role('button', name='Выбрать', exact=True).evaluate('button => button.click()')
+            page.wait_for_function('(title) => document.getElementById("current-recording-heading").textContent === title', arg=other['title'])
+            page.locator('#source-session-loading').wait_for(state='hidden')
+            ready_status = page.locator('#source-session-status').inner_text()
+            assert page.locator('#speaker-editor').is_hidden()
+            assert page.locator('#announcement-processor-card').is_hidden()
+            page.evaluate('window.__s10aReleasePartResponse()')
+            page.wait_for_timeout(250)
+            assert page.locator('#current-recording-heading').inner_text() == other['title']
+            assert page.locator('#source-session-status').inner_text() == ready_status
+            assert page.locator('#speaker-editor').is_hidden()
+            assert page.locator('#announcement-processor-card').is_hidden()
+
+            other_part_gets = [p for m,p in trace if m == 'GET' and p.startswith(f'/v1/source-sessions/{other["id"]}/blobs/')]
+            activate('#open-local-speaker')
+            page.wait_for_function("async(id)=>{const state=(await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();return state.ready&&state.session?.id===id}", arg=other['id'], timeout=60000)
+            page.wait_for_function("document.getElementById('source-session-status').textContent.includes('Открыта работа «Спикерская»')")
+            speaker_identity = page.evaluate("""async () => {
+              const state = (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState();
+              window.__s10aSelectedFiles = state.files;
+              return {sessionId: state.session.id, count: state.files.length};
+            }""")
+            assert speaker_identity == {'sessionId': other['id'], 'count': len(other['sourceTracks'])}
+            assert [p for m,p in trace if m == 'GET' and p.startswith(f'/v1/source-sessions/{other["id"]}/blobs/')] == other_part_gets
+            page.locator('#speaker-editor-close').click()
+            if page.locator('#speaker-unsaved-dialog').is_visible():
+                page.locator('#speaker-unsaved-discard').click()
+            page.locator('#speaker-editor').wait_for(state='hidden')
+            activate('#open-local-announcement')
+            page.locator('#announcement-processor-card').wait_for(state='visible')
+            page.wait_for_function("!document.getElementById('processor-run').disabled")
+            assert page.evaluate("""async () => {
+              const files = (await import('./scripts/audio-processor.mjs')).getProcessorFiles();
+              return files.length === window.__s10aSelectedFiles.length && files.every((file, index) => file === window.__s10aSelectedFiles[index]);
+            }""")
+            assert [p for m,p in trace if m == 'GET' and p.startswith(f'/v1/source-sessions/{other["id"]}/blobs/')] == other_part_gets
+
+            # Explicit cancel while A is late preserves the already committed B batch and
+            # the exact File objects currently owned by Announcement.
+            page.evaluate('(id) => window.__s10aHoldPartResponse(id)', primary['id'])
+            activate('#source-session-mode-archive'); page.locator('#source-session-recent').click()
+            page.locator(f'.source-session-item[data-session-id="{primary["id"]}"]').get_by_role('button', name='Выбрать', exact=True).evaluate('button => button.click()')
+            page.wait_for_function('window.__s10aPartResponseHeld()')
+            page.locator('#source-session-loading-cancel').click()
+            assert page.locator('#current-recording-heading').inner_text() == other['title']
+            assert page.evaluate("""async () => {
+              const files = (await import('./scripts/audio-processor.mjs')).getProcessorFiles();
+              return files.length === window.__s10aSelectedFiles.length && files.every((file, index) => file === window.__s10aSelectedFiles[index]);
+            }""")
+            cancelled_status = page.locator('#source-session-status').inner_text()
+            assert 'отменена' in cancelled_status.lower()
+            page.evaluate('window.__s10aReleasePartResponse()')
+            page.locator('#source-session-loading').wait_for(state='hidden')
+            page.wait_for_timeout(250)
+            assert page.locator('#current-recording-heading').inner_text() == other['title']
+            assert page.locator('#source-session-status').inner_text() == cancelled_status
+            assert page.locator('#announcement-processor-card').is_visible()
+            assert page.locator('#speaker-editor').is_hidden()
+            assert page.evaluate("""async () => {
+              const files = (await import('./scripts/audio-processor.mjs')).getProcessorFiles();
+              return files.length === window.__s10aSelectedFiles.length && files.every((file, index) => file === window.__s10aSelectedFiles[index]);
+            }""")
+            no_archive_writes(start)
+            print('S10A rapid selection: late A cannot replace B; exact Files persist through workflow reuse and cancelled replacement.', flush=True)
+
         if scenario in ('all', 'delayed-speaker'):
             open_primary()
             start = len(trace)
@@ -290,7 +391,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', default='http://127.0.0.1:8000')
     parser.add_argument('--screenshot-dir', type=Path)
-    parser.add_argument('--scenario', default='all', choices=['all','delayed-speaker','announcement-auth','archive-auth'])
+    parser.add_argument('--scenario', default='all', choices=['all','rapid-selection','delayed-speaker','announcement-auth','archive-auth'])
     args = parser.parse_args()
     with sync_playwright() as p:
         browser = p.chromium.launch()
