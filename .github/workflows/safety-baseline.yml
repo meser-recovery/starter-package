@@ -31,14 +31,15 @@ jobs:
         run: node --test tests/safety/*.test.mjs
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
-      - name: Install Chromium
-        run: python3 -m playwright install --with-deps chromium
+      - name: Install Chromium and WebKit
+        run: python3 -m playwright install --with-deps chromium webkit
       - name: Run local browser smoke suite
         run: |
           python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/site-server.log 2>&1 &
           server_pid=$!
           trap 'kill "$server_pid"' EXIT
           python3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000
+          python3 tests/safety/s10a_browser_smoke.py --base-url http://127.0.0.1:8000
 
   production-safety:
     if: github.event_name == 'push' || github.event_name == 'schedule'

@@ -2,12 +2,34 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import {
-  DEFAULT_AUDIO_PART_BYTES, MAX_AUDIO_PART_BYTES, MAX_AUDIO_SESSION_BYTES, Sha256, assetName,
+  AudioArchiveGateway, DEFAULT_AUDIO_PART_BYTES, MAX_AUDIO_PART_BYTES, MAX_AUDIO_SESSION_BYTES, Sha256, assetName,
   createAnnouncementPublicationPlan, createIngestionPlan, isUuid, reconstructAnnouncementOutput, reconstructSessionTracks,
-  serializeAnnouncementPublicationPlan, serializeIngestionPlan, sha256Hex, validateAnnouncementOutput, validateSessionManifest
+  prepareRemoteSourceBatch, serializeAnnouncementPublicationPlan, serializeIngestionPlan, sha256Hex, validateAnnouncementOutput, validateSessionManifest
 } from "../../../scripts/audio-archive-client.mjs";
 
 function nodeSha(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
+
+test("login requires immediate authenticated session replay before retaining CSRF", async () => {
+  const calls = [];
+  const responses = [
+    new Response(JSON.stringify({ authenticated: true, csrfToken: "unproven" }), { status: 200, headers: { "Content-Type": "application/json" } }),
+    new Response(JSON.stringify({ error: "missing cookie" }), { status: 401, headers: { "Content-Type": "application/json" } })
+  ];
+  const gateway = new AudioArchiveGateway("https://gateway.test", async (url, options) => {
+    calls.push([url, options.method || "GET", options.credentials]);
+    return responses.shift();
+  });
+  await assert.rejects(() => gateway.login("correct password"), error => error.status === 401 && error.code === "storage_access_required");
+  assert.deepEqual(calls.map(call => call.slice(1)), [["POST", "include"], ["GET", "include"]]);
+  assert.equal(gateway.csrfToken, null);
+
+  const accepted = new AudioArchiveGateway("https://gateway.test", async (_url, options) => new Response(JSON.stringify(
+    (options.method || "GET") === "POST" ? { authenticated: true, csrfToken: "unproven" } : { authenticated: true, csrfToken: "replayed" }
+  ), { status: 200, headers: { "Content-Type": "application/json" } }));
+  const proof = await accepted.login("correct password");
+  assert.equal(proof.csrfToken, "replayed");
+  assert.equal(accepted.csrfToken, "replayed");
+});
 
 test("incremental SHA-256 matches known vectors and block boundaries", async () => {
   assert.equal(new Sha256().update(new Uint8Array()).digestHex(), "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
@@ -91,6 +113,93 @@ test("ordered parts reconstruct byte-identically and corruption fails closed", a
   assert.deepEqual(new Uint8Array(await file.arrayBuffer()), new Uint8Array(complete));
   await assert.rejects(() => reconstructSessionTracks(session, async () => new Response(Uint8Array.of(9, 9, 9))), /целостности/);
   assert.equal(validateSessionManifest({ ...session, id: "malformed" }), false);
+
+  let reads = 0; const progress = [];
+  const fresh = { ...session, revision: 2, title: "Новое название", updatedAt: "2026-01-02T00:00:00.000Z" };
+  const gateway = {
+    async getSession() { reads++; return reads === 1 ? session : fresh; },
+    sourcePartFetch() { return goodFetch; }
+  };
+  const batch = await prepareRemoteSourceBatch({ gateway, sessionId, onProgress: value => progress.push(value) });
+  assert.equal(reads, 2);
+  assert.equal(batch.session, fresh);
+  assert.equal(batch.files[0].name, "meeting.wav");
+  assert.equal(progress.at(-1).verifiedBytes, complete.length);
+  assert.equal(progress.at(-1).verifiedParts, 2);
+  assert.equal(Object.isFrozen(batch.files), true);
+
+  const changed = structuredClone(fresh); changed.sourceTracks[0].sha256 = "0".repeat(64);
+  reads = 0;
+  await assert.rejects(() => prepareRemoteSourceBatch({ gateway: {
+    async getSession() { reads++; return reads === 1 ? session : changed; }, sourcePartFetch() { return goodFetch; }
+  }, sessionId }), /изменились/);
+
+  const controller = new AbortController();
+  await assert.rejects(() => prepareRemoteSourceBatch({ gateway: {
+    async getSession() { return session; },
+    sourcePartFetch() { return async () => { controller.abort(); return new Response(chunks[0]); }; }
+  }, sessionId, signal: controller.signal }), error => error?.name === "AbortError");
+
+  await assert.rejects(() => prepareRemoteSourceBatch({ gateway: {
+    async getSession() { throw Object.assign(new Error("expired"), { status: 401 }); }, sourcePartFetch() { throw new Error("must not fetch"); }
+  }, sessionId }), error => error?.status === 401);
+  await assert.rejects(() => prepareRemoteSourceBatch({ gateway: {
+    async getSession() { return session; }, sourcePartFetch() { return async () => new Response("forbidden", { status: 403 }); }
+  }, sessionId }), error => error?.status === 403);
+  reads = 0;
+  await assert.rejects(() => prepareRemoteSourceBatch({ gateway: {
+    async getSession() { if (reads++) throw Object.assign(new Error("expired"), { status: 401 }); return session; }, sourcePartFetch() { return goodFetch; }
+  }, sessionId }), error => error?.status === 401);
+});
+
+test("duplicate canonical source identities fail before any source-part GET or partial batch", async () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const firstTrackId = "22222222-2222-4222-8222-222222222222";
+  const secondTrackId = "44444444-4444-4444-8444-444444444444";
+  const firstBlobId = "33333333-3333-4333-8333-333333333333";
+  const secondBlobId = "55555555-5555-4555-8555-555555555555";
+  const bytes = Uint8Array.of(1, 2, 3);
+  const digest = nodeSha(bytes);
+  const workflow = (name) => ({ workflow: name, status: "new", currentDraft: null, outputs: [], deletedVersions: [], nextVersion: 1 });
+  const track = ({ trackId, blobId, ordinal, assetId }) => {
+    const name = assetName(blobId, 1);
+    return { trackId, blobId, ordinal, originalName: `track-${ordinal}.wav`, mediaType: "audio/wav",
+      sizeBytes: bytes.length, sha256: digest, parts: [{ partNumber: 1, sizeBytes: bytes.length, sha256: digest,
+        assetName: name, assetId, downloadUrl: `https://github.com/meser-recovery/audio-archive/releases/download/audio-session-${sessionId}/${name}` }] };
+  };
+  const base = {
+    schemaVersion: 1, revision: 1, id: sessionId, title: "Запись", recordedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    origin: { kind: "manual", externalId: null }, storage: { releaseId: 1, tag: `audio-session-${sessionId}` },
+    lifecycle: { state: "incoming" }, sourceState: "available", deletedSources: null,
+    sourceTracks: [track({ trackId: firstTrackId, blobId: firstBlobId, ordinal: 1, assetId: 10 }),
+      track({ trackId: secondTrackId, blobId: secondBlobId, ordinal: 2, assetId: 20 })],
+    workflows: { announcement: workflow("announcement"), speaker: workflow("speaker") },
+    relations: { supersedesSessionId: null, supersededBySessionId: null }, transaction: { state: "finalized", id: sessionId }
+  };
+  assert.equal(validateSessionManifest(base), true);
+
+  const duplicateTrack = structuredClone(base);
+  duplicateTrack.sourceTracks[1].trackId = firstTrackId;
+  const duplicateBlob = structuredClone(base);
+  duplicateBlob.sourceTracks[1] = track({ trackId: secondTrackId, blobId: firstBlobId, ordinal: 2, assetId: 20 });
+  const duplicatePartIdentity = structuredClone(base);
+  duplicatePartIdentity.sourceTracks[1].parts[0].assetId = 10;
+
+  for (const malformed of [duplicateTrack, duplicateBlob, duplicatePartIdentity]) {
+    assert.equal(validateSessionManifest(malformed), false);
+    let partFactoryCalls = 0; let partGets = 0; let batch = null; let manifestReads = 0;
+    await assert.rejects(async () => {
+      batch = await prepareRemoteSourceBatch({ gateway: {
+        async getSession() { manifestReads++; return malformed; },
+        sourcePartFetch() { partFactoryCalls++; return async () => { partGets++; return new Response(bytes); }; }
+      }, sessionId });
+    }, /Запись больше не доступна/);
+    assert.equal(manifestReads, 1);
+    assert.equal(partFactoryCalls, 0);
+    assert.equal(partGets, 0);
+    assert.equal(batch, null);
+  }
 });
 
 test("Announcement publication planning is deterministic and reconstructed output uses recipe presentation metadata", async () => {

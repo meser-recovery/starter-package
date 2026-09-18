@@ -9,6 +9,7 @@ import {
   selectSessions, selectResults, recoveryPolicy, editorUrl, deletionImpact, parseArchiveIntent, RequestGeneration,
   processingAvailabilityMessage, pageItems, latestOutput
 } from './audio-archive-core.mjs';
+import { ArchiveAuthController } from './audio-archive-auth.mjs';
 
 const $ = id => document.getElementById(id);
 const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || document.querySelector('meta[name="audio-archive-gateway"]')?.content || '');
@@ -94,6 +95,34 @@ function updateControls() {
   $('login').hidden = state.authenticated; $('logout').hidden = !state.authenticated;
   $('refresh').disabled = !state.authenticated || state.busy; $('rebuild').disabled = !state.authenticated || state.busy;
 }
+
+const authController = new ArchiveAuthController({
+  gateway,
+  mount: $('storage-frame'),
+  onState: ({ state: authState, detail }) => {
+    const help = $('storage-help');
+    help.hidden = !['storage-access-required', 'opening-first-party-bootstrap', 'awaiting-storage-grant', 'unsupported'].includes(authState) &&
+      !(authState === 'denied' && detail?.code !== 'invalid_password');
+    const labels = {
+      'checking-password': 'Проверка пароля…',
+      'verifying-session': 'Подтверждаем защищённый сеанс…',
+      'storage-access-required': 'Пароль принят, но Safari пока не разрешил странице использовать защищённый сеанс.',
+      'opening-first-party-bootstrap': 'Открываем защищённую вкладку архива…',
+      'awaiting-storage-grant': 'Вернитесь после подтверждения пароля и разрешите доступ в блоке ниже.',
+      'connected': 'Подключение подтверждено.',
+      'unsupported': 'Безопасный запрос доступа не поддерживается этим браузером.',
+      'denied': detail?.code === 'invalid_password' ? 'Неверный пароль.' : 'Доступ Safari не разрешён. Можно повторить.',
+      'error': detail?.message || 'Не удалось подтвердить подключение. Повторите действие.'
+    };
+    if (labels[authState]) $('login-status').textContent = labels[authState];
+    if (authState === 'connected' && !state.authenticated && $('login-dialog').open) {
+      state.authenticated = true;
+      if ($('login-dialog').open) $('login-dialog').close();
+      updateControls();
+      void refresh();
+    }
+  }
+});
 function openRecordPicker() {
   state.picker.open = true; $('records').hidden = false; $('record-picker-open').setAttribute('aria-expanded', 'true');
   $('records-title').focus();
@@ -576,13 +605,16 @@ $('record-picker-recent').addEventListener('click', () => { $('filters').element
 $('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; renderRecords(); }));
 $('record-prev').addEventListener('click', () => { state.picker.page--; renderRecords(); }); $('record-next').addEventListener('click', () => { state.picker.page++; renderRecords(); });
 $('refresh').addEventListener('click', refresh); $('detail-close').addEventListener('click', () => closeDetail()); $('player-close').addEventListener('click', clearPlayback); $('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
-$('login').addEventListener('click', () => { $('login-status').textContent = ''; $('login-dialog').showModal(); }); $('login-cancel').addEventListener('click', () => $('login-dialog').close());
+$('login').addEventListener('click', () => { $('login-status').textContent = ''; $('storage-help').hidden = true; $('login-dialog').showModal(); });
+$('login-cancel').addEventListener('click', () => { authController.cancel(); $('login-dialog').close(); });
+$('storage-bootstrap').addEventListener('click', () => authController.openBootstrap());
+$('storage-retry').addEventListener('click', () => authController.showBridge());
 $('delete-cancel').addEventListener('click', () => { if (!state.busy) $('delete-dialog').close(); }); $('delete-dialog').addEventListener('cancel', event => { if (state.busy) event.preventDefault(); });
 $('delete-dialog').addEventListener('close', () => { state.target = null; generations.delete.next(); const focus = state.returnFocus?.isConnected ? state.returnFocus : $('records-title'); focus.focus(); state.returnFocus = null; });
 $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); const submit = event.submitter; if (submit.disabled) return; submit.disabled = true; const sequence = generations.auth.next();
-  try { await gateway.login($('password').value); if (!generations.auth.current(sequence)) return; state.authenticated = true; $('login-dialog').close(); updateControls(); await refresh(); }
-  catch (error) { if (generations.auth.current(sequence)) $('login-status').textContent = message(error); }
+  try { await authController.login($('password').value); if (!generations.auth.current(sequence)) return; }
+  catch (error) { if (generations.auth.current(sequence) && !['storage_access_required', 'invalid_password'].includes(error?.code)) $('login-status').textContent = message(error); }
   finally { $('password').value = ''; submit.disabled = false; }
 });
 $('logout').addEventListener('click', async () => {
@@ -594,7 +626,7 @@ $('logout').addEventListener('click', async () => {
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
-  try { await gateway.configuration(); await gateway.sessionStatus(); if (!generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
+  try { await gateway.configuration(); const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();
