@@ -19,6 +19,7 @@ const legacyActivation = read(resolve(root, "deploy/s10a/activate-reviewed-gatew
 const recoveryCreate = read(resolve(root, "deploy/recovery/create-recovery-bundle.sh"));
 const recoveryRestore = read(resolve(root, "deploy/recovery/restore-meser-service.sh"));
 const s10aChecklist = read(resolve(root, "deploy/s10a/OPERATOR-CHECKLIST.md"));
+const createRelease = read(resolve(repositoryRoot, "service/tools/create-release.sh"));
 
 function serviceBlock(name, next) {
   const end = next ? `\n  ${next}:` : "\nnetworks:";
@@ -188,4 +189,12 @@ test("S10A artifact layout check consumes the complete tar listing under pipefai
   } finally {
     rmSync(fixture, { recursive: true, force: true });
   }
+});
+
+test("full release rewrites the renamed source checksum record to the recovery filename", () => {
+  assert.match(createRelease, /source_archive="\$output\/meser-service-s10a-\$\{source_sha\}\.tar\.gz"/);
+  assert.match(createRelease, /source_hash=\$\(awk .*"\$source_archive\.sha256"\)/);
+  assert.match(createRelease, /meser-service-source\.tar\.gz\.sha256/);
+  assert.match(createRelease, /printf '%s  %s\\n' "\$source_hash" meser-service-source\.tar\.gz/);
+  assert.doesNotMatch(createRelease, /mv "\$output\/meser-service-s10a-\$\{source_sha\}\.tar\.gz\.sha256"/);
 });

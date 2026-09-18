@@ -12,9 +12,12 @@ git diff --quiet && git diff --cached --quiet || die 'working tree must be clean
 for command in docker git sha256sum; do command -v "$command" >/dev/null || die "missing executable: $command"; done
 
 "$(dirname "$0")/package-reviewed-service.sh" "$source_sha" "$output"
+source_archive="$output/meser-service-s10a-${source_sha}.tar.gz"
+source_hash=$(awk 'NF == 2 { print $1 }' "$source_archive.sha256")
+[[ "$source_hash" =~ ^[0-9a-f]{64}$ && "$(sha256sum "$source_archive" | awk '{ print $1 }')" == "$source_hash" ]] || die 'source archive checksum record is invalid'
 mv "$output/meser-service-s10a-${source_sha}.tar.gz" "$output/meser-service-source.tar.gz"
-mv "$output/meser-service-s10a-${source_sha}.tar.gz.sha256" "$output/meser-service-source.tar.gz.sha256"
-rm "$output/meser-service-s10a-${source_sha}.tar.gz.source-sha" "$output/meser-service-s10a-${source_sha}.tar.gz.source-tree"
+printf '%s  %s\n' "$source_hash" meser-service-source.tar.gz >"$output/meser-service-source.tar.gz.sha256"
+rm "$output/meser-service-s10a-${source_sha}.tar.gz.sha256" "$output/meser-service-s10a-${source_sha}.tar.gz.source-sha" "$output/meser-service-s10a-${source_sha}.tar.gz.source-tree"
 
 gateway_tag="meser-service-gateway:${source_sha}"
 caddy_tag="meser-service-caddy:${source_sha}"
