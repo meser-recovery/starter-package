@@ -3,62 +3,24 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#478ac9">
-  <meta name="audio-archive-gateway" content="https://meserproject.duckdns.org">
+  <meta name="robots" content="noindex">
   <title>Аудиоархив — Проект Мэсэр</title>
   <link rel="icon" href="images/favicon.png?v=2" type="image/png">
   <link rel="stylesheet" href="styles/foundation.css">
   <link rel="stylesheet" href="styles/components.css">
-  <link rel="stylesheet" href="styles/audio-archive.css">
-  <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-12">
-  <script src="scripts/service-landing.js"></script>
-  <script type="module" src="scripts/audio-archive.mjs"></script>
+  <link rel="stylesheet" href="styles/admin-access.css">
 </head>
-<body class="audio-studio site-page">
-  <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
-  <header class="site-header portal-sidebar"><div class="container site-header__content">
-    <div class="portal-brand"><a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="./"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
-    <nav class="portal-nav" aria-label="Аудиопортал"><a href="Audio-Editor.html"><span aria-hidden="true">⌁</span> Редактор</a><a class="is-current" href="Audio-Archive.html" aria-current="page"><span aria-hidden="true">▣</span> Аудиоархив</a></nav>
-    <div class="portal-sidebar__footer"><a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a></div>
-  </div></header>
-  <main id="main-content" class="audio-editor-main archive-main">
-    <div class="container archive-management">
-      <div id="archive-index">
-        <div class="archive-heading"><div><div><p class="portal-kicker">Аудиопортал</p><h1>Аудиоархив</h1><p class="archive-intro">Ваши Zoom-записи, проекты и результаты</p></div><a class="portal-link action-primary" href="Audio-Editor.html">+ Новая запись</a></div></div>
-        <div class="archive-entry-actions"><button id="record-picker-open" class="action-primary" type="button" aria-expanded="false" aria-controls="records">Показать записи</button></div>
-      <section id="records" class="record-picker" aria-labelledby="records-title" hidden><div class="picker-heading"><h2 id="records-title" tabindex="-1">Выбрать запись</h2><button id="record-picker-close" type="button">Закрыть</button></div>
-        <form id="filters" class="filters" role="search">
-          <label class="wide">Поиск по названию или имени исходной дорожки<input name="search" type="search" autocomplete="off"></label>
-          <label>Месяц<input name="month" type="month"></label>
-          <div class="picker-actions"><button id="record-picker-search" type="submit" class="action-primary">Найти</button><button id="record-picker-recent" type="button">Последние записи</button></div>
-          <details class="secondary-filters wide"><summary>Уточнить поиск</summary><div>
-            <label>Сортировка<select name="sort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="title">По названию</option></select></label>
-            <fieldset class="quick-filters"><legend>Состояние</legend>
-              <label><input name="quick" type="radio" value="all" checked>Все записи</label>
-              <label><input name="quick" type="radio" value="incoming">В рабочем списке</label>
-              <label><input name="quick" type="radio" value="archived">Убраны из рабочего списка</label>
-              <label><input name="quick" type="radio" value="attention">Требуют внимания</label>
-            </fieldset>
-            <label class="checkbox"><input name="availableOnly" type="checkbox">Исходники доступны</label>
-            <label class="checkbox"><input name="speakerProject" type="checkbox">Есть проект обработки спикерской</label>
-            <label class="checkbox"><input name="announcementResult" type="checkbox">Есть версии для анонс-мейкера</label>
-            <label class="checkbox"><input name="speakerResult" type="checkbox">Есть финальные версии спикерской</label>
-            <button type="reset">Сбросить поиск и фильтры</button>
-          </div></details>
-        </form>
-        <p id="matching" role="status" aria-live="polite">Список появится после поиска.</p><div id="session-list" class="cards"></div><nav id="record-pagination" class="pagination" aria-label="Страницы результатов" hidden><button id="record-prev" type="button">← Назад</button><span id="record-page"></span><button id="record-next" type="button">Дальше →</button></nav>
+<body class="site-page" data-service-path="/Audio-Archive.html">
+  <main class="admin-main" id="main-content">
+    <div class="container admin-content">
+      <h1>Аудиоархив</h1>
+      <section class="admin-card" aria-label="Переход в защищённый служебный раздел">
+        <p class="admin-intro">Служебный раздел теперь работает на защищённом адресе.</p>
+        <p><a id="service-forward-link" class="admin-submit" href="https://meserproject.duckdns.org/Audio-Archive.html">Перейти в служебный раздел</a></p>
+        <noscript><p>Для автоматического перехода включите JavaScript или воспользуйтесь ссылкой выше.</p></noscript>
       </section>
-        <details id="maintenance"><summary id="maintenance-title">Техническое обслуживание</summary><p>Здесь находятся операции без подтверждённой связи с записью и диагностические наблюдения. Операции известной записи показаны в её сведениях.</p><div id="operations" class="cards"></div><div id="observations"></div>
-          <h3>Служебный каталог</h3><p>Восстанавливает внутренний список записей по сохранённым данным. Не изменяет аудиофайлы и не восстанавливает удалённые записи.</p><button id="rebuild" type="button" disabled>Пересобрать служебный каталог</button>
-        </details>
-        <div class="archive-connection"><p id="status" role="status" aria-live="polite">Проверка подключения…</p><div class="toolbar archive-connection__actions" aria-label="Управление подключением"><button id="login" type="button">Подключить архив</button><button id="refresh" type="button" disabled>Обновить данные</button><button id="logout" type="button" hidden>Отключить архив</button></div></div>
-      </div>
-      <section id="detail" aria-labelledby="detail-title" hidden><div class="record-context"><button id="detail-close" class="back-button" type="button">Сменить запись</button><div id="detail-heading" class="record-hero"></div></div><div id="detail-body"></div></section>
-      <div id="player" hidden><div><h3 id="player-title"></h3><p id="player-meta"></p></div><audio id="audio" controls preload="none"></audio><div><a id="download">Скачать проверенный файл</a><button id="player-close" type="button">Закрыть</button></div></div><p id="playback-status" role="status" aria-live="polite"></p>
     </div>
   </main>
-  <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
-  <dialog id="login-dialog" aria-labelledby="login-title"><form id="login-form"><h2 id="login-title">Подключить аудиоархив</h2><label>Общий служебный пароль<input id="password" type="password" autocomplete="current-password" required></label><p id="login-status" role="status"></p><section id="storage-help" class="archive-storage-help" aria-labelledby="storage-title" hidden><h3 id="storage-title">Дополнительное подтверждение Safari</h3><p>Откройте защищённую вкладку архива, повторно введите пароль там, затем разрешите доступ в блоке ниже.</p><button id="storage-bootstrap" type="button">Открыть защищённую вкладку</button><button id="storage-retry" type="button">Повторить запрос доступа</button><div id="storage-frame" class="archive-storage-frame" hidden></div></section><div class="toolbar"><button type="submit">Подключить</button><button id="login-cancel" type="button">Отмена</button></div></form></dialog>
-  <dialog id="delete-dialog" aria-labelledby="delete-title"><form id="delete-form"><h2 id="delete-title">Подтвердите удаление</h2><p id="delete-name"></p><h3>Будет удалено</h3><p id="delete-removed"></p><h3>Останется сохранено</h3><p id="delete-retained"></p><p id="delete-pending"></p><label id="purge-label" hidden>Введите точный ID записи: <strong id="purge-id"></strong><input id="purge-confirmation" autocomplete="off" spellcheck="false"></label><p id="delete-status" role="status"></p><div class="toolbar"><button id="delete-submit" type="submit" class="danger">Подтвердить удаление</button><button id="delete-cancel" type="button">Отмена</button></div></form></dialog>
+  <script src="scripts/service-compatibility.js"></script>
 </body>
 </html>

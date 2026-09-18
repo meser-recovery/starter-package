@@ -14,13 +14,67 @@
 	}
 }
 
-meserproject.duckdns.org {
-	reverse_proxy gateway:8080 {
-		header_up -X-Forwarded-For
-		header_up X-Forwarded-For {remote_host}
-		header_up -X-Forwarded-Proto
-		header_up X-Forwarded-Proto {scheme}
-		header_up -X-Forwarded-Host
-		header_up X-Forwarded-Host {host}
+{$MESER_SITE_ADDRESS:meserproject.duckdns.org} {
+	root * /srv/service
+	encode zstd gzip
+
+	header {
+		X-Content-Type-Options nosniff
+		Referrer-Policy no-referrer
+		Permissions-Policy "camera=(), geolocation=(), microphone=()"
+		Content-Security-Policy "default-src 'self'; base-uri 'none'; object-src 'none'; form-action 'self'; frame-ancestors 'none'; frame-src https://calendar.google.com; connect-src 'self'; img-src 'self' data: blob:; media-src 'self' blob:; script-src 'self' 'wasm-unsafe-eval'; style-src 'self'; worker-src 'self' blob:"
+		Cache-Control "no-store"
+	}
+
+	@internal path /internal/*
+	handle @internal {
+		respond 404
+	}
+
+	@health path /healthz
+	handle @health {
+		reverse_proxy gateway:8080 {
+			header_up -X-Forwarded-For
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Forwarded-Proto
+			header_up X-Forwarded-Proto {scheme}
+			header_up -X-Forwarded-Host
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	@api path /v1/*
+	handle @api {
+		reverse_proxy gateway:8080 {
+			header_up -X-Forwarded-For
+			header_up X-Forwarded-For {remote_host}
+			header_up -X-Forwarded-Proto
+			header_up X-Forwarded-Proto {scheme}
+			header_up -X-Forwarded-Host
+			header_up X-Forwarded-Host {host}
+		}
+	}
+
+	@login path /login /login.html /scripts/origin-guard.js /scripts/service-login.mjs /scripts/service-session.mjs /scripts/service-session-client.mjs /styles/foundation.css /styles/components.css /styles/admin-access.css /images/favicon.png /images/NALogo.png
+	handle @login {
+		try_files {path} /login.html
+		file_server
+	}
+
+	@document path / /index.html /Calendar.html /Google-Drive.html /Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html /Audio-Editor.html /Audio-Archive.html
+	handle @document {
+		forward_auth gateway:8080 {
+			uri /internal/document-auth
+			copy_headers X-Service-Authenticated
+		}
+		file_server
+	}
+
+	handle {
+		forward_auth gateway:8080 {
+			uri /internal/auth-check
+			copy_headers X-Service-Authenticated X-Service-Login
+		}
+		file_server
 	}
 }

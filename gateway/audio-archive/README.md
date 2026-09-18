@@ -43,27 +43,29 @@ The test suite uses a deterministic in-memory repository and mocked GitHub HTTP 
 
 ## Self-hosted runtime
 
-The approved runtime is an existing Ubuntu 24.04 VM. Host-level HAProxy routes TLS ClientHello traffic by SNI: exact `meserproject.duckdns.org` traffic goes to loopback Caddy, while every other connection remains on the existing Xray REALITY path. Caddy terminates TLS only for the gateway hostname and proxies to the gateway container over the Compose-private network.
+The approved runtime target is an Ubuntu 24.04 VM. Host-level HAProxy routes TLS ClientHello traffic by SNI: exact `meserproject.duckdns.org` traffic goes to loopback Caddy, while every other connection remains on the existing Xray REALITY path. Caddy terminates TLS for that hostname, serves the immutable protected frontend, applies an internal gateway auth subrequest, and proxies same-origin `/v1/*` to the gateway over the Compose-private network.
 
 Committed non-secret deployment artifacts are in [`deploy/self-hosted/`](deploy/self-hosted/):
 
-- `compose.yaml`: Caddy publishes host TCP `80` and loopback-only `127.0.0.1:9443`; the gateway publishes no host port;
-- `Caddyfile`: ACME/TLS and reverse proxy to `gateway:8080`;
+- `compose.yaml`: custom gateway and Caddy/frontend images share a dedicated private network; Caddy publishes host TCP `80` and loopback-only `127.0.0.1:9443`; the gateway publishes no host port;
+- `Caddy.Dockerfile`: digest-pinned Caddy image containing the reviewed Caddyfile and allowlisted protected frontend;
+- `Caddyfile`: public health/login allowlist, internal auth gate, protected static delivery and same-origin `/v1/*` reverse proxy;
 - `haproxy.cfg`: host-level TCP/SNI passthrough with unconditional Xray default;
 - `deployment-state.template.md`: required unresolved discovery/evidence record.
 
-The frontend retains the accepted production gateway origin. This repository change does not deploy or restart that gateway and does not mutate production archive data.
+Canonical protected frontend sources and their fail-closed inventory live under `service/frontend/`. Root GitHub Pages service paths are compatibility forwarders only. This repository change does not deploy or restart either container and does not mutate production archive data.
 
 ## Runtime configuration
 
 Non-secret environment variables:
 
-- `ALLOWED_ORIGIN=https://meser-recovery.github.io`: exact GitHub Pages browser origin;
+- `ALLOWED_ORIGIN=https://meserproject.duckdns.org`: exact canonical same-origin service origin;
 - `GITHUB_APP_ID` and `GITHUB_APP_INSTALLATION_ID`: machine identity identifiers;
 - `STORAGE_OWNER=meser-recovery` and `STORAGE_REPOSITORY=audio-archive`: fixed canonical target;
 - `STORAGE_BRANCH`: defaults to `main`;
 - `ACCEPTED_PART_BYTES`: defaults to 16 MiB and cannot exceed 64 MiB;
-- `SESSION_LIFETIME_SECONDS`: defaults to four hours and cannot exceed 24 hours;
+- `SESSION_LIFETIME_SECONDS`: defaults to four hours and cannot exceed four hours;
+- `ACTIVE_SESSION_LIMIT`: bounded in-memory session-registry capacity;
 - `PORT`: defaults to `8080`.
 
 Sensitive values are read once at startup from read-only files:
@@ -79,11 +81,12 @@ Compose sources these mounts from the supplied existing `/etc/meser-audio-archiv
 ## Security boundaries
 
 - Login verifies the shared password with scrypt only in the gateway.
-- The signed session is carried in a `Secure; HttpOnly; SameSite=None; Partitioned; Path=/` cookie.
+- The only accepted auth cookie is the host-only `__Host-meser_service_session`, carrying an opaque signed session identity with `Secure; HttpOnly; SameSite=Lax; Path=/` and bounded `Max-Age`.
+- Active sessions and CSRF state live only in the bounded in-memory registry; logout, expiry, eviction and gateway replacement invalidate them fail closed.
 - Every non-safe authenticated request also requires the session-bound CSRF token.
-- `/v1/*` accepts only the configured GitHub Pages origin and returns credentialed CORS headers only to it.
+- State-changing `/v1/*` requests require the exact configured service Origin. Cross-origin Pages API access and wildcard CORS are not supported.
 - Request bodies, part sizes and schemas are bounded and validated.
 - Browser clients receive no GitHub write token, private key, password verifier or signing secret.
 - The GitHub adapter exposes fixed domain operations, not a general-purpose repository proxy.
 
-See [PROVISIONING.md](PROVISIONING.md) for the four gated, transactional future deployment phases and rollback requirements. Every host command there is explicitly unexecuted by this repository-only task.
+See [PROVISIONING.md](PROVISIONING.md), the prepared full-stack operator scripts under `deploy/s10a/`, and the recovery tooling under `deploy/recovery/`. Every host, activation, restore, timer and real-backup command is explicitly unexecuted by this repository-only task.

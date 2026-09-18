@@ -1,0 +1,12 @@
+[Unit]
+Description=Create encrypted Meser service recovery bundle
+ConditionPathExists=/etc/meser-recovery/backup.env
+
+[Service]
+Type=oneshot
+EnvironmentFile=/etc/meser-recovery/backup.env
+ExecStart=/opt/meser-service/gateway/audio-archive/deploy/recovery/run-configured-backup.sh
+User=root
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true

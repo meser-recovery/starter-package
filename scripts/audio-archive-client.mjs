@@ -755,6 +755,7 @@ export class AudioArchiveGateway {
     this.baseUrl = String(baseUrl || "").replace(/\/+$/, "");
     this.fetchImpl = fetchImpl.bind(globalThis);
     this.csrfToken = null;
+    this.authGeneration = 0;
     this.acceptedPartSize = DEFAULT_AUDIO_PART_BYTES;
     this.speakerProjectHistoryVersion = 0;
   }
@@ -762,7 +763,6 @@ export class AudioArchiveGateway {
   async request(path, options = {}) {
     const { captureCsrf = true, ...fetchOptions } = options;
     throwIfAborted(fetchOptions.signal);
-    if (!this.baseUrl) throw new Error("Шлюз аудиоархива ещё не настроен.");
     const headers = new Headers(fetchOptions.headers || {});
     if (fetchOptions.body && !(fetchOptions.body instanceof Blob) && typeof fetchOptions.body !== "string") {
       headers.set("Content-Type", "application/json");
@@ -800,8 +800,10 @@ export class AudioArchiveGateway {
     error.userMessage = error.message;
     throw error;
   }
-  sessionStatus() { return this.request("/v1/session"); }
+  sessionStatus({ captureCsrf = true } = {}) { return this.request("/v1/session", { captureCsrf }); }
+  invalidateAuthentication() { this.authGeneration += 1; this.csrfToken = null; }
   async login(password, { onState } = {}) {
+    const generation = ++this.authGeneration;
     this.csrfToken = null;
     onState?.("checking-password");
     try {
@@ -812,16 +814,22 @@ export class AudioArchiveGateway {
     }
     try {
       onState?.("verifying-session");
-      const proof = await this.sessionStatus();
+      const proof = await this.sessionStatus({ captureCsrf: false });
       if (proof?.authenticated !== true || typeof proof.csrfToken !== "string" || !proof.csrfToken) throw new Error("Шлюз не подтвердил защищённый сеанс.");
+      if (generation !== this.authGeneration) return Object.freeze({ authenticated: false, stale: true });
+      this.csrfToken = proof.csrfToken;
       return proof;
     } catch (error) {
-      this.csrfToken = null;
-      if ([401, 403].includes(error?.status)) error.code = "storage_access_required";
+      if (generation === this.authGeneration) this.csrfToken = null;
+      if (error?.status === 401) error.code = "session_replay_failed";
       throw error;
     }
   }
-  logout() { return this.request("/v1/session/logout", { method: "POST" }); }
+  async logout() {
+    this.authGeneration += 1;
+    try { return await this.request("/v1/session/logout", { method: "POST" }); }
+    finally { this.csrfToken = null; }
+  }
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
   getSession(id, signal) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`, { signal }); }
   sourcePartFetch(session) {

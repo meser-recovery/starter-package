@@ -1,7 +1,7 @@
 import { normalizeAudioFilename, normalizedMediaType, validateSessionManifest } from './audio-archive-client.mjs';
 import { normalizeSpeakerPayload, resultDuration } from './speaker-editor-core.mjs';
 
-export const RECONNECT_MESSAGE = 'Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.';
+export const RECONNECT_MESSAGE = 'Служебная сессия истекла. Войдите снова, чтобы продолжить.';
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 export function exactProjectStateForDraft(projectState, session, draft) {
   if (!projectState || !session || !draft || projectState.sessionId !== session.id ||

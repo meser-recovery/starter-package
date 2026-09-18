@@ -9,10 +9,10 @@ import {
   selectSessions, selectResults, recoveryPolicy, editorUrl, deletionImpact, parseArchiveIntent, RequestGeneration,
   processingAvailabilityMessage, pageItems, latestOutput
 } from './audio-archive-core.mjs';
-import { ArchiveAuthController } from './audio-archive-auth.mjs';
+import { ServiceSessionController, SERVICE_SESSION_EXPIRED_MESSAGE } from './service-session.mjs';
 
 const $ = id => document.getElementById(id);
-const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || document.querySelector('meta[name="audio-archive-gateway"]')?.content || '');
+const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || '');
 const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete'].map(key => [key, new RequestGeneration()]));
 const state = {
   authenticated: false, sessions: null, maintenance: null, detail: null, projects: new Map(), outputMeta: new Map(),
@@ -32,7 +32,7 @@ function button(label, action, className) {
   const node = element('button', label, className); node.type = 'button'; node.addEventListener('click', action); return node;
 }
 function message(error) {
-  if ([401, 403].includes(error?.status)) return RECONNECT_MESSAGE;
+  if (error?.status === 401) return SERVICE_SESSION_EXPIRED_MESSAGE;
   if (error?.status === 409) return 'Данные изменились или операция сейчас недоступна. Загрузите актуальное состояние и подтвердите действие заново.';
   if (error?.status === 404) return 'Запись или результат больше не доступны.';
   return error?.userMessage || 'Не удалось получить подтверждение от архива. Проверьте состояние перед повторным действием.';
@@ -42,7 +42,7 @@ function setArchiveStatus(text, tone = 'neutral') {
   $('status').dataset.tone = tone;
 }
 function report(error) {
-  if ([401, 403].includes(error?.status)) clearSession();
+  if (error?.status === 401) clearSession();
   setArchiveStatus(message(error), 'error');
 }
 function technical(data) {
@@ -92,27 +92,21 @@ function clearSession() {
   if ($('delete-dialog').open) $('delete-dialog').close(); updateControls(); render();
 }
 function updateControls() {
-  $('login').hidden = state.authenticated; $('logout').hidden = !state.authenticated;
+  $('login').hidden = state.authenticated;
   $('refresh').disabled = !state.authenticated || state.busy; $('rebuild').disabled = !state.authenticated || state.busy;
 }
 
-const authController = new ArchiveAuthController({
+const authController = new ServiceSessionController({
   gateway,
-  mount: $('storage-frame'),
   onState: ({ state: authState, detail }) => {
-    const help = $('storage-help');
-    help.hidden = !['storage-access-required', 'opening-first-party-bootstrap', 'awaiting-storage-grant', 'unsupported'].includes(authState) &&
-      !(authState === 'denied' && detail?.code !== 'invalid_password');
     const labels = {
       'checking-password': 'Проверка пароля…',
-      'verifying-session': 'Подтверждаем защищённый сеанс…',
-      'storage-access-required': 'Пароль принят, но Safari пока не разрешил странице использовать защищённый сеанс.',
-      'opening-first-party-bootstrap': 'Открываем защищённую вкладку архива…',
-      'awaiting-storage-grant': 'Вернитесь после подтверждения пароля и разрешите доступ в блоке ниже.',
-      'connected': 'Подключение подтверждено.',
-      'unsupported': 'Безопасный запрос доступа не поддерживается этим браузером.',
-      'denied': detail?.code === 'invalid_password' ? 'Неверный пароль.' : 'Доступ Safari не разрешён. Можно повторить.',
-      'error': detail?.message || 'Не удалось подтвердить подключение. Повторите действие.'
+      'verifying-session': 'Подтверждаем служебную сессию…',
+      connected: 'Служебная сессия подтверждена.',
+      denied: 'Неверный пароль.',
+      throttled: 'Слишком много попыток. Подождите и повторите вход.',
+      'network-error': 'Не удалось связаться с сервером. Проверьте подключение.',
+      'server-error': detail?.status >= 500 ? 'Служебный сервер временно недоступен.' : 'Не удалось подтвердить вход.'
     };
     if (labels[authState]) $('login-status').textContent = labels[authState];
     if (authState === 'connected' && !state.authenticated && $('login-dialog').open) {
@@ -605,28 +599,20 @@ $('record-picker-recent').addEventListener('click', () => { $('filters').element
 $('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; renderRecords(); }));
 $('record-prev').addEventListener('click', () => { state.picker.page--; renderRecords(); }); $('record-next').addEventListener('click', () => { state.picker.page++; renderRecords(); });
 $('refresh').addEventListener('click', refresh); $('detail-close').addEventListener('click', () => closeDetail()); $('player-close').addEventListener('click', clearPlayback); $('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
-$('login').addEventListener('click', () => { $('login-status').textContent = ''; $('storage-help').hidden = true; $('login-dialog').showModal(); });
+$('login').addEventListener('click', () => { $('login-status').textContent = ''; $('login-dialog').showModal(); });
 $('login-cancel').addEventListener('click', () => { authController.cancel(); $('login-dialog').close(); });
-$('storage-bootstrap').addEventListener('click', () => authController.openBootstrap());
-$('storage-retry').addEventListener('click', () => authController.showBridge());
 $('delete-cancel').addEventListener('click', () => { if (!state.busy) $('delete-dialog').close(); }); $('delete-dialog').addEventListener('cancel', event => { if (state.busy) event.preventDefault(); });
 $('delete-dialog').addEventListener('close', () => { state.target = null; generations.delete.next(); const focus = state.returnFocus?.isConnected ? state.returnFocus : $('records-title'); focus.focus(); state.returnFocus = null; });
 $('login-form').addEventListener('submit', async event => {
   event.preventDefault(); const submit = event.submitter; if (submit.disabled) return; submit.disabled = true; const sequence = generations.auth.next();
   try { await authController.login($('password').value); if (!generations.auth.current(sequence)) return; }
-  catch (error) { if (generations.auth.current(sequence) && !['storage_access_required', 'invalid_password'].includes(error?.code)) $('login-status').textContent = message(error); }
+  catch (error) { if (generations.auth.current(sequence) && error?.code !== 'invalid_password') $('login-status').textContent = message(error); }
   finally { $('password').value = ''; submit.disabled = false; }
-});
-$('logout').addEventListener('click', async () => {
-  clearSession(); setArchiveStatus('Отключение архива…', 'busy'); const sequence = generations.auth.value; $('login').disabled = true;
-  try { await gateway.logout(); if (generations.auth.current(sequence)) setArchiveStatus('Аудиоархив отключён.'); }
-  catch { if (generations.auth.current(sequence)) setArchiveStatus('Локальные данные очищены, но сервер не подтвердил выход. Повторите отключение.', 'error'); $('logout').hidden = false; }
-  finally { gateway.csrfToken = null; $('login').disabled = false; }
 });
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
-  try { await gateway.configuration(); const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
+  try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();

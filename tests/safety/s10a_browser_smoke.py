@@ -1,189 +1,176 @@
 #!/usr/bin/env python3
-"""Focused S10A auth/storage-access regression in Chromium and WebKit.
+"""Focused S10A same-origin service regression in Chromium, Firefox and WebKit.
 
-This deterministic mock proves frontend state transitions and origin/source fencing;
-it is not evidence of real iPhone Safari ITP behavior.
+The suite uses only synthetic local data. Playwright is regression evidence, not
+proof of behavior on a real iPhone/Safari or Android/Chrome device.
 """
 
 from __future__ import annotations
 
 import argparse
-import json
-from urllib.parse import urlparse
+from pathlib import Path
+import struct
+import wave
+from io import BytesIO
 
 from playwright.sync_api import sync_playwright
 
 
-GATEWAY = "https://gateway.test"
+PASSWORD = "local-test-password"
+EXPIRED = "Служебная сессия истекла. Войдите снова, чтобы продолжить."
 
 
-def cors_headers(origin, content_type="application/json"):
-    return {
-        "Access-Control-Allow-Origin": origin,
-        "Access-Control-Allow-Credentials": "true",
-        "Access-Control-Allow-Headers": "Content-Type, X-CSRF-Token",
-        "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-        "Content-Type": content_type,
-    }
+def wav_fixture() -> bytes:
+    output = BytesIO()
+    with wave.open(output, "wb") as wav:
+        wav.setnchannels(1)
+        wav.setsampwidth(2)
+        wav.setframerate(8000)
+        wav.writeframes(struct.pack("<" + "h" * 1600, *([0] * 1600)))
+    return output.getvalue()
 
 
-def exercise(browser_type, base_url: str):
-    site_origin = urlparse(base_url)._replace(path="", params="", query="", fragment="").geturl().rstrip("/")
-    site_authority = urlparse(site_origin).netloc
-    context = browser_type.launch().new_context(viewport={"width": 390, "height": 844})
-    context.add_init_script(f"sessionStorage.setItem('meser_service_access_v1', 'granted'); window.__MESER_AUDIO_ARCHIVE_GATEWAY__ = {json.dumps(GATEWAY)}")
-    scenario = {"replay": "direct", "bridge": "granted", "session_gets": 0, "login_done": False}
-    trace = []
+def login(page, base_url: str, expected_path: str = "/") -> list[tuple[str, str]]:
+    trace: list[tuple[str, str]] = []
+
+    def record(request):
+        if "/v1/session" in request.url:
+            trace.append((request.method, request.url.split(base_url, 1)[-1]))
+
+    page.on("request", record)
+    page.locator("#admin-password").fill(PASSWORD)
+    page.locator("#admin-access-form button[type=submit]").click()
+    page.wait_for_url(f"**{expected_path}", timeout=10_000)
+    page.wait_for_load_state("domcontentloaded")
+    filtered = [(method, path.split("?", 1)[0]) for method, path in trace if path.startswith("/v1/session")]
+    if filtered[:2] != [("POST", "/v1/session/login"), ("GET", "/v1/session")]:
+        raise AssertionError(f"login was not proven by immediate replay: {filtered}")
+    return filtered
+
+
+def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
+    browser = browser_type.launch()
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    page = context.new_page()
     blocked = []
 
-    def route_request(route):
-        request = route.request
-        parsed = urlparse(request.url)
-        if parsed.scheme == "blob":
-            route.continue_()
-            return
-        if parsed.netloc == site_authority:
-            route.continue_()
-            return
-        if parsed.netloc != "gateway.test":
+    def observe(request):
+        if request.url.startswith(("https://meserproject.duckdns.org", "https://meser-recovery.github.io")):
             blocked.append(request.url)
-            route.abort()
-            return
-        trace.append((request.method, parsed.path))
-        if request.method == "OPTIONS":
-            route.fulfill(status=204, headers=cors_headers(site_origin), body="")
-            return
-        if parsed.path == "/v1/config":
-            route.fulfill(status=200, headers=cors_headers(site_origin), body=json.dumps({"acceptedPartSize": 1024, "speakerProjectHistory": 1}))
-            return
-        if parsed.path == "/v1/session/login":
-            scenario["login_done"] = True
-            if scenario["replay"] == "wrong":
-                route.fulfill(status=401, headers=cors_headers(site_origin), body=json.dumps({"error": "Неверный пароль."}))
-            else:
-                route.fulfill(status=200, headers=cors_headers(site_origin), body=json.dumps({"authenticated": True, "csrfToken": "unproven"}))
-            return
-        if parsed.path == "/v1/session":
-            scenario["session_gets"] += 1
-            success = scenario["login_done"] and (scenario["replay"] == "direct" or
-                (scenario["replay"] == "blocked" and scenario["bridge"] == "granted-after-click"))
-            route.fulfill(status=200 if success else 401, headers=cors_headers(site_origin), body=json.dumps(
-                {"authenticated": True, "expiresAt": 9999999999, "csrfToken": "replayed"} if success else {"error": "cookie unavailable"}
-            ))
-            return
-        if parsed.path in ("/v1/source-sessions", "/v1/maintenance/incomplete"):
-            body = {"revision": 1, "sessions": []} if parsed.path == "/v1/source-sessions" else {"transactions": [], "observations": []}
-            route.fulfill(status=200, headers=cors_headers(site_origin), body=json.dumps(body))
-            return
-        if parsed.path == "/safari-bootstrap":
-            route.fulfill(status=200, headers={"Content-Type": "text/html"}, body="<!doctype html><title>Bootstrap</title><p>first-party</p>")
-            return
-        if parsed.path == "/storage-access-bridge":
-            mode = scenario["bridge"]
-            automatic = "unsupported" if mode == "unsupported" else "required"
-            clicked = "denied" if mode == "denied" else "granted"
-            body = f'''<!doctype html><button id="grant">grant</button><script>
-              const send = status => parent.postMessage({{type:'meser-storage-access',version:1,status}}, {json.dumps(site_origin)});
-              send({json.dumps(automatic)});
-              grant.onclick = () => send({json.dumps(clicked)});
-            </script>'''
-            route.fulfill(status=200, headers={"Content-Type": "text/html"}, body=body)
-            return
-        route.fulfill(status=404, headers=cors_headers(site_origin), body=json.dumps({"error": "unexpected"}))
 
-    context.route("**/*", route_request)
-    page = context.new_page()
+    page.on("request", observe)
 
-    def open_login():
-        page.goto(base_url.rstrip("/") + "/Audio-Archive.html", wait_until="domcontentloaded")
-        page.locator("#login").click()
-        page.locator("#password").fill("local-test-password")
-        page.locator("#login-form button[type=submit]").click()
+    response = page.goto(base_url + "/", wait_until="domcontentloaded")
+    assert response is not None
+    page.wait_for_url("**/login?return=*", timeout=5000)
+    assert page.get_by_role("heading", name="Для служащих").is_visible()
+    login(page, base_url, "/")
+    assert page.get_by_role("heading", name="Служебная страница").is_visible()
 
-    # Direct path: POST is immediately followed by the replay proof.
-    scenario.update(replay="direct", bridge="granted", session_gets=0, login_done=False)
-    open_login()
-    page.locator("#logout").wait_for(state="visible")
-    assert [(method, path) for method, path in trace if path in ("/v1/session/login", "/v1/session")][-2:] == [
-        ("POST", "/v1/session/login"), ("GET", "/v1/session")
-    ]
+    for path, heading in (
+        ("/Calendar.html", "Календарь событий"),
+        ("/Google-Drive.html", "Материалы"),
+        ("/Audio-Archive.html", "Аудиоархив"),
+        ("/Audio-Editor.html", "Редактирование аудио"),
+    ):
+        page.goto(base_url + path, wait_until="domcontentloaded")
+        page.get_by_role("heading", name=heading, exact=True).wait_for(state="visible")
+        assert page.locator("text=Дополнительное подтверждение Safari").count() == 0
+        assert page.get_by_role("button", name="Подключить архив").count() == 0
+        assert page.get_by_role("button", name="Отключить архив").count() == 0
 
-    # Correct password with an unavailable cookie must not authenticate.
-    trace.clear()
-    scenario.update(replay="blocked", bridge="required", session_gets=0, login_done=False)
-    page = context.new_page()
-    open_login()
-    page.locator("#storage-help").wait_for(state="visible")
-    assert page.locator("#logout").is_hidden()
-    assert "Safari" in page.locator("#login-status").inner_text()
-    page.evaluate("""() => window.dispatchEvent(new MessageEvent('message', {
-      origin: 'https://gateway.test', source: window,
-      data: {type: 'meser-storage-access', version: 1, status: 'granted'}
-    }))""")
-    assert page.locator("#logout").is_hidden()
+    page.goto(base_url + "/Audio-Archive.html", wait_until="domcontentloaded")
+    page.locator("#status").wait_for()
+    assert page.locator("#login").is_hidden(), "Archive must be automatic after service login"
+    assert not page.locator("#login-dialog").is_visible()
 
-    # Bootstrap is explicit and opens the fixed gateway URL.
-    with page.expect_popup() as popup_info:
-        page.locator("#storage-bootstrap").click()
-    popup = popup_info.value
-    popup.wait_for_load_state("domcontentloaded")
-    assert popup.url == GATEWAY + "/safari-bootstrap"
-    popup.close()
-    page.evaluate("""() => {
-      const frame = document.querySelector('#storage-frame iframe');
-      window.dispatchEvent(new MessageEvent('message', {
-        origin: 'https://evil.example', source: frame.contentWindow,
-        data: {type: 'meser-storage-access', version: 1, status: 'granted'}
-      }));
-    }""")
-    assert page.locator("#logout").is_hidden()
+    page.goto(base_url + "/Audio-Editor.html", wait_until="domcontentloaded")
+    page.locator("#processor-file").set_input_files({
+        "name": "synthetic.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
+    })
+    page.wait_for_function("document.getElementById('processor-file').files.length === 1")
+    page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
+    page.request.post(base_url + "/__test/expire")
+    page.locator("#source-session-mode-archive").click()
+    page.locator("#source-session-refresh").click()
+    page.get_by_text(EXPIRED, exact=True).first.wait_for(state="visible")
+    assert page.locator("#processor-file").evaluate("input => input.files[0].name") == "synthetic.wav"
 
-    # Unsupported Storage Access API is distinct and keeps local/archive auth disconnected.
-    scenario["bridge"] = "unsupported"
-    page.locator("#storage-retry").click()
-    page.wait_for_function("document.getElementById('login-status').textContent.includes('не поддерживает')")
-    assert page.locator("#logout").is_hidden()
+    page.locator("#source-session-authenticate").click()
+    page.locator("#source-session-login-dialog").wait_for(state="visible")
+    page.locator("#source-session-password").fill(PASSWORD)
+    page.locator("#source-session-login-form button[type=submit]").click()
+    page.locator("#source-session-login-dialog").wait_for(state="hidden")
+    assert page.locator("#processor-file").evaluate("input => input.files[0].name") == "synthetic.wav"
+    assert page.locator("#open-local-announcement").is_visible()
+    assert page.locator("#open-local-speaker").is_visible()
 
-    # Denial remains disconnected and retry is safe.
-    scenario["bridge"] = "denied"
-    page.locator("#storage-retry").click()
-    frame = page.frame_locator("#storage-frame iframe")
-    frame.locator("#grant").click()
-    page.wait_for_function("document.getElementById('login-status').textContent.includes('не разрешён')")
-    assert page.locator("#logout").is_hidden()
+    csrf_denied = {"active": True}
 
-    # A grant is followed by one final /v1/session replay before connected UI.
-    scenario["bridge"] = "granted-after-click"
-    before = scenario["session_gets"]
-    page.locator("#storage-retry").click()
-    page.frame_locator("#storage-frame iframe").locator("#grant").click()
-    page.locator("#logout").wait_for(state="visible")
-    assert scenario["session_gets"] == before + 1
+    def deny_reads(route):
+        if csrf_denied["active"]:
+            route.fulfill(status=403, content_type="application/json", body='{"error":"Origin/CSRF denied"}')
+        else:
+            route.continue_()
 
-    # Wrong password is distinct and never exposes the Safari fallback.
-    scenario.update(replay="wrong", bridge="required", login_done=False)
-    page = context.new_page()
-    open_login()
-    page.wait_for_function("document.getElementById('login-status').textContent.includes('Неверный пароль')")
-    assert page.locator("#storage-help").is_hidden()
-    assert page.locator("#logout").is_hidden()
+    context.route("**/v1/source-sessions?*", deny_reads)
+    page.locator("#source-session-refresh").click()
+    page.wait_for_timeout(250)
+    assert not page.locator("#source-session-login-dialog").is_visible(), "403 must not be misclassified as expiry"
+    assert "Origin, CSRF" in page.locator("#source-session-status").inner_text()
+    csrf_denied["active"] = False
+    context.unroute("**/v1/source-sessions?*", deny_reads)
+
+    for width in (320, 390, 768, 1280):
+        page.set_viewport_size({"width": width, "height": 900})
+        for path in ("/", "/Audio-Archive.html", "/Audio-Editor.html"):
+            page.goto(base_url + path, wait_until="domcontentloaded")
+            assert not page.evaluate("document.documentElement.scrollWidth > window.innerWidth"), (width, path)
+            if screenshot_dir:
+                screenshot_dir.mkdir(parents=True, exist_ok=True)
+                name = path.strip("/").replace(".", "-") or "landing"
+                page.screenshot(path=screenshot_dir / f"s10a-{browser_type.name}-{name}-{width}.png", full_page=True)
+
+    page.goto(base_url + "/Audio-Editor.html", wait_until="domcontentloaded")
+    page.locator("#processor-file").set_input_files({
+        "name": "unsaved-speaker.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
+    })
+    page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
+    page.locator("#open-local-speaker").click()
+    page.wait_for_function("document.getElementById('speaker-editor-status').dataset.dirty === 'true'", timeout=30_000)
+    page.locator("#service-logout").click()
+    page.locator("#speaker-unsaved-dialog").wait_for(state="visible")
+    page.locator("#speaker-unsaved-cancel").click()
+    assert "/Audio-Editor.html" in page.url
+    assert page.evaluate("async () => (await fetch('/v1/session')).status") == 200
+    page.locator("#service-logout").click()
+    page.locator("#speaker-unsaved-dialog").wait_for(state="visible")
+    page.locator("#speaker-unsaved-discard").click()
+    page.wait_for_url("**/login", timeout=5000)
+    assert page.evaluate("async () => (await fetch('/v1/session')).status") == 401
+    page.goto(base_url + "/Audio-Archive.html", wait_until="domcontentloaded")
+    page.wait_for_url("**/login?return=*", timeout=5000)
 
     assert not blocked, blocked
-    context.browser.close()
+    context.close()
+    browser.close()
 
 
-def main():
+def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--base-url", default="http://127.0.0.1:4173")
-    parser.add_argument("--browser", choices=("chromium", "webkit", "both"), default="both")
+    parser.add_argument("--base-url", default="http://localhost:4173")
+    parser.add_argument("--browser", choices=("chromium", "firefox", "webkit", "all"), default="all")
+    parser.add_argument("--screenshot-dir", type=Path)
     args = parser.parse_args()
+    base_url = args.base_url.rstrip("/")
     with sync_playwright() as playwright:
-        names = ("chromium", "webkit") if args.browser == "both" else (args.browser,)
+        names = ("chromium", "firefox", "webkit") if args.browser == "all" else (args.browser,)
         for name in names:
-            exercise(getattr(playwright, name), args.base_url)
-            print(f"S10A focused browser smoke passed: {name}")
-    print("Playwright WebKit is regression evidence, not proof of real iPhone Safari/ITP behavior.")
+            exercise(getattr(playwright, name), base_url, args.screenshot_dir)
+            print(f"S10A focused same-origin browser smoke passed: {name}")
+    print("Playwright is regression evidence, not proof of real iPhone/Safari or Android/Chrome behavior.")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

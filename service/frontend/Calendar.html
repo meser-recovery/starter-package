@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#478ac9">
+    <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2">
+    <title>Календарь событий — Проект Мэсэр</title>
+    <link rel="stylesheet" href="styles/foundation.css">
+    <link rel="stylesheet" href="styles/components.css">
+    <link rel="stylesheet" href="styles/calendar.css">
+    <script src="scripts/origin-guard.js"></script>
+    <script src="scripts/calendar.js" defer></script>
+  </head>
+  <body class="site-page">
+    <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
+    <header class="site-header">
+      <div class="container site-header__content">
+        <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
+        <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
+        <a class="service-link" href="/" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
+      </div>
+    </header>
+    <main id="main-content" class="calendar-main">
+      <div class="container calendar-content">
+        <h1>Календарь событий</h1>
+        <section class="gc-card" aria-label="Календарь событий">
+          <div class="gc-frame-wrap"><iframe id="gc-frame" class="gc-frame" title="Календарь событий" scrolling="no"></iframe></div>
+          <div class="gc-actions"><a class="gc-btn" href="https://calendar.google.com/calendar/r/week?cid=meserproject%40gmail.com" target="_blank" rel="noopener noreferrer">Открыть календарь в Google Calendar</a></div>
+          <p class="gc-note">Календарь доступен для просмотра здесь. Пользователи с соответствующими правами могут редактировать его в Google Calendar.</p>
+        </section>
+      </div>
+    </main>
+    <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
+  </body>
+</html>

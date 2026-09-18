@@ -1,16 +1,16 @@
-# S10A gateway activation checklist (prepared, unexecuted)
+# S10A full-service activation checklist (prepared, unexecuted)
 
-This package changes only the `gateway` application container. It does not change HAProxy, Caddy, Xray, DNS, firewall, secrets, GitHub App scope, or archive data.
+This package replaces the Meser `gateway` and custom `caddy` application containers together. It must not edit HAProxy, Xray/REALITY, x-ui, MTProxy, n8n, router, DNS, firewall, secrets, GitHub App scope, or archive data.
 
-1. Obtain explicit authorization naming the exact reviewed PR HEAD and the three generated artifact files.
-2. Independently compare the PR HEAD, `.source-sha`, archive filename, and `.sha256` manifest.
-3. Generate the artifact from a clean reviewed checkout with `package-reviewed-head.sh <full-head-sha> <empty-output-directory>`.
-4. Copy the artifact, checksum manifest, source record, guarded activation script, guarded rollback script, and this checklist to the gateway host without changing their contents.
-5. Keep both activation gates false until the separate review and authorization are recorded. Never place the password in an argument, environment variable, log, or shell history; provide it in a root-owned mode-0600 temporary file.
-6. Review the captured pre-change runtime identity under `/var/backups/meser-audio-archive/s10a/<timestamp>/`. It intentionally excludes environment values and secret contents.
-7. Run the guarded activation. Confirm `/healthz`, exact Pages-origin config/CORS, bootstrap and bridge security headers, two independent `Set-Cookie` headers, and cookie replay. Do not display the captured headers or cookie jar.
-8. From a trusted Chromium browser, confirm direct password login and mandatory `/v1/session` replay. From the separately authorized real iPhone/Safari, perform the contract's read-only retained-fixture check and record only redacted versions/digests and pass/fail steps.
-9. Confirm the trace contains no archive-domain write except session login/logout, and confirm opening Announcement then Speaker makes no second source-part download.
-10. On any failure, run `rollback-reviewed-gateway.sh <captured-rollback-directory>` and verify the exact prior image and public health. Preserve the rollback directory and logs for review.
+1. Obtain explicit authorization naming the exact reviewed PR HEAD, source tree and generated full-service artifact hashes.
+2. Independently verify the source SHA/tree, source archive, gateway image archive, Caddy/frontend image archive and release manifest.
+3. Create and integrity-check an encrypted recovery bundle on a verified off-VM mount. Keep the age private identity outside the production VM.
+4. Capture the current gateway/Caddy container IDs and image IDs, create unique preserved rollback image tags, and record Compose/Caddy/runtime and HAProxy checksums without printing secret values.
+5. Keep both authorization gates in `activate-reviewed-service.sh` false until the separate review and authorization are recorded. Supply the smoke password only in a root-owned mode-0600 file.
+6. Validate the candidate with `docker compose config` and the pinned Caddy image before replacement.
+7. Replace only `gateway` and `caddy`; preserve Caddy volumes and never use `docker compose down`.
+8. Run the script's zero-write smoke: health, canonical unauthenticated redirect, one-password login, `/v1/session` replay, protected routes, automatic Archive access, Editor/config, exact read-only source-part bytes/SHA and logout.
+9. Create and verify the post-activation off-VM recovery bundle before accepting the activation. Confirm the authoritative deployment record names its identity and records zero archive mutations.
+10. On failure, run `rollback-reviewed-service.sh <captured-rollback-directory>` to force-recreate both prior application containers from the preserved references, then verify both exact image IDs and health. Preserve the rollback identity and redacted logs.
 
-No command in this directory has been executed against production during the CODEX stage.
+The superseded gateway-only scripts are hard-disabled. No command in this directory was executed against production during the repository stage.

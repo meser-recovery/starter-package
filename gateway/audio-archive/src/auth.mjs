@@ -3,8 +3,11 @@ import { promisify } from "node:util";
 import { ValidationError } from "./validation.mjs";
 
 const scrypt = promisify(scryptCallback);
-export const PARTITIONED_COOKIE_NAME = "__Host-meser_audio_session";
-export const STORAGE_ACCESS_COOKIE_NAME = "__Host-meser_audio_storage_session";
+export const SERVICE_COOKIE_NAME = "__Host-meser_service_session";
+export const RETIRED_COOKIE_NAMES = Object.freeze([
+  "__Host-meser_audio_session",
+  "__Host-meser_audio_storage_session"
+]);
 
 function base64url(value) {
   return Buffer.from(value).toString("base64url");
@@ -39,8 +42,8 @@ export async function verifyPassword(password, verifier) {
   return timingSafeEqual(actual, expected);
 }
 
-function signature(payload, secret) {
-  return createHmac("sha256", secret).update(payload).digest("base64url");
+function signature(sessionId, secret) {
+  return createHmac("sha256", secret).update(sessionId).digest("base64url");
 }
 
 function parseCookies(header) {
@@ -50,46 +53,70 @@ function parseCookies(header) {
   }).filter(([key]) => key));
 }
 
-export function createSession(sessionSecret, lifetimeSeconds, now = Date.now()) {
-  if (typeof sessionSecret !== "string" || sessionSecret.length < 32) throw new Error("SESSION_SIGNING_SECRET must contain at least 32 characters");
-  const csrfToken = randomBytes(32).toString("base64url");
-  const payload = base64url(JSON.stringify({
-    version: 1,
-    sessionId: randomBytes(24).toString("base64url"),
-    csrfToken,
-    issuedAt: Math.floor(now / 1000),
-    expiresAt: Math.floor(now / 1000) + lifetimeSeconds
-  }));
-  const value = `${payload}.${signature(payload, sessionSecret)}`;
-  const partitionedCookie = `${PARTITIONED_COOKIE_NAME}=${value}; Path=/; Max-Age=${lifetimeSeconds}; Secure; HttpOnly; SameSite=None; Partitioned`;
-  const storageAccessCookie = `${STORAGE_ACCESS_COOKIE_NAME}=${value}; Path=/; Max-Age=${lifetimeSeconds}; Secure; HttpOnly; SameSite=None`;
-  return { cookie: partitionedCookie, cookies: [partitionedCookie, storageAccessCookie], csrfToken };
-}
-
-export function clearSessionCookie() {
-  return [
-    `${PARTITIONED_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=None; Partitioned`,
-    `${STORAGE_ACCESS_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=None`
-  ];
-}
-
-export function readSession(request, sessionSecret, now = Date.now()) {
-  const cookies = parseCookies(request.headers.get("cookie"));
-  const partitioned = cookies[PARTITIONED_COOKIE_NAME];
-  const storageAccess = cookies[STORAGE_ACCESS_COOKIE_NAME];
-  if (partitioned && storageAccess && !fixedTimeEqual(partitioned, storageAccess)) return null;
-  const value = partitioned || storageAccess;
-  if (!value) return null;
-  const [payload, suppliedSignature, ...extra] = value.split(".");
-  if (!payload || !suppliedSignature || extra.length || !fixedTimeEqual(suppliedSignature, signature(payload, sessionSecret))) return null;
-  try {
-    const session = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
-    if (session.version !== 1 || typeof session.sessionId !== "string" || typeof session.csrfToken !== "string" ||
-        !Number.isSafeInteger(session.expiresAt) || session.expiresAt <= Math.floor(now / 1000)) return null;
-    return session;
-  } catch {
-    return null;
+export class SessionRegistry {
+  constructor({ clock = () => Date.now(), maxEntries = 256 } = {}) {
+    if (!Number.isSafeInteger(maxEntries) || maxEntries < 1) throw new Error("Session registry limit is invalid");
+    this.clock = clock;
+    this.maxEntries = maxEntries;
+    this.sessions = new Map();
   }
+
+  prune(now = this.clock()) {
+    for (const [sessionId, session] of this.sessions) {
+      if (session.expiresAt * 1000 <= now) this.sessions.delete(sessionId);
+    }
+    while (this.sessions.size >= this.maxEntries) this.sessions.delete(this.sessions.keys().next().value);
+  }
+
+  create(lifetimeSeconds, now = this.clock()) {
+    this.prune(now);
+    const session = Object.freeze({
+      sessionId: randomBytes(24).toString("base64url"),
+      csrfToken: randomBytes(32).toString("base64url"),
+      issuedAt: Math.floor(now / 1000),
+      expiresAt: Math.floor(now / 1000) + lifetimeSeconds
+    });
+    this.sessions.set(session.sessionId, session);
+    return session;
+  }
+
+  get(sessionId, now = this.clock()) {
+    const session = this.sessions.get(sessionId);
+    if (!session || session.expiresAt * 1000 <= now) {
+      if (session) this.sessions.delete(sessionId);
+      return null;
+    }
+    return session;
+  }
+
+  revoke(sessionId) {
+    return this.sessions.delete(sessionId);
+  }
+}
+
+export function createSession(sessionSecret, lifetimeSeconds, registry, now = Date.now()) {
+  if (typeof sessionSecret !== "string" || sessionSecret.length < 32) throw new Error("SESSION_SIGNING_SECRET must contain at least 32 characters");
+  if (!(registry instanceof SessionRegistry)) throw new Error("A session registry is required");
+  const session = registry.create(lifetimeSeconds, now);
+  const value = `${session.sessionId}.${signature(session.sessionId, sessionSecret)}`;
+  const cookie = `${SERVICE_COOKIE_NAME}=${value}; Path=/; Max-Age=${lifetimeSeconds}; Secure; HttpOnly; SameSite=Lax`;
+  return { cookie, cookies: [cookie, ...retiredCookieClears()], session };
+}
+
+function retiredCookieClears() {
+  return RETIRED_COOKIE_NAMES.map((name) => `${name}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`);
+}
+
+export function clearSessionCookies() {
+  return [`${SERVICE_COOKIE_NAME}=; Path=/; Max-Age=0; Secure; HttpOnly; SameSite=Lax`, ...retiredCookieClears()];
+}
+
+export function readSession(request, sessionSecret, registry, now = Date.now()) {
+  const value = parseCookies(request.headers.get("cookie"))[SERVICE_COOKIE_NAME];
+  if (!value) return null;
+  const [sessionId, suppliedSignature, ...extra] = value.split(".");
+  if (!sessionId || !suppliedSignature || extra.length || !fixedTimeEqual(suppliedSignature, signature(sessionId, sessionSecret))) return null;
+  return registry.get(sessionId, now);
 }
 
 export function requireCsrf(request, session) {

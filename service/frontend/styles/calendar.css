@@ -1,0 +1,12 @@
+.calendar-main { padding: var(--space-8) 0 var(--space-12); background: var(--color-brand-surface); }
+.calendar-content > h1 { margin-bottom: var(--space-6); color: #fff; font-size: clamp(1.8rem, 5vw, 2.7rem); text-align: center; }
+.gc-card { max-width: 60rem; margin: 0 auto; padding: clamp(.75rem, 3vw, 1.5rem); overflow: hidden; background: #fff; border: 2px solid var(--color-brand); border-radius: 1.25rem; box-shadow: 0 .75rem 1.75rem rgba(1, 58, 91, .18); }
+.gc-frame-wrap { height: 45rem; overflow: hidden; background: #f3f7fb; border: 1px solid var(--color-palette-light-2); border-radius: 1rem; }
+.gc-frame { display: block; width: 100%; height: 100%; border: 0; background: #fff; }
+.gc-actions { display: flex; justify-content: center; margin-top: var(--space-4); }
+.gc-btn { display: flex; align-items: center; justify-content: center; min-height: 2.75rem; padding: .625rem 1.25rem; color: #fff; background: var(--color-brand); border: 2px solid var(--color-brand); border-radius: var(--radius-action); font-size: 1.125rem; font-weight: 700; line-height: 1.25; text-align: center; text-decoration: none; }
+.gc-btn:hover { background: var(--color-palette-dark-1); border-color: var(--color-palette-dark-1); }
+.gc-btn:focus-visible { outline: 3px solid var(--color-focus-ring); outline-offset: 3px; }
+.gc-note { margin: var(--space-3) 0 0; color: var(--color-palette-dark-1); font-size: .875rem; text-align: center; }
+@media (max-width: 40rem) { .calendar-main { padding-block: var(--space-6); } .calendar-content { width: min(100% - 1rem, var(--container-max)); } .gc-frame-wrap { height: 47.5rem; border-radius: .875rem; } .gc-btn { width: 100%; } }
+@media (max-width: 23.75rem) { .gc-card { padding: .5rem; } .gc-frame-wrap { height: 46.25rem; } .gc-note { font-size: .75rem; } }

@@ -24,7 +24,7 @@ function jsonResponse(value, status = 200) {
 
 function configEnvironment(overrides = {}) {
   return {
-    ALLOWED_ORIGIN: "https://meser-recovery.github.io", GITHUB_APP_ID: "1", GITHUB_APP_INSTALLATION_ID: "2",
+    ALLOWED_ORIGIN: "https://meserproject.duckdns.org", GITHUB_APP_ID: "1", GITHUB_APP_INSTALLATION_ID: "2",
     GITHUB_APP_PRIVATE_KEY_FILE: "/run/secrets/github-app.pem",
     SHARED_PASSWORD_VERIFIER_FILE: "/run/secrets/shared-password-verifier",
     SESSION_SIGNING_SECRET_FILE: "/run/secrets/session-signing-secret",
@@ -45,16 +45,22 @@ function secretReader(overrides = {}) {
   };
 }
 
-test("configuration fixes GitHub scope and accepts one exact HTTPS Pages origin", () => {
+test("configuration fixes GitHub scope and accepts only the canonical service origin", () => {
   const env = configEnvironment();
   const loaded = loadConfig(env, secretReader());
   assert.equal(`${loaded.storageOwner}/${loaded.storageRepository}`, "meser-recovery/audio-archive");
+  assert.equal(loaded.syntheticRuntime, false);
   assert.equal(Object.hasOwn(loaded, "speakerProjectHistory"), false);
   assert.equal(Object.hasOwn(loadConfig({ ...env, UNRELATED_ROLLOUT_SWITCH: "0" }, secretReader()), "speakerProjectHistory"), false);
   assert.throws(() => loadConfig({ ...env, STORAGE_REPOSITORY: "starter-package" }, secretReader()), /must remain/);
-  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "http://localhost:8000" }, secretReader()), /HTTPS origin/);
-  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test/path" }, secretReader()), /HTTPS origin/);
-  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test" }, secretReader()), /must remain/);
+  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "http://localhost:8000" }, secretReader()), /canonical HTTPS/);
+  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test/path" }, secretReader()), /canonical HTTPS/);
+  assert.throws(() => loadConfig({ ...env, ALLOWED_ORIGIN: "https://example.test" }, secretReader()), /canonical HTTPS/);
+  const synthetic = loadConfig({ ...env, MESER_SYNTHETIC_RUNTIME: "true", ALLOWED_ORIGIN: "http://127.0.0.1:18080" }, secretReader());
+  assert.equal(synthetic.syntheticRuntime, true);
+  assert.equal(synthetic.allowedOrigin, "http://127.0.0.1:18080");
+  assert.throws(() => loadConfig({ ...env, MESER_SYNTHETIC_RUNTIME: "true", ALLOWED_ORIGIN: "http://localhost:18080" }, secretReader()), /explicit loopback/);
+  assert.throws(() => loadConfig({ ...env, MESER_SYNTHETIC_RUNTIME: "true", ALLOWED_ORIGIN: "https://meserproject.duckdns.org" }, secretReader()), /explicit loopback/);
 });
 
 test("configuration reads each secret file once, preserves PEM newlines, and strips only the final newline", () => {

@@ -129,7 +129,7 @@ def check_literature(page, base_url: str, width: int) -> None:
         raise AssertionError("Literature skip link is missing")
     if page.locator(".site-header__identity").count() != 1 or page.locator(".site-header__logo").count() != 1:
         raise AssertionError("Literature shared home navigation is missing")
-    if page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+    if page.locator('a.service-link[href="https://meserproject.duckdns.org/"]').count() != 1:
         raise AssertionError("Literature service control is missing")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Literature has horizontal overflow at {width}px")
@@ -402,7 +402,7 @@ def check_audiobook(page, base_url: str, width: int) -> None:
         raise AssertionError("AudioBook skip link is missing")
     if page.locator(".site-header__identity").count() != 1 or page.locator(".site-header__logo").count() != 1:
         raise AssertionError("AudioBook shared home navigation is missing")
-    service = page.locator('a.service-link[href="Admin-panel.html"]')
+    service = page.locator('a.service-link[href="https://meserproject.duckdns.org/"]')
     if service.count() != 1:
         raise AssertionError("AudioBook service control is missing")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
@@ -524,7 +524,7 @@ def check_offline_meetings(page, base_url: str, width: int) -> None:
         raise AssertionError("Offline Meetings main landmark or skip link is missing")
     if page.locator(".site-header__identity").count() != 1 or page.locator(".site-header__logo").count() != 1:
         raise AssertionError("Offline Meetings shared home navigation is missing")
-    if page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+    if page.locator('a.service-link[href="https://meserproject.duckdns.org/"]').count() != 1:
         raise AssertionError("Offline Meetings service control is missing")
     if not page.locator("body").evaluate("element => getComputedStyle(element).display === 'flex' && element.scrollHeight >= window.innerHeight"):
         raise AssertionError(f"Offline Meetings shared full-height shell is missing at {width}px")
@@ -684,7 +684,7 @@ def check_calculator(page, base_url: str, width: int) -> None:
         raise AssertionError("Calculator card title must be a correct H2")
     if page.locator('a[href="#main-content"]').count() != 1 or page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1:
         raise AssertionError("Calculator shared navigation is missing")
-    if page.locator('a.service-link[href="Admin-panel.html"]').count() != 1 or page.locator("footer.site-footer").count() != 1:
+    if page.locator('a.service-link[href="https://meserproject.duckdns.org/"]').count() != 1 or page.locator("footer.site-footer").count() != 1:
         raise AssertionError("Calculator shared service link or footer is missing")
     if page.locator('script[src="scripts/calculator.js"]').count() != 1:
         raise AssertionError("Calculator dedicated runtime is missing")
@@ -789,7 +789,7 @@ def check_calendar(page, base_url: str, width: int) -> None:
         raise AssertionError(f"Calendar H1 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Calendar main landmark or skip link is missing at {width}px")
-    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="https://meserproject.duckdns.org/"]').count() != 1:
         raise AssertionError(f"Calendar shared navigation is missing at {width}px")
     frame = page.locator("#gc-frame")
     frame.wait_for(state="visible")
@@ -857,7 +857,7 @@ def check_google_drive(page, base_url: str, width: int) -> None:
         raise AssertionError(f"Drive H1 is invalid at {width}px")
     if page.locator("main#main-content").count() != 1 or page.locator('a[href="#main-content"]').count() != 1:
         raise AssertionError(f"Drive main landmark or skip link is missing at {width}px")
-    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="Admin-panel.html"]').count() != 1:
+    if page.locator(".site-header__logo").count() != 1 or page.locator(".site-header__identity").count() != 1 or page.locator('a.service-link[href="https://meserproject.duckdns.org/"]').count() != 1:
         raise AssertionError(f"Drive shared navigation is missing at {width}px")
     if page.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
         raise AssertionError(f"Drive has horizontal overflow at {width}px")
@@ -1181,7 +1181,7 @@ def check_audio_editor_shell(page, width: int) -> None:
         raise AssertionError(f"Audio editor shared header is missing at {width}px")
     if page.get_by_role("link", name="К служебной странице", exact=True).count():
         raise AssertionError(f"Audio editor redundant service back link is present at {width}px")
-    service_link = page.locator('.service-link[href="Admin-panel.html"]')
+    service_link = page.locator('.service-link[href="https://meserproject.duckdns.org/"]')
     if service_link.count() != 1 or service_link.get_attribute("href") != "Admin-panel.html":
         raise AssertionError(f"Audio editor shared service navigation is missing at {width}px")
     logout = page.get_by_role("button", name="Выйти", exact=True)
@@ -3667,7 +3667,7 @@ def main() -> int:
         goto_ready(page, url(base_url, "/"))
         homepage_destinations = (
             "Offline-meetings.html", "Literature.html", "AudioBook.html",
-            "Calculator.html", "Admin-panel.html",
+            "Calculator.html", "https://meserproject.duckdns.org/",
             "https://na-tranzit.org/gruppy/onlajn-gruppy",
             "https://na-russia.org/meditation-today", "https://radio-na.ru/",
             "https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751",
@@ -3680,7 +3680,7 @@ def main() -> int:
         page.get_by_role("heading", name="Проект Мэсэр", level=1).wait_for()
         if page.locator('a[href="#main-content"]').count() != 1:
             raise AssertionError("homepage skip link is missing")
-        if page.locator('a[href="Admin-panel.html"]').count() != 1:
+        if page.locator('a[href="https://meserproject.duckdns.org/"]').count() != 1:
             raise AssertionError("desktop service navigation link is missing or duplicated")
         desktop_service = page.get_by_role("link", name="Для служащих")
         if not desktop_service.is_visible():
@@ -3749,7 +3749,7 @@ def main() -> int:
             if mobile.evaluate("document.documentElement.scrollWidth > window.innerWidth"):
                 raise AssertionError(f"homepage has horizontal overflow at {width}px")
             mobile.get_by_role("heading", name="Проект Мэсэр", level=1).wait_for(state="visible")
-            service = mobile.locator('a[href="Admin-panel.html"]')
+            service = mobile.locator('a[href="https://meserproject.duckdns.org/"]')
             service.wait_for(state="visible")
             heading_box = mobile.get_by_role("heading", name="Проект Мэсэр", level=1).bounding_box()
             service_box = service.bounding_box()
@@ -3810,8 +3810,6 @@ def main() -> int:
             check_audiobook(page, base_url, width)
         click_viewport_link(page, "./", "/")
         goto_ready(page, url(base_url, "/Literature.html"))
-        click_viewport_link(page, "Admin-panel.html", "/Admin-panel.html")
-
         goto_ready(page, url(base_url, "/About.html"))
         page.wait_for_url(base_url + "/", timeout=10000)
         wait_for_page_ready(page)
@@ -3830,59 +3828,9 @@ def main() -> int:
         if not source or not source.endswith("audio/bt6/bt6_002.mp3"):
             raise AssertionError(f"second audio track did not set expected source: {source}")
 
-        for width in (320, 390, 768, 1280):
-            check_admin_login(page, base_url, width)
-            check_service_landing(page, base_url, width)
-        check_admin_hash_functions(page, base_url)
-        check_admin_without_subtle_crypto(browser, base_url)
-        check_service_access_journeys(page, base_url)
-        check_archive_management(browser, base_url, args.screenshot_dir)
-        check_archive_management_cors(browser)
-        from s09a_smoke import check_s09a
-        check_s09a(browser, base_url, args.screenshot_dir)
-        from s09a_acceptance_smoke import check_s09a_acceptance
-        check_s09a_acceptance(browser, base_url, args.screenshot_dir)
-        from s09a_editor_corrective_smoke import check_s09a_editor_corrective
-        check_s09a_editor_corrective(browser, base_url, args.screenshot_dir)
-        check_s09a_editor_corrective(browser, base_url, args.screenshot_dir, device_scale_factor=2)
-        from s09a_design_a_smoke import check_design_a
-        check_design_a(browser, base_url, args.screenshot_dir)
-        from s09a_waveform_alignment_smoke import check_waveform_alignment
-        check_waveform_alignment(browser, base_url, args.screenshot_dir)
-        from s09a_waveform_consistency_smoke import check_waveform_consistency
-        check_waveform_consistency(browser, base_url, args.screenshot_dir)
-        from s09a_waveform_motion_smoke import check_waveform_motion
-        check_waveform_motion(browser, base_url, args.screenshot_dir)
-        from s09a_meters_smoke import check_audio_meters
-        check_audio_meters(browser, base_url, args.screenshot_dir)
-        from s09a_playback_signal_smoke import check_playback_signal
-        check_playback_signal(browser, base_url, args.screenshot_dir)
-        from s09a_timeline_smoke import check_timeline_controls
-        check_timeline_controls(browser, base_url, args.screenshot_dir)
-        from s09a_approved_timeline_ux_smoke import check_approved_timeline_ux
-        check_approved_timeline_ux(browser, base_url, args.screenshot_dir)
-        from s09a_input_focus_smoke import check_input_focus
-        check_input_focus(browser, base_url)
-        from s09a_speaker_render_performance_smoke import check_speaker_parallel_equivalence, check_speaker_render_performance
-        check_speaker_render_performance(browser, base_url)
-        check_speaker_parallel_equivalence(browser, base_url)
-        from s09a_compression_scale_smoke import check_compression_scale
-        check_compression_scale(browser, base_url, args.screenshot_dir)
-        from s09a_corrective_management_smoke import check_s09a_corrective_management
-        check_s09a_corrective_management(browser, base_url, args.screenshot_dir)
-        check_audio_editor(page, base_url)
-        check_source_session_archive(browser, base_url, args.screenshot_dir)
-        check_local_preview_archive_hint(browser, base_url)
-        check_audio_processor(browser, base_url, args.screenshot_dir)
-        if page.evaluate(f"sessionStorage.getItem('{SERVICE_SESSION_KEY}')") is not None:
-            raise AssertionError("Calendar and Drive regression checks must run without an admin marker")
-
-        for width in (320, 390, 768, 1280):
-            check_calendar(page, base_url, width)
-        check_calendar_mode_transition(page, base_url)
-
-        for width in (320, 390, 768, 1280):
-            check_google_drive(page, base_url, width)
+        # Protected service pages moved to their own same-origin runtime. Their
+        # login, Archive/Editor, reconnect and cross-engine coverage lives in
+        # s10a_browser_smoke.py; this full suite keeps the public Pages surface.
         if args.screenshot_dir:
             capture_screenshots(page, base_url, args.screenshot_dir)
         context.close()

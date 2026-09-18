@@ -31,19 +31,24 @@ function secretFromFile(env, variable, readTextFile) {
 export function loadConfig(env = process.env, readTextFile = readFileSync) {
   const allowedOrigin = required(env, "ALLOWED_ORIGIN").replace(/\/$/, "");
   const parsedOrigin = new URL(allowedOrigin);
-  if (parsedOrigin.protocol !== "https:" || parsedOrigin.origin !== allowedOrigin) throw new Error("ALLOWED_ORIGIN must be one HTTPS origin");
-  if (allowedOrigin !== "https://meser-recovery.github.io") throw new Error("ALLOWED_ORIGIN must remain https://meser-recovery.github.io");
+  const syntheticRuntime = env.MESER_SYNTHETIC_RUNTIME === "true";
+  const syntheticOrigin = parsedOrigin.protocol === "http:" && parsedOrigin.hostname === "127.0.0.1" && parsedOrigin.origin === allowedOrigin;
+  if (parsedOrigin.origin !== allowedOrigin || (syntheticRuntime ? !syntheticOrigin : allowedOrigin !== "https://meserproject.duckdns.org")) {
+    throw new Error("ALLOWED_ORIGIN must remain canonical HTTPS, except explicit loopback synthetic rehearsal");
+  }
   const storageOwner = env.STORAGE_OWNER || "meser-recovery";
   const storageRepository = env.STORAGE_REPOSITORY || "audio-archive";
   if (storageOwner !== "meser-recovery" || storageRepository !== "audio-archive") throw new Error("Storage target must remain meser-recovery/audio-archive");
   return Object.freeze({
     port: positiveInteger(env.PORT, 8080, 65535, "PORT"),
     allowedOrigin,
+    syntheticRuntime,
     storageOwner,
     storageRepository,
     storageBranch: env.STORAGE_BRANCH || "main",
     acceptedPartBytes: positiveInteger(env.ACCEPTED_PART_BYTES, DEFAULT_PART_BYTES, MAX_PART_BYTES, "ACCEPTED_PART_BYTES"),
-    sessionLifetimeSeconds: positiveInteger(env.SESSION_LIFETIME_SECONDS, 4 * 60 * 60, 24 * 60 * 60, "SESSION_LIFETIME_SECONDS"),
+    sessionLifetimeSeconds: positiveInteger(env.SESSION_LIFETIME_SECONDS, 4 * 60 * 60, 4 * 60 * 60, "SESSION_LIFETIME_SECONDS"),
+    activeSessionLimit: positiveInteger(env.ACTIVE_SESSION_LIMIT, 256, 4096, "ACTIVE_SESSION_LIMIT"),
     githubAppId: required(env, "GITHUB_APP_ID"),
     githubAppInstallationId: required(env, "GITHUB_APP_INSTALLATION_ID"),
     githubAppPrivateKey: secretFromFile(env, "GITHUB_APP_PRIVATE_KEY_FILE", readTextFile),

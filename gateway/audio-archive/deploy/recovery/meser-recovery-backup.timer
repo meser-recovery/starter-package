@@ -1,0 +1,10 @@
+[Unit]
+Description=Weekly encrypted Meser service recovery bundle (disabled until authorized)
+
+[Timer]
+OnCalendar=Sun *-*-* 03:30:00
+Persistent=true
+RandomizedDelaySec=0
+
+[Install]
+WantedBy=timers.target
