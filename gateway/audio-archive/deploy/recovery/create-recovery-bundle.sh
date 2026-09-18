@@ -3,6 +3,10 @@ set -Eeuo pipefail
 
 die() { printf 'RECOVERY BUNDLE REFUSED: %s\n' "$*" >&2; exit 1; }
 [[ $# -eq 7 ]] || die 'usage: create-recovery-bundle.sh <release-dir> <secret-dir> <runtime-env> <absolute-mounted-destination> <age-recipient> <expected-mount-id> <failure-domain-note>'
+runtime_schema="$(dirname "$0")/runtime-env.sh"
+[[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || die 'canonical runtime schema is missing or unsafe'
+# shellcheck source=runtime-env.sh
+source "$runtime_schema"
 release_dir=$1
 secret_dir=$2
 runtime_env=$3
@@ -44,19 +48,24 @@ for key in "${required_manifest_keys[@]}"; do
   value=$(awk -F= -v key="$key" '$1 == key { sub(/^[^=]*=/, ""); print }' "$release_dir/release-manifest.txt")
   [[ -n "$value" ]] || die "release manifest is incomplete: $key"
 done
+gateway_image_ref=$(awk -F= '$1 == "gateway_image_ref" { print $2 }' "$release_dir/release-manifest.txt")
+caddy_image_ref=$(awk -F= '$1 == "caddy_frontend_image_ref" { print $2 }' "$release_dir/release-manifest.txt")
 
-expected_runtime_keys=$'ALLOWED_ORIGIN\nGITHUB_APP_ID\nGITHUB_APP_INSTALLATION_ID\nMESER_HTTP_BIND\nMESER_RUNTIME_UID\nMESER_SITE_ADDRESS\nMESER_SYNTHETIC_RUNTIME\nMESER_TLS_BIND'
-actual_runtime_keys=$(awk -F= 'NF >= 2 && $1 !~ /^#/ { print $1 }' "$runtime_env" | LC_ALL=C sort)
-[[ "$actual_runtime_keys" == "$expected_runtime_keys" ]] || die 'runtime environment contains missing or unknown keys'
-runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$runtime_env"; }
-github_app_id=$(runtime_value GITHUB_APP_ID)
-github_installation_id=$(runtime_value GITHUB_APP_INSTALLATION_ID)
-allowed_origin=$(runtime_value ALLOWED_ORIGIN)
-site_address=$(runtime_value MESER_SITE_ADDRESS)
-http_bind=$(runtime_value MESER_HTTP_BIND)
-tls_bind=$(runtime_value MESER_TLS_BIND)
-runtime_uid=$(runtime_value MESER_RUNTIME_UID)
-synthetic_runtime=$(runtime_value MESER_SYNTHETIC_RUNTIME)
+meser_validate_runtime_env_shape "$runtime_env" || die 'runtime environment contains malformed, missing, duplicate or unknown keys'
+runtime_source_sha=$(meser_runtime_value "$runtime_env" SOURCE_SHA)
+runtime_gateway_image=$(meser_runtime_value "$runtime_env" GATEWAY_IMAGE)
+runtime_caddy_image=$(meser_runtime_value "$runtime_env" CADDY_IMAGE)
+[[ "$runtime_source_sha" == "$source_sha" ]] || die 'runtime SOURCE_SHA differs from release manifest'
+[[ "$runtime_gateway_image" == "$gateway_image_ref" ]] || die 'runtime GATEWAY_IMAGE differs from release manifest'
+[[ "$runtime_caddy_image" == "$caddy_image_ref" ]] || die 'runtime CADDY_IMAGE differs from release manifest'
+github_app_id=$(meser_runtime_value "$runtime_env" GITHUB_APP_ID)
+github_installation_id=$(meser_runtime_value "$runtime_env" GITHUB_APP_INSTALLATION_ID)
+allowed_origin=$(meser_runtime_value "$runtime_env" ALLOWED_ORIGIN)
+site_address=$(meser_runtime_value "$runtime_env" MESER_SITE_ADDRESS)
+http_bind=$(meser_runtime_value "$runtime_env" MESER_HTTP_BIND)
+tls_bind=$(meser_runtime_value "$runtime_env" MESER_TLS_BIND)
+runtime_uid=$(meser_runtime_value "$runtime_env" MESER_RUNTIME_UID)
+synthetic_runtime=$(meser_runtime_value "$runtime_env" MESER_SYNTHETIC_RUNTIME)
 [[ "$github_app_id" =~ ^[0-9]+$ && "$github_installation_id" =~ ^[0-9]+$ ]] || die 'runtime GitHub App identities are invalid'
 [[ "$runtime_uid" =~ ^[0-9]+$ ]] || die 'runtime UID is invalid'
 if [[ "${MESER_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
@@ -64,7 +73,7 @@ if [[ "${MESER_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
   [[ "$http_bind" =~ ^127\.0\.0\.1:[0-9]+$ && "$tls_bind" =~ ^127\.0\.0\.1:[0-9]+$ ]] || die 'synthetic runtime binds are invalid'
 else
   [[ "$synthetic_runtime" == false && "$allowed_origin" == https://meserproject.duckdns.org && "$site_address" == meserproject.duckdns.org ]] || die 'production runtime origin is invalid'
-  [[ "$http_bind" == 80 && "$tls_bind" == 127.0.0.1:9443 ]] || die 'production runtime binds are invalid'
+  [[ "$http_bind" == 80 && "$tls_bind" == 127.0.0.1:9443 && "$runtime_uid" == 1000 ]] || die 'production runtime identity/binds are invalid'
 fi
 for pair in 'compose_sha256 compose.yaml' 'caddy_sha256 Caddyfile' 'haproxy_sha256 haproxy.cfg'; do
   read -r key filename <<<"$pair"
@@ -80,21 +89,9 @@ bundle="$work/$bundle_name"
 mkdir -m 700 "$bundle"
 
 for name in "${required_release[@]}"; do cp -- "$release_dir/$name" "$bundle/$name"; done
-gateway_image_ref=$(awk -F= '$1 == "gateway_image_ref" { print $2 }' "$release_dir/release-manifest.txt")
-caddy_image_ref=$(awk -F= '$1 == "caddy_frontend_image_ref" { print $2 }' "$release_dir/release-manifest.txt")
-cat >"$bundle/runtime.env" <<EOF
-SOURCE_SHA=$source_sha
-GATEWAY_IMAGE=$gateway_image_ref
-CADDY_IMAGE=$caddy_image_ref
-GITHUB_APP_ID=$github_app_id
-GITHUB_APP_INSTALLATION_ID=$github_installation_id
-ALLOWED_ORIGIN=$allowed_origin
-MESER_SITE_ADDRESS=$site_address
-MESER_HTTP_BIND=$http_bind
-MESER_TLS_BIND=$tls_bind
-MESER_RUNTIME_UID=$runtime_uid
-MESER_SYNTHETIC_RUNTIME=$synthetic_runtime
-EOF
+meser_write_runtime_env "$bundle/runtime.env" "$source_sha" "$gateway_image_ref" "$caddy_image_ref" \
+  "$github_app_id" "$github_installation_id" "$allowed_origin" "$site_address" "$http_bind" "$tls_bind" "$runtime_uid" "$synthetic_runtime" \
+  || die 'failed to write canonical recovery runtime environment'
 printf '%s\n' 'github-app.pem mode=600' 'shared-password-verifier mode=600' 'session-signing-secret mode=600' >"$work/secret-metadata.txt"
 tar -C "$secret_dir" -cf - github-app.pem shared-password-verifier session-signing-secret -C "$work" secret-metadata.txt \
   | age -r "$recipient" -o "$bundle/secrets.age"

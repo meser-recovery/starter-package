@@ -18,8 +18,12 @@ const s10aRollback = read(resolve(root, "deploy/s10a/rollback-reviewed-service.s
 const legacyActivation = read(resolve(root, "deploy/s10a/activate-reviewed-gateway.sh"));
 const recoveryCreate = read(resolve(root, "deploy/recovery/create-recovery-bundle.sh"));
 const recoveryRestore = read(resolve(root, "deploy/recovery/restore-meser-service.sh"));
+const recoveryRuntime = read(resolve(root, "deploy/recovery/runtime-env.sh"));
+const configuredBackup = read(resolve(root, "deploy/recovery/run-configured-backup.sh"));
+const syntheticRecovery = read(resolve(root, "deploy/recovery/synthetic-recovery-rehearsal.sh"));
 const s10aChecklist = read(resolve(root, "deploy/s10a/OPERATOR-CHECKLIST.md"));
 const createRelease = read(resolve(repositoryRoot, "service/tools/create-release.sh"));
+const safetyWorkflow = read(resolve(repositoryRoot, ".github/workflows/safety-baseline.yml"));
 
 function serviceBlock(name, next) {
   const end = next ? `\n  ${next}:` : "\nnetworks:";
@@ -151,6 +155,24 @@ test("recovery tooling uses age, exact secret allowlist, off-VM marker and inert
   assert.match(recoveryRestore, /sha256sum -c SHA256SUMS/);
   assert.match(recoveryRestore, /age -d -i/);
   assert.match(recoveryCreate, /runtime\.env/);
+  assert.match(s10aActivation, /meser_write_runtime_env "\$candidate_runtime"/);
+  assert.match(recoveryCreate, /meser_validate_runtime_env_shape "\$runtime_env"/);
+  assert.match(recoveryCreate, /runtime SOURCE_SHA differs from release manifest/);
+  assert.match(recoveryCreate, /runtime GATEWAY_IMAGE differs from release manifest/);
+  assert.match(recoveryCreate, /runtime CADDY_IMAGE differs from release manifest/);
+  assert.match(configuredBackup, /meser_validate_runtime_env_shape "\$MESER_RUNTIME_ENV"/);
+  assert.match(configuredBackup, /MESER_RUNTIME_ENV=\$\{MESER_RUNTIME_ENV:-\/etc\/meser-audio-archive\/runtime\.env\}/);
+  assert.match(configuredBackup, /production runtime must be the installed canonical runtime\.env/);
+  assert.match(configuredBackup, /create-recovery-bundle\.sh/);
+  for (const key of [
+    "SOURCE_SHA", "GATEWAY_IMAGE", "CADDY_IMAGE", "GITHUB_APP_ID", "GITHUB_APP_INSTALLATION_ID",
+    "ALLOWED_ORIGIN", "MESER_SITE_ADDRESS", "MESER_HTTP_BIND", "MESER_TLS_BIND", "MESER_RUNTIME_UID",
+    "MESER_SYNTHETIC_RUNTIME"
+  ]) assert.match(recoveryRuntime, new RegExp(`^${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`, "m"));
+  for (const refusal of [
+    "runtime-source-mismatch", "runtime-gateway-mismatch", "runtime-caddy-mismatch",
+    "runtime-missing-key", "runtime-duplicate-key", "runtime-unknown-key"
+  ]) assert.match(syntheticRecovery, new RegExp(refusal));
   assert.match(recoveryRestore, /loaded gateway image ID does not match release manifest/);
   assert.match(recoveryRestore, /restored Caddy container does not use exact manifest image ID/);
 });
@@ -197,4 +219,6 @@ test("full release rewrites the renamed source checksum record to the recovery f
   assert.match(createRelease, /meser-service-source\.tar\.gz\.sha256/);
   assert.match(createRelease, /printf '%s  %s\\n' "\$source_hash" meser-service-source\.tar\.gz/);
   assert.doesNotMatch(createRelease, /mv "\$output\/meser-service-s10a-\$\{source_sha\}\.tar\.gz\.sha256"/);
+  assert.match(safetyWorkflow, /SOURCE_ARTIFACT_SHA256=%s/);
+  assert.match(safetyWorkflow, /Exact-HEAD source artifact SHA-256/);
 });

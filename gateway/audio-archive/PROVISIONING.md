@@ -33,7 +33,7 @@ Evidence must show:
 
 `service/tools/create-release.sh <exact-sha> <empty-output-directory>` is the future offline release entry point. It refuses a dirty checkout, packages reviewed source only, builds both images with exact-SHA OCI labels, saves immutable image archives and writes `release-manifest.txt` with exact image refs/IDs, source tree, base digests and Compose/Caddy/HAProxy checksums. `service/tools/PACKAGING-ENVIRONMENT.md` defines the canonical packaging environment; CI builds twice in independent empty directories and requires byte-identical source archives and SHA-256 records.
 
-Do not build a release from mutable `/opt` state. Do not include credentials, runtime data or logs. The recovery bundle separately creates an allowlisted non-secret `runtime.env` containing only exact image/source identities, GitHub App public identifiers, origin/bind settings and the runtime UID.
+Do not build a release from mutable `/opt` state. Do not include credentials, runtime data or logs. Activation, configured backup and restore share the strict writer/validator in `deploy/recovery/runtime-env.sh`. Its non-secret `runtime.env` contains exactly `SOURCE_SHA`, `GATEWAY_IMAGE`, `CADDY_IMAGE`, `GITHUB_APP_ID`, `GITHUB_APP_INSTALLATION_ID`, `ALLOWED_ORIGIN`, `MESER_SITE_ADDRESS`, `MESER_HTTP_BIND`, `MESER_TLS_BIND`, `MESER_RUNTIME_UID` and `MESER_SYNTHETIC_RUNTIME`; missing, duplicate or unknown keys fail closed, and source/image identities must match the release manifest.
 
 ## Pre-cutover recovery gate
 
