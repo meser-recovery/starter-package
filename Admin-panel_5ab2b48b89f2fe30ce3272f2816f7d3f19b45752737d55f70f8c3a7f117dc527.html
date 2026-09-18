@@ -1,40 +1,26 @@
 <!doctype html>
 <html lang="ru">
-  <head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-    <meta name="theme-color" content="#478ac9">
-    <meta name="audio-archive-gateway" content="https://meserproject.duckdns.org">
-    <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2">
-    <title>Служебная страница — Проект Мэсэр</title>
-    <link rel="stylesheet" href="styles/foundation.css">
-    <link rel="stylesheet" href="styles/components.css">
-    <link rel="stylesheet" href="styles/service-landing.css">
-    <script src="scripts/service-landing.js"></script>
-  </head>
-  <body class="site-page">
-    <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
-    <header class="site-header">
-      <div class="container site-header__content">
-        <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
-        <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
-        <a class="service-link" href="Admin-panel.html" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
-      </div>
-    </header>
-    <main id="main-content" class="service-main">
-      <div class="container service-content">
-        <h1>Служебная страница</h1>
-        <section class="service-card" aria-label="Служебные инструменты">
-          <div class="service-actions">
-            <a class="service-action" href="Calendar.html">Календарь</a>
-            <a class="service-action" href="Google-Drive.html">Материалы</a>
-            <a class="service-action" href="Audio-Editor.html">Редактирование аудио</a>
-            <a class="service-action" href="Audio-Archive.html">Аудиоархив</a>
-          </div>
-          <button id="service-logout" class="service-logout" type="button">Выйти</button>
-        </section>
-      </div>
-    </main>
-    <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
-  </body>
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="robots" content="noindex">
+  <title>Служебная страница — Проект Мэсэр</title>
+  <link rel="icon" href="images/favicon.png?v=2" type="image/png">
+  <link rel="stylesheet" href="styles/foundation.css">
+  <link rel="stylesheet" href="styles/components.css">
+  <link rel="stylesheet" href="styles/admin-access.css">
+</head>
+<body class="site-page" data-service-path="/">
+  <main class="admin-main" id="main-content">
+    <div class="container admin-content">
+      <h1>Служебная страница</h1>
+      <section class="admin-card" aria-label="Переход в защищённый служебный раздел">
+        <p class="admin-intro">Служебный раздел теперь работает на защищённом адресе.</p>
+        <p><a id="service-forward-link" class="admin-submit" href="https://meserproject.duckdns.org/">Перейти в служебный раздел</a></p>
+        <noscript><p>Для автоматического перехода включите JavaScript или воспользуйтесь ссылкой выше.</p></noscript>
+      </section>
+    </div>
+  </main>
+  <script src="scripts/service-compatibility.js"></script>
+</body>
 </html>

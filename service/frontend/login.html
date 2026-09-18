@@ -1,0 +1,47 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#478ac9">
+    <link rel="icon" type="image/png" sizes="64x64" href="images/favicon.png?v=2">
+    <title>Для служащих — Проект Мэсэр</title>
+    <link rel="stylesheet" href="styles/foundation.css">
+    <link rel="stylesheet" href="styles/components.css">
+    <link rel="stylesheet" href="styles/admin-access.css">
+    <script src="scripts/origin-guard.js"></script>
+    <script type="module" src="scripts/service-login.mjs"></script>
+  </head>
+  <body class="site-page">
+    <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
+    <header class="site-header">
+      <div class="container site-header__content">
+        <a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a>
+        <a class="site-header__title site-header__identity" href="./">Проект Мэсэр</a>
+        <a class="service-link" href="/login" aria-label="Для служащих"><span>Для</span><span>служащих</span></a>
+      </div>
+    </header>
+    <main id="main-content" class="admin-main">
+      <div class="container admin-content">
+        <h1>Для служащих</h1>
+        <section class="admin-card" aria-label="Вход для служащих">
+          <p class="admin-intro">Введите пароль для доступа к служебным инструментам.</p>
+          <form id="admin-access-form" class="admin-form">
+            <div class="admin-field">
+              <label for="admin-password">Пароль</label>
+              <div class="admin-password-control">
+                <input id="admin-password" name="password" type="password" autocomplete="current-password" required>
+                <button id="admin-password-toggle" class="admin-password-toggle" type="button" aria-label="Показать пароль" aria-pressed="false" aria-controls="admin-password">
+                  <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24"><path class="admin-eye" d="M2.5 12s3.5-6 9.5-6 9.5 6 9.5 6-3.5 6-9.5 6-9.5-6-9.5-6Z"></path><circle class="admin-eye" cx="12" cy="12" r="2.75"></circle><path class="admin-eye-off" d="m3 3 18 18M10.6 6.3A10.9 10.9 0 0 1 12 6c6 0 9.5 6 9.5 6a18 18 0 0 1-3.2 3.8M6.1 8.1A18 18 0 0 0 2.5 12S6 18 12 18a10.5 10.5 0 0 0 2.1-.2"></path></svg>
+                </button>
+              </div>
+            </div>
+            <button class="admin-submit" type="submit">Войти</button>
+            <p id="admin-error" class="admin-error" aria-live="polite"></p>
+          </form>
+        </section>
+      </div>
+    </main>
+    <footer class="site-footer"><div class="container"><p>Горячая линия АН, где вы можете получить поддержку и любую информацию, связанную с выздоровлением и сообществом.<br>Единый номер: 8 (800) 101-42-12<br>Круглосуточно, бесплатно для звонков по РФ</p></div></footer>
+  </body>
+</html>
