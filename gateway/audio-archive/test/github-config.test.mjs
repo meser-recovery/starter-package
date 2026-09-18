@@ -24,7 +24,7 @@ function jsonResponse(value, status = 200) {
 
 function configEnvironment(overrides = {}) {
   return {
-    ALLOWED_ORIGIN: "https://meser-recovery.github.io", GITHUB_APP_ID: "1", GITHUB_APP_INSTALLATION_ID: "2",
+    ALLOWED_ORIGIN: "https://meserproject.duckdns.org", GITHUB_APP_ID: "1", GITHUB_APP_INSTALLATION_ID: "2",
     GITHUB_APP_PRIVATE_KEY_FILE: "/run/secrets/github-app.pem",
     SHARED_PASSWORD_VERIFIER_FILE: "/run/secrets/shared-password-verifier",
     SESSION_SIGNING_SECRET_FILE: "/run/secrets/session-signing-secret",
@@ -45,7 +45,7 @@ function secretReader(overrides = {}) {
   };
 }
 
-test("configuration fixes GitHub scope and accepts one exact HTTPS Pages origin", () => {
+test("configuration fixes GitHub scope and accepts only the canonical service origin", () => {
   const env = configEnvironment();
   const loaded = loadConfig(env, secretReader());
   assert.equal(`${loaded.storageOwner}/${loaded.storageRepository}`, "meser-recovery/audio-archive");

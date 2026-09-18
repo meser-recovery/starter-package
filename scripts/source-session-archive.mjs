@@ -4,16 +4,14 @@ import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProject
 import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding,
   createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSpeakerOutput, prepareRemoteSourceBatch, remoteSourceFingerprint } from "./audio-archive-client.mjs";
-import { ArchiveAuthController } from "./audio-archive-auth.mjs";
+import { ServiceSessionController } from "./service-session.mjs";
 import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
 const byId = (id) => document.getElementById(`source-session-${id}`);
 const speakerId = (id) => document.getElementById(`speaker-editor-${id}`);
-const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ ||
-  document.querySelector('meta[name="audio-archive-gateway"]')?.content.trim().replace(/\/$/, "") || "";
+const baseUrl = globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || "";
 const gateway = new AudioArchiveGateway(baseUrl);
-const productionGatewayOrigin = "https://meserproject.duckdns.org";
 const state = {
   localContext: null, localProject: null, editorMode: null,
   authenticated: false, authSequence: 0, retryAction: null, reconnectNeeded: false,
@@ -82,22 +80,14 @@ function workflowLabel(value) {
 
 function userError(error, fallback) {
   if (error?.name === "AbortError") return "Операция остановлена.";
-  if (error?.status === 401 || error?.status === 403) return "Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.";
+  if (error?.status === 401) return RECONNECT_MESSAGE;
+  if (error?.status === 403) return "Действие отклонено проверкой Origin, CSRF или прав операции. Обновите состояние и повторите безопасно.";
   if (error?.status === 409) return "Данные записи изменились в другом окне. Обновите архив и повторите действие.";
   if (error?.status === 413) return "Объём данных превышает допустимый предел.";
   if (error?.status === 422) return "Проверка целостности данных не пройдена. Операция остановлена без изменений.";
   if (error?.status >= 500) return "Архив временно недоступен. Повторите действие позже.";
   if (error?.userMessage) return error.userMessage;
-  if (error instanceof TypeError) {
-    let localPreview = false;
-    try {
-      localPreview = ["127.0.0.1", "localhost", "::1"].includes(location.hostname) &&
-        new URL(baseUrl).origin === productionGatewayOrigin;
-    } catch { /* an invalid gateway URL is reported by the regular connection message */ }
-    return localPreview ?
-      "Production-архив недоступен из локального preview из-за ограничения origin. Локальная обработка доступна; для передачи откройте опубликованный сайт." :
-      "Не удалось связаться с архивом. Проверьте подключение к сети и повторите действие.";
-  }
+  if (error instanceof TypeError) return "Не удалось связаться со служебным сервером. Проверьте подключение к сети и повторите действие.";
   return fallback;
 }
 
@@ -106,8 +96,7 @@ function setArchiveStatus(message) {
 }
 
 function updateSessionStatus() {
-  byId("session-status").textContent = !baseUrl ? "Шлюз аудиоархива ещё не настроен." :
-    state.authenticated ? "Общий защищённый сеанс архива активен." : "Для архива требуется общий служебный пароль.";
+  byId("session-status").textContent = state.authenticated ? "Служебная сессия активна." : RECONNECT_MESSAGE;
   byId("authenticate").hidden = state.authenticated;
   document.getElementById("archive-reconnect").hidden = !state.reconnectNeeded || (state.authenticated && !state.retryAction);
   document.getElementById("archive-reconnect-message").textContent = state.authenticated ? "Подключение восстановлено. Повторите действие." : RECONNECT_MESSAGE;
@@ -116,23 +105,17 @@ function updateSessionStatus() {
 
 }
 
-const authController = new ArchiveAuthController({
+const authController = new ServiceSessionController({
   gateway,
-  mount: document.getElementById("source-session-storage-frame"),
   onState: ({ state: authState, detail }) => {
-    const help = document.getElementById("source-session-storage-help");
-    help.hidden = !["storage-access-required", "opening-first-party-bootstrap", "awaiting-storage-grant", "unsupported"].includes(authState) &&
-      !(authState === "denied" && detail?.code !== "invalid_password");
     const labels = {
       "checking-password": "Проверка пароля…",
-      "verifying-session": "Подтверждаем защищённый сеанс…",
-      "storage-access-required": "Пароль принят, но Safari пока не разрешил странице использовать защищённый сеанс.",
-      "opening-first-party-bootstrap": "Открываем защищённую вкладку архива…",
-      "awaiting-storage-grant": "Вернитесь после подтверждения пароля и разрешите доступ в блоке ниже.",
-      connected: "Подключение подтверждено.",
-      unsupported: "Безопасный запрос доступа не поддерживается этим браузером. Локальная обработка остаётся доступна.",
-      denied: detail?.code === "invalid_password" ? "Неверный пароль." : "Доступ Safari не разрешён. Можно повторить.",
-      error: detail?.message || "Не удалось подтвердить подключение. Повторите действие."
+      "verifying-session": "Подтверждаем служебную сессию…",
+      connected: "Служебная сессия подтверждена.",
+      denied: "Неверный пароль.",
+      throttled: "Слишком много попыток. Подождите и повторите вход.",
+      "network-error": "Не удалось связаться с сервером. Проверьте подключение.",
+      "server-error": detail?.status >= 500 ? "Служебный сервер временно недоступен." : "Не удалось подтвердить вход."
     };
     if (labels[authState]) byId("login-status").textContent = labels[authState];
     if (authState === "connected" && !state.authenticated && (byId("login-dialog").open || state.afterLogin)) void finishAuthentication();
@@ -327,11 +310,11 @@ function button(label, action, className = "") {
 }
 
 function onGatewayError(error, fallback, retry = null) {
-  if ([401, 403].includes(error?.status)) {
+  if (error?.status === 401) {
     state.authenticated = false; ++state.authSequence; state.reconnectNeeded = true; state.retryAction = retry;
     state.listsLoaded = false; state.projects.clear(); state.sessions = []; state.allSessions = []; renderSessions(); renderResultArchive();
     updateSessionStatus();
-    setArchiveStatus("Подключение к аудиоархиву истекло. Подключитесь снова, чтобы продолжить.");
+    setArchiveStatus(RECONNECT_MESSAGE);
     return;
   }
   setArchiveStatus(userError(error, fallback));
@@ -340,20 +323,12 @@ function onGatewayError(error, fallback, retry = null) {
 async function refreshSessions() {
   const sequence = ++state.refreshSequence, auth = state.authSequence;
   state.listsLoaded = false; state.projects.clear(); state.sessions = []; state.allSessions = []; renderSessions(); renderResultArchive();
-  if (!baseUrl) {
-    state.sessions = [];
-    state.allSessions = [];
-    renderSessions();
-    renderResultArchive();
-    setArchiveStatus("Шлюз аудиоархива ещё не настроен. Локальная обработка доступна в режиме «С устройства».");
-    return;
-  }
   if (!state.authenticated) {
     state.sessions = [];
     state.allSessions = [];
     renderSessions();
     renderResultArchive();
-    setArchiveStatus("Подключите архив общим служебным паролем.");
+    setArchiveStatus(RECONNECT_MESSAGE);
     return;
   }
   setArchiveStatus("Загрузка записей и сохранённых результатов…");
@@ -366,7 +341,7 @@ async function refreshSessions() {
       return [session.id, projectProjection(session, result.draft)];
     }));
     if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
-    const failure = projects.find(result => result.status === 'rejected' && [401, 403].includes(result.reason?.status));
+    const failure = projects.find(result => result.status === 'rejected' && result.reason?.status === 401);
     if (failure) throw failure.reason;
     for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
     state.sessions = state.allSessions.filter(eligible); state.listsLoaded = true;
@@ -869,7 +844,7 @@ async function openArchivedOutput(session, output, workflow = "announcement", do
     if (downloadOnly) link.click();
   } catch (error) {
     if (sequence === state.outputSequence && auth === state.authSequence) {
-      if ([401, 403].includes(error.status)) onGatewayError(error, RECONNECT_MESSAGE, async () => {
+      if (error.status === 401) onGatewayError(error, RECONNECT_MESSAGE, async () => {
         if (sequence !== state.outputSequence || state.resultArchive !== workflow || state.activeManifest?.id !== currentSessionId) return;
         const fresh = await gateway.getSession(session.id);
         const target = fresh.workflows[workflow].outputs.find(item => item.outputId === output.outputId && item.sha256 === output.sha256 && item.version === output.version);
@@ -1052,7 +1027,7 @@ async function ensureAuthenticated(action = async () => {}) {
   const connected = await new Promise(resolve => {
     if (state.afterLogin) { resolve(false); return; }
     state.afterLogin = resolve;
-    byId("login-status").textContent = baseUrl ? RECONNECT_MESSAGE : "Шлюз аудиоархива ещё не настроен.";
+    byId("login-status").textContent = RECONNECT_MESSAGE;
     byId("password").value = "";
     byId("login-dialog").showModal(); byId("password").focus();
   });
@@ -1063,7 +1038,7 @@ async function withReconnect(action) {
   await ensureAuthenticated();
   try { return await action(); }
   catch (error) {
-    if (![401, 403].includes(error.status)) throw error;
+    if (error.status !== 401) throw error;
     state.authenticated = false; updateSessionStatus();
     await ensureAuthenticated();
     return action(); // One retry only; the action revalidates revisions and its retained transaction.
@@ -1408,7 +1383,7 @@ async function submitDeletion(event) {
     if (!current()) return;
     state.deleteTarget = null;
     byId("delete-status").textContent = userError(error, "Удаление не подтверждено. Обновите данные и получите новый предварительный просмотр.");
-    if ([401, 403].includes(error.status)) onGatewayError(error, "", null);
+    if (error.status === 401) onGatewayError(error, "", null);
   } finally { state.deleteBusy = false; }
 }
 
@@ -1487,7 +1462,7 @@ async function recover(operation, action) {
   } catch (error) {
     if (!currentContext()) return;
     byId("recovery-list").textContent = userError(error, "Не удалось восстановить незавершённую операцию.");
-    if ([401, 403].includes(error.status)) onGatewayError(error, "", null);
+    if (error.status === 401) onGatewayError(error, "", null);
   }
 }
 
@@ -1613,14 +1588,10 @@ async function consumeEditorIntent() {
 async function initialize() {
   setMode("archive");
   updateSessionStatus();
-  if (baseUrl) {
-    try {
-      await gateway.configuration();
-      state.authenticated = await authController.restore();
-    } catch {
-      state.authenticated = false;
-    }
-  }
+  try {
+    state.authenticated = await authController.restore();
+    if (state.authenticated) await gateway.configuration();
+  } catch { state.authenticated = false; }
   updateSessionStatus();
   await refreshSessions();
 
@@ -1776,17 +1747,13 @@ byId("login-form").addEventListener("submit", async (event) => {
     await authController.login(password);
     if (auth !== state.authSequence) return;
   } catch (error) {
-    if (!['storage_access_required', 'invalid_password'].includes(error?.code)) {
-      byId("login-status").textContent = userError(error, "Не удалось подключить архив. Проверьте подключение и повторите действие.");
-    }
+    if (error?.code !== 'invalid_password') byId("login-status").textContent = userError(error, "Не удалось восстановить служебную сессию.");
   } finally {
     submit.disabled = false;
     byId("password").value = "";
   }
 });
 byId("login-cancel").addEventListener("click", () => { ++state.authSequence; authController.cancel(); state.afterLogin?.(false); state.afterLogin = null; byId("login-dialog").close(); });
-document.getElementById("source-session-bootstrap").addEventListener("click", () => authController.openBootstrap());
-document.getElementById("source-session-storage-retry").addEventListener("click", () => authController.showBridge());
 byId("ingest-files").addEventListener("change", () => {
   const files = Array.from(byId("ingest-files").files || []);
   byId("ingest-selection").textContent = files.length ? localSelectionText(files) : "";
@@ -1823,13 +1790,13 @@ const archiveFetch = gateway.fetchImpl;
 gateway.fetchImpl = async (url, options) => {
   const auth = state.authSequence;
   const response = await archiveFetch(url, options);
-  if (auth === state.authSequence && [401, 403].includes(response.status) && !String(url).endsWith("/session/login")) {
+  if (auth === state.authSequence && response.status === 401 && !String(url).endsWith("/session/login")) {
     state.authenticated = false; state.reconnectNeeded = true; updateSessionStatus(); setArchiveStatus(RECONNECT_MESSAGE);
   }
   return response;
 };
 for (const dialog of [byId("ingest-dialog"), byId("publication-dialog"), speakerId("save-dialog")]) {
-  const reconnect = button("Подключиться снова", () => ensureAuthenticated().catch(() => {}));
+  const reconnect = button("Войти снова", () => ensureAuthenticated().catch(() => {}));
   dialog.append(reconnect);
 }
 

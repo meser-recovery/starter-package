@@ -19,7 +19,7 @@ test("login requires immediate authenticated session replay before retaining CSR
     calls.push([url, options.method || "GET", options.credentials]);
     return responses.shift();
   });
-  await assert.rejects(() => gateway.login("correct password"), error => error.status === 401 && error.code === "storage_access_required");
+  await assert.rejects(() => gateway.login("correct password"), error => error.status === 401 && error.code === "session_replay_failed");
   assert.deepEqual(calls.map(call => call.slice(1)), [["POST", "include"], ["GET", "include"]]);
   assert.equal(gateway.csrfToken, null);
 
@@ -29,6 +29,34 @@ test("login requires immediate authenticated session replay before retaining CSR
   const proof = await accepted.login("correct password");
   assert.equal(proof.csrfToken, "replayed");
   assert.equal(accepted.csrfToken, "replayed");
+});
+
+test("a late login replay cannot replace the newer auth generation", async () => {
+  let replayCount = 0;
+  let releaseOldReplay;
+  const oldReplay = new Promise((resolve) => { releaseOldReplay = resolve; });
+  const gateway = new AudioArchiveGateway("", async (url, options) => {
+    if ((options.method || "GET") === "POST") {
+      return new Response("{}", { status: 200, headers: { "Content-Type": "application/json" } });
+    }
+    replayCount += 1;
+    if (replayCount === 1) return oldReplay;
+    return new Response(JSON.stringify({ authenticated: true, csrfToken: "new-token" }), {
+      status: 200, headers: { "Content-Type": "application/json" }
+    });
+  });
+
+  const staleLogin = gateway.login("first password");
+  await new Promise((resolve) => setImmediate(resolve));
+  const current = await gateway.login("second password");
+  assert.equal(current.csrfToken, "new-token");
+  assert.equal(gateway.csrfToken, "new-token");
+
+  releaseOldReplay(new Response(JSON.stringify({ authenticated: true, csrfToken: "old-token" }), {
+    status: 200, headers: { "Content-Type": "application/json" }
+  }));
+  assert.deepEqual(await staleLogin, { authenticated: false, stale: true });
+  assert.equal(gateway.csrfToken, "new-token");
 });
 
 test("incremental SHA-256 matches known vectors and block boundaries", async () => {

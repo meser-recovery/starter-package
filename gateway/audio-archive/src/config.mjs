@@ -32,7 +32,7 @@ export function loadConfig(env = process.env, readTextFile = readFileSync) {
   const allowedOrigin = required(env, "ALLOWED_ORIGIN").replace(/\/$/, "");
   const parsedOrigin = new URL(allowedOrigin);
   if (parsedOrigin.protocol !== "https:" || parsedOrigin.origin !== allowedOrigin) throw new Error("ALLOWED_ORIGIN must be one HTTPS origin");
-  if (allowedOrigin !== "https://meser-recovery.github.io") throw new Error("ALLOWED_ORIGIN must remain https://meser-recovery.github.io");
+  if (allowedOrigin !== "https://meserproject.duckdns.org") throw new Error("ALLOWED_ORIGIN must remain https://meserproject.duckdns.org");
   const storageOwner = env.STORAGE_OWNER || "meser-recovery";
   const storageRepository = env.STORAGE_REPOSITORY || "audio-archive";
   if (storageOwner !== "meser-recovery" || storageRepository !== "audio-archive") throw new Error("Storage target must remain meser-recovery/audio-archive");
@@ -43,7 +43,8 @@ export function loadConfig(env = process.env, readTextFile = readFileSync) {
     storageRepository,
     storageBranch: env.STORAGE_BRANCH || "main",
     acceptedPartBytes: positiveInteger(env.ACCEPTED_PART_BYTES, DEFAULT_PART_BYTES, MAX_PART_BYTES, "ACCEPTED_PART_BYTES"),
-    sessionLifetimeSeconds: positiveInteger(env.SESSION_LIFETIME_SECONDS, 4 * 60 * 60, 24 * 60 * 60, "SESSION_LIFETIME_SECONDS"),
+    sessionLifetimeSeconds: positiveInteger(env.SESSION_LIFETIME_SECONDS, 4 * 60 * 60, 4 * 60 * 60, "SESSION_LIFETIME_SECONDS"),
+    activeSessionLimit: positiveInteger(env.ACTIVE_SESSION_LIMIT, 256, 4096, "ACTIVE_SESSION_LIMIT"),
     githubAppId: required(env, "GITHUB_APP_ID"),
     githubAppInstallationId: required(env, "GITHUB_APP_INSTALLATION_ID"),
     githubAppPrivateKey: secretFromFile(env, "GITHUB_APP_PRIVATE_KEY_FILE", readTextFile),
