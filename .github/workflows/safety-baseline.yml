@@ -31,15 +31,40 @@ jobs:
         run: node --test tests/safety/*.test.mjs
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
-      - name: Install Chromium and WebKit
-        run: python3 -m playwright install --with-deps chromium webkit
+      - name: Install Chromium, Firefox and WebKit
+        run: python3 -m playwright install --with-deps chromium firefox webkit
       - name: Run local browser smoke suite
         run: |
           python3 -m http.server 8000 --bind 127.0.0.1 >/tmp/site-server.log 2>&1 &
           server_pid=$!
-          trap 'kill "$server_pid"' EXIT
+          node tests/safety/s10a_preview_server.mjs 4173 http://localhost:4173 >/tmp/service-preview.log 2>&1 &
+          preview_pid=$!
+          trap 'kill "$server_pid" "$preview_pid"' EXIT
           python3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000
-          python3 tests/safety/s10a_browser_smoke.py --base-url http://127.0.0.1:8000
+          python3 tests/safety/s10a_browser_smoke.py --base-url http://localhost:4173 --browser all
+      - name: Verify protected frontend inventory and script syntax
+        run: |
+          node service/tools/verify-frontend.mjs
+          bash -n service/tools/*.sh gateway/audio-archive/deploy/s10a/*.sh gateway/audio-archive/deploy/recovery/*.sh
+      - name: Validate same-origin Compose and pinned Caddy configuration
+        env:
+          SOURCE_SHA: ${{ github.sha }}
+          GITHUB_APP_ID: validation-only
+          GITHUB_APP_INSTALLATION_ID: validation-only
+        run: |
+          docker compose -f gateway/audio-archive/deploy/self-hosted/compose.yaml config >/tmp/meser-compose.yaml
+          docker run --rm \
+            -v "$PWD/gateway/audio-archive/deploy/self-hosted/Caddyfile:/etc/caddy/Caddyfile:ro" \
+            caddy:2.11.4-alpine@sha256:de23def33b17fb5d1290b0f6c2add1d70780e52341896c00a4c8a2a2fe9d355e \
+            caddy validate --config /etc/caddy/Caddyfile
+          docker compose -f gateway/audio-archive/deploy/self-hosted/compose.yaml build gateway caddy
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' meser-audio-archive-gateway)" = "$SOURCE_SHA"
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' meser-audio-archive-caddy)" = "$SOURCE_SHA"
+      - name: Synthetic encrypted recovery rehearsal
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y age
+          gateway/audio-archive/deploy/recovery/synthetic-recovery-rehearsal.sh
 
   production-safety:
     if: github.event_name == 'push' || github.event_name == 'schedule'

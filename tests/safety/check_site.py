@@ -17,6 +17,7 @@ from urllib.parse import parse_qs, urljoin, urlparse, urlunparse
 from urllib.request import Request, urlopen
 
 ROOT = Path(__file__).resolve().parents[2]
+SERVICE_FRONTEND = ROOT / "service" / "frontend"
 CONTRACT_PATH = Path(__file__).with_name("site-contract.json")
 FILE_ATTRIBUTES = {
     "a": ("href",), "link": ("href",), "script": ("src",), "img": ("src",),
@@ -94,7 +95,12 @@ def normalize_local_path(reference: str, containing_file: Path) -> tuple[Path | 
     path = parsed.path
     if not path:
         return containing_file, parsed.fragment or None
-    target = (ROOT / path.lstrip("/")) if path.startswith("/") else (containing_file.parent / path)
+    if path.startswith("/") and SERVICE_FRONTEND in containing_file.parents:
+        target = SERVICE_FRONTEND / path.lstrip("/")
+        if path == "/login":
+            target = SERVICE_FRONTEND / "login.html"
+    else:
+        target = (ROOT / path.lstrip("/")) if path.startswith("/") else (containing_file.parent / path)
     target = target.resolve()
     if target.is_dir():
         target = target / "index.html"
@@ -315,8 +321,7 @@ def check_favicons(errors: list[str]) -> None:
     expected = {"rel": "icon", "type": "image/png", "sizes": "64x64", "href": "images/favicon.png?v=2"}
     migrated_pages = (
         "index.html", "Literature.html", "Literature-reader.html", "AudioBook.html", "Offline-meetings.html",
-        "Admin-panel.html", "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html",
-        "Calculator.html", "Calendar.html", "Google-Drive.html", "Audio-Editor.html",
+        "Calculator.html",
     )
     for name in migrated_pages:
         page = ROOT / name
@@ -347,7 +352,7 @@ def check_audiobook_contract(errors: list[str]) -> None:
         errors.append("AudioBook.html: shared home-linked logo is missing")
     if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
         errors.append("AudioBook.html: shared home-linked identity is missing")
-    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "https://meserproject.duckdns.org/" for tag, attrs in parser.start_tags):
         errors.append("AudioBook.html: shared service link is missing")
     frames = [attrs for tag, attrs in parser.start_tags if tag == "iframe"]
     if len(frames) != 1 or frames[0].get("src") != "bt6-player.html":
@@ -380,7 +385,7 @@ def check_offline_meetings_contract(errors: list[str]) -> None:
         errors.append("Offline-meetings.html: shared home-linked logo is missing")
     if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
         errors.append("Offline-meetings.html: shared home-linked identity is missing")
-    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "https://meserproject.duckdns.org/" for tag, attrs in parser.start_tags):
         errors.append("Offline-meetings.html: shared service link is missing")
     if not any(tag == "select" and attrs.get("id") == "cityFilter" for tag, attrs in parser.start_tags):
         errors.append("Offline-meetings.html: native city filter is missing")
@@ -419,7 +424,7 @@ def check_calculator_contract(errors: list[str]) -> None:
         errors.append("Calculator.html: shared home-linked logo is missing")
     if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
         errors.append("Calculator.html: shared home-linked identity is missing")
-    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "https://meserproject.duckdns.org/" for tag, attrs in parser.start_tags):
         errors.append("Calculator.html: shared service link is missing")
     if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
         errors.append("Calculator.html: shared footer is missing")
@@ -467,7 +472,7 @@ def check_calendar_contract(errors: list[str]) -> None:
         errors.append("Calendar.html: shared home-linked logo is missing")
     if not any(tag == "a" and "site-header__identity" in (attrs.get("class") or "").split() and attrs.get("href") == "./" for tag, attrs in parser.start_tags):
         errors.append("Calendar.html: shared home-linked identity is missing")
-    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+    if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "https://meserproject.duckdns.org/" for tag, attrs in parser.start_tags):
         errors.append("Calendar.html: shared service link is missing")
     if not any(tag == "footer" and "site-footer" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
         errors.append("Calendar.html: shared footer is missing")
@@ -787,7 +792,7 @@ def check_audio_editor_contract(errors: list[str]) -> None:
                 errors.append(f"Audio-Editor.html: shared {class_name} link is missing")
         if any(tag == "a" and "archive-back-link" in (attrs.get("class") or "").split() for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: redundant service back link must be absent")
-        if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "Admin-panel.html" for tag, attrs in parser.start_tags):
+        if not any(tag == "a" and "service-link" in (attrs.get("class") or "").split() and attrs.get("href") == "https://meserproject.duckdns.org/" for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: shared service navigation is missing")
         if not any(tag == "button" and attrs.get("id") == "service-logout" for tag, attrs in parser.start_tags):
             errors.append("Audio-Editor.html: service logout is missing")
@@ -943,7 +948,7 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
         if tag in {"script", "link"} and "ffmpeg" in (attrs.get("src") or attrs.get("href") or "").lower():
             errors.append("Audio-Editor.html: FFmpeg must not load/preload on page open")
     scripts = [attrs for tag, attrs in tags if tag == "script"]
-    if ([attrs.get("src") for attrs in scripts] != ["scripts/service-landing.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/speaker-editor.mjs", "scripts/source-session-archive.mjs"] or
+    if ([attrs.get("src") for attrs in scripts] != ["scripts/origin-guard.js", "scripts/audio-editor.js", "scripts/audio-processor.mjs", "scripts/speaker-editor.mjs", "scripts/source-session-archive.mjs"] or
             not scripts or any(key in scripts[0] for key in ("async", "defer", "type"))):
         errors.append("Audio-Editor.html: early blocking guard/archive/module order changed")
     for text in ("Длинные участки тишины продолжительностью 2 секунды и больше сокращаются примерно до 0,35 секунды.",
@@ -954,10 +959,10 @@ def check_processor_markup(source: str, errors: list[str]) -> None:
 
 
 def check_audio_processor_contract(errors: list[str]) -> None:
-    page = ROOT / "Audio-Editor.html"
+    page = SERVICE_FRONTEND / "Audio-Editor.html"
     if page.is_file():
         check_processor_markup(page.read_text(encoding="utf-8"), errors)
-    runtime = ROOT / "scripts/audio-processor.mjs"
+    runtime = SERVICE_FRONTEND / "scripts/audio-processor.mjs"
     if not runtime.is_file():
         errors.append("scripts/audio-processor.mjs is missing")
         return
@@ -1021,7 +1026,7 @@ def check_audio_processor_contract(errors: list[str]) -> None:
         path = ROOT / relative
         if not path.is_file() or hashlib.sha256(path.read_bytes()).hexdigest() != expected_hash:
             errors.append(f"Stage 7 must preserve Stage 6 bytes: {relative}")
-    vendor = ROOT / "vendor/ffmpeg"
+    vendor = SERVICE_FRONTEND / "vendor/ffmpeg"
     actual = {path.relative_to(vendor).as_posix() for path in vendor.rglob("*") if path.is_file()}
     if actual != set(FFMPEG_HASHES) | {"README.md"}:
         errors.append("FFmpeg vendor file set differs from the pinned minimal ESM closure/licenses")
@@ -1061,14 +1066,14 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "scripts/source-session-archive.mjs": (
             'setMode("archive")', "С устройства", "Анонс-мейкер", "Спикерская",
         ),
-        "Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
+        "service/frontend/Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
             'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",
             "GITHUB_APP_PRIVATE_KEY_FILE", "SHARED_PASSWORD_VERIFIER_FILE", "SESSION_SIGNING_SECRET_FILE",
         ),
         "gateway/audio-archive/src/auth.mjs": (
-            "scrypt", "Secure; HttpOnly; SameSite=None; Partitioned", "requireCsrf", "LoginThrottle",
+            "scrypt", "__Host-meser_service_session", "Secure; HttpOnly; SameSite=Lax", "SessionRegistry", "requireCsrf", "LoginThrottle",
         ),
         "gateway/audio-archive/src/domain.mjs": (
             "beginIngestion", "uploadPart", "finalizeIngestion", "expectedRevision", "pending_delete",
@@ -1079,7 +1084,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         ),
         "gateway/audio-archive/Dockerfile": ("node:24-alpine", "USER node",),
         "gateway/audio-archive/deploy/self-hosted/compose.yaml": (
-            '"80:80/tcp"', '"127.0.0.1:9443:443/tcp"', "archive_private", "/etc/meser-audio-archive/",
+            '"80:80/tcp"', '"127.0.0.1:9443:443/tcp"', "service_private", "/etc/meser-audio-archive/", "Caddy.Dockerfile",
         ),
         "gateway/audio-archive/deploy/self-hosted/Caddyfile": (
             "meserproject.duckdns.org", "proxy_protocol", "reverse_proxy gateway:8080",
@@ -1092,7 +1097,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
             "UNRESOLVED", "8443", "5678", "65000", "Materialized and reviewed literal rollback commands",
         ),
         "gateway/audio-archive/PROVISIONING.md": (
-            "repository-only preparation", "Mandatory rollback", "PHASE_B_AUTHORIZED", "meser-recovery/audio-archive",
+            "repository-only preparation", "Future full-stack activation", "docker compose down", "meser-recovery/audio-archive",
         ),
     }
     for relative, tokens in required.items():
@@ -1118,14 +1123,10 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
     if re.search(r"api\.github\.com/repos/.+(?:POST|PATCH|PUT|DELETE)", frontend, re.S):
         errors.append("S08A frontend appears to contain direct GitHub writes")
 
-    for relative in ("Admin-panel.html", "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html", "Audio-Editor.html"):
-        path = ROOT / relative
-        if path.is_file():
-            source = path.read_text(encoding="utf-8")
-            if source.count('name="audio-archive-gateway"') != 1:
-                errors.append(f"{relative}: expected one audio archive gateway configuration hook")
-            if source.count('<meta name="audio-archive-gateway" content="https://meserproject.duckdns.org">') != 1:
-                errors.append(f"{relative}: audio archive gateway hook must contain the exact production origin")
+    for relative in ("login.html", "index.html", "Audio-Editor.html", "Audio-Archive.html"):
+        path = SERVICE_FRONTEND / relative
+        if path.is_file() and 'name="audio-archive-gateway"' in path.read_text(encoding="utf-8"):
+            errors.append(f"service/frontend/{relative}: absolute gateway hook must not remain in same-origin runtime")
 
     active_provider_paths = [
         ROOT / "gateway/audio-archive/src/config.mjs",
@@ -1172,6 +1173,86 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
             errors.append("S09D Speaker recipe v2 schema is invalid JSON")
 
 
+def check_s10a_unified_service_contract(errors: list[str]) -> None:
+    service_origin = "https://meserproject.duckdns.org/"
+    public_pages = ("index.html", "Literature.html", "Literature-reader.html", "AudioBook.html", "Offline-meetings.html", "Calculator.html")
+    for name in public_pages:
+        page = ROOT / name
+        parser = parse_page(page)
+        links = [attrs for tag, attrs in parser.start_tags if tag == "a" and "service-link" in (attrs.get("class") or "").split()]
+        if len(links) != 1 or links[0].get("href") != service_origin:
+            errors.append(f"{name}: public service link must use the canonical service origin")
+
+    stubs = {
+        "Admin-panel.html": "/login",
+        "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html": "/",
+        "Calendar.html": "/Calendar.html",
+        "Google-Drive.html": "/Google-Drive.html",
+        "Audio-Editor.html": "/Audio-Editor.html",
+        "Audio-Archive.html": "/Audio-Archive.html",
+    }
+    for name, target in stubs.items():
+        source = (ROOT / name).read_text(encoding="utf-8", errors="replace")
+        if f'data-service-path="{target}"' not in source or 'scripts/service-compatibility.js' not in source:
+            errors.append(f"{name}: compatibility forwarder contract is missing")
+        if re.search(r'<form|type="password"|/v1/|sessionStorage|audio-(?:processor|archive-client)', source, re.I):
+            errors.append(f"{name}: compatibility stub contains protected auth/business logic")
+
+    compatibility = (ROOT / "scripts/service-compatibility.js").read_text(encoding="utf-8")
+    for token in ('path === "/Audio-Archive.html"', '["session", "workflow", "projectRevision", "speakerOutput"]',
+                  "new Set(keys).size === keys.length", "!location.hash", "location.replace(target)"):
+        if token not in compatibility:
+            errors.append(f"Pages compatibility transfer guard is missing: {token}")
+    if re.search(r"password|csrf|cookie|token", compatibility, re.I):
+        errors.append("Pages compatibility transfer mentions a credential-bearing field")
+
+    required_pages = {
+        "login.html": "Для служащих",
+        "index.html": "Служебная страница",
+        "Calendar.html": "Календарь событий",
+        "Google-Drive.html": "Материалы",
+        "Audio-Editor.html": "Редактирование аудио",
+        "Audio-Archive.html": "Аудиоархив",
+        "Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html": "Служебная страница",
+    }
+    for name, heading in required_pages.items():
+        page = SERVICE_FRONTEND / name
+        if not page.is_file():
+            errors.append(f"service/frontend/{name}: protected page is missing")
+            continue
+        source = page.read_text(encoding="utf-8", errors="replace")
+        parser = parse_page(page)
+        if parser.h1_texts != [heading]:
+            errors.append(f"service/frontend/{name}: protected page heading changed")
+        if "scripts/origin-guard.js" not in source:
+            errors.append(f"service/frontend/{name}: exact-origin defense guard is missing")
+        if re.search(r"audio-archive-gateway|sessionStorage|StorageAccess|safari-bootstrap|storage-access-bridge", source):
+            errors.append(f"service/frontend/{name}: superseded cross-origin auth remains")
+
+    login = (SERVICE_FRONTEND / "login.html").read_text(encoding="utf-8")
+    if 'id="admin-access-form"' not in login or 'type="password"' not in login or "scripts/service-login.mjs" not in login:
+        errors.append("protected /login password form/runtime is incomplete")
+    login_runtime = (SERVICE_FRONTEND / "scripts/service-login.mjs").read_text(encoding="utf-8")
+    if "controller.login(password.value)" not in login_runtime or "controller.restore()" not in login_runtime or "canonicalReturn" not in login_runtime:
+        errors.append("service login must submit once, replay the session, and validate same-origin return intent")
+    if re.search(r"SALT|SALTED_PASSWORD|sessionStorage|localStorage|postMessage", login_runtime):
+        errors.append("service login retains client-side verifier or persistent credential authority")
+
+    landing = (SERVICE_FRONTEND / "index.html").read_text(encoding="utf-8")
+    if [attrs.get("href") for tag, attrs in parse_page(SERVICE_FRONTEND / "index.html").start_tags
+            if tag == "a" and "service-action" in (attrs.get("class") or "").split()] != [
+                "Calendar.html", "Google-Drive.html", "Audio-Editor.html", "Audio-Archive.html"]:
+        errors.append("protected landing service actions changed")
+    if 'id="service-logout"' not in landing or "scripts/service-landing.mjs" not in landing:
+        errors.append("protected landing common logout is missing")
+
+    production = "\n".join(path.read_text(encoding="utf-8", errors="replace") for path in SERVICE_FRONTEND.rglob("*") if path.is_file() and path.suffix in {".html", ".js", ".mjs", ".css"})
+    if re.search(r"hasStorageAccess|requestStorageAccess|storage-access-bridge|safari-bootstrap|meser-storage-access|meser_service_access_v1|SALTED_PASSWORD_VERIFIER|Подключить аудиоархив|Подключить архив|Отключить архив", production):
+        errors.append("protected frontend retains a superseded S10A auth/control surface")
+    if "Служебная сессия истекла. Войдите снова, чтобы продолжить." not in production:
+        errors.append("common in-page session expiry message is missing")
+
+
 def local_check(contract: dict) -> tuple[list[str], list[str]]:
     errors: list[str] = []
     warnings: list[str] = []
@@ -1209,11 +1290,7 @@ def local_check(contract: dict) -> tuple[list[str], list[str]]:
     check_audiobook_contract(errors)
     check_offline_meetings_contract(errors)
     check_calculator_contract(errors)
-    check_calendar_contract(errors)
-    check_google_drive_contract(errors)
-    check_admin_access_contract(errors)
-    check_audio_archive_header_contract(errors)
-    check_audio_editor_contract(errors)
+    check_s10a_unified_service_contract(errors)
     check_audio_processor_contract(errors)
     check_audio_archive_foundation_contract(errors)
     parser_cache: dict[Path, PageParser] = {index: index_parser}
@@ -1251,24 +1328,10 @@ def remote_check(contract: dict, base_url: str) -> tuple[list[str], list[str]]:
         for destination in contract["homepage_internal_destinations"] + contract["homepage_external_destinations"]:
             if destination not in hrefs:
                 errors.append(f"remote homepage contract changed or missing: {destination}")
-    if pages.get("/Audio-Editor.html"):
-        check_processor_markup(pages["/Audio-Editor.html"], errors)
-    # HEAD only: production checks must not download the 31 MiB WASM on each run.
-    for relative in ["scripts/audio-processor.mjs", *[f"vendor/ffmpeg/{path}" for path in FFMPEG_HASHES]]:
-        asset_url = urljoin(base_url, relative)
-        try:
-            with urlopen(Request(asset_url, method="HEAD", headers={"User-Agent": "site-contract-check"}), timeout=30) as response:
-                if response.status != 200:
-                    errors.append(f"processor deployed asset returned HTTP {response.status}: {relative}")
-                if relative.endswith(".wasm"):
-                    mime = response.headers.get_content_type()
-                    if mime != "application/wasm":
-                        errors.append(f"deployed WASM has incorrect MIME type: {mime}")
-                    length = response.headers.get("Content-Length")
-                    if length and not response.headers.get("Content-Encoding") and length != str(FFMPEG_WASM_BYTES):
-                        errors.append(f"deployed WASM has unexpected byte size: {length}")
-        except URLError as exc:
-            errors.append(f"processor deployed asset unavailable: {relative} ({exc.reason})")
+    for path in ("/Admin-panel.html", "/Audio-Editor.html", "/Audio-Archive.html", "/Calendar.html", "/Google-Drive.html"):
+        source = pages.get(path, "")
+        if source and ("scripts/service-compatibility.js" not in source or re.search(r"<form|type=\"password\"|/v1/|sessionStorage", source, re.I)):
+            errors.append(f"remote Pages compatibility stub is unsafe: {path}")
     return errors, warnings
 
 

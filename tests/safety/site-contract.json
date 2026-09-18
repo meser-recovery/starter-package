@@ -18,14 +18,14 @@
     "Offline-meetings.html",
     "Literature.html",
     "AudioBook.html",
-    "Calculator.html",
-    "Admin-panel.html"
+    "Calculator.html"
   ],
   "homepage_external_destinations": [
     "https://na-tranzit.org/gruppy/onlajn-gruppy",
     "https://na-russia.org/meditation-today",
     "https://radio-na.ru/",
-    "https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751"
+    "https://nam-poputi.ucoz.ru/load/audio_vystuplenija_anonimnykh/polnyj_spisok_perevedjonnykh_spikerskikh_s_ivrita/11-1-0-751",
+    "https://meserproject.duckdns.org/"
   ],
   "asset_families": [
     {
