@@ -11,6 +11,8 @@ const port = Number(process.argv[2] || 4173);
 const origin = process.argv[3] || `http://localhost:${port}`;
 const frontend = resolve(import.meta.dirname, "../../service/frontend");
 const secret = "synthetic-preview-session-secret-0001";
+const previewCookie = "meser_preview_service_session";
+const canonicalCookie = "__Host-meser_service_session";
 const verifier = await createPasswordVerifier("local-test-password", Buffer.alloc(16, 11), { N: 16384, r: 8, p: 1 });
 const sessions = new SessionRegistry({ maxEntries: 16 });
 const domain = new Proxy({}, { get: (_target, name) => async () => {
@@ -35,17 +37,36 @@ const types = new Map([
   [".png", "image/png"], [".wasm", "application/wasm"], [".txt", "text/plain; charset=utf-8"], [".md", "text/markdown; charset=utf-8"]
 ]);
 
+function gatewayHeaders(headers) {
+  const result = new Headers(headers);
+  const cookie = result.get("cookie");
+  if (cookie) result.set("cookie", cookie.replace(new RegExp(`(^|;\\s*)${previewCookie}=`), `$1${canonicalCookie}=`));
+  return result;
+}
+
+function previewHeaders(headers) {
+  const result = nodeResponseHeaders(headers);
+  const cookies = result["Set-Cookie"];
+  if (!cookies) return result;
+  const rewrite = cookie => cookie.startsWith(`${canonicalCookie}=`) ?
+    cookie.replace(`${canonicalCookie}=`, `${previewCookie}=`).replace(/; Secure/gi, "") : cookie;
+  result["Set-Cookie"] = Array.isArray(cookies) ? cookies.map(rewrite) : rewrite(cookies);
+  return result;
+}
+
 function currentSession(headers) {
-  return readSession(new Request(`${origin}/internal/auth-check`, { headers }), secret, sessions);
+  return readSession(new Request(`${origin}/internal/auth-check`, { headers: gatewayHeaders(headers) }), secret, sessions);
 }
 
 async function apiRequest(incoming, outgoing) {
   const body = ["GET", "HEAD"].includes(incoming.method || "GET") ? undefined : Readable.toWeb(incoming);
   const request = new Request(new URL(incoming.url || "/", origin), {
-    method: incoming.method, headers: incoming.headers, body, duplex: body ? "half" : undefined
+    method: incoming.method, headers: gatewayHeaders(incoming.headers), body, duplex: body ? "half" : undefined
   });
   const response = await app(request);
-  outgoing.writeHead(response.status, nodeResponseHeaders(response.headers));
+  // The production cookie remains Secure + __Host-. This preview-only alias is
+  // required because WebKit intentionally refuses Secure cookies over local HTTP.
+  outgoing.writeHead(response.status, previewHeaders(response.headers));
   if (response.body) Readable.fromWeb(response.body).pipe(outgoing); else outgoing.end();
 }
 
