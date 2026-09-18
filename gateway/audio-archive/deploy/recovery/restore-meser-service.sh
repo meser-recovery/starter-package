@@ -25,15 +25,15 @@ done
 for file in runtime.env release-manifest.txt compose.yaml Caddyfile gateway-image.tar caddy-frontend-image.tar; do
   [[ -f "$bundle/$file" && ! -L "$bundle/$file" ]] || die "required restore input is missing: $file"
 done
-expected_runtime_keys=$'ALLOWED_ORIGIN\nCADDY_IMAGE\nGATEWAY_IMAGE\nGITHUB_APP_ID\nGITHUB_APP_INSTALLATION_ID\nMESER_HTTP_BIND\nMESER_RUNTIME_UID\nMESER_SITE_ADDRESS\nMESER_TLS_BIND\nSOURCE_SHA'
+expected_runtime_keys=$'ALLOWED_ORIGIN\nCADDY_IMAGE\nGATEWAY_IMAGE\nGITHUB_APP_ID\nGITHUB_APP_INSTALLATION_ID\nMESER_HTTP_BIND\nMESER_RUNTIME_UID\nMESER_SITE_ADDRESS\nMESER_SYNTHETIC_RUNTIME\nMESER_TLS_BIND\nSOURCE_SHA'
 actual_runtime_keys=$(awk -F= 'NF >= 2 && $1 !~ /^#/ { print $1 }' "$bundle/runtime.env" | LC_ALL=C sort)
 [[ "$actual_runtime_keys" == "$expected_runtime_keys" ]] || die 'runtime environment contains missing or unknown keys'
 bundle_runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$bundle/runtime.env"; }
 if [[ "$synthetic" == true ]]; then
-  [[ "$(bundle_runtime_value ALLOWED_ORIGIN)" =~ ^http://127\.0\.0\.1:[0-9]+$ && "$(bundle_runtime_value MESER_SITE_ADDRESS)" == http:// ]] || die 'synthetic runtime origin is invalid'
+  [[ "$(bundle_runtime_value MESER_SYNTHETIC_RUNTIME)" == true && "$(bundle_runtime_value ALLOWED_ORIGIN)" =~ ^http://127\.0\.0\.1:[0-9]+$ && "$(bundle_runtime_value MESER_SITE_ADDRESS)" == http:// ]] || die 'synthetic runtime origin is invalid'
   [[ "$(bundle_runtime_value MESER_HTTP_BIND)" =~ ^127\.0\.0\.1:[0-9]+$ && "$(bundle_runtime_value MESER_TLS_BIND)" =~ ^127\.0\.0\.1:[0-9]+$ ]] || die 'synthetic runtime bind is invalid'
 else
-  [[ "$(bundle_runtime_value ALLOWED_ORIGIN)" == https://meserproject.duckdns.org && "$(bundle_runtime_value MESER_SITE_ADDRESS)" == meserproject.duckdns.org ]] || die 'production runtime origin is invalid'
+  [[ "$(bundle_runtime_value MESER_SYNTHETIC_RUNTIME)" == false && "$(bundle_runtime_value ALLOWED_ORIGIN)" == https://meserproject.duckdns.org && "$(bundle_runtime_value MESER_SITE_ADDRESS)" == meserproject.duckdns.org ]] || die 'production runtime origin is invalid'
   [[ "$(bundle_runtime_value MESER_HTTP_BIND)" == 80 && "$(bundle_runtime_value MESER_TLS_BIND)" == 127.0.0.1:9443 && "$(bundle_runtime_value MESER_RUNTIME_UID)" == 1000 ]] || die 'production runtime identity/binds are invalid'
 fi
 for pair in 'compose_sha256 compose.yaml' 'caddy_sha256 Caddyfile'; do

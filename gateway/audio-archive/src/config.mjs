@@ -31,14 +31,18 @@ function secretFromFile(env, variable, readTextFile) {
 export function loadConfig(env = process.env, readTextFile = readFileSync) {
   const allowedOrigin = required(env, "ALLOWED_ORIGIN").replace(/\/$/, "");
   const parsedOrigin = new URL(allowedOrigin);
-  if (parsedOrigin.protocol !== "https:" || parsedOrigin.origin !== allowedOrigin) throw new Error("ALLOWED_ORIGIN must be one HTTPS origin");
-  if (allowedOrigin !== "https://meserproject.duckdns.org") throw new Error("ALLOWED_ORIGIN must remain https://meserproject.duckdns.org");
+  const syntheticRuntime = env.MESER_SYNTHETIC_RUNTIME === "true";
+  const syntheticOrigin = parsedOrigin.protocol === "http:" && parsedOrigin.hostname === "127.0.0.1" && parsedOrigin.origin === allowedOrigin;
+  if (parsedOrigin.origin !== allowedOrigin || (syntheticRuntime ? !syntheticOrigin : allowedOrigin !== "https://meserproject.duckdns.org")) {
+    throw new Error("ALLOWED_ORIGIN must remain canonical HTTPS, except explicit loopback synthetic rehearsal");
+  }
   const storageOwner = env.STORAGE_OWNER || "meser-recovery";
   const storageRepository = env.STORAGE_REPOSITORY || "audio-archive";
   if (storageOwner !== "meser-recovery" || storageRepository !== "audio-archive") throw new Error("Storage target must remain meser-recovery/audio-archive");
   return Object.freeze({
     port: positiveInteger(env.PORT, 8080, 65535, "PORT"),
     allowedOrigin,
+    syntheticRuntime,
     storageOwner,
     storageRepository,
     storageBranch: env.STORAGE_BRANCH || "main",

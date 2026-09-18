@@ -50,6 +50,7 @@ MESER_SITE_ADDRESS=$(runtime_value MESER_SITE_ADDRESS)
 MESER_HTTP_BIND=$(runtime_value MESER_HTTP_BIND)
 MESER_TLS_BIND=$(runtime_value MESER_TLS_BIND)
 MESER_RUNTIME_UID=$(runtime_value MESER_RUNTIME_UID)
+MESER_SYNTHETIC_RUNTIME=$(runtime_value MESER_SYNTHETIC_RUNTIME)
 EOF
 }
 write_runtime "$prior_gateway" "$prior_caddy" "$work/runtime.env"

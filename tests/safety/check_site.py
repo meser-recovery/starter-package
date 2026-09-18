@@ -1069,7 +1069,7 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
         "service/frontend/Audio-Editor.html": ("Из аудиоархива", "С устройства", "Сохранить запись Zoom в аудиоархив", "Сохранить проект"),
         "gateway/audio-archive/src/config.mjs": (
             'storageOwner = env.STORAGE_OWNER || "meser-recovery"',
-            'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "ALLOWED_ORIGIN must be one HTTPS origin",
+            'storageRepository = env.STORAGE_REPOSITORY || "audio-archive"', "except explicit loopback synthetic rehearsal",
             "GITHUB_APP_PRIVATE_KEY_FILE", "SHARED_PASSWORD_VERIFIER_FILE", "SESSION_SIGNING_SECRET_FILE",
         ),
         "gateway/audio-archive/src/auth.mjs": (

@@ -45,7 +45,7 @@ for key in "${required_manifest_keys[@]}"; do
   [[ -n "$value" ]] || die "release manifest is incomplete: $key"
 done
 
-expected_runtime_keys=$'ALLOWED_ORIGIN\nGITHUB_APP_ID\nGITHUB_APP_INSTALLATION_ID\nMESER_HTTP_BIND\nMESER_RUNTIME_UID\nMESER_SITE_ADDRESS\nMESER_TLS_BIND'
+expected_runtime_keys=$'ALLOWED_ORIGIN\nGITHUB_APP_ID\nGITHUB_APP_INSTALLATION_ID\nMESER_HTTP_BIND\nMESER_RUNTIME_UID\nMESER_SITE_ADDRESS\nMESER_SYNTHETIC_RUNTIME\nMESER_TLS_BIND'
 actual_runtime_keys=$(awk -F= 'NF >= 2 && $1 !~ /^#/ { print $1 }' "$runtime_env" | LC_ALL=C sort)
 [[ "$actual_runtime_keys" == "$expected_runtime_keys" ]] || die 'runtime environment contains missing or unknown keys'
 runtime_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$runtime_env"; }
@@ -56,13 +56,14 @@ site_address=$(runtime_value MESER_SITE_ADDRESS)
 http_bind=$(runtime_value MESER_HTTP_BIND)
 tls_bind=$(runtime_value MESER_TLS_BIND)
 runtime_uid=$(runtime_value MESER_RUNTIME_UID)
+synthetic_runtime=$(runtime_value MESER_SYNTHETIC_RUNTIME)
 [[ "$github_app_id" =~ ^[0-9]+$ && "$github_installation_id" =~ ^[0-9]+$ ]] || die 'runtime GitHub App identities are invalid'
 [[ "$runtime_uid" =~ ^[0-9]+$ ]] || die 'runtime UID is invalid'
 if [[ "${MESER_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
-  [[ "$allowed_origin" =~ ^http://127\.0\.0\.1:[0-9]+$ && "$site_address" == http:// ]] || die 'synthetic runtime origin is invalid'
+  [[ "$synthetic_runtime" == true && "$allowed_origin" =~ ^http://127\.0\.0\.1:[0-9]+$ && "$site_address" == http:// ]] || die 'synthetic runtime origin is invalid'
   [[ "$http_bind" =~ ^127\.0\.0\.1:[0-9]+$ && "$tls_bind" =~ ^127\.0\.0\.1:[0-9]+$ ]] || die 'synthetic runtime binds are invalid'
 else
-  [[ "$allowed_origin" == https://meserproject.duckdns.org && "$site_address" == meserproject.duckdns.org ]] || die 'production runtime origin is invalid'
+  [[ "$synthetic_runtime" == false && "$allowed_origin" == https://meserproject.duckdns.org && "$site_address" == meserproject.duckdns.org ]] || die 'production runtime origin is invalid'
   [[ "$http_bind" == 80 && "$tls_bind" == 127.0.0.1:9443 ]] || die 'production runtime binds are invalid'
 fi
 for pair in 'compose_sha256 compose.yaml' 'caddy_sha256 Caddyfile' 'haproxy_sha256 haproxy.cfg'; do
@@ -92,6 +93,7 @@ MESER_SITE_ADDRESS=$site_address
 MESER_HTTP_BIND=$http_bind
 MESER_TLS_BIND=$tls_bind
 MESER_RUNTIME_UID=$runtime_uid
+MESER_SYNTHETIC_RUNTIME=$synthetic_runtime
 EOF
 printf '%s\n' 'github-app.pem mode=600' 'shared-password-verifier mode=600' 'session-signing-secret mode=600' >"$work/secret-metadata.txt"
 tar -C "$secret_dir" -cf - github-app.pem shared-password-verifier session-signing-secret -C "$work" secret-metadata.txt \

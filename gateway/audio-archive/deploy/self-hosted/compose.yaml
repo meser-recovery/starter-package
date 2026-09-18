@@ -19,6 +19,7 @@ services:
     environment:
       PORT: "8080"
       ALLOWED_ORIGIN: ${ALLOWED_ORIGIN:-https://meserproject.duckdns.org}
+      MESER_SYNTHETIC_RUNTIME: ${MESER_SYNTHETIC_RUNTIME:-false}
       STORAGE_OWNER: meser-recovery
       STORAGE_REPOSITORY: audio-archive
       STORAGE_BRANCH: main

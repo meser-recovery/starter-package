@@ -31,6 +31,7 @@ MESER_SITE_ADDRESS=http://
 MESER_HTTP_BIND=127.0.0.1:18080
 MESER_TLS_BIND=127.0.0.1:19443
 MESER_RUNTIME_UID=$(id -u)
+MESER_SYNTHETIC_RUNTIME=true
 EOF
 "$repository/gateway/audio-archive/deploy/s10a/synthetic-docker-rollback-rehearsal.sh" "$work/release" "$work/secrets" "$work/runtime.env"
 age-keygen -o "$work/identity.txt" >/dev/null 2>&1
