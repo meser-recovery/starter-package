@@ -7,6 +7,8 @@ runtime_schema="$(dirname "$0")/../recovery/runtime-env.sh"
 [[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || die 'canonical runtime schema is missing or unsafe'
 # shellcheck source=../recovery/runtime-env.sh
 source "$runtime_schema"
+container_state_capture="$(dirname "$0")/capture-container-state.sh"
+[[ -f "$container_state_capture" && ! -L "$container_state_capture" && -x "$container_state_capture" ]] || die 'container state capture helper is missing or unsafe'
 release_dir=$1
 config_root=$2
 runtime_input=$3
@@ -53,6 +55,20 @@ write_runtime() {
 write_runtime "$prior_gateway" "$prior_caddy" "$work/runtime.env"
 MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/runtime.env" -f "$release_dir/compose.yaml" up -d --no-build gateway caddy
 for attempt in {1..30}; do curl --fail --silent "$(runtime_value ALLOWED_ORIGIN)/healthz" >/dev/null 2>&1 && break; [[ "$attempt" -lt 30 ]] || die 'synthetic prior stack is unhealthy'; sleep 1; done
+running_prior_gateway=$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/runtime.env" -f "$release_dir/compose.yaml" ps -q gateway)
+running_prior_caddy=$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/runtime.env" -f "$release_dir/compose.yaml" ps -q caddy)
+"$container_state_capture" "$running_prior_gateway" "$work/prior-gateway.container"
+"$container_state_capture" "$running_prior_caddy" "$work/prior-caddy.container"
+state_value() { awk -F= -v key="$1" '$1 == key { sub(/^[^=]*=/, ""); print }' "$2"; }
+[[ "$(state_value container_id "$work/prior-gateway.container")" == "$running_prior_gateway" ]] || die 'gateway container identity capture mismatch'
+[[ "$(state_value image_id "$work/prior-gateway.container")" == "$prior_gateway_id" ]] || die 'gateway image identity capture mismatch'
+[[ "$(state_value status "$work/prior-gateway.container")" == running ]] || die 'gateway running status was not captured'
+[[ "$(state_value health_status "$work/prior-gateway.container")" == healthy ]] || die 'gateway health status was not captured'
+[[ "$(state_value container_id "$work/prior-caddy.container")" == "$running_prior_caddy" ]] || die 'Caddy container identity capture mismatch'
+[[ "$(state_value image_id "$work/prior-caddy.container")" == "$prior_caddy_id" ]] || die 'Caddy image identity capture mismatch'
+[[ "$(state_value status "$work/prior-caddy.container")" == running ]] || die 'Caddy running status was not captured'
+[[ "$(state_value health_status "$work/prior-caddy.container")" == not-configured ]] || die 'healthless Caddy was not captured explicitly'
+printf 'Synthetic Docker container-state capture: PASS (healthy gateway, healthless Caddy, exact container/image identities)\n'
 
 cp "$release_dir/compose.yaml" "$work/compose.yaml"
 cp "$release_dir/Caddyfile" "$work/Caddyfile"

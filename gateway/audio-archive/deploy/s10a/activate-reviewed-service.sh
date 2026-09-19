@@ -14,6 +14,8 @@ runtime_schema="$(dirname "$0")/../recovery/runtime-env.sh"
 [[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || die 'canonical runtime schema is missing or unsafe'
 # shellcheck source=../recovery/runtime-env.sh
 source "$runtime_schema"
+container_state_capture="$(dirname "$0")/capture-container-state.sh"
+[[ -f "$container_state_capture" && ! -L "$container_state_capture" && -x "$container_state_capture" ]] || die 'container state capture helper is missing or unsafe'
 
 release_dir=$1
 precutover_bundle=$2
@@ -100,13 +102,13 @@ grep -E 'meserproject\.duckdns\.org|127\.0\.0\.1:9443|127\.0\.0\.1:9444|default_
 for service in gateway caddy; do
   container=$(docker compose --project-name meser-audio-archive --env-file "$runtime_env" -f "$current_compose" ps -q "$service")
   [[ -n "$container" ]] || die "current $service container is unavailable"
-  prior_id=$(docker inspect -f '{{.Image}}' "$container")
+  "$container_state_capture" "$container" "$rollback_dir/prior-$service.container"
+  prior_id=$(awk -F= '$1 == "image_id" { print $2 }' "$rollback_dir/prior-$service.container")
   [[ "$prior_id" =~ ^sha256:[0-9a-f]{64}$ ]] || die "current $service image ID is invalid"
   rollback_ref="meser-s10a-rollback-$tag_timestamp-$service:preserved"
   docker image tag "$prior_id" "$rollback_ref"
   printf '%s\n' "$prior_id" >"$rollback_dir/prior-$service.image-id"
   printf '%s\n' "$rollback_ref" >"$rollback_dir/prior-$service.image-ref"
-  docker inspect -f '{{.Id}} {{.State.Status}} {{if .State.Health}}{{.State.Health.Status}}{{end}}' "$container" >"$rollback_dir/prior-$service.container"
 done
 cat >"$rollback_dir/rollback-compose.override.yaml" <<EOF
 services:

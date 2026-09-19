@@ -5,7 +5,7 @@ This package replaces the Meser `gateway` and custom `caddy` application contain
 1. Obtain explicit authorization naming the exact reviewed PR HEAD, source tree and generated full-service artifact hashes.
 2. Independently verify the source SHA/tree, source archive, gateway image archive, Caddy/frontend image archive and release manifest.
 3. Create and integrity-check an encrypted recovery bundle on a verified off-VM mount. Keep the age private identity outside the production VM.
-4. Capture the current gateway/Caddy container IDs and image IDs, create unique preserved rollback image tags, and record Compose/Caddy/runtime and HAProxy checksums without printing secret values.
+4. Keep executable `capture-container-state.sh` beside `activate-reviewed-service.sh`. Use its validated full-JSON `docker inspect` snapshot to capture the current gateway/Caddy container IDs, image IDs, running status and exact health status; a container without a Docker healthcheck must record `health_status=not-configured`. Then create unique preserved rollback image tags and record Compose/Caddy/runtime and HAProxy checksums without printing secret values.
 5. Keep both authorization gates in `activate-reviewed-service.sh` false until the separate review and authorization are recorded. Supply the smoke password only in a root-owned mode-0600 file.
 6. Validate the candidate with `docker compose config` and the pinned Caddy image before replacement.
 7. Replace only `gateway` and `caddy`; preserve Caddy volumes and never use `docker compose down`.
