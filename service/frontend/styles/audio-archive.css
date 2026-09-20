@@ -23,7 +23,7 @@
 .archive-management button:disabled, dialog button:disabled { opacity: .6; cursor: default; }
 .archive-management :is(a, button, input, select, summary):focus-visible,
 dialog :is(a, button, input, select):focus-visible { outline: 3px solid #17659f; outline-offset: 3px; }
-.archive-management h2[tabindex="-1"]:focus { outline: none; }
+.archive-management h2[tabindex="-1"]:focus-visible { outline: 3px solid #17659f; outline-offset: 4px; border-radius: .25rem; }
 .archive-management .danger, dialog .danger { background: #fff4f1; border-color: #ad4633; color: #862b1b; }
 .archive-management details { margin-block: .8rem; }
 .archive-management summary { cursor: pointer; padding: .45rem 0; }

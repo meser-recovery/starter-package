@@ -8,6 +8,11 @@ const toggle = document.getElementById("admin-password-toggle");
 const status = document.getElementById("admin-error");
 const submit = form.querySelector('button[type="submit"]');
 
+function setStatus(message = "") {
+  status.textContent = message;
+  status.hidden = !message;
+}
+
 function canonicalReturn() {
   const values = new URLSearchParams(location.search).getAll("return");
   if (values.length !== 1) return "/";
@@ -48,13 +53,12 @@ const controller = new ServiceSessionController({
   onState: ({ state, detail }) => {
     const messages = {
       "checking-password": "Проверяем пароль…",
-      "verifying-session": "Подтверждаем служебную сессию…",
       denied: "Неверный пароль.",
       throttled: "Слишком много попыток. Подождите и повторите вход.",
       "network-error": "Не удалось связаться с сервером. Проверьте подключение.",
       "server-error": detail?.status >= 500 ? "Служебный сервер временно недоступен." : "Не удалось подтвердить вход."
     };
-    if (messages[state]) status.textContent = messages[state];
+    if (messages[state]) setStatus(messages[state]);
   }
 });
 
@@ -70,7 +74,7 @@ form.addEventListener("submit", async event => {
   event.preventDefault();
   if (submit.disabled) return;
   submit.disabled = true;
-  status.textContent = "";
+  setStatus();
   try {
     if (await controller.login(password.value)) location.replace(canonicalReturn());
   } catch {

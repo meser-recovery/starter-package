@@ -9,14 +9,14 @@
   <link rel="stylesheet" href="styles/foundation.css">
   <link rel="stylesheet" href="styles/components.css">
   <link rel="stylesheet" href="styles/audio-archive.css">
-  <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-12">
+  <link rel="stylesheet" href="styles/audio-studio.css?v=s10a-ui-corrective-1">
   <script src="scripts/origin-guard.js"></script>
   <script type="module" src="scripts/audio-archive.mjs"></script>
 </head>
 <body class="audio-studio site-page">
   <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
   <header class="site-header portal-sidebar"><div class="container site-header__content">
-    <div class="portal-brand"><a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="./"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
+    <div class="portal-brand"><a class="site-header__logo" href="https://meser-recovery.github.io/starter-package/" aria-label="На публичный сайт"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="https://meser-recovery.github.io/starter-package/"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
     <nav class="portal-nav" aria-label="Аудиопортал"><a href="Audio-Editor.html"><span aria-hidden="true">⌁</span> Редактор</a><a class="is-current" href="Audio-Archive.html" aria-current="page"><span aria-hidden="true">▣</span> Аудиоархив</a></nav>
     <div class="portal-sidebar__footer"><a class="service-link" href="/" aria-label="Для служащих"><span>Для</span><span>служащих</span></a></div>
   </div></header>
@@ -27,11 +27,11 @@
         <div class="archive-entry-actions"><button id="record-picker-open" class="action-primary" type="button" aria-expanded="false" aria-controls="records">Показать записи</button></div>
       <section id="records" class="record-picker" aria-labelledby="records-title" hidden><div class="picker-heading"><h2 id="records-title" tabindex="-1">Выбрать запись</h2><button id="record-picker-close" type="button">Закрыть</button></div>
         <form id="filters" class="filters" role="search">
-          <label class="wide">Поиск по названию или имени исходной дорожки<input name="search" type="search" autocomplete="off"></label>
-          <label>Месяц<input name="month" type="month"></label>
+          <label class="wide field-control"><span class="field-label">Поиск по названию или имени исходной дорожки</span><input name="search" type="search" autocomplete="off"></label>
+          <label class="field-control"><span class="field-label">Месяц</span><input name="month" type="month"></label>
           <div class="picker-actions"><button id="record-picker-search" type="submit" class="action-primary">Найти</button><button id="record-picker-recent" type="button">Последние записи</button></div>
           <details class="secondary-filters wide"><summary>Уточнить поиск</summary><div>
-            <label>Сортировка<select name="sort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="title">По названию</option></select></label>
+            <label class="field-control"><span class="field-label">Сортировка</span><select name="sort"><option value="newest">Сначала новые</option><option value="oldest">Сначала старые</option><option value="title">По названию</option></select></label>
             <fieldset class="quick-filters"><legend>Состояние</legend>
               <label><input name="quick" type="radio" value="all" checked>Все записи</label>
               <label><input name="quick" type="radio" value="incoming">В рабочем списке</label>

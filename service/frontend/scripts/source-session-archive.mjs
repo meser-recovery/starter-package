@@ -1680,6 +1680,10 @@ document.getElementById("import-zone").addEventListener("toggle", event => {
   byId("mode-archive").setAttribute("aria-expanded", String(event.currentTarget.open && state.mode === "archive"));
   byId("mode-device").setAttribute("aria-expanded", String(event.currentTarget.open && state.mode === "device"));
 });
+document.getElementById("import-zone").addEventListener("keydown", event => {
+  if (event.key !== "Escape" || !event.currentTarget.open) return;
+  event.preventDefault(); byId("picker-close").click();
+});
 byId("filters").addEventListener("submit", event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderSessions(); });
 byId("recent").addEventListener("click", () => { byId("filters").elements.search.value = ""; byId("filters").elements.month.value = ""; state.picker.requested = true; state.picker.page = 0; renderSessions(); });
 byId("prev").addEventListener("click", () => { state.picker.page--; renderSessions(); });
