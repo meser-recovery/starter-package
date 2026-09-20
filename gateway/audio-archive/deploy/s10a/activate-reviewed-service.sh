@@ -16,6 +16,10 @@ runtime_schema="$(dirname "$0")/../recovery/runtime-env.sh"
 source "$runtime_schema"
 container_state_capture="$(dirname "$0")/capture-container-state.sh"
 [[ -f "$container_state_capture" && ! -L "$container_state_capture" && -x "$container_state_capture" ]] || die 'container state capture helper is missing or unsafe'
+readiness_helper="$(dirname "$0")/readiness.sh"
+[[ -f "$readiness_helper" && ! -L "$readiness_helper" ]] || die 'readiness helper is missing or unsafe'
+# shellcheck source=readiness.sh
+source "$readiness_helper"
 
 release_dir=$1
 precutover_bundle=$2
@@ -34,7 +38,7 @@ rollback_root=/var/backups/meser-audio-archive/s10a
 deployment_root=/var/lib/meser-audio-archive/deployments
 service_origin=https://meserproject.duckdns.org
 
-for command in age awk curl date docker grep hostname id install jq mktemp readlink sha256sum stat; do command -v "$command" >/dev/null || die "missing executable: $command"; done
+for command in age awk curl date docker grep hostname id install jq mktemp python3 readlink sha256sum sleep stat; do command -v "$command" >/dev/null || die "missing executable: $command"; done
 [[ "${EUID:-$(id -u)}" -eq 0 ]] || die 'must run as root'
 [[ "$(hostname)" == vmhome ]] || die 'unexpected host'
 for path in "$release_dir" "$precutover_bundle" "$password_file" "$source_smoke_record" "$secret_dir" "$backup_destination" "$runtime_env" "$current_compose" "$current_caddyfile" "$haproxy_config"; do
@@ -110,6 +114,8 @@ for service in gateway caddy; do
   printf '%s\n' "$prior_id" >"$rollback_dir/prior-$service.image-id"
   printf '%s\n' "$rollback_ref" >"$rollback_dir/prior-$service.image-ref"
 done
+printf '%s\n' "$gateway_id" >"$rollback_dir/candidate-gateway.image-id"
+printf '%s\n' "$caddy_id" >"$rollback_dir/candidate-caddy.image-id"
 cat >"$rollback_dir/rollback-compose.override.yaml" <<EOF
 services:
   gateway:
@@ -118,6 +124,8 @@ services:
     image: $(<"$rollback_dir/prior-caddy.image-ref")
 EOF
 chmod 600 "$rollback_dir"/*
+candidate_readiness_log="$rollback_dir/candidate-readiness.log"
+meser_readiness_prepare_log "$candidate_readiness_log"
 
 # Preserve only allowlisted non-secret runtime values and bind candidate Compose
 # to the exact image references recorded by the reviewed release.
@@ -139,8 +147,12 @@ docker run --rm -v "$release_dir/Caddyfile:/etc/caddy/Caddyfile:ro" "$caddy_ref"
 
 replacement_started=true
 MESER_CONFIG_ROOT=/etc/meser-audio-archive docker compose --project-name meser-audio-archive --env-file "$candidate_runtime" -f "$release_dir/compose.yaml" up -d --no-build gateway caddy
-
-curl --fail --silent --show-error "$service_origin/healthz" | jq -e '.ok == true' >/dev/null
+gateway_container=$(MESER_CONFIG_ROOT=/etc/meser-audio-archive docker compose --project-name meser-audio-archive --env-file "$candidate_runtime" -f "$release_dir/compose.yaml" ps -q gateway)
+caddy_container=$(MESER_CONFIG_ROOT=/etc/meser-audio-archive docker compose --project-name meser-audio-archive --env-file "$candidate_runtime" -f "$release_dir/compose.yaml" ps -q caddy)
+[[ -n "$gateway_container" && -n "$caddy_container" ]] || die 'candidate containers are unavailable after replacement'
+meser_wait_container_ready "$gateway_container" "$gateway_id" gateway require-healthy 90 "$candidate_readiness_log" || die 'candidate gateway container readiness failed'
+meser_wait_container_ready "$caddy_container" "$caddy_id" caddy allow-not-configured 90 "$candidate_readiness_log" || die 'candidate Caddy container readiness failed'
+meser_wait_public_health "$service_origin" 90 candidate "$candidate_readiness_log" || die 'candidate public HTTPS readiness failed'
 curl --silent --show-error -D "$headers" -o /dev/null "$service_origin/"
 [[ "$(awk 'NR == 1 { print $2 }' "$headers")" == 303 ]] || die 'unauthenticated landing was not redirected'
 [[ "$(awk 'tolower($1) == "location:" { sub(/\r$/, "", $2); print $2 }' "$headers")" == '/login?return=%2F' ]] || die 'unauthenticated redirect return intent is not canonical'

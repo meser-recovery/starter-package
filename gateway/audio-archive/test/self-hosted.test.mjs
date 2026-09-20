@@ -15,6 +15,7 @@ const haproxy = read(resolve(deploy, "haproxy.cfg"));
 const runbook = read(resolve(root, "PROVISIONING.md"));
 const s10aActivation = read(resolve(root, "deploy/s10a/activate-reviewed-service.sh"));
 const s10aContainerState = read(resolve(root, "deploy/s10a/capture-container-state.sh"));
+const s10aReadiness = read(resolve(root, "deploy/s10a/readiness.sh"));
 const s10aRollback = read(resolve(root, "deploy/s10a/rollback-reviewed-service.sh"));
 const legacyActivation = read(resolve(root, "deploy/s10a/activate-reviewed-gateway.sh"));
 const recoveryCreate = read(resolve(root, "deploy/recovery/create-recovery-bundle.sh"));
@@ -136,6 +137,9 @@ test("S10A activation package is inert, full-stack, checksum guarded, recovery-g
   assert.match(s10aActivation, /deployment-record\.txt/);
   assert.match(s10aActivation, /post_activation_recovery_bundle/);
   assert.match(s10aActivation, /capture-container-state\.sh/);
+  assert.match(s10aActivation, /readiness\.sh/);
+  assert.ok(s10aActivation.indexOf("meser_wait_container_ready \"$gateway_container\"") < s10aActivation.indexOf("meser_wait_container_ready \"$caddy_container\""));
+  assert.ok(s10aActivation.indexOf("meser_wait_container_ready \"$caddy_container\"") < s10aActivation.indexOf("meser_wait_public_health \"$service_origin\""));
   assert.doesNotMatch(s10aActivation, /\.State\.Health/);
   assert.match(s10aContainerState, /^set -Eeuo pipefail$/m);
   assert.match(s10aContainerState, /docker inspect --type container/);
@@ -145,11 +149,31 @@ test("S10A activation package is inert, full-stack, checksum guarded, recovery-g
   assert.doesNotMatch(s10aActivation, /ssh |systemctl|docker compose down/);
   assert.match(s10aRollback, /prior-gateway\.image-id/);
   assert.match(s10aRollback, /prior-caddy\.image-id/);
+  assert.match(s10aRollback, /candidate-gateway\.image-id/);
+  assert.match(s10aRollback, /candidate-caddy\.image-id/);
   assert.match(s10aRollback, /--force-recreate gateway caddy/);
   assert.match(s10aRollback, /exact prior image ID/);
+  assert.match(s10aRollback, /candidate image remains active after rollback/);
+  assert.match(s10aRollback, /MESER_SERVICE_ORIGIN:-https:\/\/meserproject\.duckdns\.org/);
+  assert.doesNotMatch(s10aRollback, /ALLOWED_ORIGIN.*state\/runtime\.env/);
+  assert.match(s10aReadiness, /time\.monotonic_ns/);
+  assert.match(s10aReadiness, /7\|28\|35\|52\|56/);
+  assert.match(s10aReadiness, /502.*503.*504/);
+  assert.match(s10aReadiness, /consecutive >= 2/);
+  assert.match(s10aReadiness, /--connect-timeout/);
+  assert.match(s10aReadiness, /--max-time/);
+  assert.doesNotMatch(s10aReadiness, /cat "\$error_file"|<"\$error_file"/);
   assert.doesNotMatch(s10aRollback, /docker compose down|volume rm|haproxy\.cfg.*>/);
   assert.match(legacyActivation, /permanently disabled/);
   assert.match(s10aChecklist, /No command.*executed against production/);
+});
+
+test("S10A activation readiness deadline failure remains inside the automatic rollback path", () => {
+  assert.match(s10aActivation, /trap rollback_on_failure EXIT/);
+  assert.match(s10aActivation, /status != 0.*replacement_started.*true/);
+  assert.match(s10aActivation, /rollback-reviewed-service\.sh/);
+  assert.ok(s10aActivation.indexOf("replacement_started=true") < s10aActivation.indexOf("meser_wait_public_health \"$service_origin\""));
+  assert.match(s10aActivation, /meser_wait_public_health "\$service_origin" 90 candidate "\$candidate_readiness_log" \|\| die/);
 });
 
 test("recovery tooling uses age, exact secret allowlist, off-VM marker and inert restore gates", () => {
@@ -160,6 +184,7 @@ test("recovery tooling uses age, exact secret allowlist, off-VM marker and inert
   assert.match(recoveryCreate, /release manifest is incomplete/);
   for (const name of ["github-app.pem", "shared-password-verifier", "session-signing-secret"]) assert.match(recoveryCreate, new RegExp(name));
   assert.match(recoveryRestore, /MESER_RESTORE_AUTHORIZED=false/);
+  assert.match(recoveryRestore, /MESER_ISOLATED_ENVIRONMENT_CONFIRMED=false/);
   assert.match(recoveryRestore, /sha256sum -c SHA256SUMS/);
   assert.match(recoveryRestore, /age -d -i/);
   assert.match(recoveryCreate, /runtime\.env/);

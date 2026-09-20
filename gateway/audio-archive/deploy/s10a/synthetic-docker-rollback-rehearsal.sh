@@ -81,6 +81,8 @@ docker image tag "$prior_gateway_id" "$gateway_rollback_ref"
 docker image tag "$prior_caddy_id" "$caddy_rollback_ref"
 printf '%s\n' "$prior_gateway_id" >"$work/prior-gateway.image-id"
 printf '%s\n' "$prior_caddy_id" >"$work/prior-caddy.image-id"
+printf '%s\n' "$candidate_gateway_id" >"$work/candidate-gateway.image-id"
+printf '%s\n' "$candidate_caddy_id" >"$work/candidate-caddy.image-id"
 printf '%s\n' "$gateway_rollback_ref" >"$work/prior-gateway.image-ref"
 printf '%s\n' "$caddy_rollback_ref" >"$work/prior-caddy.image-ref"
 cat >"$work/rollback-compose.override.yaml" <<EOF
@@ -97,9 +99,29 @@ running_gateway=$(docker inspect -f '{{.Image}}' "$(MESER_CONFIG_ROOT="$config_r
 running_caddy=$(docker inspect -f '{{.Image}}' "$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/candidate.env" -f "$release_dir/compose.yaml" ps -q caddy)")
 [[ "$running_gateway" == "$candidate_gateway_id" && "$running_caddy" == "$candidate_caddy_id" ]] || die 'candidate replacement did not occur'
 
-# This is the forced post-replacement failure path under test.
-MESER_ROLLBACK_SYNTHETIC_TEST=true MESER_ROLLBACK_PROJECT_NAME="$project" MESER_CONFIG_ROOT="$config_root" MESER_HAPROXY_CONFIG="$work/haproxy.cfg" \
+# This is the forced post-replacement failure path under test. The curl shim
+# returns two startup-transient TLS failures before delegating to the real curl,
+# while the rollback itself still recreates and validates real Docker/Caddy
+# containers and the real synthetic public route.
+real_curl=$(command -v curl)
+mkdir "$work/readiness-bin"
+printf '0\n' >"$work/readiness-curl-count"
+cat >"$work/readiness-bin/curl" <<EOF
+#!/usr/bin/env bash
+set -eu
+count=\$(<"$work/readiness-curl-count")
+count=\$((count + 1))
+printf '%s\\n' "\$count" >"$work/readiness-curl-count"
+if (( count <= 2 )); then exit 35; fi
+exec "$real_curl" "\$@"
+EOF
+chmod 700 "$work/readiness-bin/curl"
+PATH="$work/readiness-bin:$PATH" MESER_SERVICE_ORIGIN="$(runtime_value ALLOWED_ORIGIN)" \
+  MESER_READINESS_INTERVAL_SECONDS=0.2 MESER_ROLLBACK_SYNTHETIC_TEST=true MESER_ROLLBACK_PROJECT_NAME="$project" MESER_CONFIG_ROOT="$config_root" MESER_HAPROXY_CONFIG="$work/haproxy.cfg" \
   "$(dirname "$0")/rollback-reviewed-service.sh" "$work"
+[[ "$(<"$work/readiness-curl-count")" -ge 4 ]] || die 'rollback did not retry delayed public readiness and require consecutive success'
+grep -q 'curl=35 .*result=transient' "$work/rollback-readiness.log" || die 'rollback readiness log omitted transient TLS evidence'
+grep -q 'consecutive=2 result=ready' "$work/rollback-readiness.log" || die 'rollback readiness log omitted consecutive success evidence'
 running_gateway=$(docker inspect -f '{{.Image}}' "$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/runtime.env" -f "$release_dir/compose.yaml" ps -q gateway)")
 running_caddy=$(docker inspect -f '{{.Image}}' "$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project" --env-file "$work/runtime.env" -f "$release_dir/compose.yaml" ps -q caddy)")
 [[ "$running_gateway" == "$prior_gateway_id" && "$running_caddy" == "$prior_caddy_id" ]] || die 'exact prior image IDs were not restored'
