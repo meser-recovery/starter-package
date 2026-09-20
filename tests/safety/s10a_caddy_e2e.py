@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 from io import BytesIO
+from pathlib import Path
 import struct
 import wave
 
@@ -12,6 +13,7 @@ from playwright.sync_api import expect, sync_playwright
 
 
 PASSWORD = "synthetic-caddy-password"
+LONG_M4A = Path(__file__).parent / "fixtures" / "s10a-long-aac-lc-3747s.m4a"
 
 
 def wav_fixture() -> bytes:
@@ -54,6 +56,21 @@ def main() -> int:
         api = page.evaluate("async () => { const r = await fetch('/v1/config'); return [r.status, await r.json()]; }")
         assert api[0] == 200 and api[1]["schemaVersion"] == 1
 
+        page.evaluate("""() => { const input = document.createElement('input'); input.type = 'file';
+            input.id = 's10a-long-waveform-fixture'; document.body.appendChild(input); }""")
+        page.locator("#s10a-long-waveform-fixture").set_input_files(LONG_M4A)
+        waveform = page.evaluate("""async () => {
+          const diagnostics = [];
+          const { createWaveformReader } = await import('/scripts/speaker-waveform.mjs');
+          const input = document.getElementById('s10a-long-waveform-fixture');
+          const reader = createWaveformReader(undefined, null, { onDiagnostic: value => diagnostics.push(value) });
+          try {
+            const peaks = await reader.read(input.files[0], 3747.648, { trackIndex: 1 });
+            return { peaks: peaks.length, diagnostics };
+          } finally { reader.dispose(); input.remove(); }
+        }""")
+        assert waveform == {"peaks": 65536, "diagnostics": []}, waveform
+
         page.locator("#source-session-mode-device").click()
         page.locator("#processor-file").set_input_files({
             "name": "caddy-wasm.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
@@ -77,7 +94,7 @@ def main() -> int:
         assert request.get(base + "/Audio-Editor.html", max_redirects=0).status == 303
         context.close()
         browser.close()
-    print("Caddy-backed auth, protected routes, logout and FFmpeg/WASM processing: PASS")
+    print("Caddy-backed auth, protected routes, bounded long-audio waveform, logout and FFmpeg/WASM processing: PASS")
     return 0
 
 
