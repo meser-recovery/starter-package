@@ -18,6 +18,7 @@ from playwright.sync_api import sync_playwright
 
 PASSWORD = "local-test-password"
 EXPIRED = "Служебная сессия истекла. Войдите снова, чтобы продолжить."
+PUBLIC_SITE = "https://meser-recovery.github.io/starter-package/"
 
 
 def wav_fixture() -> bytes:
@@ -43,13 +44,68 @@ def login(page, base_url: str, expected_path: str = "/") -> list[tuple[str, str]
     page.wait_for_url(f"**{expected_path}", timeout=10_000)
     page.wait_for_load_state("domcontentloaded")
     filtered = [(method, path.split("?", 1)[0]) for method, path in trace if path.startswith("/v1/session")]
-    if filtered[:2] != [("POST", "/v1/session/login"), ("GET", "/v1/session")]:
+    try:
+        login_index = filtered.index(("POST", "/v1/session/login"))
+    except ValueError:
+        login_index = -1
+    if login_index < 0 or filtered[login_index:login_index + 2] != [("POST", "/v1/session/login"), ("GET", "/v1/session")]:
         raise AssertionError(f"login was not proven by immediate replay: {filtered}")
     return filtered
 
 
+def exercise_public_return(browser, base_url: str):
+    """Prove public brand links bypass the protected return/login flow."""
+    context = browser.new_context(viewport={"width": 390, "height": 844})
+    context.route(
+        "https://meser-recovery.github.io/starter-package/**",
+        lambda route: route.fulfill(status=200, content_type="text/html", body="<title>Public site fixture</title>"),
+    )
+    page = context.new_page()
+    protected_login_requests: list[str] = []
+    page.on(
+        "request",
+        lambda request: protected_login_requests.append(request.url)
+        if request.url.endswith("/login?return=%2F")
+        else None,
+    )
+
+    page.goto(base_url + "/login?return=%2FAudio-Archive.html", wait_until="domcontentloaded")
+    status = page.locator("#admin-error")
+    assert status.is_hidden() and not status.text_content(), "initial session probe must not reserve visible status space"
+    page.locator("#admin-password").fill("wrong-local-password")
+    page.locator("#admin-access-form button[type=submit]").click()
+    page.get_by_text("Неверный пароль.", exact=True).wait_for(state="visible")
+    public_links = page.locator(f'a[href="{PUBLIC_SITE}"]')
+    assert public_links.count() == 2
+    public_links.first.click()
+    page.wait_for_url(PUBLIC_SITE)
+    assert len(context.pages) == 1, "public site must open in the same tab"
+    assert not protected_login_requests
+
+    page.goto(base_url + "/login?return=%2FAudio-Archive.html", wait_until="domcontentloaded")
+    login(page, base_url, "/Audio-Archive.html")
+    for path in ("/Audio-Archive.html", "/Audio-Editor.html"):
+        page.goto(base_url + path, wait_until="domcontentloaded")
+        links = page.locator(f'.portal-brand a[href="{PUBLIC_SITE}"]')
+        assert links.count() == 2, (path, links.count())
+        links.last.click()
+        page.wait_for_url(PUBLIC_SITE)
+        assert len(context.pages) == 1
+        assert not protected_login_requests
+
+    context.close()
+
+    malicious = browser.new_context(viewport={"width": 390, "height": 844})
+    page = malicious.new_page()
+    page.goto(base_url + "/login?return=https%3A%2F%2Fevil.example%2Fsteal", wait_until="domcontentloaded")
+    login(page, base_url, "/")
+    assert page.url == base_url + "/", page.url
+    malicious.close()
+
+
 def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
     browser = browser_type.launch()
+    exercise_public_return(browser, base_url)
     context = browser.new_context(viewport={"width": 390, "height": 844})
     page = context.new_page()
     blocked = []
@@ -66,8 +122,11 @@ def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
     assert page.get_by_role("heading", name="Для служащих").is_visible()
     login(page, base_url, "/")
     assert page.get_by_role("heading", name="Служебная страница").is_visible()
+    assert page.locator(f'.site-header__logo[href="{PUBLIC_SITE}"]').count() == 1
+    assert page.locator(f'.site-header__identity[href="{PUBLIC_SITE}"]').count() == 1
 
     for path, heading in (
+        ("/Admin-panel_5ab2b48b89f2fe30ce3272f2816f7d3f19b45752737d55f70f8c3a7f117dc527.html", "Служебная страница"),
         ("/Calendar.html", "Календарь событий"),
         ("/Google-Drive.html", "Материалы"),
         ("/Audio-Archive.html", "Аудиоархив"),
@@ -75,6 +134,8 @@ def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
     ):
         page.goto(base_url + path, wait_until="domcontentloaded")
         page.get_by_role("heading", name=heading, exact=True).wait_for(state="visible")
+        assert page.locator(f'.site-header__logo[href="{PUBLIC_SITE}"]').count() == 1
+        assert page.locator(f'.site-header__identity[href="{PUBLIC_SITE}"]').count() == 1
         assert page.locator("text=Дополнительное подтверждение Safari").count() == 0
         assert page.get_by_role("button", name="Подключить архив").count() == 0
         assert page.get_by_role("button", name="Отключить архив").count() == 0

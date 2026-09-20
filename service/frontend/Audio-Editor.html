@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="styles/components.css">
     <link rel="stylesheet" href="styles/audio-editor.css">
     <link rel="stylesheet" href="styles/audio-workspace.css">
-    <link rel="stylesheet" href="styles/audio-studio.css?v=s09c-corrective-12">
+    <link rel="stylesheet" href="styles/audio-studio.css?v=s10a-ui-corrective-1">
     <script src="scripts/origin-guard.js"></script>
     <script src="scripts/audio-editor.js" defer></script>
     <script src="scripts/audio-processor.mjs" type="module"></script>
@@ -22,7 +22,7 @@
     <a class="skip-link" href="#main-content">Перейти к основному содержимому</a>
     <header class="site-header portal-sidebar">
       <div class="container site-header__content">
-        <div class="portal-brand"><a class="site-header__logo" href="./" aria-label="На главную"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="./"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
+        <div class="portal-brand"><a class="site-header__logo" href="https://meser-recovery.github.io/starter-package/" aria-label="На публичный сайт"><img src="images/NALogo.png" alt="Логотип АН" width="52" height="52"></a><a class="site-header__title site-header__identity" href="https://meser-recovery.github.io/starter-package/"><strong>Мэсэр</strong><span>Аудиопортал</span></a></div>
         <nav class="portal-nav" aria-label="Аудиопортал"><a class="is-current" href="Audio-Editor.html" aria-current="page"><span aria-hidden="true">⌁</span> Редактор</a><a href="Audio-Archive.html"><span aria-hidden="true">▣</span> Аудиоархив</a></nav>
         <div class="portal-sidebar__footer"><a class="service-link" href="/" aria-label="Для служащих"><span>Для</span><span>служащих</span></a></div>
       </div>
@@ -72,7 +72,7 @@
               <button id="source-session-authenticate" type="button" hidden>Войти снова</button>
             </div>
             <p id="source-session-session-status" class="source-session-session-status">Подключение к архиву проверяется…</p>
-            <form id="source-session-filters" class="source-session-filters" role="search"><label>Название или исходная дорожка<input name="search" type="search" autocomplete="off"></label><label>Месяц<input name="month" type="month"></label><div><button class="action-primary" type="submit">Найти</button><button id="source-session-recent" type="button">Последние записи</button></div></form>
+            <form id="source-session-filters" class="source-session-filters" role="search"><label class="field-control"><span class="field-label">Название или исходная дорожка</span><input name="search" type="search" autocomplete="off"></label><label class="field-control"><span class="field-label">Месяц</span><input name="month" type="month"></label><div><button class="action-primary" type="submit">Найти</button><button id="source-session-recent" type="button">Последние записи</button></div></form>
             <p id="source-session-count" class="archive-count" hidden></p>
             <div id="source-session-list" class="source-session-list" aria-live="polite"></div><nav id="source-session-pagination" class="pagination" aria-label="Страницы результатов" hidden><button id="source-session-prev" type="button">← Назад</button><span id="source-session-page"></span><button id="source-session-next" type="button">Дальше →</button></nav>
 

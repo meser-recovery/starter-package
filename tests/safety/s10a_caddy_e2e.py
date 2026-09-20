@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 from io import BytesIO
 from pathlib import Path
+import re
 import struct
 import wave
 
@@ -84,6 +85,10 @@ def main() -> int:
         expect(page.locator("#processor-run")).to_be_enabled(timeout=30_000)
         page.locator("#processor-run").click()
         page.locator("#processor-result").wait_for(state="visible", timeout=120_000)
+        expect(page.locator("#processor-status")).to_have_text(
+            re.compile(r"^(?:Готово\.|Длинные паузы не найдены\. Файл не изменён\.)$"),
+            timeout=120_000,
+        )
         result = page.evaluate("() => window.__lastCaddyWasmResult || ({ href: document.getElementById('processor-download').href, status: document.getElementById('processor-status').textContent })")
         assert result["href"].startswith("blob:"), result
         assert result["status"] in ("Готово.", "Длинные паузы не найдены. Файл не изменён."), result

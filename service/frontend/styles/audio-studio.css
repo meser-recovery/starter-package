@@ -1452,3 +1452,37 @@
 .archive-storage-help { margin-block: .8rem; padding: .8rem; border: 1px solid #d0dae4; border-radius: .65rem; background: #f7fafc; }
 .archive-storage-help h3 { margin-top: 0; }
 .archive-storage-frame { margin-top: .75rem; }
+
+/* S10A corrective: keep compact labels and their focus rings in normal flow. */
+.audio-studio { --studio-form-focus:#58a9d3; }
+.audio-studio .field-control {
+  position:static;
+  display:grid;
+  grid-template-columns:minmax(0,1fr);
+  align-content:start;
+  gap:9px;
+  min-width:0;
+}
+.audio-studio .record-picker .filters label.field-control,
+.audio-studio #import-zone .source-session-filters label.field-control {
+  gap:9px;
+}
+.audio-studio .field-control > .field-label {
+  position:static;
+  display:block;
+  min-width:0;
+  line-height:1.35;
+}
+.audio-studio :is(button,a,input,select,textarea,summary):focus-visible {
+  outline:3px solid var(--studio-form-focus);
+  outline-offset:3px;
+}
+.audio-studio form :is(input,select,textarea,button):focus-visible,
+.audio-studio dialog :is(input,select,textarea,button):focus-visible {
+  outline:3px solid var(--studio-form-focus);
+  outline-offset:3px;
+}
+.audio-studio #matching,
+.audio-studio #source-session-count {
+  margin-top:16px;
+}
