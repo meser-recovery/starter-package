@@ -48,6 +48,7 @@ jobs:
           trap 'kill "$server_pid" "$preview_pid"' EXIT
           python3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000
           python3 tests/safety/s10a_browser_smoke.py --base-url http://localhost:4173 --browser all
+          python3 tests/safety/s10a_mobile_waveform_smoke.py --base-url http://127.0.0.1:8000 --browser all
       - name: Verify protected frontend inventory and script syntax
         run: |
           node service/tools/verify-frontend.mjs

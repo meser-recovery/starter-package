@@ -44,7 +44,9 @@ def summarize_operations(operations):
         return [round(item["durationMs"], 1) for item in completed if item["type"] == kind and predicate(item)]
     is_analysis = lambda item: any("print_format=json" in str(arg) for arg in (item.get("args") or []))
     is_final = lambda item: item.get("args") and "-filter_complex_script" in item["args"]
-    is_waveform = lambda item: item.get("args") and "speaker-waveform.rgba" in item["args"]
+    is_waveform = lambda item: item.get("args") and any(
+        str(arg).startswith("speaker-waveform-") and str(arg).endswith(".rgba") for arg in item["args"]
+    )
     return {
         "engineLoadMs": durations("LOAD"),
         "inputWriteMs": durations("WRITE_FILE", lambda item: str(item.get("path") or "").startswith("speaker-input-")),

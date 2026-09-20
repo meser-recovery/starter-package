@@ -180,6 +180,35 @@ test("ordered parts reconstruct byte-identically and corruption fails closed", a
   }, sessionId }), error => error?.status === 401);
 });
 
+test("octet-stream source parts reconstruct exact AAC container bytes with canonical audio/mp4 type", async () => {
+  const sessionId = "11111111-1111-4111-8111-111111111111";
+  const trackId = "22222222-2222-4222-8222-222222222222";
+  const blobId = "33333333-3333-4333-8333-333333333333";
+  const chunks = [Uint8Array.of(0x66, 0x74, 0x79, 0x70), Uint8Array.of(0x6d, 0x70, 0x34, 0x61)];
+  const complete = Buffer.concat(chunks.map(value => Buffer.from(value)));
+  const parts = chunks.map((bytes, index) => {
+    const name = assetName(blobId, index + 1);
+    return { partNumber: index + 1, sizeBytes: bytes.length, sha256: nodeSha(bytes), assetName: name, assetId: index + 1,
+      downloadUrl: `https://github.com/meser-recovery/audio-archive/releases/download/audio-session-${sessionId}/${name}` };
+  });
+  const workflow = name => ({ workflow: name, status: "new", currentDraft: null, outputs: [], deletedVersions: [], nextVersion: 1 });
+  const session = { schemaVersion: 1, revision: 1, id: sessionId, title: "Synthetic", recordedAt: null,
+    createdAt: "2026-01-01T00:00:00.000Z", updatedAt: "2026-01-01T00:00:00.000Z",
+    origin: { kind: "device", externalId: null }, storage: { releaseId: 1, tag: `audio-session-${sessionId}` },
+    lifecycle: { state: "incoming" }, sourceState: "available",
+    sourceTracks: [{ trackId, blobId, ordinal: 1, originalName: "synthetic.m4a", mediaType: "audio/mp4",
+      sizeBytes: complete.length, sha256: nodeSha(complete), parts }], deletedSources: null,
+    workflows: { announcement: workflow("announcement"), speaker: workflow("speaker") },
+    relations: { supersedesSessionId: null, supersededBySessionId: null }, transaction: { state: "finalized", id: sessionId } };
+  const [file] = await reconstructSessionTracks(session, async url => {
+    const index = parts.findIndex(part => part.downloadUrl === url);
+    return new Response(chunks[index], { status: 200, headers: { "Content-Type": "application/octet-stream" } });
+  });
+  assert.equal(file.type, "audio/mp4");
+  assert.equal(file.size, complete.length);
+  assert.equal(nodeSha(new Uint8Array(await file.arrayBuffer())), nodeSha(complete));
+});
+
 test("duplicate canonical source identities fail before any source-part GET or partial batch", async () => {
   const sessionId = "11111111-1111-4111-8111-111111111111";
   const firstTrackId = "22222222-2222-4222-8222-222222222222";

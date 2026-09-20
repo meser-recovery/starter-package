@@ -52,6 +52,9 @@ const bytesText = (bytes) => bytes < 1024 * 1024 ? `${Math.round(bytes / 1024)} 
 let confirmedUnload = false;
 
 function userMessage(error, fallback) {
+  if (error?.waveformDiagnostic?.stage) return error.waveformDiagnostic.stage === "aborted" ?
+    "Создание финальной версии отменено. Проект и исходники сохранены в памяти. Код диагностики: aborted." :
+    `${fallback} Код диагностики: ${error.waveformDiagnostic.stage}.`;
   if (error?.name === "AbortError" || error?.message === "cancelled") return "Создание финальной версии отменено. Проект и исходники сохранены в памяти.";
   if ([401, 403].includes(error?.status)) return RECONNECT_MESSAGE;
   if (error?.status === 409) return "Проект или запись изменились в другом окне. Закройте работу, откройте её снова и повторите изменения.";
@@ -1025,7 +1028,7 @@ async function prepareSources(epoch) {
       const duration = await metadataFor(track.url, controller.signal);
       if (!current()) throw new DOMException("cancelled", "AbortError");
       track.duration = duration; durations.push(duration);
-      track.samples = await reader.read(track.file, duration);
+      track.samples = await reader.read(track.file, duration, { trackIndex: index + 1 });
       if (!current()) throw new DOMException("cancelled", "AbortError");
     }
     activeTrack = null;
