@@ -1,6 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { LoginThrottle, SessionRegistry, clearSessionCookies, createSession, readSession, requireCsrf, verifyPassword } from "./auth.mjs";
 import { ValidationError, assertUuid, hashIdempotencyKey } from "./validation.mjs";
+import { waveformResponse } from "./waveform.mjs";
 
 const JSON_LIMIT = 1024 * 1024;
 const SAFE_METHODS = new Set(["GET", "HEAD", "OPTIONS"]);
@@ -96,7 +97,7 @@ function actionBody(body) {
   return body;
 }
 
-export function createApp({ config, domain, throttle = new LoginThrottle(), clock = () => Date.now(), sessionRegistry } = {}) {
+export function createApp({ config, domain, waveformService = null, throttle = new LoginThrottle(), clock = () => Date.now(), sessionRegistry } = {}) {
   const sessions = sessionRegistry || new SessionRegistry({ clock, maxEntries: config.activeSessionLimit || 256 });
   return async function handle(request) {
     const requestId = randomUUID();
@@ -182,6 +183,11 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
           "Content-Type": "application/octet-stream", "Content-Length": String(result.bytes.byteLength),
           "Content-Disposition": `attachment; filename="${result.assetName}"`
         } }), config.allowedOrigin);
+      }
+      if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/blobs\/([^/]+)\/waveform$/)) && request.method === "GET") {
+        if ([...url.searchParams].length) throw new ValidationError("Waveform endpoint does not accept query parameters");
+        if (!waveformService) { const error = new Error("Waveform service is unavailable"); error.status = 503; throw error; }
+        return apiResponse(waveformResponse(await waveformService.get(assertUuid(match[0], "sessionId"), assertUuid(match[1], "blobId"), request.signal)), config.allowedOrigin);
       }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/outputs\/announcement\/publications$/)) && request.method === "POST") {
         return apiResponse(json(await domain.beginAnnouncementPublication(assertUuid(match[0], "sessionId"), await jsonBody(request)), 201), config.allowedOrigin);
@@ -307,7 +313,12 @@ export function createApp({ config, domain, throttle = new LoginThrottle(), cloc
       console.error(JSON.stringify({ level: "error", message: "request_failed", requestId, method: request.method, path: url.pathname, status,
         durationMs: clock() - started, errorType: error?.name || "Error" }));
       const headers = error?.retryAfter ? { "Retry-After": String(error.retryAfter) } : {};
-      const response = json({ error: safe, requestId, ...(error instanceof ValidationError && error.details ? { details: error.details } : {}) }, status, headers);
+      const waveformDiagnostic = error?.name === "WaveformError" ? {
+        stage: error.stage || "load", exitStatus: Number.isInteger(error.exitStatus) ? error.exitStatus : null
+      } : null;
+      const response = json({ error: safe, requestId,
+        ...(error instanceof ValidationError && error.details ? { details: error.details } : {}),
+        ...(waveformDiagnostic ? { waveformDiagnostic } : {}) }, status, headers);
       return request.headers.get("origin") === config.allowedOrigin ? apiResponse(response, config.allowedOrigin) : response;
     }
   };

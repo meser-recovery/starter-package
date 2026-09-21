@@ -410,6 +410,9 @@ body[data-editing] #active-editor-mode { font-size: .85rem; margin: .4rem 0 0; }
 .speaker-track.is-muted .speaker-track-controls, .processor-track.is-muted .processor-track__top { color: #62717c; background: #e1e6ea; }
 .speaker-source-pending { display: grid; place-content: center; min-height: 112px; padding: 1rem; color: #cedce8; background: #13293d; font-size: .85rem; overflow-wrap: anywhere; }
 #speaker-editor-source-retry { justify-self: start; min-height: 36px; font: inherit; }
+.speaker-diagnostics { max-width: 100%; padding: .65rem; border: 1px solid currentColor; border-radius: 6px; }
+.speaker-diagnostics pre { max-height: 14rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: .75rem; }
+.speaker-diagnostics button { min-height: 36px; }
 .speaker-selection, .speaker-regions, .speaker-render, .processor-action-section { padding: .5rem; gap: .4rem; border: 0; border-radius: 0; background: transparent; }
 .speaker-selection { display: flex; flex-wrap: wrap; align-items: center; border-block: 1px solid #c6d2df; }
 .speaker-selection > div:first-child { flex: 1 1 100%; }

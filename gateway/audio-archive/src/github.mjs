@@ -240,6 +240,21 @@ export class GitHubArchiveRepository {
     return bytes;
   }
 
+  async openReleaseAsset(assetId, signal) {
+    if (!Number.isSafeInteger(assetId) || assetId < 1) throw new Error("Unsafe release asset ID");
+    const token = await this.token();
+    const response = await this.fetchImpl(`https://api.github.com/repos/${this.owner}/${this.repository}/releases/assets/${assetId}`, {
+      headers: this.headers(token, { Accept: "application/octet-stream" }), signal
+    });
+    if (!response.ok || !response.body) throw new GitHubError("GitHub asset stream failed", response.status);
+    const declared = Number(response.headers.get("content-length"));
+    if (Number.isFinite(declared) && (declared < 1 || declared > MAX_PART_BYTES)) {
+      response.body.cancel().catch(() => {});
+      throw new GitHubError("GitHub asset stream size is invalid", 502);
+    }
+    return response;
+  }
+
   async publishRelease(releaseId) {
     return this.api(`/releases/${releaseId}`, { method: "PATCH", body: { draft: false, prerelease: false } });
   }

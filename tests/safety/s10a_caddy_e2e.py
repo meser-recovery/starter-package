@@ -42,6 +42,7 @@ def main() -> int:
         assert redirect.headers["location"] == "/login?return=%2FAudio-Editor.html%3Fworkflow%3Dannouncement"
         assert request.get(base + "/scripts/audio-processor.mjs", max_redirects=0).status == 401
         assert request.get(base + "/v1/config", max_redirects=0).status == 401
+        assert request.get(base + "/v1/source-sessions/11111111-1111-4111-8111-111111111111/blobs/44444444-4444-4444-8444-444444444444/waveform", max_redirects=0).status == 401
         assert request.get(base + "/internal/auth-check", max_redirects=0).status == 404
 
         page = context.new_page()

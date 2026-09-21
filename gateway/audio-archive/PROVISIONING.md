@@ -58,7 +58,7 @@ It must not use `docker compose down`, edit HAProxy/Xray/x-ui/MTProxy/n8n/router
 
 ## Rollback
 
-Any failed activation invokes `rollback-reviewed-service.sh` with the captured directory. Before candidate load, both prior image IDs are protected by unique rollback tags. Rollback uses an exact-image Compose override, force-recreates both services, verifies both running container image IDs and service health, preserves volumes, verifies HAProxy stayed unchanged and does not touch GitHub archive records. If any captured identity, preserved tag or checksum differs, rollback fails closed for operator intervention.
+Any failed activation invokes `rollback-reviewed-service.sh` with the captured directory. Before candidate load, both prior image IDs are protected by unique rollback tags. Rollback uses an exact-image Compose override, force-recreates both services, verifies both running container image IDs and service health, preserves volumes, verifies HAProxy stayed unchanged and does not touch GitHub archive records. The native waveform cache is disposable derived data and is deliberately excluded from backup/recovery; an absent cache volume after clean restore is recreated empty. If any captured identity, preserved tag or checksum differs, rollback fails closed for operator intervention.
 
 ## Clean-machine restore
 

@@ -86,6 +86,12 @@ export class MemoryRepository {
     return Buffer.from(bytes);
   }
 
+  async openReleaseAsset(assetId) {
+    const bytes = this.assetBytes.get(assetId);
+    if (!bytes) return new Response(null, { status: 404 });
+    return new Response(Buffer.from(bytes), { status: 200, headers: { "Content-Length": String(bytes.byteLength) } });
+  }
+
   async publishRelease(releaseId) { this.releases.get(releaseId).draft = false; }
   async deleteAsset(assetId) {
     for (const release of this.releases.values()) release.assets = release.assets.filter((asset) => asset.id !== assetId);

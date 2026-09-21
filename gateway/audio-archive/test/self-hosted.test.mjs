@@ -26,6 +26,11 @@ const syntheticRecovery = read(resolve(root, "deploy/recovery/synthetic-recovery
 const s10aChecklist = read(resolve(root, "deploy/s10a/OPERATOR-CHECKLIST.md"));
 const createRelease = read(resolve(repositoryRoot, "service/tools/create-release.sh"));
 const safetyWorkflow = read(resolve(repositoryRoot, ".github/workflows/safety-baseline.yml"));
+const gatewayDockerfile = read(resolve(root, "Dockerfile"));
+const toolchainManifest = read(resolve(root, "ffmpeg-toolchain.env"));
+const toolchainVerifier = read(resolve(root, "tools/verify-ffmpeg-toolchain.mjs"));
+const waveformImplementation = read(resolve(root, "src/waveform.mjs"));
+const waveformContract = read(resolve(root, "WAVEFORM-CONTRACT.md"));
 
 function serviceBlock(name, next) {
   const end = next ? `\n  ${next}:` : "\nnetworks:";
@@ -44,6 +49,8 @@ test("self-hosted Compose isolates gateway ports, networks, and file secrets", (
   assert.doesNotMatch(gateway, /network_mode|privileged:/);
   assert.match(gateway, /no-new-privileges:true/);
   assert.match(gateway, /service_private/);
+  assert.match(gateway, /waveform_cache:\/var\/cache\/meser-waveforms/);
+  assert.match(compose, /\n  waveform_cache:\s*$/m);
   assert.match(gateway, /SOURCE_SHA/);
   assert.match(proxy, /Caddy\.Dockerfile/);
   assert.match(proxy, /image: \$\{CADDY_IMAGE:\?CADDY_IMAGE/);
@@ -59,6 +66,27 @@ test("self-hosted Compose isolates gateway ports, networks, and file secrets", (
     assert.match(gateway, new RegExp(`/run/secrets/${path.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
   }
   assert.doesNotMatch(compose, /GITHUB_APP_PRIVATE_KEY:\s|SHARED_PASSWORD_VERIFIER:\s|SESSION_SIGNING_SECRET:\s/);
+});
+
+test("native waveform runtime is pinned, disposable and exercised at realistic load", () => {
+  const manifest = Object.fromEntries(toolchainManifest.trim().split("\n").map(line => line.split("=", 2)));
+  assert.equal(manifest.FFMPEG_SOURCE_IMAGE, gatewayDockerfile.match(/^FROM (.+)$/m)?.[1]);
+  assert.equal(manifest.FFMPEG_PACKAGE, "8.1.2-r0");
+  assert.equal(manifest.FFMPEG_ARCH, "x86_64");
+  assert.equal(manifest.FFMPEG_VERSION, "8.1.2");
+  assert.match(manifest.FFMPEG_SHA256, /^[0-9a-f]{64}$/); assert.match(manifest.FFPROBE_SHA256, /^[0-9a-f]{64}$/);
+  assert.match(gatewayDockerfile, /apk add --no-cache "ffmpeg=\$FFMPEG_PACKAGE"/);
+  assert.match(gatewayDockerfile, /verify-ffmpeg-toolchain\.mjs/);
+  assert.match(toolchainVerifier, /spawn\(path, \["-version"\], \{ shell: false/);
+  assert.match(waveformImplementation, /spawn\(command, args, \{ shell: false/);
+  assert.match(waveformImplementation, /const safeKey = sourceSha256 => `\$\{WAVEFORM_ALGORITHM\}-\$\{sourceSha256\}-\$\{WAVEFORM_PEAK_COUNT\}`/);
+  assert.match(gatewayDockerfile, /chown root:root \/var\/cache\/meser-waveforms/);
+  assert.match(waveformContract, /exactly 65,536 IEEE-754 Float32/);
+  assert.match(waveformContract, /not part of Archive or recovery data/);
+  assert.match(safetyWorkflow, /generate-s10a-real-mobile-waveform-fixture\.sh/);
+  assert.match(safetyWorkflow, /s10a_realistic_waveform_load\.mjs/);
+  assert.match(safetyWorkflow, /--env-file "\$PWD\/gateway\/audio-archive\/ffmpeg-toolchain\.env"/);
+  assert.doesNotMatch(safetyWorkflow, /\/usr\/bin\/(?:ffmpeg|ffprobe)|\/opt\/homebrew\/[^\s]*(?:ffmpeg|ffprobe)/);
 });
 
 test("Caddy terminates one hostname behind loopback HAProxy and replaces forwarding headers", () => {
@@ -183,6 +211,8 @@ test("recovery tooling uses age, exact secret allowlist, off-VM marker and inert
   assert.match(recoveryCreate, /release artifact checksum failed/);
   assert.match(recoveryCreate, /release manifest is incomplete/);
   for (const name of ["github-app.pem", "shared-password-verifier", "session-signing-secret"]) assert.match(recoveryCreate, new RegExp(name));
+  assert.doesNotMatch(recoveryCreate, /\/var\/cache\/meser-waveforms|waveform_cache.*(?:tar|cp|rsync)/);
+  assert.doesNotMatch(recoveryRestore, /\/var\/cache\/meser-waveforms|waveform_cache.*(?:tar|cp|rsync)/);
   assert.match(recoveryRestore, /MESER_RESTORE_AUTHORIZED=false/);
   assert.match(recoveryRestore, /MESER_ISOLATED_ENVIRONMENT_CONFIRMED=false/);
   assert.match(recoveryRestore, /sha256sum -c SHA256SUMS/);

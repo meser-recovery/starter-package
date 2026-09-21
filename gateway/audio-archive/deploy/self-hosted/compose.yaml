@@ -41,6 +41,10 @@ services:
       - service_private
     tmpfs:
       - /tmp:rw,noexec,nosuid,nodev,size=64m
+    volumes:
+      # Disposable derived peaks and temporary verified source files only.
+      # This volume is intentionally excluded from recovery bundles.
+      - waveform_cache:/var/cache/meser-waveforms
     healthcheck:
       test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8080/healthz').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
       interval: 15s
@@ -84,6 +88,7 @@ networks:
 volumes:
   caddy_data:
   caddy_config:
+  waveform_cache:
 
 secrets:
   github_app_private_key:
