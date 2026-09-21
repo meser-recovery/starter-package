@@ -1,5 +1,7 @@
 # S10A FIX requirement / evidence matrix
 
+> Final operational closure is recorded in [`S10A_CLOSURE_RECORD.md`](S10A_CLOSURE_RECORD.md). The activation-attempt sections and pre-closure status statements below are retained as historical incident/evidence snapshots and do not describe the final active production state.
+
 Status: corrective incident evidence after the separately authorized 2026-09-20 activation attempt of accepted source `1ff33848bf228d6212f4691804911ef3d0533a57`. That attempt replaced the two application containers, encountered a startup readiness race at the first public HTTPS probe, invoked rollback, and returned non-zero when the legacy-origin rollback probe timed out. The old exact image IDs were restored and the canonical public route subsequently recovered. This remains neither successful deployment evidence nor operational recovery readiness or complete mobile-device acceptance. Partial physical-iPhone evidence for the later mobile-waveform corrective implementation is recorded below; Android and the unperformed device scenarios remain explicitly unverified.
 
 | Requirement | Implementation evidence | Automated / visual evidence | Status |
