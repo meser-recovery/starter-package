@@ -88,8 +88,19 @@ def exercise_archive_sidecar_editor(page):
           const first = editor.getSpeakerSaveState();
           const canvases = document.querySelectorAll('#speaker-editor-tracks .speaker-waveform canvas').length;
           const audio = document.querySelector('#speaker-editor-preview-audios audio');
-          let playback = false;
-          if (audio) { await audio.play(); playback = !audio.paused; audio.pause(); }
+          let playback = false, playbackError = null;
+          if (audio) {
+            try {
+              // play() resolves only after playback has started. The synthetic
+              // clip is 200 ms, so WebKit may already report paused/ended by
+              // the time the promise settles on a loaded CI runner.
+              await audio.play();
+              playback = audio.error === null;
+            } catch (error) {
+              playbackError = `${error?.name || 'Error'}: ${error?.message || String(error)}`;
+            }
+            audio.pause();
+          }
           const start = document.getElementById('speaker-editor-selection-start');
           const end = document.getElementById('speaker-editor-selection-end');
           start.value = '.01'; end.value = '.05'; start.dispatchEvent(new Event('input', {bubbles: true})); end.dispatchEvent(new Event('input', {bubbles: true}));
@@ -99,7 +110,7 @@ def exercise_archive_sidecar_editor(page):
           const second = editor.getSpeakerSaveState();
           await editor.closeSpeakerEditor(true);
           return {firstOpen, secondOpen, firstReady: first.ready, secondReady: second.ready, calls, maximumActive, canvases,
-            duration: first.originalDuration, playback, selection, retainedFiles: first.files.length};
+            duration: first.originalDuration, playback, playbackError, selection, retainedFiles: first.files.length};
         }""",
         {"encoded": encoded},
     )
@@ -109,7 +120,8 @@ def exercise_archive_sidecar_editor(page):
     assert result["maximumActive"] == 1
     assert result["canvases"] == 3 and result["retainedFiles"] == 3
     assert abs(result["duration"] - 0.2) < 0.01
-    assert result["playback"] and result["selection"] == "0.040000"
+    assert result["playback"], result["playbackError"]
+    assert result["selection"] == "0.040000", result["selection"]
 
 
 def exercise_public_return(browser, base_url: str):
