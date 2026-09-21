@@ -8,8 +8,10 @@ runtime_schema="$repository/gateway/audio-archive/deploy/recovery/runtime-env.sh
 # shellcheck source=runtime-env.sh
 source "$runtime_schema"
 source_sha=$(git rev-parse HEAD)
-work=$(mktemp -d /tmp/meser-docker-recovery.XXXXXX)
-service_root=$(mktemp -d /tmp/meser-synthetic-restore.XXXXXX)
+rehearsal_tmp_root=${MESER_REHEARSAL_TMP_ROOT:-/tmp}
+[[ -d "$rehearsal_tmp_root" && ! -L "$rehearsal_tmp_root" ]] || { printf 'DOCKER RESTORE REHEARSAL FAILED: temporary root is missing or unsafe\n' >&2; exit 1; }
+work=$(mktemp -d "$rehearsal_tmp_root/meser-docker-recovery.XXXXXX")
+service_root=$(mktemp -d "$rehearsal_tmp_root/meser-synthetic-restore.XXXXXX")
 cleanup() {
   if [[ -f "$service_root/.restore-project-name" && -f "$service_root/config/runtime.env" ]]; then
     project=$(<"$service_root/.restore-project-name")
@@ -39,6 +41,7 @@ MESER_RECOVERY_SYNTHETIC_TEST=true "$repository/gateway/audio-archive/deploy/rec
   "$work/release" "$work/secrets" "$work/runtime.env" "$work/destination" "$recipient" synthetic-docker-mount 'CI Docker fixture'
 bundle=$(find "$work/destination" -mindepth 1 -maxdepth 1 -type d -name 'meser-service-recovery-*' -print)
 docker image rm "$gateway_ref" "$caddy_ref" >/dev/null
-MESER_RECOVERY_SYNTHETIC_TEST=true "$repository/gateway/audio-archive/deploy/recovery/restore-meser-service.sh" "$bundle" "$work/identity.txt" "$service_root"
+MESER_RECOVERY_SYNTHETIC_TEST=true MESER_RECOVERY_SYNTHETIC_ROOT="$rehearsal_tmp_root" \
+  "$repository/gateway/audio-archive/deploy/recovery/restore-meser-service.sh" "$bundle" "$work/identity.txt" "$service_root"
 python3 "$repository/tests/safety/s10a_caddy_e2e.py" --base-url http://127.0.0.1:18080
 printf 'Synthetic Docker clean-machine restore rehearsal: PASS (exact image IDs, health, Caddy runtime and no archive writes)\n'

@@ -14,7 +14,9 @@ identity=$2
 service_root=$3
 synthetic=${MESER_RECOVERY_SYNTHETIC_TEST:-false}
 if [[ "$synthetic" == true ]]; then
-  [[ "$service_root" == /tmp/meser-synthetic-restore.* && -d "$service_root" && ! -L "$service_root" ]] || die 'synthetic restore root must be an existing dedicated /tmp directory'
+  synthetic_root=${MESER_RECOVERY_SYNTHETIC_ROOT:-/tmp}
+  [[ "$synthetic_root" == /* && -d "$synthetic_root" && ! -L "$synthetic_root" ]] || die 'synthetic restore parent must be an existing absolute non-symlink directory'
+  [[ "$service_root" == "$synthetic_root"/meser-synthetic-restore.* && -d "$service_root" && ! -L "$service_root" ]] || die 'synthetic restore root must be an existing dedicated directory below the approved synthetic parent'
 else
   [[ "$MESER_RESTORE_AUTHORIZED" == true ]] || die 'restore authorization gate is false'
   [[ "$MESER_ISOLATED_ENVIRONMENT_CONFIRMED" == true ]] || die 'isolated environment gate is false'

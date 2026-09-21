@@ -1,6 +1,6 @@
 # S10A Closure Record
 
-Status: **CLOSED — production activation and acceptance passed with an explicitly accepted Android residual risk**
+Status: **MOBILE ACCEPTANCE REOPENED** — see [`S10A_CLOSURE_ADDENDUM_REAL_IPHONE_REGRESSION.md`](S10A_CLOSURE_ADDENDUM_REAL_IPHONE_REGRESSION.md). The production activation and non-mobile evidence below remain historical facts; the prior mobile PASS is superseded for final acceptance.
 
 Closure date: 2026-09-21
 

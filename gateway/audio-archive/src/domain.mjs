@@ -150,6 +150,24 @@ export class AudioArchiveDomain {
     return { bytes, assetName: part.assetName };
   }
 
+  async waveformSource(sessionId, blobId) {
+    const id = assertUuid(blobId, "blobId");
+    const session = (await this.sessionSnapshot(sessionId)).session;
+    if (session.sourceState !== "available") throw notFound("Source Session audio is unavailable");
+    const track = session.sourceTracks.find((item) => item.blobId === id);
+    if (!track) throw notFound("Source Session track not found");
+    return Object.freeze({
+      sessionId: session.id,
+      blobId: track.blobId,
+      sizeBytes: track.sizeBytes,
+      sha256: track.sha256,
+      mediaType: track.mediaType,
+      parts: Object.freeze(track.parts.map(part => Object.freeze({
+        partNumber: part.partNumber, assetId: part.assetId, sizeBytes: part.sizeBytes, sha256: part.sha256
+      })))
+    });
+  }
+
   async getOutput(sessionId, outputId, workflow = "announcement") {
     if (!WORKFLOWS.includes(workflow)) throw new ValidationError("Unknown output workflow");
     const id = assertUuid(outputId, "outputId");

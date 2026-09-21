@@ -785,6 +785,24 @@ export class AudioArchiveGateway {
     return payload;
   }
 
+  async requestBinary(path, { signal } = {}) {
+    throwIfAborted(signal);
+    const response = await this.fetchImpl(`${this.baseUrl}${path}`, { method: "GET", credentials: "include", signal });
+    if (!response.ok) {
+      const payload = (response.headers.get("Content-Type") || "").toLowerCase().startsWith("application/json")
+        ? await response.json().catch(() => null) : null;
+      throw Object.assign(new Error(payload?.error || "Операция аудиоархива не выполнена."), {
+        status: response.status,
+        waveformDiagnostic: payload?.waveformDiagnostic && typeof payload.waveformDiagnostic.stage === "string"
+          ? Object.freeze({ stage: payload.waveformDiagnostic.stage, exitStatus: Number.isInteger(payload.waveformDiagnostic.exitStatus) ? payload.waveformDiagnostic.exitStatus : null }) : null
+      });
+    }
+    if ((response.headers.get("Content-Type") || "").toLowerCase() !== "application/vnd.meser.waveform-f32le") {
+      throw new Error("Шлюз вернул waveform в неожиданном формате.");
+    }
+    return { response, bytes: new Uint8Array(await response.arrayBuffer()) };
+  }
+
   async configuration() {
     const result = await this.request("/v1/config");
     if (Number.isSafeInteger(result?.acceptedPartSize) && result.acceptedPartSize > 0 && result.acceptedPartSize <= MAX_AUDIO_PART_BYTES) {
@@ -832,6 +850,31 @@ export class AudioArchiveGateway {
   }
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
   getSession(id, signal) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`, { signal }); }
+  async sourceWaveform(sessionId, blobId, expectedSource, signal) {
+    if (!isUuid(sessionId) || !isUuid(blobId) || !expectedSource || !/^[0-9a-f]{64}$/.test(expectedSource.sha256)) {
+      throw new Error("Некорректная waveform identity.");
+    }
+    const { response, bytes } = await this.requestBinary(`/v1/source-sessions/${encodeURIComponent(sessionId)}/blobs/${encodeURIComponent(blobId)}/waveform`, { signal });
+    const peakCount = Number(response.headers.get("X-Meser-Waveform-Peaks"));
+    const duration = Number(response.headers.get("X-Meser-Waveform-Duration"));
+    const sourceSha256 = response.headers.get("X-Meser-Source-SHA256") || "";
+    const resultSha256 = response.headers.get("X-Meser-Waveform-SHA256") || "";
+    if (response.headers.get("X-Meser-Waveform-Algorithm") !== "meser-peaks-f32le-v1" || peakCount !== 65536 ||
+        bytes.byteLength !== peakCount * 4 || sourceSha256 !== expectedSource.sha256 || !/^[0-9a-f]{64}$/.test(resultSha256) ||
+        await sha256Hex(bytes, signal) !== resultSha256 || !(duration > 0)) {
+      throw new Error("Проверка server waveform не пройдена.");
+    }
+    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+    const samples = new Float32Array(peakCount);
+    for (let index = 0; index < samples.length; index++) {
+      const value = view.getFloat32(index * 4, true);
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("Server waveform содержит недопустимые peaks.");
+      samples[index] = value;
+    }
+    samples.sampleRate = samples.length / duration;
+    return Object.freeze({ samples, duration, sourceSha256, resultSha256,
+      cache: response.headers.get("X-Meser-Waveform-Cache") === "hit" ? "hit" : "miss" });
+  }
   sourcePartFetch(session) {
     if (!validateSessionManifest(session) || session.sourceState !== "available") throw new Error("Данные архивной записи повреждены.");
     const parts = new Map();

@@ -600,6 +600,7 @@ async function loadSpeakerSession(session, intent = {}) {
       draft: work.draft,
       projectState: work.projectState,
       initialPayload: work.initialPayload,
+      waveformProvider: ({ track, signal }) => gateway.sourceWaveform(complete.id, track.blobId, track, signal),
       isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && (!newerSpeakerSession(complete) || ownsSources()),
       saveDraft: ({ session, draft, payload, signal, forceLatest }) => withReconnect(() => forceLatest ? project.saveAsLatest(session, draft, payload, signal) : project.save(session, draft, payload, signal)),
       loadProjectState: async ({ session: latest, draft: latestDraft, signal }) => {

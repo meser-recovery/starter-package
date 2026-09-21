@@ -35,6 +35,12 @@ jobs:
         run: npm --prefix gateway/audio-archive test
       - name: Run frontend Node safety suite
         run: node --test tests/safety/*.test.mjs
+      - name: Exercise realistic three-track Archive waveform load
+        run: |
+          fixture_dir=$(mktemp -d)
+          trap 'rm -rf "$fixture_dir"' EXIT
+          tests/safety/fixtures/generate-s10a-real-mobile-waveform-fixture.sh "$fixture_dir" /usr/bin/ffmpeg
+          node tests/safety/s10a_realistic_waveform_load.mjs "$fixture_dir" /usr/bin/ffmpeg /usr/bin/ffprobe
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
       - name: Install Chromium, Firefox and WebKit

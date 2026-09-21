@@ -7,6 +7,14 @@ LABEL org.opencontainers.image.revision=$SOURCE_SHA \
 ENV NODE_ENV=production
 WORKDIR /app
 
+# The digest-pinned Node image's Alpine package version is pinned so the reviewed image contents cannot
+# silently move to a different native decoder between builds.
+RUN apk add --no-cache ffmpeg=8.1.2-r0 \
+    && ffmpeg -version | head -1 | grep -F 'ffmpeg version 8.1.2' \
+    && mkdir -p /var/cache/meser-waveforms \
+    && chown root:root /var/cache/meser-waveforms \
+    && chmod 0770 /var/cache/meser-waveforms
+
 COPY package.json ./
 COPY src ./src
 

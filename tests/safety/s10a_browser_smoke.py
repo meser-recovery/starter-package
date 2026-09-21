@@ -8,6 +8,7 @@ proof of behavior on a real iPhone/Safari or Android/Chrome device.
 from __future__ import annotations
 
 import argparse
+import base64
 from pathlib import Path
 import struct
 import wave
@@ -51,6 +52,64 @@ def login(page, base_url: str, expected_path: str = "/") -> list[tuple[str, str]
     if login_index < 0 or filtered[login_index:login_index + 2] != [("POST", "/v1/session/login"), ("GET", "/v1/session")]:
         raise AssertionError(f"login was not proven by immediate replay: {filtered}")
     return filtered
+
+
+def exercise_archive_sidecar_editor(page):
+    """Exercise provider ordering and the prepared Editor, not long-file decoding."""
+    encoded = base64.b64encode(wav_fixture()).decode("ascii")
+    result = page.evaluate(
+        """async ({encoded}) => {
+          const bytes = Uint8Array.from(atob(encoded), character => character.charCodeAt(0));
+          const files = [1, 2, 3].map(index => new File([bytes], `track-${index}.wav`, {type: 'audio/wav'}));
+          const ids = [
+            ['11111111-1111-4111-8111-111111111111', '44444444-4444-4444-8444-444444444441'],
+            ['22222222-2222-4222-8222-222222222222', '44444444-4444-4444-8444-444444444442'],
+            ['33333333-3333-4333-8333-333333333333', '44444444-4444-4444-8444-444444444443']
+          ];
+          const session = {id: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', revision: 1, title: 'Synthetic sidecar',
+            lifecycle: {state: 'incoming'}, sourceState: 'available', sourceTracks: ids.map(([trackId, blobId], index) => ({
+              trackId, blobId, ordinal: index + 1, originalName: `track-${index + 1}.wav`, mediaType: 'audio/wav',
+              sizeBytes: files[index].size, sha256: String(index + 1).repeat(64), parts: []
+            }))};
+          let active = 0, maximumActive = 0; const calls = [];
+          const provider = async ({trackIndex, signal}) => {
+            active++; maximumActive = Math.max(maximumActive, active); calls.push(trackIndex);
+            try {
+              await new Promise((resolve, reject) => {
+                const timer = setTimeout(resolve, 15);
+                signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('cancelled', 'AbortError')); }, {once: true});
+              });
+              const samples = new Float32Array(65536); samples[0] = 1; samples[65535] = .5; samples.sampleRate = samples.length / .2;
+              return {samples, duration: .2, sourceSha256: 'a'.repeat(64), resultSha256: 'b'.repeat(64), cache: 'miss'};
+            } finally { active--; }
+          };
+          const editor = await import('./scripts/speaker-editor.mjs');
+          const firstOpen = await editor.openSpeakerEditor({session, files, waveformProvider: provider});
+          const first = editor.getSpeakerSaveState();
+          const canvases = document.querySelectorAll('#speaker-editor-tracks .speaker-waveform canvas').length;
+          const audio = document.querySelector('#speaker-editor-preview-audios audio');
+          let playback = false;
+          if (audio) { await audio.play(); playback = !audio.paused; audio.pause(); }
+          const start = document.getElementById('speaker-editor-selection-start');
+          const end = document.getElementById('speaker-editor-selection-end');
+          start.value = '.01'; end.value = '.05'; start.dispatchEvent(new Event('input', {bubbles: true})); end.dispatchEvent(new Event('input', {bubbles: true}));
+          const selection = document.getElementById('speaker-editor-selection-duration').textContent;
+          await editor.closeSpeakerEditor(true);
+          const secondOpen = await editor.openSpeakerEditor({session, files, waveformProvider: provider});
+          const second = editor.getSpeakerSaveState();
+          await editor.closeSpeakerEditor(true);
+          return {firstOpen, secondOpen, firstReady: first.ready, secondReady: second.ready, calls, maximumActive, canvases,
+            duration: first.originalDuration, playback, selection, retainedFiles: first.files.length};
+        }""",
+        {"encoded": encoded},
+    )
+    assert result["firstOpen"] and result["secondOpen"]
+    assert result["firstReady"] and result["secondReady"]
+    assert result["calls"] == [1, 2, 3, 1, 2, 3]
+    assert result["maximumActive"] == 1
+    assert result["canvases"] == 3 and result["retainedFiles"] == 3
+    assert abs(result["duration"] - 0.2) < 0.01
+    assert result["playback"] and result["selection"] == "0.040000"
 
 
 def exercise_public_return(browser, base_url: str):
@@ -146,6 +205,7 @@ def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
     assert not page.locator("#login-dialog").is_visible()
 
     page.goto(base_url + "/Audio-Editor.html", wait_until="domcontentloaded")
+    exercise_archive_sidecar_editor(page)
     page.locator("#processor-file").set_input_files({
         "name": "synthetic.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
     })

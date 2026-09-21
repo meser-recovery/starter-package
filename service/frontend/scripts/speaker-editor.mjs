@@ -26,7 +26,8 @@ const state = {
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
   scaleMode: "time", timeZoomValue: 1, timeZoomMax: 8, trackHeight: 196, loopEnabled: false, loopRange: null, resultDuration: NaN, resultPixelsPerSecond: 2,
-  measurementCache: new LoudnessMeasurementCache(128), sourceIdentities: new SourceIdentityRegistry(), lastRenderProfile: null
+  measurementCache: new LoudnessMeasurementCache(128), sourceIdentities: new SourceIdentityRegistry(), lastRenderProfile: null,
+  waveformProvider: null, waveformDiagnostics: []
 };
 let renderOperationSequence = 0;
 
@@ -60,6 +61,37 @@ function userMessage(error, fallback) {
   if (error?.status === 409) return "Проект или запись изменились в другом окне. Закройте работу, откройте её снова и повторите изменения.";
   if (error?.status === 413) return "Проект превышает безопасный предел размера.";
   return error instanceof Error && /^(Не удалось|Длительность|Верните|Проект|Состав|Регион)/.test(error.message) ? error.message : fallback;
+}
+
+const SAFE_DIAGNOSTIC_STAGES = new Set(["load", "source-reconstruction", "metadata", "ffmpeg-core-load", "engine-load",
+  "write", "wasm-write", "seek-chunk", "exec", "ffmpeg-exec", "read", "wasm-read", "peak-conversion", "cleanup",
+  "worker-termination", "aborted"]);
+function safeDiagnostic(error, context = {}) {
+  const source = error?.waveformDiagnostic || {};
+  const stage = SAFE_DIAGNOSTIC_STAGES.has(source.stage) ? source.stage : error?.name === "AbortError" ? "aborted" : "load";
+  const rawName = String(source.exceptionType || error?.name || "Error");
+  const exceptionName = /^[A-Za-z][A-Za-z0-9_.-]{0,63}$/.test(rawName) ? rawName : "Error";
+  const messages = Object.freeze({
+    AbortError: "Operation cancelled", WaveformStageError: "Waveform stage failed", WaveformError: "Native waveform stage failed",
+    TypeError: "Waveform data shape was invalid", Error: "Waveform preparation failed"
+  });
+  return Object.freeze({
+    stage,
+    trackIndex: Number.isInteger(context.trackIndex) ? context.trackIndex : Number.isInteger(source.trackIndex) ? source.trackIndex : null,
+    sourceBytes: Number.isSafeInteger(context.sourceBytes) ? context.sourceBytes : Number.isSafeInteger(source.sourceBytes) ? source.sourceBytes : null,
+    chunkIndex: Number.isInteger(source.chunkIndex) ? source.chunkIndex : 0,
+    chunkCount: Number.isInteger(source.chunkCount) ? source.chunkCount : 0,
+    elapsedMs: Number.isFinite(context.elapsedMs) ? Math.max(0, Math.round(context.elapsedMs)) : Number.isFinite(source.elapsedMs) ? source.elapsedMs : null,
+    exceptionName,
+    exceptionMessage: messages[exceptionName] || "Waveform preparation failed",
+    exitStatus: Number.isInteger(source.exitStatus) ? source.exitStatus : Number.isInteger(source.exitCode) ? source.exitCode : null,
+    expectedOutputBytes: Number.isSafeInteger(source.expectedOutputBytes) ? source.expectedOutputBytes : null
+  });
+}
+function updateDiagnosticDisclosure() {
+  const details = byId("diagnostics"), output = byId("diagnostics-report");
+  if (!details || !output) return;
+  output.textContent = JSON.stringify({ schemaVersion: 1, diagnostics: state.waveformDiagnostics }, null, 2);
 }
 
 function currentDirty() {
@@ -1015,26 +1047,50 @@ async function metadataFor(url, signal) {
 
 async function prepareSources(epoch) {
   const controller = new AbortController(); state.preparation = controller;
-  const reader = createWaveformReader(controller.signal);
-  state.preparationError = ""; byId("source-retry").hidden = true;
+  const reader = createWaveformReader(controller.signal, null, { onDiagnostic: diagnostic => {
+    state.waveformDiagnostics.push(safeDiagnostic({ waveformDiagnostic: diagnostic }, { trackIndex: diagnostic.trackIndex, sourceBytes: diagnostic.sourceBytes }));
+    updateDiagnosticDisclosure();
+  } });
+  state.preparationError = ""; state.waveformDiagnostics = []; updateDiagnosticDisclosure(); byId("source-retry").hidden = true;
   const tracks = [...state.tracks]; const session = state.session; const payload = state.payload; const draft = state.draft;
   const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
   let activeTrack;
   try {
-    const durations = [];
+    const durations = []; const preparedSamples = [];
     for (const [index, track] of tracks.entries()) {
       activeTrack = track; track.preparationError = "";
       byId("status").textContent = `Подготовка дорожки ${index + 1} из ${tracks.length}: ${track.file.name}`;
       const duration = await metadataFor(track.url, controller.signal);
       if (!current()) throw new DOMException("cancelled", "AbortError");
       track.duration = duration; durations.push(duration);
-      track.samples = await reader.read(track.file, duration, { trackIndex: index + 1 });
+      const started = performance.now();
+      try {
+        if (state.waveformProvider) {
+          const remote = await state.waveformProvider({ track: track.manifest, signal: controller.signal, trackIndex: index + 1 });
+          if (Math.abs(remote.duration - duration) > .5) throw Object.assign(new Error("Server waveform duration differs from verified media metadata."), {
+            waveformDiagnostic: { stage: "metadata" }
+          });
+          preparedSamples.push(remote.samples);
+          state.waveformDiagnostics.push(Object.freeze({ stage: "read", trackIndex: index + 1, sourceBytes: track.file.size,
+            chunkIndex: 1, chunkCount: 1, elapsedMs: Math.max(0, Math.round(performance.now() - started)), exceptionName: null,
+            exceptionMessage: null, exitStatus: 0, expectedOutputBytes: remote.samples.byteLength }));
+          updateDiagnosticDisclosure();
+        } else preparedSamples.push(await reader.read(track.file, duration, { trackIndex: index + 1 }));
+      } catch (error) {
+        const report = safeDiagnostic(error, { trackIndex: index + 1, sourceBytes: track.file.size, elapsedMs: performance.now() - started });
+        if (!state.waveformDiagnostics.some(item => item.stage === report.stage && item.trackIndex === report.trackIndex)) state.waveformDiagnostics.push(report);
+        updateDiagnosticDisclosure();
+        byId("diagnostics").open = true;
+        throw error;
+      }
       if (!current()) throw new DOMException("cancelled", "AbortError");
     }
     activeTrack = null;
     const originalDuration = Math.max(...durations);
     if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.");
     const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
+    if (!current()) throw new DOMException("cancelled", "AbortError");
+    tracks.forEach((track, index) => { track.samples = preparedSamples[index]; });
     state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
     state.savedFingerprint = draft ? fingerprint(normalized) : "";
     setupPlayback(); state.ready = true;
@@ -1046,6 +1102,7 @@ async function prepareSources(epoch) {
     if (activeTrack) activeTrack.preparationError = detail;
     const message = activeTrack ? `Не удалось подготовить «${activeTrack.file.name}». ${detail}` : detail;
     // Keep exact File references and the project so retry needs no re-selection.
+    for (const track of tracks) track.samples = null;
     state.preparationError = message; state.ready = false; render();
     byId("source-retry").hidden = false;
     byId("render-status").textContent = "Исходники остались в редакторе. Повторите подготовку или измените выбор файлов в разделе «Импорт».";
@@ -1602,6 +1659,7 @@ async function teardown() {
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
   byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
   state.draft = null; state.projectState = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.loadProjectState = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
+  state.waveformProvider = null; state.waveformDiagnostics = []; updateDiagnosticDisclosure();
   document.getElementById("announcement-processor-card").hidden = true;
   document.getElementById("active-editor-mode").textContent = "Выберите исходники и режим редактирования.";
   notifyState();
@@ -1620,14 +1678,14 @@ export async function closeSpeakerEditor(force = false, isCurrent = () => true) 
   await teardown(); return true;
 }
 
-export async function openSpeakerEditor({ session, files, draft = null, projectState = null, initialPayload = null, saveDraft: save, loadProjectState = null, onSaved, isCurrent = () => true }) {
+export async function openSpeakerEditor({ session, files, draft = null, projectState = null, initialPayload = null, waveformProvider = null, saveDraft: save, loadProjectState = null, onSaved, isCurrent = () => true }) {
   if (session.kind !== "local" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) throw new Error("Для обработки спикерской нужны доступные исходники. Верните запись для обработки.");
   if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый проект имеет неподдерживаемую схему и не будет перезаписан.");
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
   if (files.length !== orderedManifest.length) throw new Error("Состав загруженных исходников не совпадает с записью.");
   if (!await closeSpeakerEditor(false, isCurrent) || !isCurrent()) return false;
   const epoch = ++state.sourceEpoch;
-  state.ready = false; state.saveLocked = false; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
+  state.ready = false; state.saveLocked = false; state.waveformProvider = typeof waveformProvider === "function" ? waveformProvider : null; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null, color: defaultTrackColor(index) }));
   state.payload = initialPayload ? structuredClone(initialPayload) : draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
   state.history = new SpeakerHistory(state.payload); state.savedFingerprint = initialPayload ? "" : draft ? fingerprint(state.payload) : ""; state.draft = draft; state.projectState = initialPayload ? null : projectState; state.saveDraft = save; state.loadProjectState = loadProjectState; state.onSaved = onSaved;
@@ -1730,6 +1788,18 @@ byId("source-retry").addEventListener("click", async () => {
   byId("render-status").textContent = "";
   try { await prepareSources(state.sourceEpoch); }
   catch { /* prepareSources displays a named error and retains the inputs. */ }
+});
+
+byId("diagnostics-copy")?.addEventListener("click", async () => {
+  const text = byId("diagnostics-report").textContent;
+  try {
+    await navigator.clipboard.writeText(text);
+    byId("diagnostics-copy-status").textContent = "Диагностика скопирована.";
+  } catch {
+    const selection = getSelection(); const range = document.createRange(); range.selectNodeContents(byId("diagnostics-report"));
+    selection.removeAllRanges(); selection.addRange(range);
+    byId("diagnostics-copy-status").textContent = "Текст выделен. Используйте команду копирования браузера.";
+  }
 });
 
 byId("result-waveform-scroll").addEventListener("scroll", () => {
