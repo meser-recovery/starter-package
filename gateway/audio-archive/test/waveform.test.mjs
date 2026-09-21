@@ -1,7 +1,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { chmod, mkdtemp, readFile, readdir, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { access } from "node:fs/promises";
@@ -137,6 +137,50 @@ test("generation failure and abort both permit a clean retry without stale cache
   } finally { await service.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
+test("one active process and four queued keys fail closed before a sixth distinct job", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meser-waveform-queue-"));
+  const blobs = Array.from({ length: 6 }, (_, index) => `44444444-4444-4444-8444-${String(index + 1).padStart(12, "0")}`);
+  const bytes = blobs.map((_, index) => Buffer.from(`ftypM4A queue source ${index}`));
+  const sources = new Map(blobs.map((blobId, index) => [blobId, { sessionId: SESSION, blobId, sizeBytes: bytes[index].length,
+    sha256: sha(bytes[index]), mediaType: "audio/mp4", parts: [{ partNumber: 1, assetId: index + 1, sizeBytes: bytes[index].length, sha256: sha(bytes[index]) }] }]));
+  let active; const started = new Promise(resolve => { active = resolve; });
+  const service = new WaveformService({ cacheDir: directory, resolveSource: async (_sessionId, blobId) => sources.get(blobId),
+    openPart: async assetId => new Response(bytes[assetId - 1], { headers: { "Content-Length": String(bytes[assetId - 1].length) } }),
+    generate: async ({ signal }) => { active(); await new Promise((_resolve, reject) => signal.addEventListener("abort", () => reject(Object.assign(new Error("cancelled"), { name: "AbortError" })), { once: true })); } });
+  await service.initialize(); const controllers = []; const pending = [];
+  try {
+    for (let index = 0; index < 5; index++) {
+      const controller = new AbortController(); controllers.push(controller);
+      pending.push(service.get(SESSION, blobs[index], controller.signal).catch(error => error));
+      if (index === 0) await started;
+    }
+    while (service.queue.length < 4) await new Promise(resolve => setTimeout(resolve, 1));
+    await assert.rejects(service.get(SESSION, blobs[5]), error => error.status === 503 && error.stage === "load");
+    controllers.forEach(controller => controller.abort()); await Promise.allSettled(pending);
+  } finally { await service.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
+test("native timeout kills the process and a clean retry succeeds", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meser-waveform-timeout-"));
+  const binaries = await mkdtemp(join(tmpdir(), "meser-waveform-native-tools-"));
+  const ffmpeg = join(binaries, "ffmpeg test binary"), ffprobe = join(binaries, "ffprobe test binary");
+  await writeFile(ffmpeg, "#!/bin/sh\nexec sleep 60\n", { mode: 0o700 });
+  await writeFile(ffprobe, "#!/bin/sh\nprintf '1.0\\n'\n", { mode: 0o700 });
+  await chmod(ffmpeg, 0o700); await chmod(ffprobe, 0o700);
+  const { parts, source } = fixture();
+  const service = new WaveformService({ cacheDir: directory, ffmpegPath: ffmpeg, ffprobePath: ffprobe, timeoutMs: 1000,
+    resolveSource: async () => source,
+    openPart: async assetId => new Response(parts[assetId - 1], { headers: { "Content-Length": String(parts[assetId - 1].length) } }) });
+  await service.initialize();
+  try {
+    await assert.rejects(service.get(SESSION, BLOB), error => error.stage === "exec" && /timed out/.test(error.message));
+    await writeFile(ffmpeg, "#!/bin/sh\nprintf '\\000\\000\\000\\000'\n", { mode: 0o700 }); await chmod(ffmpeg, 0o700);
+    const retried = await service.get(SESSION, BLOB); assert.equal(retried.cache, "miss"); assert.equal(retried.body.byteLength, WAVEFORM_BODY_BYTES);
+  } finally {
+    await service.close(); await rm(directory, { recursive: true, force: true }); await rm(binaries, { recursive: true, force: true });
+  }
+});
+
 test("cache limit evicts deterministically and never retains more than the configured bound", async () => {
   const directory = await mkdtemp(join(tmpdir(), "meser-waveform-evict-"));
   const blobs = [BLOB, "44444444-4444-4444-8444-444444444445"];
@@ -171,9 +215,23 @@ test("source-size and duration limits fail closed before cache publication", asy
   } finally { await service.close(); await rm(directory, { recursive: true, force: true }); }
 });
 
+test("non-digest source identity cannot reach filesystem or native arguments", async () => {
+  const directory = await mkdtemp(join(tmpdir(), "meser-waveform-identity-")); let opened = 0; let generated = 0;
+  const { source } = fixture();
+  const service = new WaveformService({ cacheDir: directory, resolveSource: async () => ({ ...source, sha256: "../../client-controlled" }),
+    openPart: async () => { opened++; throw new Error("must not open"); },
+    generate: async () => { generated++; return { durationSeconds: 1, body: Buffer.alloc(WAVEFORM_BODY_BYTES) }; } });
+  await service.initialize();
+  try {
+    await assert.rejects(service.get(SESSION, BLOB), error => error.status === 409 && error.stage === "load");
+    assert.equal(opened, 0); assert.equal(generated, 0); assert.deepEqual(await readdir(directory), []);
+  } finally { await service.close(); await rm(directory, { recursive: true, force: true }); }
+});
+
 test("pinned native contract decodes the exact 3747-second AAC-LC/M4A fixture", { timeout: 120_000 }, async t => {
-  const ffmpeg = process.env.MESER_TEST_FFMPEG || "/opt/homebrew/bin/ffmpeg";
-  const ffprobe = process.env.MESER_TEST_FFPROBE || "/opt/homebrew/bin/ffprobe";
+  const ffmpeg = process.env.FFMPEG_BIN;
+  const ffprobe = process.env.FFPROBE_BIN;
+  if (!ffmpeg || !ffprobe) { t.skip("explicit pinned native toolchain is unavailable"); return; }
   try { await access(ffmpeg); await access(ffprobe); } catch { t.skip("native ffmpeg is unavailable"); return; }
   const bytes = await readFile(new URL("../../../tests/safety/fixtures/s10a-long-aac-lc-3747s.m4a", import.meta.url));
   const directory = await mkdtemp(join(tmpdir(), "meser-waveform-native-"));

@@ -11,6 +11,8 @@ const config = loadConfig();
 const repository = new GitHubArchiveRepository(config);
 const domain = new AudioArchiveDomain(repository, config);
 const waveformService = new WaveformService({
+  ffmpegPath: process.env.FFMPEG_BIN,
+  ffprobePath: process.env.FFPROBE_BIN,
   resolveSource: (sessionId, blobId) => domain.waveformSource(sessionId, blobId),
   openPart: (assetId, signal) => repository.openReleaseAsset(assetId, signal)
 });

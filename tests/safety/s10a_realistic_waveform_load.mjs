@@ -4,11 +4,11 @@ import { mkdtemp, readFile, readdir, rm, stat, writeFile } from "node:fs/promise
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { WaveformService, WAVEFORM_PEAK_COUNT } from "../../gateway/audio-archive/src/waveform.mjs";
+import { verifyFfmpegToolchain } from "../../gateway/audio-archive/tools/verify-ffmpeg-toolchain.mjs";
 
 const directory = resolve(process.argv[2] || "");
-const ffmpegPath = process.argv[3] || "/opt/homebrew/bin/ffmpeg";
-const ffprobePath = process.argv[4] || "/opt/homebrew/bin/ffprobe";
-if (!process.argv[2]) throw new Error("usage: node s10a_realistic_waveform_load.mjs FIXTURE_DIR [FFMPEG] [FFPROBE]");
+if (!process.argv[2]) throw new Error("usage: node s10a_realistic_waveform_load.mjs FIXTURE_DIR");
+const { ffmpeg: ffmpegPath, ffprobe: ffprobePath } = await verifyFfmpegToolchain();
 const sha = bytes => createHash("sha256").update(bytes).digest("hex");
 const ids = [
   ["11111111-1111-4111-8111-111111111111", "44444444-4444-4444-8444-444444444441"],

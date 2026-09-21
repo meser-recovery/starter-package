@@ -35,12 +35,30 @@ jobs:
         run: npm --prefix gateway/audio-archive test
       - name: Run frontend Node safety suite
         run: node --test tests/safety/*.test.mjs
+      - name: Build and verify the canonical pinned FFmpeg toolchain
+        run: |
+          toolchain_image="meser-service-gateway:${GITHUB_SHA}"
+          docker build --platform linux/amd64 --build-arg SOURCE_SHA="$GITHUB_SHA" -t "$toolchain_image" gateway/audio-archive
+          test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$toolchain_image")" = "$GITHUB_SHA"
+          docker run --rm --platform linux/amd64 \
+            --env-file "$PWD/gateway/audio-archive/ffmpeg-toolchain.env" \
+            --entrypoint node "$toolchain_image" tools/verify-ffmpeg-toolchain.mjs
+          printf 'S10A_TOOLCHAIN_IMAGE=%s\n' "$toolchain_image" >>"$GITHUB_ENV"
       - name: Exercise realistic three-track Archive waveform load
         run: |
-          fixture_dir=$(mktemp -d)
+          fixture_dir="$RUNNER_TEMP/s10a realistic waveform fixture"
+          mkdir -p "$fixture_dir"
           trap 'rm -rf "$fixture_dir"' EXIT
-          tests/safety/fixtures/generate-s10a-real-mobile-waveform-fixture.sh "$fixture_dir" /usr/bin/ffmpeg
-          node tests/safety/s10a_realistic_waveform_load.mjs "$fixture_dir" /usr/bin/ffmpeg /usr/bin/ffprobe
+          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+            -v "$PWD:/repo:ro" -v "$fixture_dir:/fixture" -w /repo \
+            --env-file "$PWD/gateway/audio-archive/ffmpeg-toolchain.env" \
+            --entrypoint /bin/sh "$S10A_TOOLCHAIN_IMAGE" \
+            tests/safety/fixtures/generate-s10a-real-mobile-waveform-fixture.sh /fixture
+          docker run --rm --platform linux/amd64 --user "$(id -u):$(id -g)" \
+            -v "$PWD:/repo:ro" -v "$fixture_dir:/fixture:ro" -w /repo \
+            --env-file "$PWD/gateway/audio-archive/ffmpeg-toolchain.env" \
+            --entrypoint node "$S10A_TOOLCHAIN_IMAGE" \
+            tests/safety/s10a_realistic_waveform_load.mjs /fixture
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
       - name: Install Chromium, Firefox and WebKit
@@ -91,6 +109,8 @@ jobs:
           docker compose -f gateway/audio-archive/deploy/self-hosted/compose.yaml build gateway caddy
           test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$GATEWAY_IMAGE")" = "$SOURCE_SHA"
           test "$(docker image inspect -f '{{ index .Config.Labels "org.opencontainers.image.revision" }}' "$CADDY_IMAGE")" = "$SOURCE_SHA"
+          printf 'CANDIDATE_GATEWAY_IMAGE_ID=%s\n' "$(docker image inspect -f '{{.Id}}' "$GATEWAY_IMAGE")"
+          printf 'CANDIDATE_CADDY_IMAGE_ID=%s\n' "$(docker image inspect -f '{{.Id}}' "$CADDY_IMAGE")"
       - name: Synthetic encrypted recovery rehearsal
         run: |
           sudo apt-get update

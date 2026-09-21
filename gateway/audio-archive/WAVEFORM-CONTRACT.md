@@ -28,6 +28,9 @@ validates both identities, the response size and every peak before publication.
 
 ## Resource and lifecycle limits
 
+- native toolchain: `ffmpeg`/`ffprobe` 8.1.2 from `ffmpeg=8.1.2-r0` in the
+  digest-pinned Node/Alpine source image; the committed toolchain manifest binds
+  the amd64 binary SHA-256 values and is verified during image build and CI;
 - maximum canonical source: 500 MiB;
 - maximum decoded duration: 8 hours;
 - active native FFmpeg processes: 1;

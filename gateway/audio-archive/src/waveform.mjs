@@ -3,7 +3,7 @@ import { constants, createWriteStream } from "node:fs";
 import { chmod, lstat, mkdir, open, readdir, rename, rm, stat } from "node:fs/promises";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { join } from "node:path";
+import { isAbsolute, join } from "node:path";
 import { pipeline } from "node:stream/promises";
 import { Readable, Transform } from "node:stream";
 
@@ -149,7 +149,7 @@ async function reconstructSource(source, path, openPart, signal) {
 function runProcess(command, args, { signal, timeoutMs, stage, consumeStdout }) {
   return new Promise((resolve, reject) => {
     throwIfAborted(signal, stage);
-    const child = spawn(command, args, { stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
+    const child = spawn(command, args, { shell: false, stdio: ["ignore", "pipe", "pipe"], windowsHide: true });
     let stderr = ""; let settled = false; let forcedError = null; let consumerError = null;
     const kill = () => { if (child.exitCode === null && child.signalCode === null) child.kill("SIGKILL"); };
     const timer = setTimeout(() => { forcedError ||= new WaveformError("Native waveform process timed out", { stage }); kill(); }, timeoutMs);
@@ -217,8 +217,8 @@ async function nativePeaks(path, durationSeconds, options, signal) {
 }
 
 export class WaveformService {
-  constructor({ resolveSource, openPart, cacheDir = "/var/cache/meser-waveforms", ffmpegPath = "/usr/bin/ffmpeg",
-    ffprobePath = "/usr/bin/ffprobe", timeoutMs = WAVEFORM_JOB_TIMEOUT_MS, cacheMaxBytes = WAVEFORM_CACHE_MAX_BYTES, generate = null } = {}) {
+  constructor({ resolveSource, openPart, cacheDir = "/var/cache/meser-waveforms", ffmpegPath,
+    ffprobePath, timeoutMs = WAVEFORM_JOB_TIMEOUT_MS, cacheMaxBytes = WAVEFORM_CACHE_MAX_BYTES, generate = null } = {}) {
     if (typeof resolveSource !== "function" || typeof openPart !== "function") throw new Error("Waveform source adapters are required");
     this.resolveSource = resolveSource; this.openPart = openPart; this.cacheDir = cacheDir;
     if (!Number.isSafeInteger(cacheMaxBytes) || cacheMaxBytes < WAVEFORM_BODY_BYTES + 4096) throw new Error("Waveform cache limit is invalid");
@@ -227,6 +227,9 @@ export class WaveformService {
   }
 
   async initialize() {
+    if (!this.generate && (![this.options.ffmpegPath, this.options.ffprobePath].every(path => typeof path === "string" && isAbsolute(path)))) {
+      throw new WaveformError("Pinned native waveform tool paths are required", { status: 503, stage: "load" });
+    }
     await mkdir(this.cacheDir, { recursive: true, mode: 0o770 });
     const cacheInfo = await lstat(this.cacheDir);
     if (!cacheInfo.isDirectory() || cacheInfo.isSymbolicLink()) throw new WaveformError("Waveform cache directory is unsafe", { status: 503, stage: "load" });
@@ -358,6 +361,9 @@ export class WaveformService {
   async close() {
     this.closed = true;
     for (const job of this.inFlight.values()) job.controller.abort();
+    for (const job of this.queue.splice(0)) {
+      this.inFlight.delete(job.key); job.reject(abortError());
+    }
     await Promise.allSettled([...this.inFlight.values()].map(job => job.promise));
     for (const name of await readdir(this.cacheDir).catch(() => [])) if (name.startsWith(".") && (name.endsWith(".source") || name.endsWith(".tmp"))) await rm(join(this.cacheDir, name), { force: true });
   }

@@ -7,13 +7,22 @@ LABEL org.opencontainers.image.revision=$SOURCE_SHA \
 ENV NODE_ENV=production
 WORKDIR /app
 
-# The digest-pinned Node image's Alpine package version is pinned so the reviewed image contents cannot
-# silently move to a different native decoder between builds.
-RUN apk add --no-cache ffmpeg=8.1.2-r0 \
-    && ffmpeg -version | head -1 | grep -F 'ffmpeg version 8.1.2' \
+# One manifest binds the digest-pinned source image, Alpine package, architecture,
+# exact native binary hashes and version used by the image and realistic CI load.
+COPY ffmpeg-toolchain.env ./ffmpeg-toolchain.env
+COPY tools/verify-ffmpeg-toolchain.mjs ./tools/verify-ffmpeg-toolchain.mjs
+RUN set -a \
+    && . ./ffmpeg-toolchain.env \
+    && set +a \
+    && test "$(apk --print-arch)" = "$FFMPEG_ARCH" \
+    && apk add --no-cache "ffmpeg=$FFMPEG_PACKAGE" \
+    && node ./tools/verify-ffmpeg-toolchain.mjs \
     && mkdir -p /var/cache/meser-waveforms \
     && chown root:root /var/cache/meser-waveforms \
     && chmod 0770 /var/cache/meser-waveforms
+
+ENV FFMPEG_BIN=/usr/bin/ffmpeg \
+    FFPROBE_BIN=/usr/bin/ffprobe
 
 COPY package.json ./
 COPY src ./src

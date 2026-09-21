@@ -27,6 +27,9 @@ const s10aChecklist = read(resolve(root, "deploy/s10a/OPERATOR-CHECKLIST.md"));
 const createRelease = read(resolve(repositoryRoot, "service/tools/create-release.sh"));
 const safetyWorkflow = read(resolve(repositoryRoot, ".github/workflows/safety-baseline.yml"));
 const gatewayDockerfile = read(resolve(root, "Dockerfile"));
+const toolchainManifest = read(resolve(root, "ffmpeg-toolchain.env"));
+const toolchainVerifier = read(resolve(root, "tools/verify-ffmpeg-toolchain.mjs"));
+const waveformImplementation = read(resolve(root, "src/waveform.mjs"));
 const waveformContract = read(resolve(root, "WAVEFORM-CONTRACT.md"));
 
 function serviceBlock(name, next) {
@@ -66,12 +69,24 @@ test("self-hosted Compose isolates gateway ports, networks, and file secrets", (
 });
 
 test("native waveform runtime is pinned, disposable and exercised at realistic load", () => {
-  assert.match(gatewayDockerfile, /ffmpeg=8\.1\.2-r0/);
+  const manifest = Object.fromEntries(toolchainManifest.trim().split("\n").map(line => line.split("=", 2)));
+  assert.equal(manifest.FFMPEG_SOURCE_IMAGE, gatewayDockerfile.match(/^FROM (.+)$/m)?.[1]);
+  assert.equal(manifest.FFMPEG_PACKAGE, "8.1.2-r0");
+  assert.equal(manifest.FFMPEG_ARCH, "x86_64");
+  assert.equal(manifest.FFMPEG_VERSION, "8.1.2");
+  assert.match(manifest.FFMPEG_SHA256, /^[0-9a-f]{64}$/); assert.match(manifest.FFPROBE_SHA256, /^[0-9a-f]{64}$/);
+  assert.match(gatewayDockerfile, /apk add --no-cache "ffmpeg=\$FFMPEG_PACKAGE"/);
+  assert.match(gatewayDockerfile, /verify-ffmpeg-toolchain\.mjs/);
+  assert.match(toolchainVerifier, /spawn\(path, \["-version"\], \{ shell: false/);
+  assert.match(waveformImplementation, /spawn\(command, args, \{ shell: false/);
+  assert.match(waveformImplementation, /const safeKey = sourceSha256 => `\$\{WAVEFORM_ALGORITHM\}-\$\{sourceSha256\}-\$\{WAVEFORM_PEAK_COUNT\}`/);
   assert.match(gatewayDockerfile, /chown root:root \/var\/cache\/meser-waveforms/);
   assert.match(waveformContract, /exactly 65,536 IEEE-754 Float32/);
   assert.match(waveformContract, /not part of Archive or recovery data/);
   assert.match(safetyWorkflow, /generate-s10a-real-mobile-waveform-fixture\.sh/);
   assert.match(safetyWorkflow, /s10a_realistic_waveform_load\.mjs/);
+  assert.match(safetyWorkflow, /--env-file "\$PWD\/gateway\/audio-archive\/ffmpeg-toolchain\.env"/);
+  assert.doesNotMatch(safetyWorkflow, /\/usr\/bin\/(?:ffmpeg|ffprobe)|\/opt\/homebrew\/[^\s]*(?:ffmpeg|ffprobe)/);
 });
 
 test("Caddy terminates one hostname behind loopback HAProxy and replaces forwarding headers", () => {

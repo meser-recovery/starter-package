@@ -26,6 +26,8 @@ test("waveform route requires the common session, accepts only canonical ids and
   assert.equal((await app(new Request(`${ORIGIN}${path}`))).status, 401);
   assert.equal((await app(new Request(`${ORIGIN}${path}?sha256=${"a".repeat(64)}`, { headers: { cookie } }))).status, 400);
   assert.equal((await app(new Request(`${ORIGIN}/v1/source-sessions/not-a-uuid/blobs/${BLOB}/waveform`, { headers: { cookie } }))).status, 400);
+  assert.equal((await app(new Request(`${ORIGIN}/v1/source-sessions/${SESSION}/blobs/not-a-uuid/waveform`, { headers: { cookie } }))).status, 400);
+  assert.equal((await app(new Request(`${ORIGIN}/v1/source-sessions/${SESSION}/blobs/%2e%2e/waveform`, { headers: { cookie } }))).status, 404);
   const response = await app(new Request(`${ORIGIN}${path}`, { headers: { cookie } }));
   assert.equal(response.status, 200); assert.equal(response.headers.get("content-type"), "application/vnd.meser.waveform-f32le");
   assert.equal(response.headers.get("x-meser-waveform-peaks"), "65536");

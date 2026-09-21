@@ -8,9 +8,9 @@ const BLOB = "44444444-4444-4444-8444-444444444444";
 const SOURCE_SHA = "a".repeat(64);
 const sha = value => createHash("sha256").update(value).digest("hex");
 
-function waveformResponse({ status = 200, sourceSha = SOURCE_SHA, mutate = false } = {}) {
+function waveformResponse({ status = 200, sourceSha = SOURCE_SHA, mutate = false, secondPeak = 0 } = {}) {
   const peaks = new Float32Array(65536);
-  peaks[0] = 1; peaks[65535] = .5;
+  peaks[0] = 1; peaks[1] = secondPeak; peaks[65535] = .5;
   const bytes = new Uint8Array(peaks.buffer.slice(0));
   if (mutate) bytes[4] = 255;
   return new Response(status === 200 ? bytes : JSON.stringify({ error: "safe failure", waveformDiagnostic: { stage: "exec", exitStatus: 7 } }), {
@@ -43,6 +43,19 @@ test("source identity mismatch and server stage fail closed without exposing req
   const failed = new AudioArchiveGateway("", async () => waveformResponse({ status: 502 }));
   await assert.rejects(failed.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }), error =>
     error.status === 502 && error.waveformDiagnostic.stage === "exec" && error.waveformDiagnostic.exitStatus === 7);
+});
+
+test("malformed, NaN and out-of-range Float32 responses fail before peak publication", async () => {
+  for (const secondPeak of [Number.NaN, -0.01, 1.01]) {
+    const gateway = new AudioArchiveGateway("", async () => waveformResponse({ secondPeak }));
+    await assert.rejects(gateway.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }), /[Ss]erver waveform/);
+  }
+  const truncated = new AudioArchiveGateway("", async () => new Response(new Uint8Array(12), { status: 200, headers: {
+    "Content-Type": "application/vnd.meser.waveform-f32le", "X-Meser-Waveform-Algorithm": "meser-peaks-f32le-v1",
+    "X-Meser-Waveform-Peaks": "65536", "X-Meser-Waveform-Duration": "3747.648", "X-Meser-Source-SHA256": SOURCE_SHA,
+    "X-Meser-Waveform-SHA256": sha(new Uint8Array(12))
+  } }));
+  await assert.rejects(truncated.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }), /[Ss]erver waveform/);
 });
 
 test("implementation contains no Safari, iPhone or Android waveform branch", async () => {
