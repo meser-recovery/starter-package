@@ -57,7 +57,8 @@ def run(base_url, screenshot=None):
           const editor = await import('./scripts/speaker-editor.mjs');
           window.__legacyEditor = editor;
           window.__legacySaveCalls = [];
-          window.__legacyOpen = () => editor.openSpeakerEditor({session, files, draft,
+          window.__legacyOpen = (history = false) => editor.openSpeakerEditor({session, files, draft,
+            initialPayload: history ? structuredClone(payload) : null,
             waveformProvider: async () => ({duration:10, samples:new Float32Array(65536).fill(.25)}),
             saveDraft: async ({payload:submitted}) => {
               window.__legacySaveCalls.push(structuredClone(submitted));
@@ -107,6 +108,15 @@ def run(base_url, screenshot=None):
         assert corrected["cuts"][1]["endSeconds"] == 9.5, corrected
         assert page.evaluate("window.__legacyEditor.saveSpeakerProject()")
         assert len(page.evaluate("window.__legacySaveCalls")) == 2
+        assert page.evaluate("window.__legacyOpen(true)")
+        historical = page.evaluate("""() => ({
+          ready:window.__legacyEditor.getSpeakerSaveState().ready,
+          counts:window.__legacyEditor.getSpeakerSaveState().waveformSampleCounts,
+          saveDisabled:document.getElementById('speaker-editor-save').disabled,
+          warning:document.getElementById('speaker-editor-legacy-warning').textContent
+        })""")
+        assert historical["ready"] and historical["counts"] == [65536, 65536, 65536], historical
+        assert historical["saveDisabled"] and "вырез 2" in historical["warning"], historical
         assert not errors, errors
         browser.close()
     print("S10A legacy Speaker state browser regression: PASS; three waveforms, valid edits preserved, explicit remove/correct before in-memory save, ARCHIVE_MUTATIONS=0")

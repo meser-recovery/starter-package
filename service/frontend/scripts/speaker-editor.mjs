@@ -23,7 +23,7 @@ const workspace = document.getElementById("speaker-editor");
 const encoder = new TextEncoder();
 const sourceDetail = createWaveformDetail();
 const state = {
-  session: null, filesById: new Map(), tracks: [], payload: null, loadedPayload: null, legacyInvalidCuts: [], history: null, draft: null, projectState: null, savedFingerprint: "",
+  session: null, filesById: new Map(), tracks: [], payload: null, loadedPayload: null, loadedCurrentDraft: false, legacyInvalidCuts: [], history: null, draft: null, projectState: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, loadProjectState: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
@@ -1060,7 +1060,7 @@ async function prepareSources(epoch) {
     updateDiagnosticDisclosure();
   } });
   state.preparationError = ""; state.waveformDiagnostics = []; updateDiagnosticDisclosure(); byId("source-retry").hidden = true;
-  const tracks = [...state.tracks]; const session = state.session; const archivedPayload = state.loadedPayload; const payload = archivedPayload || state.payload; const draft = state.draft;
+  const tracks = [...state.tracks]; const session = state.session; const archivedPayload = state.loadedPayload; const loadedCurrentDraft = state.loadedCurrentDraft; const payload = archivedPayload || state.payload;
   const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
   let activeTrack, stage = "metadata";
   try {
@@ -1105,8 +1105,8 @@ async function prepareSources(epoch) {
     if (!current()) throw new DOMException("cancelled", "AbortError");
     tracks.forEach((track, index) => { track.samples = preparedSamples[index]; });
     state.originalDuration = originalDuration; state.payload = prepared.payload; state.history.reset(prepared.payload);
-    state.legacyInvalidCuts = prepared.invalidGlobalCuts; state.loadedPayload = null;
-    state.savedFingerprint = draft ? fingerprint(prepared.invalidGlobalCuts.length ? payload : prepared.payload) : "";
+    state.legacyInvalidCuts = prepared.invalidGlobalCuts; state.loadedPayload = null; state.loadedCurrentDraft = false;
+    state.savedFingerprint = loadedCurrentDraft ? fingerprint(prepared.invalidGlobalCuts.length ? payload : prepared.payload) : "";
     stage = "render";
     setupPlayback(); state.ready = true;
     setSelection(0, originalDuration, state.payload.trackIds[0], "all");
@@ -1702,7 +1702,7 @@ async function teardown() {
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   await cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
-  byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.loadedPayload = null; state.legacyInvalidCuts = []; state.history = null;
+  byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.loadedPayload = null; state.loadedCurrentDraft = false; state.legacyInvalidCuts = []; state.history = null;
   state.draft = null; state.projectState = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.loadProjectState = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
   state.waveformProvider = null; state.waveformDiagnostics = []; updateDiagnosticDisclosure();
   document.getElementById("announcement-processor-card").hidden = true;
@@ -1732,10 +1732,11 @@ export async function openSpeakerEditor({ session, files, draft = null, projectS
   const epoch = ++state.sourceEpoch;
   state.ready = false; state.saveLocked = false; state.waveformProvider = typeof waveformProvider === "function" ? waveformProvider : null; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null, color: defaultTrackColor(index) }));
-  state.loadedPayload = draft && !initialPayload ? structuredClone(draft.payload) : null;
+  state.loadedPayload = initialPayload ? structuredClone(initialPayload) : draft ? structuredClone(draft.payload) : null;
+  state.loadedCurrentDraft = Boolean(draft && !initialPayload);
   state.legacyInvalidCuts = [];
-  state.payload = initialPayload ? structuredClone(initialPayload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
-  state.history = new SpeakerHistory(state.payload); state.savedFingerprint = initialPayload ? "" : draft ? fingerprint(state.payload) : ""; state.draft = draft; state.projectState = initialPayload ? null : projectState; state.saveDraft = save; state.loadProjectState = loadProjectState; state.onSaved = onSaved;
+  state.payload = defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
+  state.history = new SpeakerHistory(state.payload); state.savedFingerprint = ""; state.draft = draft; state.projectState = initialPayload ? null : projectState; state.saveDraft = save; state.loadProjectState = loadProjectState; state.onSaved = onSaved;
   document.getElementById("announcement-processor-card").hidden = true;
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;
   byId("technical").textContent = `Идентификатор записи: ${session.id}. Ревизия записи: ${session.revision}. Версия процессора: speaker-editor-v1.`;
