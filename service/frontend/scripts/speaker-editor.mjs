@@ -13,6 +13,7 @@ import { sha256Hex } from "./audio-archive-client.mjs";
 import {
   SpeakerHistory, buildLevelingAnalysisFilter, buildSpeakerCandidate, buildSpeakerFilterGraph,
   createSpeakerRenderSnapshot, defaultSpeakerPayload, microseconds, normalizeSpeakerPayload, parseLoudnormMeasurements,
+  prepareLegacySpeakerPayload,
   rebindSpeakerCandidate, removedDuration, resultDuration, speakerAnalysisCacheKey, SPEAKER_FFMPEG_BUILD, SPEAKER_PAYLOAD_SCHEMA,
   SPEAKER_SAMPLE_RATE
 } from "./speaker-editor-core.mjs";
@@ -22,7 +23,7 @@ const workspace = document.getElementById("speaker-editor");
 const encoder = new TextEncoder();
 const sourceDetail = createWaveformDetail();
 const state = {
-  session: null, filesById: new Map(), tracks: [], payload: null, history: null, draft: null, projectState: null, savedFingerprint: "",
+  session: null, filesById: new Map(), tracks: [], payload: null, loadedPayload: null, legacyInvalidCuts: [], history: null, draft: null, projectState: null, savedFingerprint: "",
   originalDuration: NaN, saveDraft: null, loadProjectState: null, onSaved: null, candidate: null, candidateUrl: null, engine: null,
   preparation: null, preparationError: "", operation: null, projectSaving: false, projectController: null, saveLocked: false, ready: false, sourceEpoch: 0, presentationEpoch: 0, monitorTimer: null,
   selectedRegion: null, dragPayload: null, editTool: null, selectionScope: "all", cancelSelection: null, pixelsPerSecond: 2, follow: false,
@@ -71,7 +72,7 @@ function updateDiagnosticDisclosure() {
 }
 
 function currentDirty() {
-  return Boolean(state.payload && fingerprint(state.payload) !== state.savedFingerprint);
+  return Boolean(state.payload && (state.legacyInvalidCuts.length || fingerprint(state.payload) !== state.savedFingerprint));
 }
 
 export function speakerEditorHasUnsavedChanges() { return currentDirty(); }
@@ -698,8 +699,8 @@ function renderRegions() {
   container.replaceChildren();
   const regions = [...state.payload.globalCuts.map((region) => ({ ...region, kind: "cut" })),
     ...state.payload.trackSilenceRegions.map((region) => ({ ...region, kind: "silence" }))];
-  document.getElementById("speaker-regions-heading").textContent = `Правки · ${regions.length}`;
-  if (!regions.length) { container.append(element("p", "", "Регионов пока нет.")); if (focusedRow) document.getElementById("speaker-regions-heading").focus(); return; }
+  document.getElementById("speaker-regions-heading").textContent = `Правки · ${regions.length + state.legacyInvalidCuts.length}`;
+  if (!regions.length && !state.legacyInvalidCuts.length) { container.append(element("p", "", "Регионов пока нет.")); if (focusedRow) document.getElementById("speaker-regions-heading").focus(); return; }
   for (const region of regions) {
     const row = element("article", `speaker-region-row speaker-region-row--${region.kind}`); row.dataset.regionId = region.regionId;
     const title = element("h4", "", region.kind === "cut" ? "Глобальный вырез" : `Тишина · ${state.tracks.find((track) => track.trackId === region.trackId)?.file.name}`);
@@ -719,6 +720,33 @@ function renderRegions() {
     }, null, editsDisabled);
     fields.append(start, end, apply, select, remove); row.append(title, fields); container.append(row);
   }
+  for (const pending of state.legacyInvalidCuts) {
+    const row = element("article", "speaker-region-row speaker-region-row--invalid"); row.dataset.regionId = pending.region.regionId;
+    const title = element("h4", "", `Глобальный вырез ${pending.index} · требует исправления`);
+    const fields = element("div", "speaker-region-row__fields");
+    const disabled = editorBusy() || !state.ready;
+    const start = document.createElement("input"); start.type = "number"; start.step = "0.000001"; start.min = "0"; start.value = pending.region.startSeconds; start.disabled = disabled;
+    start.setAttribute("aria-label", `Глобальный вырез ${pending.index}, начало в секундах`);
+    const end = document.createElement("input"); end.type = "number"; end.step = "0.000001"; end.min = "0"; end.value = pending.region.endSeconds; end.disabled = disabled;
+    end.setAttribute("aria-label", `Глобальный вырез ${pending.index}, конец в секундах`);
+    const apply = makeButton("Исправить границы", () => {
+      if (editorBusy() || !state.ready) return;
+      try {
+        const next = structuredClone(state.payload);
+        next.globalCuts.push({ ...pending.region, startSeconds: Number(start.value), endSeconds: Number(end.value) });
+        const normalized = normalizeSpeakerPayload(next, state.session.sourceTracks.map((track) => track.trackId), state.originalDuration);
+        state.payload = state.history.commit(normalized);
+        state.legacyInvalidCuts = state.legacyInvalidCuts.filter((item) => item !== pending);
+        clearCandidate(); render();
+      } catch (error) { byId("status").textContent = userMessage(error, "Исправьте границы выреза в пределах исходной записи."); }
+    }, null, disabled);
+    const remove = makeButton("Удалить проблемный вырез", () => {
+      if (editorBusy() || !state.ready) return;
+      state.legacyInvalidCuts = state.legacyInvalidCuts.filter((item) => item !== pending);
+      clearCandidate(); render();
+    }, null, disabled);
+    fields.append(start, end, apply, remove); row.append(title, fields); container.append(row);
+  }
   if (focusedRow && focusIndex >= 0) {
     const row = [...container.children].find(row => row.dataset.regionId === focusedRow.dataset.regionId);
     (row?.querySelectorAll("input, button")[focusIndex] || document.getElementById("speaker-regions-heading")).focus({ preventScroll: true });
@@ -734,7 +762,7 @@ function updateRenderState() {
   byId("render-reason").textContent = allExcluded ? "Все дорожки исключены. Верните хотя бы одну дорожку в микс." :
     state.saveLocked ? "Идёт сохранение в архив «Спикерская»." : state.operation ? "Идёт локальная сборка." : !state.ready ? "Сборка недоступна, пока исходники не прошли полную проверку." :
       "В результат войдут только дорожки, оставленные в финальном миксе.";
-  byId("save").disabled = !state.ready || !state.session || editorBusy();
+  byId("save").disabled = !state.ready || !state.session || editorBusy() || state.legacyInvalidCuts.length > 0;
   byId("close").disabled = state.saveLocked;
   for (const id of ["selection-start", "selection-end", "selection-track"]) byId(id).disabled = !state.ready || editorBusy();
   updateSelectionDuration();
@@ -750,6 +778,9 @@ function render() {
   if (!state.ready) renderSourceTimeline("speaker-source-timeline", NaN, 0);
   byId("status").dataset.dirty = String(currentDirty());
   byId("status").textContent = state.preparationError || (!state.ready ? "Подготовка исходников…" : currentDirty() ? "Есть несохранённые изменения" : "Все изменения сохранены");
+  const warning = byId("legacy-warning");
+  warning.hidden = !state.legacyInvalidCuts.length;
+  if (!warning.hidden) warning.textContent = `Глобальный вырез ${state.legacyInvalidCuts.map((item) => item.index).join(", ")} выходит за длительность исходной записи и не применяется. Раскройте «Правки», исправьте границы или удалите проблемный вырез, чтобы разрешить сохранение. Архив не изменён.`;
   byId("heading").textContent = state.session.title;
   byId("identity").textContent = `${state.tracks.length} дорожек · ${clock(state.originalDuration)} · исходная шкала`;
   notifyState();
@@ -1029,7 +1060,7 @@ async function prepareSources(epoch) {
     updateDiagnosticDisclosure();
   } });
   state.preparationError = ""; state.waveformDiagnostics = []; updateDiagnosticDisclosure(); byId("source-retry").hidden = true;
-  const tracks = [...state.tracks]; const session = state.session; const payload = state.payload; const draft = state.draft;
+  const tracks = [...state.tracks]; const session = state.session; const archivedPayload = state.loadedPayload; const payload = archivedPayload || state.payload; const draft = state.draft;
   const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
   let activeTrack, stage = "metadata";
   try {
@@ -1069,11 +1100,13 @@ async function prepareSources(epoch) {
     stage = "validate";
     const originalDuration = Math.max(...durations);
     if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.");
-    const normalized = normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration);
+    const prepared = archivedPayload ? prepareLegacySpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration) :
+      { payload: normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration), invalidGlobalCuts: [] };
     if (!current()) throw new DOMException("cancelled", "AbortError");
     tracks.forEach((track, index) => { track.samples = preparedSamples[index]; });
-    state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
-    state.savedFingerprint = draft ? fingerprint(normalized) : "";
+    state.originalDuration = originalDuration; state.payload = prepared.payload; state.history.reset(prepared.payload);
+    state.legacyInvalidCuts = prepared.invalidGlobalCuts; state.loadedPayload = null;
+    state.savedFingerprint = draft ? fingerprint(prepared.invalidGlobalCuts.length ? payload : prepared.payload) : "";
     stage = "render";
     setupPlayback(); state.ready = true;
     setSelection(0, originalDuration, state.payload.trackIds[0], "all");
@@ -1113,6 +1146,10 @@ async function prepareSources(epoch) {
 }
 
 export async function saveSpeakerProject() {
+  if (state.legacyInvalidCuts.length) {
+    byId("status").textContent = "Сохранение заблокировано: исправьте или удалите проблемный глобальный вырез.";
+    return false;
+  }
   if (!state.ready || editorBusy() || !state.session || !state.saveDraft) return false;
   const epoch = state.sourceEpoch;
   const submitted = structuredClone(state.payload);
@@ -1145,8 +1182,17 @@ export async function saveSpeakerProject() {
           }
           if (epoch !== state.sourceEpoch) return false;
         }
+        let latest;
+        try {
+          latest = prepareLegacySpeakerPayload(error.latestDraft.payload,
+            error.latestSession.sourceTracks.map((track) => track.trackId), state.originalDuration);
+        } catch (loadError) {
+          byId("status").textContent = userMessage(loadError, "Последнее состояние проекта не прошло проверку. Локальные изменения оставлены в памяти.");
+          return false;
+        }
         state.session = structuredClone(error.latestSession); state.draft = structuredClone(error.latestDraft); state.projectState = projectState;
-        state.payload = structuredClone(error.latestDraft.payload); state.history.reset(state.payload); state.savedFingerprint = fingerprint(state.payload); clearCandidate(); render();
+        state.payload = latest.payload; state.legacyInvalidCuts = latest.invalidGlobalCuts; state.history.reset(state.payload);
+        state.savedFingerprint = fingerprint(latest.invalidGlobalCuts.length ? error.latestDraft.payload : latest.payload); clearCandidate(); render();
         byId("status").textContent = "Открыто последнее сохранённое состояние проекта.";
         return true;
       }
@@ -1656,7 +1702,7 @@ async function teardown() {
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   await cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
   for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
-  byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.history = null;
+  byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.loadedPayload = null; state.legacyInvalidCuts = []; state.history = null;
   state.draft = null; state.projectState = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.loadProjectState = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
   state.waveformProvider = null; state.waveformDiagnostics = []; updateDiagnosticDisclosure();
   document.getElementById("announcement-processor-card").hidden = true;
@@ -1686,7 +1732,9 @@ export async function openSpeakerEditor({ session, files, draft = null, projectS
   const epoch = ++state.sourceEpoch;
   state.ready = false; state.saveLocked = false; state.waveformProvider = typeof waveformProvider === "function" ? waveformProvider : null; state.session = structuredClone(session); state.filesById = new Map(orderedManifest.map((track, index) => [track.trackId, files[index]]));
   state.tracks = orderedManifest.map((track, index) => ({ trackId: track.trackId, manifest: track, file: files[index], url: URL.createObjectURL(files[index]), duration: NaN, samples: null, solo: false, mute: false, audio: null, color: defaultTrackColor(index) }));
-  state.payload = initialPayload ? structuredClone(initialPayload) : draft ? structuredClone(draft.payload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
+  state.loadedPayload = draft && !initialPayload ? structuredClone(draft.payload) : null;
+  state.legacyInvalidCuts = [];
+  state.payload = initialPayload ? structuredClone(initialPayload) : defaultSpeakerPayload(orderedManifest.map((track) => track.trackId));
   state.history = new SpeakerHistory(state.payload); state.savedFingerprint = initialPayload ? "" : draft ? fingerprint(state.payload) : ""; state.draft = draft; state.projectState = initialPayload ? null : projectState; state.saveDraft = save; state.loadProjectState = loadProjectState; state.onSaved = onSaved;
   document.getElementById("announcement-processor-card").hidden = true;
   workspace.hidden = false; document.getElementById("active-editor-mode").textContent = "Сейчас открыто: Финальная обработка спикерской"; byId("identity").textContent = `${session.title} · активная работа «Спикерская» · исходная шкала неизменна`;

@@ -170,6 +170,27 @@ export function normalizeSpeakerPayload(value, availableTrackIds, originalTimeli
   return normalized;
 }
 
+// An older project can contain a structurally valid cut beyond the duration
+// reported by its source media. Keep that cut for explicit user resolution,
+// but never include it in the working payload or silently persist its removal.
+export function prepareLegacySpeakerPayload(value, availableTrackIds, originalTimelineDuration) {
+  if (!Array.isArray(value?.globalCuts)) return { payload: normalizeSpeakerPayload(value, availableTrackIds, originalTimelineDuration), invalidGlobalCuts: [] };
+  normalizedGlobalCuts(value.globalCuts, NaN); // Preserve strict region shape, IDs and absolute bounds.
+  const duration = microseconds(originalTimelineDuration, "Длительность");
+  const cutIds = new Set(value.globalCuts.map((region) => uuid(region.regionId, "Глобальный вырез")));
+  if (Array.isArray(value.trackSilenceRegions) && value.trackSilenceRegions.some((region) => cutIds.has(uuid(region.regionId, "Регион тишины")))) {
+    fail("Идентификаторы регионов не должны повторяться.");
+  }
+  const invalidGlobalCuts = [];
+  const validCuts = value.globalCuts.filter((region, index) => {
+    if (microseconds(region.endSeconds) <= duration) return true;
+    invalidGlobalCuts.push({ index: index + 1, region: structuredClone(region) });
+    return false;
+  });
+  const payload = normalizeSpeakerPayload({ ...value, globalCuts: validCuts }, availableTrackIds, duration);
+  return { payload, invalidGlobalCuts };
+}
+
 export function removedDuration(globalCuts) {
   return microseconds(globalCuts.reduce((sum, region) => sum + region.endSeconds - region.startSeconds, 0));
 }
