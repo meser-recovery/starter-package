@@ -1,6 +1,7 @@
 import { isUuid, validateSessionManifest } from './audio-archive-client.mjs';
 
 export const workflows = Object.freeze({ announcement: 'Анонс-мейкер', speaker: 'Спикерская' });
+const hasOwn = (value, key) => Object.prototype.hasOwnProperty.call(value, key);
 export const statuses = Object.freeze({ new: 'Новая', in_progress: 'В работе', result_ready: 'Результат готов' });
 export const lifecycleLabel = session => session.lifecycle.state === 'incoming' ? 'В рабочем списке' : 'Убрана из рабочего списка';
 export const sourceLabel = session => session.sourceState === 'available' ? 'Исходники доступны' :
@@ -18,7 +19,7 @@ export function pageItems(items, page = 0, pageSize = 10) {
   return items.slice(page * pageSize, (page + 1) * pageSize);
 }
 export function latestOutput(session, workflow) {
-  if (!Object.hasOwn(workflows, workflow)) throw new Error('Неизвестный вид работы.');
+  if (!hasOwn(workflows, workflow)) throw new Error('Неизвестный вид работы.');
   return [...session.workflows[workflow].outputs].sort((a, b) => b.version - a.version || String(a.outputId).localeCompare(String(b.outputId)))[0] || null;
 }
 export function speakerRecoveryBinding(operation, context = {}) {
@@ -101,7 +102,7 @@ export function selectSessions(sessions, filters = {}, transactions = null) {
   });
 }
 export function selectResults(sessions, workflow, sort = 'newest') {
-  if (!Object.hasOwn(workflows, workflow)) throw new Error('Неизвестный вид работы.');
+  if (!hasOwn(workflows, workflow)) throw new Error('Неизвестный вид работы.');
   return sessions.flatMap(session => session.workflows[workflow].outputs.map(output => ({ session, output, workflow })))
     .sort((a, b) => (sort === 'version' ? a.output.version - b.output.version : sort === 'version-desc' ? b.output.version - a.output.version :
       sort === 'title' ? compareText(a.session.title, b.session.title) : compareDate(a.output.createdAt, b.output.createdAt, sort === 'oldest' ? 1 : -1)) ||
@@ -124,7 +125,7 @@ export function recoveryPolicy(operation) {
     actions: [['retry', 'Продолжить удаление']], local: 'Удаление уже начато. Отмена и восстановление удалённых байтов недоступны.'
   } : readOnly;
   if (!['ingestion', 'publication'].includes(operation.kind)) return readOnly;
-  if (operation.kind === 'publication' && !Object.hasOwn(workflows, operation.workflow)) return readOnly;
+  if (operation.kind === 'publication' && !hasOwn(workflows, operation.workflow)) return readOnly;
   const states = operation.kind === 'ingestion' ? ['uploading', 'staged'] : ['uploading', 'cancelled', 'finalizing', 'discarding'];
   if (!states.includes(operation.state)) return readOnly;
   if (operation.state === 'discarding') return { actions: [['discard', 'Завершить удаление незавершённого сохранения']], local: 'Возобновление сохранения недоступно: удаление уже начато.' };
@@ -143,7 +144,7 @@ export function parseEditorIntent(search) {
   const allowed = new Set(['session', 'workflow', 'projectRevision', 'speakerOutput']);
   if (params.getAll('session').length !== 1 || params.getAll('workflow').length !== 1 ||
       [...params.keys()].some(key => !allowed.has(key)) ||
-      !isUuid(params.get('session')) || !Object.hasOwn(workflows, params.get('workflow'))) throw new Error('Некорректная ссылка на обработку. Откройте запись из аудиоархива.');
+      !isUuid(params.get('session')) || !hasOwn(workflows, params.get('workflow'))) throw new Error('Некорректная ссылка на обработку. Откройте запись из аудиоархива.');
   const revisions = params.getAll('projectRevision'), outputs = params.getAll('speakerOutput');
   if (revisions.length > 1 || outputs.length > 1 || (revisions.length && outputs.length) ||
       ((revisions.length || outputs.length) && params.get('workflow') !== 'speaker')) {
@@ -170,7 +171,7 @@ export function parseArchiveIntent(search) {
   return { sessionId: params.get('session') };
 }
 export function editorUrl(session, workflow) {
-  if (!eligible(session) || !Object.hasOwn(workflows, workflow)) throw new Error('Для обработки нужны запись в рабочем списке и доступные исходники.');
+  if (!eligible(session) || !hasOwn(workflows, workflow)) throw new Error('Для обработки нужны запись в рабочем списке и доступные исходники.');
   return `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=${workflow}`;
 }
 export function deletionImpact(preview, target) {

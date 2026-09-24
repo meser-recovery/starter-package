@@ -2,6 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { AudioArchiveGateway } from "../../service/frontend/scripts/audio-archive-client.mjs";
+import { parseEditorIntent } from "../../service/frontend/scripts/audio-archive-core.mjs";
+import { defaultSpeakerPayload, normalizeSpeakerPayload } from "../../service/frontend/scripts/speaker-editor-core.mjs";
+import { drawWaveformViewport } from "../../service/frontend/scripts/audio-waveform-view.mjs";
+import { safeWaveformDiagnostic } from "../../service/frontend/scripts/speaker-waveform-diagnostics.mjs";
+import { WaveformStageError } from "../../service/frontend/scripts/speaker-waveform.mjs";
 
 const SESSION = "11111111-1111-4111-8111-111111111111";
 const BLOB = "44444444-4444-4444-8444-444444444444";
@@ -36,6 +41,65 @@ test("Archive waveform request sends only canonical ids and validates the fixed 
   assert.equal(result.duration, 3747.648); assert.equal(result.cache, "miss");
   assert.equal(requests[0].url, `/v1/source-sessions/${SESSION}/blobs/${BLOB}/waveform`);
   assert.equal(requests[0].url.includes("sha"), false); assert.equal(requests[0].options.credentials, "include");
+});
+
+test("three exact Float32LE sidecar responses validate and render without Array.at or Object.hasOwn", async () => {
+  const blobs = [BLOB, "55555555-5555-4555-8555-555555555555", "66666666-6666-4666-8666-666666666666"];
+  const tracks = ["11111111-1111-4111-8111-111111111111", "22222222-2222-4222-8222-222222222222", "33333333-3333-4333-8333-333333333333"];
+  const responses = blobs.map(() => waveformResponse());
+  const originalAt = Object.getOwnPropertyDescriptor(Array.prototype, "at");
+  const originalHasOwn = Object.getOwnPropertyDescriptor(Object, "hasOwn");
+  const requests = [];
+  const gateway = new AudioArchiveGateway("", async (url) => { requests.push(url); return responses.shift(); });
+  try {
+    Object.defineProperty(Array.prototype, "at", { value: undefined, configurable: true, writable: true });
+    Object.defineProperty(Object, "hasOwn", { value: undefined, configurable: true, writable: true });
+    assert.deepEqual(parseEditorIntent(`?session=${SESSION}&workflow=speaker`), { sessionId: SESSION, workflow: "speaker" });
+    const samples = [];
+    for (const blob of blobs) {
+      const result = await gateway.sourceWaveform(SESSION, blob, { sha256: SOURCE_SHA });
+      assert.equal(result.samples.byteLength, 262144);
+      samples.push(result.samples);
+    }
+    const payload = normalizeSpeakerPayload(defaultSpeakerPayload(tracks), tracks, 3747.648);
+    assert.equal(payload.trackIds.length, 3);
+    const rendered = samples.map((peaks) => {
+      const points = [];
+      const context = { fillRect() {}, beginPath() {}, moveTo(...point) { points.push(point); },
+        lineTo(...point) { points.push(point); }, closePath() {}, fill() {} };
+      const canvas = { style: {}, getContext: () => context };
+      drawWaveformViewport(canvas, peaks, 3747.648, 2, 0, 800, 100, 2);
+      assert.ok(points.length > 0);
+      return peaks.length;
+    });
+    assert.deepEqual(rendered, [65536, 65536, 65536]);
+    assert.equal(requests.length, 3);
+  } finally {
+    if (originalAt) Object.defineProperty(Array.prototype, "at", originalAt); else delete Array.prototype.at;
+    if (originalHasOwn) Object.defineProperty(Object, "hasOwn", originalHasOwn); else delete Object.hasOwn;
+  }
+});
+
+test("post-read validation and render exceptions preserve stage, name and safe message", () => {
+  const validation = safeWaveformDiagnostic(new TypeError("Object.hasOwn is not a function"), { stage: "validate" });
+  assert.equal(validation.stage, "validate");
+  assert.equal(validation.exceptionName, "TypeError");
+  assert.equal(validation.exceptionMessage, "Object.hasOwn is not a function");
+  const render = safeWaveformDiagnostic(new TypeError("canvas.getContext is not a function"), { stage: "render" });
+  assert.equal(render.stage, "render");
+  assert.equal(render.exceptionName, "TypeError");
+  assert.equal(render.exceptionMessage, "canvas.getContext is not a function");
+  assert.notEqual(render.stage, "load");
+  const wrapped = safeWaveformDiagnostic(new Error("Waveform preparation failed", {
+    cause: new TypeError("canvas.getContext is not a function")
+  }), { stage: "render" });
+  assert.equal(wrapped.exceptionName, "TypeError");
+  assert.equal(wrapped.exceptionMessage, "canvas.getContext is not a function");
+  const stageCause = new TypeError("WASM read failed");
+  assert.equal(new WaveformStageError({ stage: "wasm-read" }, stageCause).cause, stageCause);
+  assert.equal(safeWaveformDiagnostic(new DOMException("cancelled", "AbortError"), { stage: "render" }).stage, "aborted");
+  assert.equal(safeWaveformDiagnostic(new Error("https://example.test/?token=private"), { stage: "render" }).exceptionMessage,
+    "Error details redacted");
 });
 
 test("source identity mismatch and server stage fail closed without exposing request data", async () => {
@@ -87,8 +151,10 @@ test("Editor routes Archive peaks through the provider, commits atomically and e
   assert.match(editor, /preparedSamples\.push\(remote\.samples\)/);
   assert.ok(editor.indexOf("tracks.forEach((track, index) => { track.samples = preparedSamples[index]; })") > editor.indexOf("for (const [index, track] of tracks.entries())"));
   assert.match(editor, /for \(const track of tracks\) track\.samples = null/);
-  assert.match(editor, /exceptionMessage: messages\[exceptionName\]/);
-  assert.doesNotMatch(editor.slice(editor.indexOf("function safeDiagnostic"), editor.indexOf("function currentDirty")), /file\.name|session\.title|cookie|csrf|downloadUrl/i);
+  const diagnostics = await readFile(new URL("../../service/frontend/scripts/speaker-waveform-diagnostics.mjs", import.meta.url), "utf8");
+  assert.match(editor, /safeWaveformDiagnostic\(error, \{ stage,/);
+  assert.match(editor, /stage = "validate";[\s\S]*stage = "render";\s*setupPlayback\(\)/);
+  assert.doesNotMatch(diagnostics, /file\.name|session\.title|downloadUrl/i);
   assert.match(html, /id="speaker-editor-diagnostics-copy"/);
   assert.match(html, /Отчёт не содержит имён, содержимого записи или данных сеанса/);
 });

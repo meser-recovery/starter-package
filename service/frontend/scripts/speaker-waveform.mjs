@@ -20,8 +20,9 @@ const decimal = value => Number(value.toFixed(9)).toString();
 
 export class WaveformStageError extends Error {
   constructor(diagnostic, cause) {
-    super(`Waveform processing failed at ${diagnostic.stage}`, cause === undefined ? undefined : { cause });
+    super(`Waveform processing failed at ${diagnostic.stage}`);
     this.name = diagnostic.stage === 'aborted' ? 'AbortError' : 'WaveformStageError';
+    if (cause !== undefined) this.cause = cause;
     this.waveformDiagnostic = Object.freeze({ ...diagnostic });
   }
 }
