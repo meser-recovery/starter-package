@@ -45,7 +45,7 @@ function isPlainObject(value) {
 }
 
 function exactKeys(value, keys, label) {
-  if (!isPlainObject(value) || Object.keys(value).length !== keys.length || keys.some((key) => !Object.hasOwn(value, key))) {
+  if (!isPlainObject(value) || Object.keys(value).length !== keys.length || keys.some((key) => !Object.prototype.hasOwnProperty.call(value, key))) {
     fail(`${label}: неподдерживаемая структура.`);
   }
 }

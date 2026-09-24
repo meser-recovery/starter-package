@@ -35,6 +35,7 @@ service/frontend/scripts/speaker-analysis-queue.mjs
 service/frontend/scripts/speaker-editor-core.mjs
 service/frontend/scripts/speaker-editor.mjs
 service/frontend/scripts/speaker-render-cache.mjs
+service/frontend/scripts/speaker-waveform-diagnostics.mjs
 service/frontend/scripts/speaker-waveform.mjs
 service/frontend/styles/admin-access.css
 service/frontend/styles/audio-archive.css

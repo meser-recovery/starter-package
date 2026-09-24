@@ -17,7 +17,7 @@ const WORKFLOW_STATES = new Set(["new", "in_progress", "result_ready"]);
 
 function hasExactKeys(value, keys) {
   return value && typeof value === "object" && !Array.isArray(value) &&
-    Object.keys(value).length === keys.length && keys.every((key) => Object.hasOwn(value, key));
+    Object.keys(value).length === keys.length && keys.every((key) => Object.prototype.hasOwnProperty.call(value, key));
 }
 
 export function isUuid(value) {
