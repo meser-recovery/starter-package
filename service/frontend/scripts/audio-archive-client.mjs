@@ -798,9 +798,15 @@ export class AudioArchiveGateway {
       });
     }
     if ((response.headers.get("Content-Type") || "").toLowerCase() !== "application/vnd.meser.waveform-f32le") {
-      throw new Error("Шлюз вернул waveform в неожиданном формате.");
+      throw Object.assign(new Error("Шлюз вернул waveform в неожиданном формате."), { waveformDiagnostic: Object.freeze({ stage: "parse" }) });
     }
-    return { response, bytes: new Uint8Array(await response.arrayBuffer()) };
+    try {
+      return { response, bytes: new Uint8Array(await response.arrayBuffer()) };
+    } catch (error) {
+      throw Object.assign(new Error("Не удалось прочитать binary waveform ответ."), {
+        cause: error, waveformDiagnostic: Object.freeze({ stage: "parse" })
+      });
+    }
   }
 
   async configuration() {
@@ -862,13 +868,13 @@ export class AudioArchiveGateway {
     if (response.headers.get("X-Meser-Waveform-Algorithm") !== "meser-peaks-f32le-v1" || peakCount !== 65536 ||
         bytes.byteLength !== peakCount * 4 || sourceSha256 !== expectedSource.sha256 || !/^[0-9a-f]{64}$/.test(resultSha256) ||
         await sha256Hex(bytes, signal) !== resultSha256 || !(duration > 0)) {
-      throw new Error("Проверка server waveform не пройдена.");
+      throw Object.assign(new Error("Проверка server waveform не пройдена."), { waveformDiagnostic: Object.freeze({ stage: "validate" }) });
     }
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
     const samples = new Float32Array(peakCount);
     for (let index = 0; index < samples.length; index++) {
       const value = view.getFloat32(index * 4, true);
-      if (!Number.isFinite(value) || value < 0 || value > 1) throw new Error("Server waveform содержит недопустимые peaks.");
+      if (!Number.isFinite(value) || value < 0 || value > 1) throw Object.assign(new Error("Server waveform содержит недопустимые peaks."), { waveformDiagnostic: Object.freeze({ stage: "validate" }) });
       samples[index] = value;
     }
     samples.sampleRate = samples.length / duration;

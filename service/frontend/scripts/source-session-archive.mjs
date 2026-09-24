@@ -1093,7 +1093,8 @@ function renderImportFiles() {
   useLocal.disabled = !workingFiles().length;
   document.getElementById("import-summary").textContent = workingFiles().length ? `Выбрано дорожек: ${workingFiles().length}` : "Запись не выбрана";
   for (const [index, file] of workingFiles().entries()) {
-    const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${file.name.split('.').at(-1).toUpperCase()} · ${formatBytes(file.size)} `));
+    const extension = file.name.split('.').slice(-1)[0];
+    const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${extension.toUpperCase()} · ${formatBytes(file.size)} `));
     row.append(button("Удалить", async () => {
       const files = workingFiles().filter((_, i) => i !== index);
       if (!await closeSpeakerEditor(false)) return;

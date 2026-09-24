@@ -71,6 +71,9 @@ def exercise_archive_sidecar_editor(page):
               trackId, blobId, ordinal: index + 1, originalName: `track-${index + 1}.wav`, mediaType: 'audio/wav',
               sizeBytes: files[index].size, sha256: String(index + 1).repeat(64), parts: []
             }))};
+          // Exercise the production path with the optional Array helper absent.
+          // All three exact-size F32LE tracks must still render sequentially.
+          Object.defineProperty(Array.prototype, 'at', {value: undefined, configurable: true, writable: true});
           let active = 0, maximumActive = 0; const calls = [];
           const provider = async ({trackIndex, signal}) => {
             active++; maximumActive = Math.max(maximumActive, active); calls.push(trackIndex);
@@ -80,6 +83,7 @@ def exercise_archive_sidecar_editor(page):
                 signal.addEventListener('abort', () => { clearTimeout(timer); reject(new DOMException('cancelled', 'AbortError')); }, {once: true});
               });
               const samples = new Float32Array(65536); samples[0] = 1; samples[65535] = .5; samples.sampleRate = samples.length / .2;
+              if (samples.byteLength !== 262144) throw new Error('exact F32LE fixture size changed');
               return {samples, duration: .2, sourceSha256: 'a'.repeat(64), resultSha256: 'b'.repeat(64), cache: 'miss'};
             } finally { active--; }
           };
@@ -110,7 +114,8 @@ def exercise_archive_sidecar_editor(page):
           const second = editor.getSpeakerSaveState();
           await editor.closeSpeakerEditor(true);
           return {firstOpen, secondOpen, firstReady: first.ready, secondReady: second.ready, calls, maximumActive, canvases,
-            duration: first.originalDuration, playback, playbackError, selection, retainedFiles: first.files.length};
+            duration: first.originalDuration, playback, playbackError, selection, retainedFiles: first.files.length,
+            waveformSampleCounts: first.waveformSampleCounts};
         }""",
         {"encoded": encoded},
     )
@@ -119,6 +124,7 @@ def exercise_archive_sidecar_editor(page):
     assert result["calls"] == [1, 2, 3, 1, 2, 3]
     assert result["maximumActive"] == 1
     assert result["canvases"] == 3 and result["retainedFiles"] == 3
+    assert result["waveformSampleCounts"] == [65536, 65536, 65536]
     assert abs(result["duration"] - 0.2) < 0.01
     assert result["playback"], result["playbackError"]
     assert result["selection"] == "0.040000", result["selection"]

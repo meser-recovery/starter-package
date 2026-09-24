@@ -32,6 +32,7 @@ test("Archive waveform request sends only canonical ids and validates the fixed 
   const gateway = new AudioArchiveGateway("", async (url, options) => { requests.push({ url, options }); return waveformResponse(); });
   const result = await gateway.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }, new AbortController().signal);
   assert.equal(result.samples.length, 65536); assert.equal(result.samples[0], 1); assert.equal(result.samples.at(-1), .5);
+  assert.equal(result.samples.byteLength, 262144, "exact Float32LE payload is retained without conversion loss");
   assert.equal(result.duration, 3747.648); assert.equal(result.cache, "miss");
   assert.equal(requests[0].url, `/v1/source-sessions/${SESSION}/blobs/${BLOB}/waveform`);
   assert.equal(requests[0].url.includes("sha"), false); assert.equal(requests[0].options.credentials, "include");
@@ -45,10 +46,17 @@ test("source identity mismatch and server stage fail closed without exposing req
     error.status === 502 && error.waveformDiagnostic.stage === "exec" && error.waveformDiagnostic.exitStatus === 7);
 });
 
+test("unexpected binary media type is reported as parse before peak validation", async () => {
+  const gateway = new AudioArchiveGateway("", async () => new Response(new Uint8Array(262144), { status: 200, headers: { "Content-Type": "application/octet-stream" } }));
+  await assert.rejects(gateway.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }), error =>
+    error.waveformDiagnostic?.stage === "parse" && /неожиданном формате/.test(error.message));
+});
+
 test("malformed, NaN and out-of-range Float32 responses fail before peak publication", async () => {
   for (const secondPeak of [Number.NaN, -0.01, 1.01]) {
     const gateway = new AudioArchiveGateway("", async () => waveformResponse({ secondPeak }));
-    await assert.rejects(gateway.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }), /[Ss]erver waveform/);
+    await assert.rejects(gateway.sourceWaveform(SESSION, BLOB, { sha256: SOURCE_SHA }), error =>
+      /[Ss]erver waveform/.test(error.message) && error.waveformDiagnostic?.stage === "validate");
   }
   const truncated = new AudioArchiveGateway("", async () => new Response(new Uint8Array(12), { status: 200, headers: {
     "Content-Type": "application/vnd.meser.waveform-f32le", "X-Meser-Waveform-Algorithm": "meser-peaks-f32le-v1",

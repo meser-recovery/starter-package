@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { drawWaveformViewport } from '../../scripts/audio-waveform-view.mjs';
-import { waveformImageSpec } from '../../scripts/audio-waveform-image.mjs';
+import { drawWaveformViewport } from '../../service/frontend/scripts/audio-waveform-view.mjs';
+import { waveformImageSpec } from '../../service/frontend/scripts/audio-waveform-image.mjs';
 function canvas() {
   const points = []; let paints = 0;
   const context = { fillRect() { paints++; }, beginPath() { points.length = 0; },
@@ -27,6 +27,15 @@ test('a narrow transient survives overview aggregation without spaced bars', () 
   drawWaveformViewport(c,s,10,1,0,10,100,1);
   assert.ok(c.points.some(([x,y])=>x===.5&&y===4));
   assert.ok(c.points.some(([x,y])=>x===1.5&&y===49.5));
+});
+test('exact 65,536-peak Float32LE overview renders when Array.prototype.at is unavailable', () => {
+  const descriptor=Object.getOwnPropertyDescriptor(Array.prototype,'at');
+  try {
+    Object.defineProperty(Array.prototype,'at',{value:undefined,configurable:true,writable:true});
+    const c=canvas(),s=new Float32Array(65536);s[0]=1;s[65535]=.5;
+    drawWaveformViewport(c,s,3747.648,2,0,800,100,2);
+    assert.ok(c.points.length>0);
+  } finally { Object.defineProperty(Array.prototype,'at',descriptor); }
 });
 test('panning retains the existing bitmap until its guard is exhausted', () => {
   const c=canvas(),s=new Float32Array(64000).fill(.4);
