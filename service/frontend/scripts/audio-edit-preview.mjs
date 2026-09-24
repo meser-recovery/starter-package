@@ -4,7 +4,7 @@ export function mergeMutedRegions(regions, duration = Infinity) {
   for (const r of regions.filter(r => Number.isFinite(r.startSeconds) && Number.isFinite(r.endSeconds))
     .map(r => ({startSeconds: Math.max(0, r.startSeconds), endSeconds: Math.min(duration, r.endSeconds)}))
     .filter(r => r.endSeconds > r.startSeconds).sort((a,b) => a.startSeconds-b.startSeconds)) {
-    const last = result.at(-1);
+    const last = result[result.length - 1];
     if (last && r.startSeconds <= last.endSeconds) last.endSeconds = Math.max(last.endSeconds, r.endSeconds);
     else result.push({...r});
   }

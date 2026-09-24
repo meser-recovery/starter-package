@@ -69,7 +69,7 @@ export function parseSilences(logs, duration, minimum = MIN_SILENCE_SECONDS) {
   intervals.sort((a, b) => a[0] - b[0]);
   const merged = [];
   for (const interval of intervals) {
-    const previous = merged.at(-1);
+    const previous = merged[merged.length - 1];
     if (previous && interval[0] <= previous[1]) previous[1] = Math.max(previous[1], interval[1]);
     else merged.push(interval);
   }
@@ -88,7 +88,7 @@ export function commonSilences(analyses, duration) {
   for (const track of analyses) {
     const intervals = track.silences.map((interval) => [...interval]);
     if (track.duration < duration) {
-      const tail = intervals.at(-1);
+      const tail = intervals[intervals.length - 1];
       if (tail && tail[1] === track.duration) tail[1] = duration;
       else intervals.push([track.duration, duration]);
     }
@@ -139,7 +139,7 @@ export function makeMixFilter(trackCount, ranges, duration) {
 
 export function analysisDuration(progress) {
   const times = [...progress.matchAll(/^out_time_us=(\d+)$/gm)].map((match) => Number(match[1]) / 1e6);
-  const duration = times.at(-1);
+  const duration = times[times.length - 1];
   if (!progress.includes("progress=end") || !Number.isFinite(duration) || duration <= 0) {
     throw new Error("Не удалось определить длительность аудио.");
   }

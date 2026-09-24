@@ -45,8 +45,10 @@ export function drawWaveformViewport(canvas, samples, duration, pixelsPerSecond,
       ink.fillStyle = color; ink.beginPath();
       ink.moveTo((start - tileLeft) * dpr, mid - peaks[0]);
       for (let i = 0; i < peaks.length; i++) ink.lineTo((start + i + .5 - tileLeft) * dpr, mid - peaks[i]);
-      ink.lineTo((end - tileLeft) * dpr, mid - peaks.at(-1));
-      ink.lineTo((end - tileLeft) * dpr, mid + peaks.at(-1));
+      // Use index access: Array.prototype.at is optional in browser runtimes.
+      const lastPeak = peaks[peaks.length - 1];
+      ink.lineTo((end - tileLeft) * dpr, mid - lastPeak);
+      ink.lineTo((end - tileLeft) * dpr, mid + lastPeak);
       for (let i = peaks.length - 1; i >= 0; i--) ink.lineTo((start + i + .5 - tileLeft) * dpr, mid + peaks[i]);
       ink.lineTo((start - tileLeft) * dpr, mid + peaks[0]);
       ink.closePath(); ink.fill();

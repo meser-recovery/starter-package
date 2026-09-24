@@ -75,7 +75,7 @@ function normalizeGroup(regions) {
     left.endSeconds - right.endSeconds || left.regionId.localeCompare(right.regionId));
   const result = [];
   for (const region of ordered) {
-    const previous = result.at(-1);
+    const previous = result[result.length - 1];
     if (previous && region.startSeconds <= previous.endSeconds) {
       previous.endSeconds = Math.max(previous.endSeconds, region.endSeconds);
       previous.regionId = [previous.regionId, region.regionId].sort()[0];
@@ -212,7 +212,7 @@ export function parseLoudnormMeasurements(lines) {
   const matches = [...text.matchAll(/\{[\s\S]*?"input_i"[\s\S]*?\}/g)];
   if (!matches.length) fail("Не удалось получить надёжные измерения громкости.");
   let data;
-  try { data = JSON.parse(matches.at(-1)[0]); } catch { fail("Не удалось прочитать измерения громкости."); }
+  try { data = JSON.parse(matches[matches.length - 1][0]); } catch { fail("Не удалось прочитать измерения громкости."); }
   const fields = { input_i: "measured_I", input_tp: "measured_TP", input_lra: "measured_LRA", input_thresh: "measured_thresh", target_offset: "offset" };
   const bounded = {};
   for (const [source, target] of Object.entries(fields)) {

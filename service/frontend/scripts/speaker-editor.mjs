@@ -55,7 +55,7 @@ let confirmedUnload = false;
 function userMessage(error, fallback) {
   if (error?.waveformDiagnostic?.stage) return error.waveformDiagnostic.stage === "aborted" ?
     "Создание финальной версии отменено. Проект и исходники сохранены в памяти. Код диагностики: aborted." :
-    `${fallback} Код диагностики: ${error.waveformDiagnostic.stage}.`;
+    `${error.waveformDiagnostic.stage === "render" ? "Не удалось отрисовать форму сигнала." : fallback} Код диагностики: ${error.waveformDiagnostic.stage}.`;
   if (error?.name === "AbortError" || error?.message === "cancelled") return "Создание финальной версии отменено. Проект и исходники сохранены в памяти.";
   if ([401, 403].includes(error?.status)) return RECONNECT_MESSAGE;
   if (error?.status === 409) return "Проект или запись изменились в другом окне. Закройте работу, откройте её снова и повторите изменения.";
@@ -65,7 +65,7 @@ function userMessage(error, fallback) {
 
 const SAFE_DIAGNOSTIC_STAGES = new Set(["load", "source-reconstruction", "metadata", "ffmpeg-core-load", "engine-load",
   "write", "wasm-write", "seek-chunk", "exec", "ffmpeg-exec", "read", "wasm-read", "peak-conversion", "cleanup",
-  "worker-termination", "aborted"]);
+  "worker-termination", "parse", "validate", "render", "aborted"]);
 function safeDiagnostic(error, context = {}) {
   const source = error?.waveformDiagnostic || {};
   const stage = SAFE_DIAGNOSTIC_STAGES.has(source.stage) ? source.stage : error?.name === "AbortError" ? "aborted" : "load";
@@ -113,6 +113,7 @@ export function getSpeakerSaveState() {
     sourceEpoch: state.sourceEpoch,
     originalDuration: state.originalDuration,
     files: state.session?.sourceTracks.map(t => state.filesById.get(t.trackId)) || [],
+    waveformSampleCounts: state.tracks.map(track => track.samples?.length || 0),
     ready: state.ready,
     saving: state.saveLocked,
     renderProfile: state.lastRenderProfile ? structuredClone(state.lastRenderProfile) : null
@@ -1093,11 +1094,19 @@ async function prepareSources(epoch) {
     tracks.forEach((track, index) => { track.samples = preparedSamples[index]; });
     state.originalDuration = originalDuration; state.payload = normalized; state.history.reset(normalized);
     state.savedFingerprint = draft ? fingerprint(normalized) : "";
-    setupPlayback(); state.ready = true;
-    setSelection(0, originalDuration, state.payload.trackIds[0], "all");
-    render();
+    try {
+      setupPlayback(); state.ready = true;
+      setSelection(0, originalDuration, state.payload.trackIds[0], "all");
+      render();
+    } catch (error) {
+      if (!error?.waveformDiagnostic) error.waveformDiagnostic = Object.freeze({ stage: "render" });
+      throw error;
+    }
   } catch (error) {
     if (!current()) throw new DOMException("cancelled", "AbortError");
+    const report = safeDiagnostic(error, { trackIndex: activeTrack ? tracks.indexOf(activeTrack) + 1 : null });
+    if (!state.waveformDiagnostics.some(item => item.stage === report.stage && item.trackIndex === report.trackIndex)) state.waveformDiagnostics.push(report);
+    updateDiagnosticDisclosure();
     const detail = userMessage(error, "Не удалось декодировать аудио для формы сигнала.");
     if (activeTrack) activeTrack.preparationError = detail;
     const message = activeTrack ? `Не удалось подготовить «${activeTrack.file.name}». ${detail}` : detail;
