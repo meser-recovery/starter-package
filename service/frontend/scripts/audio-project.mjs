@@ -1,5 +1,5 @@
 import { normalizeAudioFilename, normalizedMediaType, validateSessionManifest } from './audio-archive-client.mjs';
-import { normalizeSpeakerPayload, resultDuration } from './speaker-editor-core.mjs';
+import { microseconds, normalizeSpeakerPayload, resultDuration } from './speaker-editor-core.mjs';
 
 export const RECONNECT_MESSAGE = 'Служебная сессия истекла. Войдите снова, чтобы продолжить.';
 const equal = (a, b) => JSON.stringify(a) === JSON.stringify(b);
@@ -55,6 +55,33 @@ export function bindLocalPayload(context, payload, plan, session, duration) {
 export function recordingBoundaries(payload, duration) {
   return { start: payload.globalCuts.find(c => c.startSeconds === 0)?.endSeconds || 0,
     end: payload.globalCuts.find(c => c.endSeconds === duration)?.startSeconds ?? duration };
+}
+// Waveform metadata is produced from the exact Source Session track SHA, so it
+// supplies one device-independent original-source timeline. Browser media
+// duration is only a compatibility check, never a persisted boundary.
+export function canonicalSourceDuration(browserDurations, verifiedDurations) {
+  if (!Array.isArray(browserDurations) || !Array.isArray(verifiedDurations) || !browserDurations.length ||
+      browserDurations.length !== verifiedDurations.length ||
+      browserDurations.some((duration, index) => !Number.isFinite(duration) || duration <= 0 ||
+        !Number.isFinite(verifiedDurations[index]) || verifiedDurations[index] <= 0 ||
+        Math.abs(duration - verifiedDurations[index]) > .5)) {
+    throw new Error('Длительность исходника не совпадает с проверенными данными Source Session.');
+  }
+  const canonical = verifiedDurations.map(duration => microseconds(duration));
+  if (Math.max(...canonical) - Math.min(...canonical) > .5) {
+    throw new Error('Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.');
+  }
+  return Math.max(...canonical);
+}
+// On the first save of local files, source ingestion precedes the project save.
+// Rebase only the explicit trailing boundary onto the newly verified timebase;
+// arbitrary interior cuts and track silence remain subject to strict validation.
+export function rebaseRecordingEnd(payload, browserDuration, canonicalDuration) {
+  const browserEnd = microseconds(browserDuration), sourceEnd = microseconds(canonicalDuration);
+  const next = structuredClone(payload);
+  next.globalCuts = next.globalCuts.map(cut => cut.startSeconds > 0 && cut.endSeconds === browserEnd
+    ? { ...cut, endSeconds: sourceEnd } : cut);
+  return next;
 }
 export function setRecordingBoundary(payload, duration, kind, value) {
   const bounds = recordingBoundaries(payload, duration), next = structuredClone(payload);

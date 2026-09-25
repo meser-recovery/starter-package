@@ -8,7 +8,7 @@ import { createWaveformReader } from "./speaker-waveform.mjs";
 import { safeWaveformDiagnostic } from "./speaker-waveform-diagnostics.mjs";
 import { LoudnessMeasurementCache, SourceIdentityRegistry } from "./speaker-render-cache.mjs";
 import { chooseSpeakerAnalysisConcurrency, runSpeakerAnalysisQueue } from "./speaker-analysis-queue.mjs";
-import { RECONNECT_MESSAGE, recordingBoundaries, setRecordingBoundary, loadExactConflictProjectState } from "./audio-project.mjs";
+import { RECONNECT_MESSAGE, canonicalSourceDuration, rebaseRecordingEnd, recordingBoundaries, setRecordingBoundary, loadExactConflictProjectState } from "./audio-project.mjs";
 import { sha256Hex } from "./audio-archive-client.mjs";
 import {
   SpeakerHistory, buildLevelingAnalysisFilter, buildSpeakerCandidate, buildSpeakerFilterGraph,
@@ -1064,7 +1064,7 @@ async function prepareSources(epoch) {
   const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
   let activeTrack, stage = "metadata";
   try {
-    const durations = []; const preparedSamples = [];
+    const durations = []; const verifiedDurations = []; const preparedSamples = [];
     for (const [index, track] of tracks.entries()) {
       activeTrack = track; track.preparationError = "";
       byId("status").textContent = `Подготовка дорожки ${index + 1} из ${tracks.length}: ${track.file.name}`;
@@ -1080,6 +1080,8 @@ async function prepareSources(epoch) {
           if (Math.abs(remote.duration - duration) > .5) throw Object.assign(new Error("Server waveform duration differs from verified media metadata."), {
             waveformDiagnostic: { stage: "metadata" }
           });
+          verifiedDurations.push(remote.duration);
+          track.duration = remote.duration;
           preparedSamples.push(remote.samples);
           state.waveformDiagnostics.push(Object.freeze({ stage: "read", trackIndex: index + 1, sourceBytes: track.file.size,
             chunkIndex: 1, chunkCount: 1, elapsedMs: Math.max(0, Math.round(performance.now() - started)), exceptionName: null,
@@ -1098,8 +1100,8 @@ async function prepareSources(epoch) {
     }
     activeTrack = null;
     stage = "validate";
-    const originalDuration = Math.max(...durations);
-    if (originalDuration - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.");
+    if (Math.max(...durations) - Math.min(...durations) > .5) throw new Error("Длительность дорожек различается больше чем на 0,5 секунды. Выберите дорожки одной и той же записи Zoom.");
+    const originalDuration = state.waveformProvider ? canonicalSourceDuration(durations, verifiedDurations) : microseconds(Math.max(...durations));
     const prepared = archivedPayload ? prepareLegacySpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration) :
       { payload: normalizeSpeakerPayload(payload, session.sourceTracks.map((track) => track.trackId), originalDuration), invalidGlobalCuts: [] };
     if (!current()) throw new DOMException("cancelled", "AbortError");
@@ -1157,7 +1159,8 @@ export async function saveSpeakerProject() {
   byId("status").textContent = "Сохранение проекта…"; updateRenderState();
   try {
     const result = await state.saveDraft({ session: structuredClone(state.session), draft: state.draft,
-      payload: submitted, files: state.session.sourceTracks.map(t => state.filesById.get(t.trackId)), duration: state.originalDuration, signal: state.projectController.signal,
+      payload: submitted, files: state.session.sourceTracks.map(t => state.filesById.get(t.trackId)), duration: state.originalDuration,
+      trackDurations: state.tracks.map(track => track.duration), signal: state.projectController.signal,
       onProgress: ({ uploadedBytes, totalBytes }) => { if (epoch === state.sourceEpoch) byId("status").textContent = `Сохранение исходных дорожек: ${Math.round(uploadedBytes / totalBytes * 100)}%`; } });
     if (epoch !== state.sourceEpoch || !result) return false;
     applySavedProject(result, submitted);
@@ -1201,6 +1204,7 @@ export async function saveSpeakerProject() {
         try {
           const result = await state.saveDraft({ session: structuredClone(error.latestSession), draft: error.latestDraft,
             payload: submitted, files: state.session.sourceTracks.map(t => state.filesById.get(t.trackId)), duration: state.originalDuration,
+            trackDurations: state.tracks.map(track => track.duration),
             signal: state.projectController.signal, forceLatest: true });
           if (epoch !== state.sourceEpoch || !result) return false;
           applySavedProject(result, submitted); state.onSaved?.(result); render(); return !currentDirty();
@@ -1221,15 +1225,32 @@ export async function saveSpeakerProject() {
 
 function applySavedProject(result, submitted) {
     if (result.mapping) {
+      const browserDuration = state.originalDuration;
+      const canonicalDuration = result.canonicalDuration ?? browserDuration;
+      state.originalDuration = canonicalDuration;
       const remap = id => result.mapping.get(id);
-      state.tracks.forEach(t => { t.trackId = remap(t.trackId); t.manifest = result.session.sourceTracks.find(s => s.trackId === t.trackId); });
+      state.tracks.forEach((t, index) => {
+        t.trackId = remap(t.trackId);
+        t.manifest = result.session.sourceTracks.find(s => s.trackId === t.trackId);
+        if (result.verifiedWaveforms) {
+          t.duration = result.verifiedWaveforms[index].duration;
+          t.samples = result.verifiedWaveforms[index].samples;
+        }
+      });
       state.filesById = new Map(state.tracks.map(t => [t.trackId, t.file]));
       const remapPayload = payload => {
-        const next = structuredClone(payload); next.trackIds = next.trackIds.map(remap); next.excludedTrackIds = next.excludedTrackIds.map(remap);
+        const next = rebaseRecordingEnd(payload, browserDuration, canonicalDuration);
+        next.trackIds = next.trackIds.map(remap); next.excludedTrackIds = next.excludedTrackIds.map(remap);
         for (const value of [...next.trackProcessing, ...next.trackSilenceRegions]) value.trackId = remap(value.trackId);
         return normalizeSpeakerPayload(next, result.session.sourceTracks.map(t => t.trackId), state.originalDuration);
       };
-      state.history.past = state.history.past.map(remapPayload); state.history.future = state.history.future.map(remapPayload);
+      try {
+        state.history.past = state.history.past.map(remapPayload);
+        state.history.future = state.history.future.map(remapPayload);
+      } catch {
+        // A discarded local undo state must not invalidate a successfully saved canonical project.
+        state.history.past = []; state.history.future = [];
+      }
       state.payload = structuredClone(result.draft.payload); state.history.present = structuredClone(state.payload);
       // Keep the local MP3 downloadable, but never relabel its source provenance.
       if (state.candidate) byId("render-status").textContent = "Проект сохранён. Создайте финальную версию заново, чтобы сохранить её в аудиоархив.";
@@ -1238,6 +1259,9 @@ function applySavedProject(result, submitted) {
     state.savedFingerprint = fingerprint(result.draft.payload);
     const select = byId("selection-track"); select.replaceChildren();
     for (const t of state.tracks) { const option = element("option", "", t.file.name); option.value = t.trackId; select.append(option); }
+    if (result.mapping && result.canonicalDuration !== undefined) {
+      setSelection(0, state.originalDuration, state.payload.trackIds[0], "all");
+    }
 }
 
 function dialogChoice(id, choices) {
