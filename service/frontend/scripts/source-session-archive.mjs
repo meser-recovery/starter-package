@@ -5,7 +5,7 @@ import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImp
   createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSpeakerOutput, prepareRemoteSourceBatch, remoteSourceFingerprint } from "./audio-archive-client.mjs";
 import { ServiceSessionController } from "./service-session.mjs";
-import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAudioSelection, ingestionSessionId } from './audio-file-selection.mjs';
+import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAudioSelection, ingestionSessionId, prepareLocalIngestionSelection } from './audio-file-selection.mjs';
 import { bindProcessorSources, setProcessorSelectionGuard, waitProcessorIdle, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
@@ -28,6 +28,7 @@ const state = {
   mode: "archive",
   pendingFiles: [],
   ingestAttempt: null,
+  ingestPreparing: false,
   ingestPickerMode: 'replace',
   recoverySelection: new AudioFileSelection(),
   pendingOrigin: "manual",
@@ -1128,7 +1129,7 @@ function renderImportFiles() {
 }
 
 function renderIngestSelection() {
-  const files = state.pendingFiles, locked = Boolean(state.ingestAttempt || state.uploadController);
+  const files = state.pendingFiles, locked = Boolean(state.ingestAttempt || state.ingestPreparing || state.uploadController);
   renderAudioSelection(byId('ingest-list'), byId('ingest-selection'), files, formatBytes);
   byId('ingest-pick').hidden = Boolean(files.length);
   byId('ingest-add').hidden = !files.length;
@@ -1166,6 +1167,7 @@ function localSelectionText(files) {
 
 async function submitIngestion(event) {
   event.preventDefault();
+  if (state.ingestPreparing || state.uploadController) return;
   let attempt = state.ingestAttempt;
   if (!attempt) {
     const files = [...state.pendingFiles], fileError = validateAudioSelection(files);
@@ -1175,6 +1177,31 @@ async function submitIngestion(event) {
     let recordedAt;
     try { recordedAt = recordedTimestamp(byId('ingest-recorded')); }
     catch (error) { byId('ingest-status').textContent = error.message; return; }
+    state.ingestPreparing = true; renderIngestSelection(); byId('ingest-submit').disabled = true;
+    try {
+      const speaker = getSpeakerSaveState();
+      const prepared = await prepareLocalIngestionSelection(files, {
+        speakerFiles: speaker.session?.kind === 'local' ? speaker.files : null,
+        closeSpeaker: () => closeSpeakerEditor(false), waitForIdle: waitProcessorIdle,
+        currentFiles: getProcessorFiles, loadFiles: loadProcessorFiles
+      });
+      if (prepared.declined) {
+        byId('ingest-status').textContent = 'Переход к новым дорожкам отменён. Проект, выбранные файлы и поля формы сохранены.';
+        return;
+      }
+      if (prepared.switched) {
+        if (getSpeakerSaveState().session) throw new Error('Предыдущий проект «Спикерская» ещё открыт.');
+        state.activeSession = null; state.activeManifest = null; state.preparedBatch = null;
+        state.announcementDraft = null; state.candidate = null; state.processorProvenance = [];
+        state.localContext = localSourceContext(files); state.localProject = new ProjectSave(gateway);
+        renderCurrentRecording(); renderImportFiles(); renderResultArchive();
+      }
+    } catch (error) {
+      byId('ingest-status').textContent = `${userError(error, error?.message || 'Не удалось подготовить новые исходники.')} Выбранные файлы и поля формы сохранены.`;
+      return;
+    } finally {
+      state.ingestPreparing = false; renderIngestSelection(); byId('ingest-submit').disabled = false;
+    }
     attempt = Object.freeze({ files: Object.freeze(files), title, recordedAt, origin: state.pendingOrigin,
       key: state.retryKey, plan: null });
     state.ingestAttempt = attempt;
@@ -1820,7 +1847,7 @@ for (const [id, mode] of [['ingest-pick', 'replace'], ['ingest-add', 'add'], ['i
   byId(id).addEventListener('click', () => { state.ingestPickerMode = mode; byId('ingest-files').value = ''; byId('ingest-files').click(); });
 }
 byId('ingest-files').addEventListener('change', event => {
-  if (state.ingestAttempt) return;
+  if (state.ingestAttempt || state.ingestPreparing) return;
   const picked = Array.from(event.target.files || []);
   if (!picked.length) return;
   const next = state.ingestPickerMode === 'add' ? [...state.pendingFiles, ...picked] : picked;
@@ -1830,9 +1857,11 @@ byId('ingest-files').addEventListener('change', event => {
 });
 byId("ingest-form").addEventListener("submit", submitIngestion);
 byId("ingest-cancel").addEventListener("click", () => {
+  if (state.ingestPreparing) return;
   if (state.uploadController) state.uploadController.abort();
   else byId("ingest-dialog").close();
 });
+byId("ingest-dialog").addEventListener("cancel", event => { if (state.ingestPreparing) event.preventDefault(); });
 byId("delete-form").addEventListener("submit", submitDeletion);
 byId("delete-cancel").addEventListener("click", () => { if (!state.deleteBusy) byId("delete-dialog").close(); });
 byId("delete-dialog").addEventListener("cancel", event => { if (state.deleteBusy) event.preventDefault(); });

@@ -8,6 +8,8 @@ import { SessionRegistry, createPasswordVerifier, readSession } from "../../gate
 import { nodeResponseHeaders } from "../../gateway/audio-archive/src/http-adapter.mjs";
 import { AudioArchiveDomain } from '../../gateway/audio-archive/src/domain.mjs';
 import { MemoryRepository } from '../../gateway/audio-archive/test/helpers.mjs';
+import { createHash } from 'node:crypto';
+import { WAVEFORM_ALGORITHM, WAVEFORM_PEAK_COUNT, WAVEFORM_BODY_BYTES } from '../../gateway/audio-archive/src/waveform.mjs';
 
 const port = Number(process.argv[2] || 4173);
 const origin = process.argv[3] || `http://localhost:${port}`;
@@ -18,12 +20,26 @@ const canonicalCookie = "__Host-meser_service_session";
 const verifier = await createPasswordVerifier("local-test-password", Buffer.alloc(16, 11), { N: 16384, r: 8, p: 1 });
 const sessions = new SessionRegistry({ maxEntries: 16 });
 // Synthetic, process-local archive. It cannot access production storage or credentials.
-const domain = new AudioArchiveDomain(new MemoryRepository(), { acceptedPartBytes: 1024 });
+const repository = new MemoryRepository();
+const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 1024 });
+const emptyPeaks = Buffer.alloc(WAVEFORM_BODY_BYTES);
+const peakDigest = createHash('sha256').update(emptyPeaks).digest('hex');
+const waveformService = { get: async (sessionId, blobId) => {
+  const source = await domain.waveformSource(sessionId, blobId);
+  const bytes = Buffer.concat(source.parts.map(part => repository.assetBytes.get(part.assetId)));
+  if (createHash('sha256').update(bytes).digest('hex') !== source.sha256 || source.mediaType !== 'audio/wav' ||
+      bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') throw new Error('Synthetic preview supports verified WAV waveform only');
+  const sampleRate = bytes.readUInt32LE(24), channels = bytes.readUInt16LE(22), bits = bytes.readUInt16LE(34);
+  const durationSeconds = (bytes.length - 44) / (sampleRate * channels * bits / 8);
+  if (!(durationSeconds > 0)) throw new Error('Invalid synthetic WAV duration');
+  return { body: emptyPeaks, algorithm: WAVEFORM_ALGORITHM, peakCount: WAVEFORM_PEAK_COUNT,
+    durationSeconds, sourceSha256: source.sha256, resultSha256: peakDigest, cache: 'synthetic' };
+} };
 const config = {
   allowedOrigin: origin, acceptedPartBytes: 1024, sessionSigningSecret: secret,
   sessionLifetimeSeconds: 4 * 60 * 60, activeSessionLimit: 16, sharedPasswordVerifier: verifier
 };
-const app = createApp({ config, domain, sessionRegistry: sessions });
+const app = createApp({ config, domain, waveformService, sessionRegistry: sessions });
 
 const publicPaths = new Set([
   "/login", "/login.html", "/scripts/origin-guard.js", "/scripts/service-login.mjs",

@@ -69,11 +69,14 @@ jobs:
           server_pid=$!
           node tests/safety/s10a_preview_server.mjs 4173 http://localhost:4173 >/tmp/service-preview.log 2>&1 &
           preview_pid=$!
-          trap 'kill "$server_pid" "$preview_pid"' EXIT
+          node tests/safety/s10b_preview_server.mjs 4174 http://localhost:4174 >/tmp/s10b-preview.log 2>&1 &
+          s10b_preview_pid=$!
+          trap 'kill "$server_pid" "$preview_pid" "$s10b_preview_pid"' EXIT
           python3 tests/safety/browser_smoke.py --base-url http://127.0.0.1:8000
           python3 tests/safety/s10a_browser_smoke.py --base-url http://localhost:4173 --browser all
           python3 tests/safety/s10a_ui_corrective_smoke.py --base-url http://localhost:4173 --browser all
           python3 tests/safety/s10a_mobile_waveform_smoke.py --base-url http://127.0.0.1:8000 --browser all
+          python3 tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser all
       - name: Verify protected frontend inventory and script syntax
         run: |
           node service/tools/verify-frontend.mjs

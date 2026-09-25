@@ -34,6 +34,22 @@ export function renderAudioSelection(list, summary, files, formatBytes) {
   summary.textContent = files.length ? `${files.length} дорожек · ${formatBytes(files.reduce((sum, file) => sum + file.size, 0))}` : 'Файлы не выбраны';
 }
 
+export function sameFileReferences(left, right) {
+  return left.length === right.length && left.every((file, index) => file === right[index]);
+}
+
+// Resolve a local Speaker source change before any ingestion transaction can begin.
+// The caller keeps its form and File objects if closing the current project is declined.
+export async function prepareLocalIngestionSelection(files, { speakerFiles = null, closeSpeaker, waitForIdle, currentFiles, loadFiles }) {
+  if (speakerFiles && sameFileReferences(files, speakerFiles)) return { switched: false, declined: false };
+  if (!speakerFiles && sameFileReferences(files, currentFiles())) return { switched: false, declined: false };
+  if (speakerFiles && !await closeSpeaker()) return { switched: false, declined: true };
+  await waitForIdle();
+  loadFiles(files);
+  if (!sameFileReferences(files, currentFiles())) throw new Error('Новые дорожки не стали текущими локальными исходниками.');
+  return { switched: true, declined: false };
+}
+
 // File objects live in memory so a cancelled picker or service reconnect cannot clear them.
 export class AudioFileSelection {
   files = [];

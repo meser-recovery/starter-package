@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { AudioFileSelection, ingestionSessionId, recordedTimestamp, validateAudioSelection } from '../../service/frontend/scripts/audio-file-selection.mjs';
+import { AudioFileSelection, ingestionSessionId, recordedTimestamp, validateAudioSelection,
+  sameFileReferences, prepareLocalIngestionSelection } from '../../service/frontend/scripts/audio-file-selection.mjs';
 import { AudioArchiveGateway } from '../../service/frontend/scripts/audio-archive-client.mjs';
 import { uuidFromIdempotencyKey } from '../../gateway/audio-archive/src/validation.mjs';
 
@@ -18,6 +19,50 @@ test('local add, replace and cancelled picker retain exact File references and o
   assert.deepEqual(selected.files, [first, second]);
   selected.choose([replacement], 'replace');
   assert.deepEqual(selected.files, [replacement]);
+});
+
+test('A to B requires protected Speaker transition before replacing sources or writing to Archive', async () => {
+  for (const [a, b] of [
+    [audio('A.wav', [1, 2]), audio('B.wav', [3, 4])],
+    [audio('same.wav', [1, 2]), audio('same.wav', [3, 4])]
+  ]) {
+    if (a.name === b.name) {
+      assert.equal(a.size, b.size);
+      assert.notDeepEqual(new Uint8Array(await a.arrayBuffer()), new Uint8Array(await b.arrayBuffer()));
+    }
+    assert.equal(sameFileReferences([a], [b]), false);
+    let current = [a], writes = 0, closes = 0, loads = 0;
+    const controls = {
+      speakerFiles: [a], currentFiles: () => current,
+      closeSpeaker: async () => { closes++; return false; },
+      waitForIdle: async () => {},
+      loadFiles: files => { loads++; current = [...files]; }
+    };
+    const declined = await prepareLocalIngestionSelection([b], controls);
+    assert.deepEqual(declined, { switched: false, declined: true });
+    assert.equal(closes, 1); assert.equal(loads, 0); assert.equal(writes, 0);
+    assert.deepEqual(current, [a]);
+    controls.closeSpeaker = async () => { closes++; return true; };
+    const accepted = await prepareLocalIngestionSelection([b], controls);
+    assert.deepEqual(accepted, { switched: true, declined: false });
+    assert.equal(closes, 2); assert.equal(loads, 1); assert.equal(writes, 0);
+    assert.equal(current[0], b);
+    // The caller may begin its one keyed ingestion only after B is current.
+    if (sameFileReferences(current, [b])) writes++;
+    assert.equal(writes, 1);
+  }
+});
+
+test('unchanged Speaker File references preserve the active montage and picker cancellation is not replacement', async () => {
+  const a = audio('same.wav', [1, 2]);
+  let calls = 0;
+  const controls = { speakerFiles: [a], currentFiles: () => [a], closeSpeaker: async () => { calls++; return true; },
+    waitForIdle: async () => { calls++; }, loadFiles: () => { calls++; } };
+  assert.deepEqual(await prepareLocalIngestionSelection([a], controls), { switched: false, declined: false });
+  const selected = new AudioFileSelection(); selected.choose([a]);
+  assert.equal(selected.choose([], 'replace'), false);
+  assert.deepEqual(await prepareLocalIngestionSelection(selected.files, controls), { switched: false, declined: false });
+  assert.equal(calls, 0);
 });
 
 test('selection validation and optional timestamp reject invalid form values before upload', () => {
