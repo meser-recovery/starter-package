@@ -38,6 +38,11 @@ export function validateFile(file) {
 
 export function validateFiles(files) {
   if (files.some((file) => !/\.(mp3|m4a|wav)$/i.test(file.name))) return "Поддерживаются файлы MP3, M4A и WAV.";
+  if (files.some((file) => !Number.isSafeInteger(file.size) || file.size < 1)) return "Пустые аудиофайлы загружать нельзя.";
+  const mediaTypes = { mp3: ['audio/mpeg'], m4a: ['audio/mp4', 'audio/x-m4a'], wav: ['audio/wav', 'audio/x-wav'] };
+  if (files.some(file => file.type && !mediaTypes[file.name.split('.').pop().toLowerCase()].includes(file.type.toLowerCase().split(';')[0].trim()))) {
+    return 'Тип аудиофайла не соответствует его расширению.';
+  }
   if (files.reduce((sum, file) => sum + file.size, 0) > MAX_INPUT_BYTES) {
     return "Общий размер файлов слишком большой для обработки в браузере. Максимальный размер — 500 МБ.";
   }
@@ -248,6 +253,9 @@ function notifyProcessorResult() {
 }
 
 const idleWaiters = new Set();
+export async function waitProcessorIdle() {
+  if (active) await new Promise(resolve => idleWaiters.add(resolve));
+}
 export async function bindProcessorSources(files, provenance, context) {
   if (active) await new Promise(resolve => idleWaiters.add(resolve));
   if (files.length !== selectedFiles.length || files.some((file, i) => file !== selectedFiles[i]) || provenance.length !== files.length) throw new Error("Состав выбранных дорожек изменился.");
@@ -329,7 +337,7 @@ function clearResult() {
 }
 
 function setBusy(busy) {
-  input.disabled = busy || !supported;
+  input.disabled = !supported;
   run.disabled = busy || !selectedFiles.length || !supported;
   cancel.hidden = !busy;
   progress.hidden = !busy;
@@ -1302,10 +1310,12 @@ async function generateWaveforms(candidates = tracks) {
 
 function selectProcessorFiles(candidates, provenance = [], context = null) {
   if (active) return;
+  const files = Array.from(candidates || []);
+  if (!files.length) return;
+  const error = validateFiles(files);
+  if (error) { status.textContent = error; syncInputFiles(); return; }
   clearResult();
   clearTracks(false);
-  const files = Array.from(candidates || []);
-  const error = validateFiles(files);
   status.textContent = error || "Выберите файлы и нажмите «Обработать».";
   if (files.length && !error && supported) {
     tracks = files.map((file, index) => ({
@@ -1326,9 +1336,14 @@ function selectProcessorFiles(candidates, provenance = [], context = null) {
 }
 
 let selectionGuard = async () => true;
+let fileSelectionSequence = 0;
 export function setProcessorSelectionGuard(guard) { selectionGuard = guard; }
 input.addEventListener("change", async () => {
+  const sequence = ++fileSelectionSequence;
   const files = [...input.files];
+  if (!files.length) { syncInputFiles(); return; }
+  await waitProcessorIdle();
+  if (sequence !== fileSelectionSequence) return;
   if (await selectionGuard()) selectProcessorFiles(files); else syncInputFiles();
 });
 

@@ -1215,6 +1215,14 @@
 .audio-studio .archive-heading .archive-intro { margin:5px 0 0; color:var(--portal-muted); font-size:.84rem; }
 .audio-studio .archive-heading .portal-link { min-height:42px; padding:10px 18px; text-decoration:none; }
 .audio-studio .archive-entry-actions { display:none; }
+.audio-studio .audio-file-input { display:none; }
+.audio-studio .audio-file-actions { display:flex; flex-wrap:wrap; gap:8px; margin-block:10px; }
+.audio-studio .audio-file-list { padding-inline-start:1.6rem; margin-block:8px; }
+.audio-studio .audio-file-list li { overflow-wrap:anywhere; margin-block:4px; }
+.audio-studio .archive-create { max-width:720px; margin-block:20px; }
+.audio-studio .archive-create form { display:grid; gap:14px; }
+.audio-studio .archive-create-files { min-width:0; }
+.audio-studio .archive-create progress { width:100%; }
 .audio-studio .record-picker { margin-top:20px; padding:0; border:0; border-radius:0; background:#fff; }
 .audio-studio .record-picker .picker-heading { display:none; }
 .audio-studio .record-picker .filters { padding:0; display:grid; grid-template-columns:minmax(0,1fr) 150px auto; gap:9px; border:0; border-radius:0; background:#fff; }
