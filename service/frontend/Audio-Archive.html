@@ -23,7 +23,23 @@
   <main id="main-content" class="audio-editor-main archive-main">
     <div class="container archive-management">
       <div id="archive-index">
-        <div class="archive-heading"><div><div><p class="portal-kicker">Аудиопортал</p><h1>Аудиоархив</h1><p class="archive-intro">Ваши Zoom-записи, проекты и результаты</p></div><a class="portal-link action-primary" href="Audio-Editor.html">+ Новая запись</a></div></div>
+        <div class="archive-heading"><div><div><p class="portal-kicker">Аудиопортал</p><h1>Аудиоархив</h1><p class="archive-intro">Ваши Zoom-записи, проекты и результаты</p></div><button id="archive-create-open" class="action-primary" type="button" aria-expanded="false" aria-controls="archive-create">+ Создать запись</button></div></div>
+        <section id="archive-create" class="archive-create archive-card" aria-labelledby="archive-create-title" hidden>
+          <h2 id="archive-create-title" tabindex="-1">Создать запись Zoom</h2>
+          <p>Выберите исходные дорожки одной записи. Они попадут в архив только после сохранения.</p>
+          <form id="archive-create-form">
+            <label for="archive-create-name">Название записи <input id="archive-create-name" type="text" maxlength="200" required autocomplete="off"></label>
+            <label for="archive-create-recorded">Дата и время записи (необязательно) <input id="archive-create-recorded" type="datetime-local"></label>
+            <div class="archive-create-files"><span>Исходные дорожки · MP3, M4A или WAV · до 500 МБ</span>
+              <input id="archive-create-files" class="audio-file-input" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-label="Исходные дорожки">
+              <div class="audio-file-actions"><button id="archive-create-pick" type="button">Выбрать файлы</button><button id="archive-create-add" type="button" hidden>Добавить дорожки</button><button id="archive-create-replace" type="button" hidden>Выбрать заново</button></div>
+              <p id="archive-create-summary">Файлы не выбраны</p><ol id="archive-create-list" class="audio-file-list"></ol>
+            </div>
+            <p id="archive-create-status" role="status" aria-live="polite"></p>
+            <progress id="archive-create-progress" max="100" hidden aria-label="Передача исходных дорожек"></progress>
+            <div class="audio-file-actions"><button id="archive-create-submit" class="action-primary" type="submit">Сохранить запись</button><button id="archive-create-cancel" type="button">Отмена</button></div>
+          </form>
+        </section>
         <div class="archive-entry-actions"><button id="record-picker-open" class="action-primary" type="button" aria-expanded="false" aria-controls="records">Показать записи</button></div>
       <section id="records" class="record-picker" aria-labelledby="records-title" hidden><div class="picker-heading"><h2 id="records-title" tabindex="-1">Выбрать запись</h2><button id="record-picker-close" type="button">Закрыть</button></div>
         <form id="filters" class="filters" role="search">

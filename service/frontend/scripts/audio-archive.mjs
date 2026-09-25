@@ -10,6 +10,7 @@ import {
   processingAvailabilityMessage, pageItems, latestOutput
 } from './audio-archive-core.mjs';
 import { ServiceSessionController, SERVICE_SESSION_EXPIRED_MESSAGE } from './service-session.mjs';
+import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAudioSelection, ingestionSessionId } from './audio-file-selection.mjs';
 
 const $ = id => document.getElementById(id);
 const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || '');
@@ -21,6 +22,90 @@ const state = {
   resultSort: { announcement: 'newest', speaker: 'newest' },
   picker: { open: false, requested: false, page: 0, pageSize: 10 }
 };
+const creation = { selection: new AudioFileSelection(), attempt: null, controller: null, pickerMode: 'replace' };
+
+function creationStatus(value, tone = '') {
+  $('archive-create-status').textContent = value;
+  $('archive-create-status').dataset.tone = tone;
+}
+function renderCreation() {
+  const files = creation.selection.files, locked = Boolean(creation.attempt);
+  renderAudioSelection($('archive-create-list'), $('archive-create-summary'), files, bytesLabel);
+  $('archive-create-pick').hidden = Boolean(files.length);
+  $('archive-create-add').hidden = !files.length;
+  $('archive-create-replace').hidden = !files.length;
+  for (const id of ['archive-create-name', 'archive-create-recorded', 'archive-create-pick', 'archive-create-add', 'archive-create-replace']) $(id).disabled = locked || Boolean(creation.controller);
+  $('archive-create-submit').disabled = Boolean(creation.controller);
+  $('archive-create-submit').textContent = locked ? 'Проверить и продолжить сохранение' : 'Сохранить запись';
+}
+function closeCreation() {
+  if (creation.controller) { creation.controller.abort(); creationStatus('Передача остановлена. Введённые данные и файлы сохранены для безопасного продолжения.'); return; }
+  if (!creation.attempt) { creation.selection.clear(); $('archive-create-form').reset(); creationStatus(''); renderCreation(); }
+  $('archive-create').hidden = true; $('archive-create-open').setAttribute('aria-expanded', 'false'); $('archive-create-open').focus();
+}
+function confirmedCreation(session, attempt, plan) {
+  return validateSessionManifest(session) && session.title === attempt.title && session.recordedAt === attempt.recordedAt &&
+    session.origin.kind === 'manual' && session.sourceState === 'available' &&
+    session.sourceTracks.length === attempt.files.length && session.sourceTracks.every((track, index) =>
+      track.ordinal === index + 1 && track.originalName === plan.tracks[index].originalName &&
+      track.mediaType === plan.tracks[index].mediaType && track.sizeBytes === plan.tracks[index].sizeBytes && track.sha256 === plan.tracks[index].sha256);
+}
+async function saveCreation(event) {
+  event.preventDefault();
+  if (creation.controller) return;
+  let attempt = creation.attempt;
+  if (!attempt) {
+    const title = $('archive-create-name').value.trim(), files = [...creation.selection.files];
+    if (!title || title.length > 200) { creationStatus('Введите название длиной не более 200 символов.', 'error'); return; }
+    const fileError = validateAudioSelection(files);
+    if (fileError) { creationStatus(fileError, 'error'); return; }
+    let recordedAt;
+    try { recordedAt = recordedTimestamp($('archive-create-recorded')); }
+    catch (error) { creationStatus(error.message, 'error'); return; }
+    attempt = Object.freeze({ title, recordedAt, files: Object.freeze(files), key: crypto.randomUUID(), plan: null });
+    creation.attempt = attempt;
+  }
+  const controller = new AbortController(); creation.controller = controller; renderCreation();
+  $('archive-create-progress').hidden = false; $('archive-create-progress').value = 0;
+  creationStatus('Проверка и хеширование файлов…');
+  let plan = attempt.plan;
+  try {
+    if (attempt.plan) {
+      creationStatus('Проверяем, завершилось ли прежнее сохранение…');
+      try {
+        const existing = await gateway.getSession(await ingestionSessionId(attempt.key), controller.signal);
+        if (!confirmedCreation(existing, attempt, attempt.plan)) throw new Error('Найденная запись не совпадает с исходными файлами.');
+        creation.attempt = null; creation.selection.clear(); $('archive-create-form').reset(); creationStatus(''); $('archive-create-progress').hidden = true; renderCreation();
+        $('archive-create').hidden = true; $('archive-create-open').setAttribute('aria-expanded', 'false');
+        state.picker.requested = true; await refresh(); await openDetail(existing.id, { updateUrl: true });
+        setArchiveStatus(state.authenticated ? 'Запись Zoom сохранена в аудиоархиве.' : 'Запись сохранена. Войдите снова, чтобы открыть её.', 'ready');
+        return;
+      } catch (error) { if (error?.status !== 404) throw error; }
+    }
+    // A repeat always uses this exact File snapshot, metadata and key. The gateway
+    // returns a finalized session immediately when the previous response was lost.
+    const result = await gateway.ingestFiles({ files: attempt.files, title: attempt.title, recordedAt: attempt.recordedAt,
+      origin: 'manual', idempotencyKey: attempt.key, signal: controller.signal,
+      onPlan: value => { plan = value; creation.attempt = Object.freeze({ ...attempt, plan: value }); creationStatus('Хеширование завершено. Подготавливаем передачу…'); },
+      onStarted: () => creationStatus('Передача частей в архив…'),
+      onProgress: ({ uploadedBytes, totalBytes, uploadedParts, totalParts }) => {
+        $('archive-create-progress').value = Math.round(uploadedBytes / totalBytes * 100);
+        creationStatus(`Передано частей: ${uploadedParts} из ${totalParts}. Ожидаем завершения сохранения.`);
+      },
+      onFinalizing: () => creationStatus('Все части переданы. Проверяем и завершаем запись в архиве…')
+    });
+    const session = result.session || result;
+    if (!confirmedCreation(session, attempt, plan)) throw new Error('Ответ архива не подтвердил состав сохранённой записи.');
+    creation.attempt = null; creation.selection.clear(); $('archive-create-form').reset(); creationStatus(''); $('archive-create-progress').hidden = true; renderCreation();
+    $('archive-create').hidden = true; $('archive-create-open').setAttribute('aria-expanded', 'false');
+    state.picker.requested = true; await refresh();
+    await openDetail(session.id, { updateUrl: true });
+    setArchiveStatus(state.authenticated ? 'Запись Zoom сохранена в аудиоархиве.' : 'Запись сохранена. Войдите снова, чтобы открыть её.', 'ready');
+  } catch (error) {
+    if (error?.status === 401) { clearSession(); creationStatus(`${SERVICE_SESSION_EXPIRED_MESSAGE} После входа продолжите сохранение.`, 'error'); }
+    else creationStatus(error?.name === 'AbortError' ? 'Передача остановлена. Файлы и данные сохранены; проверьте и продолжите тем же действием.' : `${message(error)} Файлы и данные сохранены для безопасного повтора.`, 'error');
+  } finally { creation.controller = null; renderCreation(); }
+}
 
 function element(tag, text, className) {
   const node = document.createElement(tag);
@@ -594,6 +679,20 @@ function applyLegacyAnchor() {
 }
 
 $('record-picker-open').addEventListener('click', openRecordPicker); $('record-picker-close').addEventListener('click', closeRecordPicker);
+$('archive-create-open').addEventListener('click', () => {
+  $('archive-create').hidden = false; $('archive-create-open').setAttribute('aria-expanded', 'true');
+  renderCreation(); $('archive-create-title').focus();
+});
+$('archive-create-cancel').addEventListener('click', closeCreation);
+for (const [id, mode] of [['archive-create-pick', 'replace'], ['archive-create-add', 'add'], ['archive-create-replace', 'replace']]) {
+  $(id).addEventListener('click', () => { creation.pickerMode = mode; $('archive-create-files').value = ''; $('archive-create-files').click(); });
+}
+$('archive-create-files').addEventListener('change', event => {
+  try { if (creation.selection.choose(event.target.files, creation.pickerMode)) { creationStatus(''); renderCreation(); } }
+  catch (error) { creationStatus(error.message, 'error'); }
+  event.target.value = '';
+});
+$('archive-create-form').addEventListener('submit', saveCreation);
 $('filters').addEventListener('submit', event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderRecords(); });
 $('record-picker-recent').addEventListener('click', () => { $('filters').elements.search.value = ''; $('filters').elements.month.value = ''; $('filters').elements.sort.value = 'newest'; state.picker.requested = true; state.picker.page = 0; renderRecords(); });
 $('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; renderRecords(); }));

@@ -55,9 +55,8 @@
         <section id="speaker-project-recovery" class="archive-card contextual-recovery" aria-labelledby="speaker-project-recovery-heading" hidden>
           <h3 id="speaker-project-recovery-heading">Восстановление проекта «Спикерская»</h3>
           <p id="speaker-project-recovery-status" role="status" aria-live="polite">Проект сохранён, но исходные дорожки недоступны.</p>
-          <label for="speaker-project-recovery-files">Подключить исходные дорожки с устройства</label>
-          <input id="speaker-project-recovery-files" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav">
-          <div class="action-group"><button id="speaker-project-recovery-attach" type="button">Подключить исходные дорожки с устройства</button><button id="speaker-project-recovery-ingest" type="button" hidden>Сохранить восстановленные исходники как новую запись Zoom</button><button id="speaker-project-recovery-continue" type="button" hidden>Продолжить проект в новой записи</button></div>
+          <input id="speaker-project-recovery-files" class="audio-file-input" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-label="Исходные дорожки для восстановления">
+          <div class="action-group"><button id="speaker-project-recovery-pick" type="button">Выбрать файлы</button><button id="speaker-project-recovery-add" type="button" hidden>Добавить дорожки</button><button id="speaker-project-recovery-replace" type="button" hidden>Выбрать заново</button><button id="speaker-project-recovery-attach" type="button" disabled>Подключить исходные дорожки с устройства</button><button id="speaker-project-recovery-ingest" type="button" hidden>Сохранить восстановленные исходники как новую запись Zoom</button><button id="speaker-project-recovery-continue" type="button" hidden>Продолжить проект в новой записи</button></div><p id="speaker-project-recovery-summary">Файлы не выбраны</p><ol id="speaker-project-recovery-list" class="audio-file-list"></ol>
         </section>
         <details id="import-zone" class="archive-card source-session-card" role="dialog" aria-modal="true" hidden><summary><span><strong id="source-session-heading">Выбор записи</strong><small id="import-summary">Запись не выбрана</small></span></summary>
           <div class="archive-card__heading">
@@ -78,11 +77,11 @@
 
           </div>
           <div id="source-session-device-panel" hidden><h3>Выберите аудиодорожки</h3><p>Файлы останутся на этом устройстве, пока вы явно не сохраните запись в аудиоархив.</p><div id="processor-device-field" class="processor-field source-dropzone">
-            <label for="processor-file">Выберите аудиодорожки</label>
+            <label for="processor-file">Исходные аудиодорожки</label>
             <p id="processor-file-help">MP3, M4A или WAV. Общий размер всех файлов — не более 500 МБ. Результат — MP3, 128 кбит/с.</p>
-            <input id="processor-file" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-describedby="processor-file-help processor-privacy">
+            <input id="processor-file" class="audio-file-input" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-label="Исходные аудиодорожки" aria-describedby="processor-file-help processor-privacy">
           </div>
-<div class="action-group"><button id="import-add" type="button">Добавить дорожки</button><button id="import-replace" type="button">Заменить дорожки</button></div>
+<div class="action-group"><button id="import-replace" type="button">Выбрать файлы</button><button id="import-add" type="button" hidden>Добавить дорожки</button></div>
 <input id="import-add-files" type="file" multiple accept=".mp3,.m4a,.wav" hidden>
 <ul id="import-files" aria-label="Выбранные файлы"></ul><button id="source-session-use-local" class="action-primary source-session-use-local" type="button" hidden disabled>Использовать эти дорожки</button><div class="device-import-feedback"><p id="device-import-status" role="status">Выберите аудиодорожки.</p><progress id="device-import-progress" aria-label="Подготовка локальных дорожек" hidden></progress><button id="device-import-cancel" type="button" hidden>Отменить подготовку</button></div><div id="processor-device-ingest-actions" class="secondary-action-group">
               <p>Сохраните исходные дорожки, если хотите открыть их позже или использовать на другом устройстве. Для обработки только на этом устройстве это не требуется.</p>
@@ -365,10 +364,11 @@
           <form id="source-session-ingest-form" method="dialog">
             <h2 id="source-session-ingest-title">Сохранить запись Zoom в аудиоархив</h2>
             <div id="source-session-ingest-files-field" class="processor-field">
-              <label for="source-session-ingest-files">Синхронизированные аудиодорожки</label>
-              <input id="source-session-ingest-files" type="file" multiple required accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav">
+              <span>Синхронизированные аудиодорожки</span>
+              <input id="source-session-ingest-files" class="audio-file-input" type="file" multiple accept=".mp3,.m4a,.wav,audio/mpeg,audio/mp4,audio/x-m4a,audio/wav,audio/x-wav" aria-label="Синхронизированные аудиодорожки">
+              <div class="action-group"><button id="source-session-ingest-pick" type="button">Выбрать файлы</button><button id="source-session-ingest-add" type="button" hidden>Добавить дорожки</button><button id="source-session-ingest-replace" type="button" hidden>Выбрать заново</button></div>
             </div>
-            <p id="source-session-ingest-selection"></p>
+            <p id="source-session-ingest-selection">Файлы не выбраны</p><ol id="source-session-ingest-list" class="audio-file-list"></ol>
             <div class="processor-field">
               <label for="source-session-ingest-name">Название</label>
               <input id="source-session-ingest-name" type="text" required maxlength="200" autocomplete="off">

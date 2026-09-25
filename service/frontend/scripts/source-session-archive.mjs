@@ -3,9 +3,10 @@ import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
 import { RECONNECT_MESSAGE, canonicalSourceDuration, localSourceContext, bindLocalPayload, projectProjection, rebaseRecordingEnd, ingestSpeakerRecoverySources, ProjectSave } from "./audio-project.mjs";
 import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding,
   createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
-import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSpeakerOutput, prepareRemoteSourceBatch, remoteSourceFingerprint } from "./audio-archive-client.mjs";
+import { AudioArchiveGateway, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSpeakerOutput, prepareRemoteSourceBatch, remoteSourceFingerprint } from "./audio-archive-client.mjs";
 import { ServiceSessionController } from "./service-session.mjs";
-import { bindProcessorSources, setProcessorSelectionGuard, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
+import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAudioSelection, ingestionSessionId } from './audio-file-selection.mjs';
+import { bindProcessorSources, setProcessorSelectionGuard, waitProcessorIdle, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
 const byId = (id) => document.getElementById(`source-session-${id}`);
@@ -26,6 +27,9 @@ const state = {
   incompleteSequence: 0,
   mode: "archive",
   pendingFiles: [],
+  ingestAttempt: null,
+  ingestPickerMode: 'replace',
+  recoverySelection: new AudioFileSelection(),
   pendingOrigin: "manual",
   retryKey: null,
   uploadController: null,
@@ -529,6 +533,12 @@ async function resolveSpeakerWork(session, intent = {}) {
 }
 
 function showSpeakerRecovery(session, work) {
+  state.recoverySelection.clear();
+  renderAudioSelection(document.getElementById('speaker-project-recovery-list'), document.getElementById('speaker-project-recovery-summary'), [], formatBytes);
+  document.getElementById('speaker-project-recovery-pick').hidden = false;
+  document.getElementById('speaker-project-recovery-add').hidden = true;
+  document.getElementById('speaker-project-recovery-replace').hidden = true;
+  document.getElementById('speaker-project-recovery-attach').disabled = true;
   state.speakerRecovery = createSpeakerRecoveryAttempt(session, work);
   const panel = document.getElementById("speaker-project-recovery"); panel.hidden = false;
   document.getElementById("speaker-project-recovery-status").textContent = session.lifecycle.state !== "incoming" ?
@@ -1098,36 +1108,52 @@ function renderImportFiles() {
   const useLocal = document.getElementById("source-session-use-local");
   useLocal.hidden = !workingFiles().length;
   useLocal.disabled = !workingFiles().length;
-  document.getElementById("import-summary").textContent = workingFiles().length ? `Выбрано дорожек: ${workingFiles().length}` : "Запись не выбрана";
+  document.getElementById("import-summary").textContent = workingFiles().length ? localSelectionText(workingFiles()) : "Запись не выбрана";
+  document.getElementById('import-replace').textContent = workingFiles().length ? 'Выбрать заново' : 'Выбрать файлы';
+  document.getElementById('import-add').hidden = !workingFiles().length;
+  document.getElementById('import-replace').disabled = Boolean(state.ingestAttempt);
+  document.getElementById('import-add').disabled = Boolean(state.ingestAttempt);
   for (const [index, file] of workingFiles().entries()) {
     const extension = file.name.split('.').slice(-1)[0];
     const row = document.createElement("li"); row.append(document.createTextNode(`${file.name} · ${extension.toUpperCase()} · ${formatBytes(file.size)} `));
     row.append(button("Удалить", async () => {
+      if (state.ingestAttempt) return;
       const files = workingFiles().filter((_, i) => i !== index);
       if (!await closeSpeakerEditor(false)) return;
       state.activeManifest = null; state.localContext = null; state.localProject = null;
       if (files.length) loadProcessorFiles(files); else clearProcessorFiles();
-    })); list.append(row);
+    })); row.querySelector('button').disabled = Boolean(state.ingestAttempt); list.append(row);
   }
   renderCurrentRecording(); renderResultArchive();
+}
+
+function renderIngestSelection() {
+  const files = state.pendingFiles, locked = Boolean(state.ingestAttempt || state.uploadController);
+  renderAudioSelection(byId('ingest-list'), byId('ingest-selection'), files, formatBytes);
+  byId('ingest-pick').hidden = Boolean(files.length);
+  byId('ingest-add').hidden = !files.length;
+  byId('ingest-replace').hidden = !files.length;
+  for (const id of ['ingest-pick', 'ingest-add', 'ingest-replace', 'ingest-name', 'ingest-recorded']) byId(id).disabled = locked;
+  byId('ingest-submit').textContent = state.ingestAttempt ? 'Проверить и продолжить сохранение' : 'Загрузить и завершить';
 }
 
 function openIngestDialog(files = []) {
   const speaker = getSpeakerSaveState();
   if (speaker.session && !speaker.ready) { updateSourceSaveState(); return; }
   if (state.localProject?.finalized || state.activeManifest) { updateSourceSaveState(); return; }
-  const sameFiles = state.pendingFiles.length === files.length && state.pendingFiles.every((file, i) => file === files[i]);
-  state.pendingFiles = Array.from(files);
-  state.pendingOrigin = state.pendingFiles.length ? "device" : "manual";
-  if (!sameFiles || !state.retryKey) state.retryKey = crypto.randomUUID();
+  if (!state.ingestAttempt) {
+    state.pendingFiles = Array.from(files);
+    state.pendingOrigin = state.pendingFiles.length ? "device" : "manual";
+    state.retryKey = crypto.randomUUID();
+  }
   const local = state.pendingFiles.length > 0;
-  byId("ingest-files-field").hidden = local;
-  byId("ingest-files").required = !local;
-  if (!local) byId("ingest-files").value = "";
-  byId("ingest-selection").textContent = local ? `Будут сохранены текущие дорожки: ${localSelectionText(state.pendingFiles)}` : "";
-  byId("ingest-name").value = local ? state.pendingFiles[0].name.replace(/\.[^.]+$/, "") : "";
-  byId("ingest-recorded").value = "";
-  byId("ingest-status").textContent = "";
+  byId("ingest-files-field").hidden = false;
+  if (!state.ingestAttempt) {
+    byId("ingest-name").value = local ? state.pendingFiles[0].name.replace(/\.[^.]+$/, "") : "";
+    byId("ingest-recorded").value = "";
+    byId("ingest-status").textContent = "";
+  }
+  renderIngestSelection();
   byId("ingest-progress").hidden = true;
   byId("ingest-submit").disabled = false;
   byId("ingest-dialog").showModal();
@@ -1135,19 +1161,26 @@ function openIngestDialog(files = []) {
 
 function localSelectionText(files) {
   const bytes = files.reduce((sum, file) => sum + file.size, 0);
-  return `${files.length} · ${formatBytes(bytes)}`;
+  return `${files.length} дорожек · ${formatBytes(bytes)}`;
 }
 
 async function submitIngestion(event) {
   event.preventDefault();
-  const files = state.pendingFiles.length ? state.pendingFiles : Array.from(byId("ingest-files").files || []);
-  if (!files.length || files.some((file) => !file.size) || files.reduce((sum, file) => sum + file.size, 0) > MAX_AUDIO_SESSION_BYTES) {
-    byId("ingest-status").textContent = "Выберите непустые MP3, M4A или WAV общим размером не более 500 МБ.";
-    return;
+  let attempt = state.ingestAttempt;
+  if (!attempt) {
+    const files = [...state.pendingFiles], fileError = validateAudioSelection(files);
+    if (fileError) { byId('ingest-status').textContent = fileError; return; }
+    const title = byId("ingest-name").value.trim();
+    if (!title || title.length > 200) { byId('ingest-status').textContent = 'Введите название длиной не более 200 символов.'; return; }
+    let recordedAt;
+    try { recordedAt = recordedTimestamp(byId('ingest-recorded')); }
+    catch (error) { byId('ingest-status').textContent = error.message; return; }
+    attempt = Object.freeze({ files: Object.freeze(files), title, recordedAt, origin: state.pendingOrigin,
+      key: state.retryKey, plan: null });
+    state.ingestAttempt = attempt;
   }
-  const title = byId("ingest-name").value.trim();
-  if (!title) return;
-  state.pendingFiles = files;
+  renderIngestSelection();
+  renderImportFiles();
   state.uploadController = new AbortController();
   byId("ingest-submit").disabled = true;
   byId("ingest-files").disabled = true;
@@ -1155,33 +1188,48 @@ async function submitIngestion(event) {
   byId("ingest-progress").value = 0;
   byId("ingest-status").textContent = "Хеширование и подготовка частей…";
   try {
-    const recordedValue = byId("ingest-recorded").value;
-    const saved = await gateway.ingestFiles({
-      files, title, recordedAt: recordedValue ? new Date(recordedValue).toISOString() : null,
-      origin: state.pendingOrigin,
-      idempotencyKey: state.retryKey, signal: state.uploadController.signal,
-      onPlan: plan => { state.ingestionPlan = plan; },
+    let saved = null;
+    if (attempt.plan) {
+      byId('ingest-status').textContent = 'Проверяем, завершилось ли прежнее сохранение…';
+      try { saved = { session: await gateway.getSession(await ingestionSessionId(attempt.key), state.uploadController.signal) }; }
+      catch (error) { if (error?.status !== 404) throw error; }
+    }
+    if (!saved) saved = await gateway.ingestFiles({
+      files: attempt.files, title: attempt.title, recordedAt: attempt.recordedAt,
+      origin: attempt.origin,
+      idempotencyKey: attempt.key, signal: state.uploadController.signal,
+      onPlan: plan => { state.ingestionPlan = plan; state.ingestAttempt = Object.freeze({ ...attempt, plan }); },
+      onFinalizing: () => { byId('ingest-status').textContent = 'Все части переданы. Завершаем и проверяем запись…'; },
       onProgress: ({ uploadedBytes, totalBytes, uploadedParts, totalParts }) => {
         byId("ingest-progress").value = Math.round(uploadedBytes / totalBytes * 100);
-        byId("ingest-status").textContent = `Загружено частей: ${uploadedParts} из ${totalParts}.`;
+        byId("ingest-status").textContent = `Загружено частей: ${uploadedParts} из ${totalParts}. Ожидаем завершения сохранения.`;
       }
     });
     const session = saved.session || saved;
-    const context = localSourceContext(files);
+    if (!validateSessionManifest(session) || session.title !== attempt.title || session.recordedAt !== attempt.recordedAt ||
+      session.origin.kind !== attempt.origin || session.sourceTracks.length !== attempt.files.length ||
+      session.sourceTracks.some((track, index) => track.sha256 !== state.ingestionPlan.tracks[index].sha256 || track.ordinal !== index + 1)) throw new Error("Не удалось подтвердить исходники.");
+    const context = localSourceContext(attempt.files);
     bindLocalPayload(context, defaultSpeakerPayload(context.sourceTracks.map(t => t.trackId)), state.ingestionPlan, session);
-    if (!validateSessionManifest(session)) throw new Error("Не удалось подтвердить исходники.");
     state.activeManifest = session;
-    if (state.pendingOrigin === "device") {
+    if (attempt.origin === "device") {
       state.localProject ||= new ProjectSave(gateway); state.localProject.finalized = session; state.localProject.plan = state.ingestionPlan;
       if (state.editorMode !== "speaker") {
         state.processorProvenance = state.ingestionPlan.tracks.map(t => ({ trackId: t.trackId, blobId: t.blobId, ordinal: t.ordinal, sizeBytes: t.sizeBytes, sha256: t.sha256, mediaType: t.mediaType }));
-        state.loadingArchive = true; await bindProcessorSources(files, state.processorProvenance, { sessionId: session.id, sourceSessionRevision: session.revision }); state.loadingArchive = false;
+        state.loadingArchive = true;
+        try {
+          const current = getProcessorFiles();
+          if (current.length !== attempt.files.length || current.some((file, index) => file !== attempt.files[index])) loadProcessorFiles(attempt.files);
+          await bindProcessorSources(attempt.files, state.processorProvenance, { sessionId: session.id, sourceSessionRevision: session.revision });
+        } finally { state.loadingArchive = false; }
         renderAnnouncementWorkspace();
       }
     }
     updateSourceSaveState();
     renderCurrentRecording(); renderResultArchive();
     byId("ingest-status").textContent = "Запись Zoom сохранена в аудиоархиве.";
+    state.ingestAttempt = null;
+    renderImportFiles();
     setTimeout(() => byId("ingest-dialog").close(), 400);
     await refreshSessions();
     setArchiveStatus("Запись Zoom сохранена в аудиоархиве.");
@@ -1192,6 +1240,7 @@ async function submitIngestion(event) {
     state.uploadController = null;
     byId("ingest-submit").disabled = false;
     byId("ingest-files").disabled = false;
+    renderIngestSelection();
   }
 }
 
@@ -1614,7 +1663,7 @@ document.getElementById("speaker-project-recovery-attach").addEventListener("cli
   const input = document.getElementById("speaker-project-recovery-files");
   try {
     status.textContent = "Проверка SHA-256 и размера полного набора дорожек…";
-    const files = await verifyLocalSourceAttachment(input.files, recovery.work.sources);
+    const files = await verifyLocalSourceAttachment(state.recoverySelection.files, recovery.work.sources);
     if (state.speakerRecovery !== recovery) return;
     recovery.files = files;
     status.textContent = "Точные локальные исходники подключены в каноническом порядке. Старые удалённые bytes и tombstone не изменены.";
@@ -1767,9 +1816,17 @@ byId("login-form").addEventListener("submit", async (event) => {
   }
 });
 byId("login-cancel").addEventListener("click", () => { ++state.authSequence; authController.cancel(); state.afterLogin?.(false); state.afterLogin = null; byId("login-dialog").close(); });
-byId("ingest-files").addEventListener("change", () => {
-  const files = Array.from(byId("ingest-files").files || []);
-  byId("ingest-selection").textContent = files.length ? localSelectionText(files) : "";
+for (const [id, mode] of [['ingest-pick', 'replace'], ['ingest-add', 'add'], ['ingest-replace', 'replace']]) {
+  byId(id).addEventListener('click', () => { state.ingestPickerMode = mode; byId('ingest-files').value = ''; byId('ingest-files').click(); });
+}
+byId('ingest-files').addEventListener('change', event => {
+  if (state.ingestAttempt) return;
+  const picked = Array.from(event.target.files || []);
+  if (!picked.length) return;
+  const next = state.ingestPickerMode === 'add' ? [...state.pendingFiles, ...picked] : picked;
+  const error = validateAudioSelection(next);
+  if (error) { byId('ingest-status').textContent = error; return; }
+  state.pendingFiles = next; byId('ingest-status').textContent = ''; renderIngestSelection(); event.target.value = '';
 });
 byId("ingest-form").addEventListener("submit", submitIngestion);
 byId("ingest-cancel").addEventListener("click", () => {
@@ -1789,13 +1846,44 @@ await initialize();
 
 document.getElementById("open-local-speaker").addEventListener("click", openLocalSpeaker);
 document.getElementById("open-local-announcement").addEventListener("click", openLocalAnnouncement);
-setProcessorSelectionGuard(async () => { if (state.publicationController || state.uploadController) return false; if (!await closeSpeakerEditor(false)) return false; state.preparationController?.abort(); ++state.sessionSequence; return true; });
-document.getElementById("import-replace").addEventListener("click", () => document.getElementById("processor-file").click());
+setProcessorSelectionGuard(async () => { if (state.publicationController || state.uploadController || state.ingestAttempt) return false; if (!await closeSpeakerEditor(false)) return false; state.preparationController?.abort(); ++state.sessionSequence; return true; });
+document.getElementById("import-replace").addEventListener("click", () => { document.getElementById("processor-file").value = ''; document.getElementById("processor-file").click(); });
+document.getElementById('processor-file').addEventListener('change', event => {
+  if (!event.target.files.length) return;
+  document.getElementById('device-import-status').textContent = validateAudioSelection(Array.from(event.target.files)) || 'Подготавливаем выбранные дорожки…';
+});
 document.getElementById("import-add").addEventListener("click", () => document.getElementById("import-add-files").click());
 document.getElementById("import-add-files").addEventListener("change", async event => {
+  if (!event.target.files.length) return;
+  if (state.ingestAttempt) { event.target.value = ''; return; }
   const files = [...workingFiles(), ...event.target.files];
-  if (await closeSpeakerEditor(false)) loadProcessorFiles(files);
+  const error = validateAudioSelection(files);
+  if (error) { document.getElementById('device-import-status').textContent = error; event.target.value = ''; return; }
+  try {
+    document.getElementById('device-import-status').textContent = 'Дождитесь завершения текущей подготовки дорожек…';
+    await waitProcessorIdle();
+    if (await closeSpeakerEditor(false)) loadProcessorFiles(files);
+  } catch (failure) { document.getElementById('device-import-status').textContent = failure.message; }
   event.target.value = "";
+});
+let recoveryPickerMode = 'replace';
+for (const [id, mode] of [['speaker-project-recovery-pick', 'replace'], ['speaker-project-recovery-add', 'add'], ['speaker-project-recovery-replace', 'replace']]) {
+  document.getElementById(id).addEventListener('click', () => { recoveryPickerMode = mode; const input = document.getElementById('speaker-project-recovery-files'); input.value = ''; input.click(); });
+}
+document.getElementById('speaker-project-recovery-files').addEventListener('change', event => {
+  try {
+    if (!state.recoverySelection.choose(event.target.files, recoveryPickerMode)) return;
+    if (state.speakerRecovery) state.speakerRecovery.files = null;
+    document.getElementById('speaker-project-recovery-ingest').hidden = true;
+    const files = state.recoverySelection.files;
+    renderAudioSelection(document.getElementById('speaker-project-recovery-list'), document.getElementById('speaker-project-recovery-summary'), files, formatBytes);
+    document.getElementById('speaker-project-recovery-pick').hidden = true;
+    document.getElementById('speaker-project-recovery-add').hidden = false;
+    document.getElementById('speaker-project-recovery-replace').hidden = false;
+    document.getElementById('speaker-project-recovery-attach').disabled = false;
+    document.getElementById('speaker-project-recovery-status').textContent = 'Набор выбран. Подключите дорожки для точной проверки.';
+  } catch (error) { document.getElementById('speaker-project-recovery-status').textContent = error.message; }
+  event.target.value = '';
 });
 byId("login-dialog").addEventListener("cancel", () => { ++state.authSequence; state.afterLogin?.(false); state.afterLogin = null; });
 // Every archive response, including byte downloads, retains auth status. Login itself never recursively reconnects.

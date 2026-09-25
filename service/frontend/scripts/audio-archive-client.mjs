@@ -1073,13 +1073,15 @@ export class AudioArchiveGateway {
     });
   }
 
-  async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {}, onPlan = () => {} }) {
+  async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {}, onPlan = () => {}, onStarted = () => {}, onFinalizing = () => {} }) {
     const plan = await createIngestionPlan(files, this.acceptedPartSize, { idempotencyKey, signal });
     onPlan(plan);
     const started = await this.request("/v1/source-sessions/ingestions", {
       method: "POST", signal,
       body: { schemaVersion: AUDIO_ARCHIVE_SCHEMA_VERSION, idempotencyKey, title, recordedAt, origin, supersedesSessionId, plan: serializeIngestionPlan(plan) }
     });
+    onStarted(started);
+    if (started.state === "finalized") return { session: await this.getSession(started.sessionId, signal), idempotent: true };
     const totalParts = plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);
     let uploadedParts = 0;
     let uploadedBytes = 0;
@@ -1098,6 +1100,7 @@ export class AudioArchiveGateway {
         onProgress({ uploadedParts, totalParts, uploadedBytes, totalBytes: plan.totalBytes });
       }
     }
+    onFinalizing();
     return this.request(`/v1/source-sessions/ingestions/${encodeURIComponent(started.transactionId)}/finalize`, {
       method: "POST", signal, body: { idempotencyKey: `${idempotencyKey}:finalize` }
     });
