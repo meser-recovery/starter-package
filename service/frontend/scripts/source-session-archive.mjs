@@ -1,6 +1,6 @@
 import { contextActions } from "./audio-actions.mjs";
 import { defaultSpeakerPayload } from "./speaker-editor-core.mjs";
-import { RECONNECT_MESSAGE, localSourceContext, bindLocalPayload, projectProjection, ingestSpeakerRecoverySources, ProjectSave } from "./audio-project.mjs";
+import { RECONNECT_MESSAGE, canonicalSourceDuration, localSourceContext, bindLocalPayload, projectProjection, rebaseRecordingEnd, ingestSpeakerRecoverySources, ProjectSave } from "./audio-project.mjs";
 import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImpact, pageItems, speakerRecoveryBinding,
   createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, MAX_AUDIO_SESSION_BYTES, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSpeakerOutput, prepareRemoteSourceBatch, remoteSourceFingerprint } from "./audio-archive-client.mjs";
@@ -1045,7 +1045,7 @@ async function withReconnect(action) {
     return action(); // One retry only; the action revalidates revisions and its retained transaction.
   }
 }
-async function saveLocalProject({ session: context, files, draft, payload, duration, signal, onProgress }) {
+async function saveLocalProject({ session: context, files, draft, payload, duration, trackDurations, signal, onProgress }) {
   const project = state.localProject;
   if (context.kind !== "local") return withReconnect(() => project.save(context, draft, payload, signal));
   if (!project.finalized && !await confirmLocalProjectSave()) return null;
@@ -1054,9 +1054,16 @@ async function saveLocalProject({ session: context, files, draft, payload, durat
     state.activeManifest = session;
     renderCurrentRecording();
     renderResultArchive();
-    const bound = bindLocalPayload(context, payload, project.plan, session, duration);
+    const verifiedWaveforms = [];
+    for (const track of [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal)) {
+      signal?.throwIfAborted();
+      verifiedWaveforms.push(await gateway.sourceWaveform(session.id, track.blobId, track, signal));
+    }
+    const canonicalDuration = canonicalSourceDuration(trackDurations, verifiedWaveforms.map(waveform => waveform.duration));
+    const bound = bindLocalPayload(context, rebaseRecordingEnd(payload, duration, canonicalDuration),
+      project.plan, session, canonicalDuration);
     const result = await project.save(session, null, bound.payload, signal);
-    return { ...result, mapping: bound.mapping };
+    return { ...result, mapping: bound.mapping, canonicalDuration, verifiedWaveforms };
   });
 }
 async function openLocalSpeaker() {
