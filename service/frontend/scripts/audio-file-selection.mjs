@@ -40,9 +40,9 @@ export function sameFileReferences(left, right) {
 
 // Resolve a local Speaker source change before any ingestion transaction can begin.
 // The caller keeps its form and File objects if closing the current project is declined.
-export async function prepareLocalIngestionSelection(files, { speakerFiles = null, closeSpeaker, waitForIdle, currentFiles, loadFiles }) {
-  if (speakerFiles && sameFileReferences(files, speakerFiles)) return { switched: false, declined: false };
-  if (!speakerFiles && sameFileReferences(files, currentFiles())) return { switched: false, declined: false };
+export async function prepareLocalIngestionSelection(files, { speakerFiles = null, forceSwitch = false, closeSpeaker, waitForIdle, currentFiles, loadFiles }) {
+  if (!forceSwitch && speakerFiles && sameFileReferences(files, speakerFiles)) return { switched: false, declined: false };
+  if (!forceSwitch && !speakerFiles && sameFileReferences(files, currentFiles())) return { switched: false, declined: false };
   if (speakerFiles && !await closeSpeaker()) return { switched: false, declined: true };
   await waitForIdle();
   loadFiles(files);

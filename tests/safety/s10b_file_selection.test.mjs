@@ -65,6 +65,22 @@ test('unchanged Speaker File references preserve the active montage and picker c
   assert.equal(calls, 0);
 });
 
+test('failed B preparation retries the pending transition even when B File references reached the processor', async () => {
+  const a = audio('same.wav', [1, 2]), b = audio('same.wav', [3, 4]);
+  let current = [a], closes = 0, loads = 0;
+  const controls = { speakerFiles: [a], forceSwitch: true,
+    closeSpeaker: async () => { closes++; return true; }, waitForIdle: async () => {},
+    currentFiles: () => current,
+    loadFiles: files => { current = [...files]; if (++loads === 1) throw new Error('preparation interrupted'); }
+  };
+  await assert.rejects(prepareLocalIngestionSelection([b], controls), /preparation interrupted/);
+  assert.equal(current[0], b);
+  assert.equal(loads, 1);
+  controls.speakerFiles = null;
+  assert.deepEqual(await prepareLocalIngestionSelection([b], controls), { switched: true, declined: false });
+  assert.equal(closes, 1); assert.equal(loads, 2); assert.equal(current[0], b);
+});
+
 test('selection validation and optional timestamp reject invalid form values before upload', () => {
   assert.match(validateAudioSelection([]), /хотя бы одну/);
   assert.match(validateAudioSelection([audio('empty.wav', [])]), /Пустые/);

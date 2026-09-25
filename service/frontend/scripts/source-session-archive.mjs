@@ -5,7 +5,7 @@ import { eligible, parseEditorIntent, mergeSessions, recoveryPolicy, deletionImp
   createSpeakerRecoveryAttempt, recoveryContinuationRequest } from './audio-archive-core.mjs';
 import { AudioArchiveGateway, validateSessionManifest, validateSpeakerOutput, verifyLocalSourceAttachment, reconstructAnnouncementOutput, reconstructSpeakerOutput, prepareRemoteSourceBatch, remoteSourceFingerprint } from "./audio-archive-client.mjs";
 import { ServiceSessionController } from "./service-session.mjs";
-import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAudioSelection, ingestionSessionId, prepareLocalIngestionSelection } from './audio-file-selection.mjs';
+import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAudioSelection, ingestionSessionId, sameFileReferences, prepareLocalIngestionSelection } from './audio-file-selection.mjs';
 import { bindProcessorSources, setProcessorSelectionGuard, waitProcessorIdle, clearProcessorFiles, getProcessorFiles, getProcessorResult, loadProcessorFiles, updateProcessorProvenanceContext } from "./audio-processor.mjs";
 import { confirmLocalProjectSave, protectSpeakerTransition, closeSpeakerEditor, getSpeakerSaveState, openSpeakerEditor, setSpeakerSaveLocked, speakerEditorSessionId, updateSpeakerSession } from "./speaker-editor.mjs";
 
@@ -29,6 +29,7 @@ const state = {
   pendingFiles: [],
   ingestAttempt: null,
   ingestPreparing: false,
+  ingestNeedsFreshContext: false,
   ingestPickerMode: 'replace',
   recoverySelection: new AudioFileSelection(),
   pendingOrigin: "manual",
@@ -1180,12 +1181,15 @@ async function submitIngestion(event) {
     state.ingestPreparing = true; renderIngestSelection(); byId('ingest-submit').disabled = true;
     try {
       const speaker = getSpeakerSaveState();
+      const speakerFiles = speaker.session?.kind === 'local' ? speaker.files : null;
+      if (!sameFileReferences(files, speakerFiles || getProcessorFiles())) state.ingestNeedsFreshContext = true;
       const prepared = await prepareLocalIngestionSelection(files, {
-        speakerFiles: speaker.session?.kind === 'local' ? speaker.files : null,
+        speakerFiles, forceSwitch: state.ingestNeedsFreshContext,
         closeSpeaker: () => closeSpeakerEditor(false), waitForIdle: waitProcessorIdle,
         currentFiles: getProcessorFiles, loadFiles: loadProcessorFiles
       });
       if (prepared.declined) {
+        state.ingestNeedsFreshContext = false;
         byId('ingest-status').textContent = 'Переход к новым дорожкам отменён. Проект, выбранные файлы и поля формы сохранены.';
         return;
       }
@@ -1195,6 +1199,7 @@ async function submitIngestion(event) {
         state.announcementDraft = null; state.candidate = null; state.processorProvenance = [];
         state.localContext = localSourceContext(files); state.localProject = new ProjectSave(gateway);
         renderCurrentRecording(); renderImportFiles(); renderResultArchive();
+        state.ingestNeedsFreshContext = false;
       }
     } catch (error) {
       byId('ingest-status').textContent = `${userError(error, error?.message || 'Не удалось подготовить новые исходники.')} Выбранные файлы и поля формы сохранены.`;
