@@ -1182,7 +1182,8 @@ async function submitIngestion(event) {
     try {
       const speaker = getSpeakerSaveState();
       const speakerFiles = speaker.session?.kind === 'local' ? speaker.files : null;
-      if (!sameFileReferences(files, speakerFiles || getProcessorFiles())) state.ingestNeedsFreshContext = true;
+      if (speakerFiles && sameFileReferences(files, speakerFiles)) state.ingestNeedsFreshContext = false;
+      else if (!sameFileReferences(files, speakerFiles || getProcessorFiles())) state.ingestNeedsFreshContext = true;
       const prepared = await prepareLocalIngestionSelection(files, {
         speakerFiles, forceSwitch: state.ingestNeedsFreshContext,
         closeSpeaker: () => closeSpeakerEditor(false), waitForIdle: waitProcessorIdle,
