@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Meser audio tutorial build specification",
+  "type": "object",
+  "required": ["schema_version", "tutorial", "narration", "scenes"],
+  "additionalProperties": false,
+  "properties": {
+    "schema_version": {"const": 1},
+    "tutorial": {
+      "type": "object",
+      "required": ["language", "resolution", "fps", "canonical_content", "chapters"],
+      "additionalProperties": false,
+      "properties": {
+        "language": {"const": "ru-RU"},
+        "resolution": {"prefixItems": [{"const": 1920}, {"const": 1080}], "minItems": 2, "maxItems": 2},
+        "fps": {"const": 30},
+        "canonical_content": {
+          "type": "object",
+          "required": ["source", "sha256", "policy"],
+          "additionalProperties": false,
+          "properties": {
+            "source": {"type": "string", "minLength": 1},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "policy": {"const": "fail_on_content_drift"}
+          }
+        },
+        "chapters": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "narration": {
+      "type": "object",
+      "required": ["provider", "voice_id", "model_id", "output_format", "voice_settings", "pronunciation"],
+      "additionalProperties": false,
+      "properties": {
+        "provider": {"const": "elevenlabs"},
+        "voice_id": {"type": "string", "minLength": 1},
+        "model_id": {"type": "string", "minLength": 1},
+        "output_format": {"type": "string", "minLength": 1},
+        "voice_settings": {"type": "object"},
+        "pronunciation": {"type": "object"}
+      }
+    },
+    "scenes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scene"}}
+  },
+  "$defs": {
+    "scene": {
+      "type": "object",
+      "required": ["id", "chapter", "canonical_refs", "narration", "captions", "visual", "initial_state", "expected_state", "assertions", "fixture_set", "dependencies", "regenerate", "padding", "target_seconds", "transforms"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {"type": "string", "pattern": "^[0-9]{3}-[a-z0-9-]+$"},
+        "chapter": {"type": "string", "minLength": 1},
+        "canonical_refs": {
+          "type": "object",
+          "required": ["narration", "storyboard", "captions"],
+          "additionalProperties": false,
+          "properties": {
+            "narration": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^n[0-9]{3}$"}},
+            "storyboard": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^b[0-9]{3}$"}},
+            "captions": {"type": "array", "items": {"type": "string", "minLength": 1}}
+          }
+        },
+        "narration": {"type": "string", "minLength": 1},
+        "captions": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "visual": {
+          "type": "object",
+          "required": ["type", "goal", "animation", "action"],
+          "additionalProperties": false,
+          "properties": {
+            "type": {"enum": ["browser", "animation"]},
+            "goal": {"type": "string", "minLength": 1},
+            "animation": {"type": ["string", "null"]},
+            "action": {"type": ["string", "null"]}
+          }
+        },
+        "initial_state": {"type": "string", "minLength": 1},
+        "expected_state": {"type": "string", "minLength": 1},
+        "assertions": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+        "fixture_set": {"type": ["string", "null"]},
+        "dependencies": {"type": "array", "items": {"type": "string"}},
+        "regenerate": {"const": "on-hash-change"},
+        "padding": {
+          "type": "object",
+          "required": ["head", "tail"],
+          "additionalProperties": false,
+          "properties": {"head": {"type": "number", "minimum": 0}, "tail": {"type": "number", "minimum": 0}}
+        },
+        "target_seconds": {"type": "string", "minLength": 1},
+        "transforms": {"type": "array", "items": {"enum": ["split_paragraph", "omit_mouse_motion", "technical_numbers_to_caption", "pause_only"]}}
+      }
+    }
+  }
+}

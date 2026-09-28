@@ -13,6 +13,8 @@ import { WAVEFORM_ALGORITHM, WAVEFORM_PEAK_COUNT, WAVEFORM_BODY_BYTES } from '..
 
 const port = Number(process.argv[2] || 4173);
 const origin = process.argv[3] || `http://localhost:${port}`;
+const acceptedPartBytes = Number(process.env.S11_PREVIEW_PART_BYTES || 1024);
+if (!Number.isInteger(acceptedPartBytes) || acceptedPartBytes < 1024 || acceptedPartBytes > 1024 * 1024) throw new Error("Invalid preview part size");
 const frontend = resolve(import.meta.dirname, "../../service/frontend");
 const secret = "synthetic-preview-session-secret-0001";
 const previewCookie = "meser_preview_service_session";
@@ -21,7 +23,7 @@ const verifier = await createPasswordVerifier("local-test-password", Buffer.allo
 const sessions = new SessionRegistry({ maxEntries: 16 });
 // Synthetic, process-local archive. It cannot access production storage or credentials.
 const repository = new MemoryRepository();
-const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 1024 });
+const domain = new AudioArchiveDomain(repository, { acceptedPartBytes });
 const emptyPeaks = Buffer.alloc(WAVEFORM_BODY_BYTES);
 const peakDigest = createHash('sha256').update(emptyPeaks).digest('hex');
 const waveformService = { get: async (sessionId, blobId) => {
@@ -36,7 +38,7 @@ const waveformService = { get: async (sessionId, blobId) => {
     durationSeconds, sourceSha256: source.sha256, resultSha256: peakDigest, cache: 'synthetic' };
 } };
 const config = {
-  allowedOrigin: origin, acceptedPartBytes: 1024, sessionSigningSecret: secret,
+  allowedOrigin: origin, acceptedPartBytes, sessionSigningSecret: secret,
   sessionLifetimeSeconds: 4 * 60 * 60, activeSessionLimit: 16, sharedPasswordVerifier: verifier
 };
 const app = createApp({ config, domain, waveformService, sessionRegistry: sessions });
