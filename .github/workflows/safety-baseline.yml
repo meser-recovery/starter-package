@@ -76,6 +76,7 @@ jobs:
           python3 tests/safety/s10a_browser_smoke.py --base-url http://localhost:4173 --browser all
           python3 tests/safety/s10a_ui_corrective_smoke.py --base-url http://localhost:4173 --browser all
           python3 tests/safety/s10a_mobile_waveform_smoke.py --base-url http://127.0.0.1:8000 --browser all
+          python3 tests/safety/speaker_trackpad_scroll_smoke.py --base-url http://localhost:4174 --browser all
           python3 tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser all
       - name: Verify protected frontend inventory and script syntax
         run: |
