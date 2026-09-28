@@ -39,6 +39,14 @@ def check(browser_type, base_url):
         page.mouse.move(x, y)
         page.mouse.wheel(220, 0)  # Trusted, trackpad-like horizontal input; JS dispatch cannot scroll natively.
         page.wait_for_function("document.querySelector('#speaker-editor-tracks .speaker-waveform-scroll').scrollLeft > 50")
+        page.evaluate("""() => new Promise(resolve => {
+            const scroll = document.querySelector('#speaker-editor-tracks .speaker-waveform-scroll');
+            let idle;
+            const finish = () => { scroll.removeEventListener('scroll', reset); resolve(); };
+            const reset = () => { clearTimeout(idle); idle = setTimeout(finish, 120); };
+            scroll.addEventListener('scroll', reset);
+            reset();
+        })""")
         left = first.evaluate("e => e.scrollLeft")
         page.wait_for_function("expected => [...document.querySelectorAll('#speaker-editor-tracks .speaker-waveform-scroll')].every(e => Math.abs(e.scrollLeft - expected) < 2)", arg=left)
         rail = page.locator("#speaker-editor-source-scrollbar")
@@ -52,14 +60,22 @@ def check(browser_type, base_url):
 
         # Ctrl+wheel still zooms around the pointer's timeline time.
         before_zoom = float(zoom.input_value())
-        anchor = (left + box["width"] * .4) / pixels_per_second
+        first.evaluate("""(e, duration) => e.addEventListener('wheel', event => {
+            const bounds = e.getBoundingClientRect();
+            const offset = event.clientX - bounds.left;
+            const pps = e.firstElementChild.getBoundingClientRect().width / duration;
+            window.__speakerCtrlWheelAnchor = { time: (e.scrollLeft + offset) / pps, offset };
+        }, { capture: true, once: true })""", duration)
         page.keyboard.down("Control")
         page.mouse.wheel(0, -120)
         page.keyboard.up("Control")
         page.wait_for_function("before => Number(document.querySelector('#speaker-editor-zoom').value) > before", arg=before_zoom)
+        anchor = page.evaluate("window.__speakerCtrlWheelAnchor")
+        assert anchor is not None
         after_left = first.evaluate("e => e.scrollLeft")
         after_pps = first.locator(".speaker-waveform").evaluate("e => e.getBoundingClientRect().width") / duration
-        assert abs((after_left + box["width"] * .4) / after_pps - anchor) < .03
+        actual_time = (after_left + anchor["offset"]) / after_pps
+        assert abs(actual_time - anchor["time"]) < .03, (anchor, actual_time, after_left, after_pps)
         page.wait_for_function("expected => [...document.querySelectorAll('#speaker-editor-tracks .speaker-waveform-scroll')].every(e => Math.abs(e.scrollLeft - expected) < 2)", arg=after_left)
 
         # Custom scrollbar click and keyboard navigation remain connected to all tracks.
