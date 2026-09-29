@@ -200,17 +200,19 @@
       },
       "narration": "Для работы с такими записями используются два основных инструмента: Аудиоархив и Аудиоредактор.\n\nАудиоархив позволяет сохранить запись так, чтобы один человек мог её загрузить, а другой — позже открыть и обработать. Здесь же вместе хранятся исходники, проекты обработки и готовые версии.\n\nАудиоредактор позволяет открыть запись из Архива или непосредственно с устройства и выбрать один из двух вариантов работы: быстро подготовить материал для анонс-мейкера или выполнить полноценный монтаж спикерской.",
       "visual": {
-        "type": "animation",
+        "type": "browser",
         "goal": "`Zoom → Архив ↔ Редактор → готовые версии`",
-        "animation": "two-tools",
-        "action": null
+        "animation": null,
+        "action": "two-tools"
       },
-      "initial_state": "blank-canvas",
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
       "expected_state": "Два инструмента",
       "assertions": [
-        "animation-visible"
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
       ],
-      "fixture_set": null,
+      "fixture_set": "synthetic-zoom-v1",
       "dependencies": [],
       "regenerate": "on-hash-change",
       "padding": {
@@ -415,17 +417,19 @@
       },
       "narration": "Внутри конкретной записи собраны исходные дорожки, проект обработки и его история, версии для анонс-мейкера и финальные версии спикерской.",
       "visual": {
-        "type": "animation",
+        "type": "browser",
         "goal": "`Исходники / Проект / Для анонс-мейкера / Финальные версии`",
-        "animation": "archive-hierarchy",
-        "action": null
+        "animation": null,
+        "action": "archive-hierarchy"
       },
-      "initial_state": "blank-canvas",
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
       "expected_state": "Иерархия записи",
       "assertions": [
-        "animation-visible"
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
       ],
-      "fixture_set": null,
+      "fixture_set": "synthetic-zoom-v1",
       "dependencies": [],
       "regenerate": "on-hash-change",
       "padding": {
@@ -1630,17 +1634,19 @@
       },
       "narration": "После завершения монтажа важно различать две вещи: проект обработки и готовую аудиозапись.\n\n«Сохранить проект» сохраняет текущее состояние монтажа: начало и конец записи, вырезы, участки тишины, исключённые дорожки и настройки их обработки.\n\nТакой проект можно позже снова открыть и продолжить редактирование.\n\nНо сохранённый проект — это ещё не готовый MP3.",
       "visual": {
-        "type": "animation",
+        "type": "browser",
         "goal": "`Исходники + правки = Проект`",
-        "animation": "project-vs-final",
-        "action": null
+        "animation": null,
+        "action": "project-meaning"
       },
-      "initial_state": "blank-canvas",
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
       "expected_state": "Что такое проект",
       "assertions": [
-        "animation-visible"
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
       ],
-      "fixture_set": null,
+      "fixture_set": "synthetic-zoom-v1",
       "dependencies": [],
       "regenerate": "on-hash-change",
       "padding": {
@@ -1851,17 +1857,19 @@
       },
       "narration": "Каждая такая версия сохраняется отдельно и остаётся связана именно с тем состоянием проекта, из которого была создана.\n\nЕсли после этого монтаж изменить, уже существующая финальная версия не меняется. Для нового монтажа сохраняется проект и создаётся новая финальная версия.",
       "visual": {
-        "type": "animation",
+        "type": "browser",
         "goal": "`Состояние проекта 3 → Финальная версия 2`",
-        "animation": "project-vs-final",
-        "action": null
+        "animation": null,
+        "action": "project-final-link"
       },
-      "initial_state": "blank-canvas",
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
       "expected_state": "Связь final с проектом",
       "assertions": [
-        "animation-visible"
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
       ],
-      "fixture_set": null,
+      "fixture_set": "synthetic-zoom-v1",
       "dependencies": [],
       "regenerate": "on-hash-change",
       "padding": {
@@ -2505,7 +2513,7 @@
     "sample_rate": 48000,
     "channels": 1,
     "boundary_pause_seconds": 0.35,
-    "output_directory": "generated/module-candidate",
+    "output_directory": "generated/visual-corrective",
     "animation_source": "animations/modules.html"
   },
   "visual_cues": {

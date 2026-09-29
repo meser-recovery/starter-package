@@ -15,10 +15,10 @@ venv/bin/python tutorial/scripts/build.py visual --all-modules
 venv/bin/python tutorial/scripts/build.py assemble
 venv/bin/python tutorial/scripts/build.py verify
 python3 tutorial/scripts/module_audio_qa.py
-python3 tutorial/scripts/serve_modules.py --port 4195
+python3 tutorial/scripts/serve_modules.py --port 4196
 ```
 
-Review: `http://127.0.0.1:4195/index.html`. The loopback server implements HTTP byte ranges for reliable seeking. The page provides all eight module starts, seven boundaries starting five seconds before the join, all 60 scene starts, canonical text, the exact profile, MP4, PCM WAV, SRT/VTT and evidence. Generated media is local and ignored by Git.
+Review: `http://127.0.0.1:4196/index.html`. The loopback server implements HTTP byte ranges for reliable seeking. The page provides all eight module starts, seven boundaries starting five seconds before the join, all 60 scene starts, canonical text, the exact profile, MP4, PCM WAV, SRT/VTT and evidence. Generated media is local and ignored by Git.
 
 - N01: 001–005; N02: 006–018; N03: 019–022; N04: 023–029.
 - N05: 030–036; N06: 037–043; N07: 044–055; N08: 056–060.
@@ -45,9 +45,26 @@ venv/bin/python tutorial/scripts/build.py all --module N03
 
 ## Visuals and final audio
 
-All 13 explanatory scenes (001–005, 011, 019–022, 044, 050, 060) use `animations/modules.html` and `module-visuals.js`, extending the pilot's waveform/object/transformation language. Phrase anchors in `visual_cues` map to returned v3 character timestamps. The historical card renderer is not a fallback. The other 47 scenes capture the real Meser frontend and semantic actions from a fresh local in-memory Archive preview. Synthetic speech-free fixtures are deterministic. Outbound browser requests are blocked; only the local preview can receive mutations. Production credentials and Archive data are not used.
+The current visual correction uses **Real UI first**. All existing Meser controls, forms, Archive records, project history, final versions, and Editor timelines are recorded from the real loopback frontend with synthetic data. Scenes 005, 011, 044 and 050 therefore join the browser captures: **51 browser scenes / 9 conceptual scenes**. The remaining animations (001–004, 019–022, 060) preserve the approved waveform/object/transformation language and contain no imitation Meser windows. Missing real controls fail the capture; there is no illustrated UI fallback.
 
-`generated/module-candidate/` contains the new candidate. The eight MP3 sources are decoded to 48 kHz mono PCM, placed once on a continuous WAV timeline, with 0.35 seconds of silence between modules. Actual speech is never cut or crossfaded. A decay of at most 5 ms continues the last decoded sample into appended non-speech padding, preventing a jump to zero without changing any decoded sample. The master soundtrack is AAC-encoded exactly once while muxing the final H.264 1920×1080/30 fps MP4. Visual segments contain **no audio**; their video-only concat does not join encoded soundtracks. Subtitles use the same global PCM offsets. Scene narration audio files are never created.
+`capture_director.py` and `capture_overlay.js` are capture-only. They add a normal visible pointer, eased 300–700 ms motion, real pointerdown ripples, element/section/dialog focus and real drag gestures. Phrase cues use existing module alignment; focus arrival errors are recorded after source retiming. Navigation holds the last stable frame until the real destination is ready, preventing initialization frames. Production frontend files are unchanged. Browser requests outside the process-local preview are blocked.
+
+`generated/visual-corrective/` contains the new candidate; `generated/module-candidate/` preserves the preceding review. N01–N08 are reused without TTS requests. The eight MP3 sources are decoded to 48 kHz mono PCM and placed once on a continuous WAV timeline, with 0.35 seconds of silence between modules. Speech samples are never cut or crossfaded. A decay of at most 5 ms is applied only to appended non-speech padding. AAC is encoded once from that PCM master.
+
+For video, each cacheable visual source is decoded/normalized to raw 1920×1080 YUV420P frames at 30 fps. Sequential decoder output feeds **one continuous final H.264 encoder**, with timestamps generated from frame position. No encoded scene packets or GOPs are concatenated into the master; `-c:v copy` is not used. Scene frame counts are derived from global alignment positions, avoiding accumulated rounding drift. Subtitles use the same global PCM offsets.
+
+`video_qa.py` decodes nine final frames around each of 59 scene boundaries. It fails near-uniform black/white flashes and isolated frame excursions while permitting normal hard cuts. Contact strips and per-frame metrics are retained. Capture QA reports cursor, actual click ripple, element/section/dialog focus, drag and cue timing coverage. Automated checks supplement human review; they cannot certify semantic continuity or visual comfort.
+
+```sh
+# Visual-only corrective revision: never invoke narration/all here.
+venv/bin/python tutorial/scripts/build.py dry-run
+venv/bin/python tutorial/scripts/build.py visual
+venv/bin/python tutorial/scripts/build.py assemble
+venv/bin/python tutorial/scripts/build.py verify
+python3 tutorial/scripts/serve_modules.py --port 4196
+```
+
+Review at `http://127.0.0.1:4196/index.html`. Scene links accept `?scene=049-final-download-save`. The page includes all browser scenes, all 59 transitions with seeks two seconds before the cut, module audio boundaries, subtitles and QA evidence. Generated files remain ignored.
 
 `module_audio_qa.py` checks exact inserted silence, source-to-padding and module boundary sample discontinuities, decoded PCM identity, aligned speech gaps and loudness changes. Optional independently produced local ASR evidence is accepted only when all source audio hashes match. These checks supplement full decoding; human assessment of natural delivery remains available through boundary review controls. Generated acoustic and speech evidence is kept separate from the immutable request/timestamp evidence.
 

@@ -250,7 +250,7 @@
           "minimum": 0
         },
         "output_directory": {
-          "const": "generated/module-candidate"
+          "const": "generated/visual-corrective"
         },
         "animation_source": {
           "const": "animations/modules.html"

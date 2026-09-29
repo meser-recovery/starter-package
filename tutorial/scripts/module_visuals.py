@@ -5,7 +5,7 @@ from pathlib import Path
 from modules import ROOT,identity,sha,write_json,scene_timing
 from capture import probe
 
-OUT=ROOT/'generated/module-candidate'
+OUT=ROOT/json.loads((ROOT/'tutorial.yaml').read_text())['module_assembly']['output_directory']
 
 
 def paths(scene):

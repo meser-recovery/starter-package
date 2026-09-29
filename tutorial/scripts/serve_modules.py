@@ -8,7 +8,7 @@ from module_visuals import OUT
 
 if __name__ == '__main__':
     parser=argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--port',type=int,default=4195)
+    parser.add_argument('--port',type=int,default=4196)
     args=parser.parse_args()
     if not (OUT/'index.html').is_file(): parser.error('assemble the candidate first')
     server=ThreadingHTTPServer(('127.0.0.1',args.port),partial(Handler,directory=str(OUT)))

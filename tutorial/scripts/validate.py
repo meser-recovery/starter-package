@@ -10,8 +10,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 APPROVED_PACK_SHA256 = "6e024611d7165172f7c996f027be8281d5c6de02410822799a65a6257933841f"
 REQUIRED_ANIMATIONS = {
-    "zoom-multitrack", "archive-hierarchy", "one-translator",
-    "multiple-translators", "project-vs-final", "summary",
+    "zoom-multitrack", "one-translator",
+    "multiple-translators", "summary",
 }
 
 
@@ -151,6 +151,10 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
         fail("unmapped or duplicated narration")
     if sorted(used_storyboard) != sorted(rows):
         fail("missing or duplicated storyboard scene")
+    # Concrete Archive/Editor objects must be shown in the real local frontend.
+    for number in ('005','011','044','050'):
+        scene=next(s for s in spec['scenes'] if s['id'].startswith(number+'-'))
+        if scene['visual']['type']!='browser': fail('Real UI required: '+scene['id'])
     if not REQUIRED_ANIMATIONS.issubset(seen_animations):
         fail("required explanatory animation missing")
     for scene in spec["scenes"]:

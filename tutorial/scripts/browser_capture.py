@@ -25,7 +25,7 @@ def visual_hash(scene: dict) -> str:
     for path in sorted([*FRONTEND.glob("Audio-*.html"), *FRONTEND.glob("scripts/*.mjs"),
                         *FRONTEND.glob("scripts/*.js"), *FRONTEND.glob("styles/*.css"),
                         ROOT / "fixtures/recipes/synthetic-zoom-v1.json", ROOT / "scripts/fixtures.py",
-                        *FIXTURES.glob("*.wav"), Path(__file__), ROOT / "scripts/scenes.py"]):
+                        *FIXTURES.glob("*.wav"), Path(__file__), ROOT / "scripts/scenes.py", ROOT / "scripts/capture_director.py", ROOT / "scripts/capture_overlay.js"]):
         digest.update(str(path.relative_to(ROOT.parent)).encode())
         digest.update(path.read_bytes())
     payload = {"visual": scene["visual"], "initial_state": scene["initial_state"],
@@ -35,8 +35,16 @@ def visual_hash(scene: dict) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
+def frame_listing(frames, frame_times):
+    # image2 defaults to a coarse 1/25 time base; retain CDP microsecond timing.
+    return 'ffconcat version 1.0\n' + ''.join(
+        f"file '{frame}'\noption framerate 1000000\nduration {max(.001, frame_times[i+1]-frame_times[i]) if i+1<len(frames) else .034:.6f}\n"
+        for i, frame in enumerate(frames))
+
+
 async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, destination=None) -> dict:
     from playwright.async_api import async_playwright
+    from capture_director import Director, CapturePage
 
     if scene["visual"]["type"] != "browser":
         raise RuntimeError("browser_capture received non-browser scene")
@@ -72,16 +80,7 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
             browser = await playwright.chromium.launch(headless=True)
             context = await browser.new_context(viewport={"width": 1920, "height": 1080}, device_scale_factor=1,
                                                 color_scheme="light", service_workers="block", accept_downloads=False)
-            # A capture-only ring makes actual DOM-driven pointer clicks visible.
-            await context.add_init_script("""(() => {
-              document.addEventListener('pointerdown', event => {
-                const old=document.getElementById('__s11click'); old?.remove();
-                const ring=document.createElement('div'); ring.id='__s11click';
-                ring.style=`position:fixed;left:${event.clientX-15}px;top:${event.clientY-15}px;width:30px;height:30px;
-                  border:3px solid #0b76e0;border-radius:50%;box-shadow:0 0 0 5px #fff9;z-index:2147483647;pointer-events:none`;
-                document.body.append(ring); setTimeout(()=>ring.remove(),900);
-              },true);
-            })()""")
+            await context.add_init_script(path=str(ROOT / 'scripts/capture_overlay.js'))
             context.on("page", lambda opened: opened.on("pageerror", lambda error: errors.append(str(error))))
             page = await context.new_page()
 
@@ -98,14 +97,19 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
             await prepare(page, scene, base_url)
             if errors:
                 raise RuntimeError(f"browser preparation errors: {errors[:3]}")
+            await page.evaluate('window.__s11Capture.start()')
+            director = Director(page, scene, narration, asyncio.get_running_loop().time())
+            director.point=tuple((await page.evaluate('window.__s11Capture.evidence()'))['point'])
+            await director.stable()
             cdp = await context.new_cdp_session(page)
             pending = []
             stopping = False
             async def receive(event):
-                frame = folder / f"{len(frames):06d}.jpg"
-                frame.write_bytes(base64.b64decode(event["data"]))
-                frames.append(frame)
-                frame_times.append(event['metadata'].get('timestamp', 0))
+                if director.ready:
+                    frame = folder / f"{len(frames):06d}.jpg"
+                    frame.write_bytes(base64.b64decode(event["data"]))
+                    frames.append(frame)
+                    frame_times.append(event['metadata'].get('timestamp', 0))
                 try:
                     await cdp.send("Page.screencastFrameAck", {"sessionId": event["sessionId"]})
                 except Exception:
@@ -114,31 +118,31 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
             cdp.on("Page.screencastFrame", lambda event: pending.append(asyncio.create_task(receive(event))))
             await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 88,
                                                      "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
-            started = asyncio.get_running_loop().time()
+            started = director.started = asyncio.get_running_loop().time()
             repaint = """() => {if(window.__s11paint)clearInterval(window.__s11paint);let n=0;window.__s11paint=setInterval(()=>{
               let e=document.getElementById('__s11paint');
               if(!e){e=document.createElement('div');e.id='__s11paint';
                 e.style='position:fixed;bottom:0;right:0;width:1px;height:1px;z-index:2147483647';document.body.append(e)}
               e.style.backgroundColor=n++%2?'#fff':'#000';},33)}"""
             await page.evaluate(repaint)
-            async def cue(phrase):
-                if timing:
-                    index = scene['narration'].find(phrase)
-                    if index < 0:
-                        raise RuntimeError(f'unknown browser phrase cue: {phrase}')
-                    target = timing['alignment']['character_start_times_seconds'][index]
-                    await asyncio.sleep(max(0, target - (asyncio.get_running_loop().time() - started)))
-                    cue_evidence.append({'phrase': phrase, 'target_seconds': target,
-                                         'actual_seconds': asyncio.get_running_loop().time() - started})
-            if timing:
-                await cue(scene['narration'].split('.')[0])
-            opened = await perform(page, scene, base_url, cue=cue)
+            try:
+                opened = await perform(CapturePage(page, director), scene, base_url, cue=director.cue if timing else None)
+            except BaseException:
+                stopping=True
+                await cdp.send('Page.stopScreencast')
+                if pending:await asyncio.gather(*pending,return_exceptions=True)
+                raise
             if opened is not None:
                 stopping = True
                 await cdp.send("Page.stopScreencast")
                 if pending:
                     await asyncio.gather(*pending)
+                director.overlay_pages.append(await page.evaluate('window.__s11Capture.evidence()'))
                 page = opened
+                director.page = page
+                await page.evaluate('window.__s11Capture.start()')
+                await page.evaluate('point=>window.__s11Capture.setPoint(point)',director.point)
+                await director.stable()
                 cdp = await context.new_cdp_session(page)
                 stopping = False
                 cdp.on("Page.screencastFrame", lambda event: pending.append(asyncio.create_task(receive(event))))
@@ -154,6 +158,8 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
             await asyncio.sleep(.15)
             if pending:
                 await asyncio.gather(*pending)
+            choreography = await director.snapshot()
+            cue_evidence = choreography['alignment_action_cues']
             await browser.close()
         if errors:
             raise RuntimeError(f"browser errors: {errors[:3]}")
@@ -164,12 +170,10 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
         if timing:
             # Preserve actual capture time, including still frames and semantic cue waits.
             listing = folder / 'frames.ffconcat'
-            listing.write_text('ffconcat version 1.0\n' + ''.join(
-                f"file '{frame}'\nduration {max(.001, frame_times[i+1]-frame_times[i]) if i+1<len(frames) else .034:.6f}\n"
-                for i, frame in enumerate(frames)))
+            listing.write_text(frame_listing(frames,frame_times))
             input_args = ['-safe', '0', '-f', 'concat', '-i', str(listing)]
             elapsed = max(target_duration, frame_times[-1]-frame_times[0])
-        tail_pad = max(2.0, elapsed - len(frames) / 30 + 1)
+        tail_pad = elapsed + 1  # FFmpeg -t limits output; always retain the final stable frame.
         candidate = dest.with_suffix(".tmp.mp4")
         subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *input_args, "-t", str(elapsed),
                         "-vf", f"scale=1920:1080,tpad=stop_mode=clone:stop_duration={tail_pad:.3f},fps=30",
@@ -182,7 +186,7 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
         meta = {"scene_id": scene["id"], "visual_hash": current_hash,
                 "duration_seconds": info["duration_seconds"], "frame_count": len(frames),
                 "network_requests": dict(network), "production_mutation_requests": 0,
-                "alignment_action_cues": cue_evidence,
+                "alignment_action_cues": cue_evidence, "choreography": choreography,
                 "expected_state": "PASS", "browser_errors": 0}
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
         return {**meta, "cache": "MISS"}

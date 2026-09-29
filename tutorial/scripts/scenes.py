@@ -32,11 +32,11 @@ async def create_archive(page, title: str):
         raise RuntimeError("archive save did not open the requested synthetic record")
 
 
-async def import_local(page, base: str, mode: str | None = None):
+async def import_local(page, base: str, mode: str | None = None, tracks=None):
     await page.goto(base + "/Audio-Editor.html")
     await page.locator("#source-session-mode-device").click()
-    await page.locator("#processor-file").set_input_files([str(path) for path in TRACKS])
-    await page.wait_for_function("document.querySelector('#import-files').textContent.includes('Участник.wav')")
+    await page.locator("#processor-file").set_input_files([str(path) for path in (tracks or TRACKS)])
+    await page.locator("#import-files").get_by_text((tracks or TRACKS)[-1].name, exact=False).first.wait_for()
     await page.locator("#source-session-use-local").click()
     await page.locator("#workflow-choice").wait_for(state="visible", timeout=60_000)
     if mode == "speaker":
@@ -129,7 +129,9 @@ async def seed_history(page, base: str, title: str, *, finals: bool):
 
 
 async def select_speaker_range(page, start: str = "3", end: str = "4"):
-    await page.locator(".speaker-selection > details:first-of-type").evaluate("element => element.open = true")
+    details=page.locator(".speaker-selection > details:first-of-type")
+    if not await details.get_attribute('open') == '':
+        await details.locator(':scope > summary').click()
     await page.locator("#speaker-editor-selection-start").fill(start)
     await page.locator("#speaker-editor-selection-end").fill(end)
 
@@ -182,7 +184,26 @@ async def prepare(page, scene: dict, base: str):
     number = int(scene["id"][:3])
     await login(page, base)
     title = f"Учебная запись S11 {number:03d}"
-    if number == 6:
+    if number == 5:
+        await create_archive(page,title)
+    elif number == 11:
+        await seed_history(page,base,title,finals=True)
+        href=await page.locator('#detail .workflow-choice-announcement a').get_attribute('href')
+        await page.goto(base+'/'+href)
+        await page.locator('#announcement-processor-card').wait_for(state='visible',timeout=60000)
+        await publish_announcement(page)
+        await open_archive_detail_from_editor(page,base,title)
+    elif number == 44:
+        await import_archive(page,base,title,'speaker')
+        await add_speaker_edit(page,'cut')
+        await page.locator('#speaker-editor-tracks [data-dsp-field="enhancement"]').first.check()
+    elif number == 50:
+        await seed_history(page,base,title,finals=True)
+        await reopen_project_from_detail(page,base)
+        await page.locator('#speaker-editor-tracks .speaker-track').last.get_by_role('button',name='Исключить из микса').click()
+        await save_speaker_project(page)
+        await open_archive_detail_from_editor(page,base,title)
+    elif number == 6:
         await page.goto(base + "/Audio-Editor.html")
     elif 7 <= number <= 10:
         if number != 7:
@@ -231,7 +252,20 @@ async def prepare(page, scene: dict, base: str):
         if number in (45, 49):
             await import_archive(page, base, title, "speaker")
         else:
-            await import_local(page, base, None if number == 30 else "speaker")
+            if number == 32:
+                # Synthetic near-full-scale, in-phase sources make the REAL mix meter clip.
+                import math,struct,wave
+                folder=ROOT/'generated/visual-corrective/fixtures';folder.mkdir(parents=True,exist_ok=True)
+                tracks=[]
+                for name in ('Тест уровня 1.wav','Тест уровня 2.wav','Тест уровня 3.wav','Участник.wav'):
+                    path=folder/name
+                    with wave.open(str(path),'wb') as f:
+                        f.setnchannels(1);f.setsampwidth(2);f.setframerate(24000)
+                        f.writeframes(b''.join(struct.pack('<h',round(31000*math.sin(i*2*math.pi*220/24000))) for i in range(24000*20)))
+                    tracks.append(path)
+                await import_local(page,base,'speaker',tracks)
+            else:
+                await import_local(page, base, None if number == 30 else "speaker")
         if number in (39, 42, 43):
             await add_speaker_edit(page, "cut")
         if number == 41:
@@ -242,6 +276,7 @@ async def prepare(page, scene: dict, base: str):
             await render_speaker_final(page)
     elif 51 <= number <= 55:
         await seed_history(page, base, title, finals=number in (54, 55))
+        if number in (53,55):await page.locator("#detail .project-disclosure > summary").click()
     elif number == 58:
         await import_archive(page, base, title, "announcement")
         await publish_announcement(page)
@@ -256,13 +291,58 @@ async def perform(page, scene: dict, base: str, cue=None):
     async def at(phrase):
         if cue:
             await cue(phrase)
+    async def focus(selector,phrase=None,kind='section',label=''):
+        if hasattr(page,'tutorial'):
+            await page.tutorial.focus(page.locator(selector).first,phrase,kind,label)
+    async def move_edge(edge):
+        await edge.scroll_into_view_if_needed()
+        box=await edge.bounding_box()
+        if not box: raise RuntimeError('Real region boundary unavailable')
+        x=box['x']+box['width']/2;y=box['y']+box['height']/2
+        await page.mouse.move(x,y);await page.mouse.down();await page.mouse.move(x+42,y,steps=16);await page.mouse.up()
     number = int(scene["id"][:3])
     title = f"Учебная запись S11 {number:03d}"
-    if number == 6:
+    if number == 5:
+        await focus('#detail','Аудиоархив позволяет')
+        await at('Аудиоредактор позволяет')
+        await page.locator('nav[aria-label="Аудиопортал"] a[href="Audio-Editor.html"]').click()
+        await page.locator('#source-session-mode-archive').wait_for()
+        await page.locator('#source-session-mode-archive').click()
+        await page.locator('#source-session-list .source-session-item').filter(has_text=title).get_by_role('button',name='Выбрать').click()
+        await page.locator('#workflow-choice').wait_for(state='visible',timeout=60000)
+        await focus('#workflow-choice','выбрать один из двух')
+    elif number == 11:
+        await focus('#detail .source-section','исходные дорожки')
+        await at('проект обработки')
+        await page.locator('#detail .project-disclosure > summary').click()
+        await focus('#detail .project-disclosure')
+        await at('версии для анонс-мейкера')
+        await page.locator('#detail .version-history > summary').click()
+        await focus('#detail .workflow-announcement')
+        await focus('#detail .workflow-speaker','финальные версии')
+    elif number == 44:
+        await focus('#speaker-editor-tracks','проект обработки',label='Редактируемый монтаж')
+        await at('Сохранить проект')
+        await save_speaker_project(page)
+        await focus('#speaker-editor-status')
+        await focus('#speaker-editor-tracks','Такой проект')
+        await focus('#speaker-editor-render','Но сохранённый проект',kind='element',label='Проект ≠ MP3')
+    elif number == 50:
+        await page.locator('#detail .project-disclosure > summary').click()
+        linked=page.locator('#detail .project-state-row').filter(has_text='Связанные финальные версии:').first
+        if hasattr(page,'tutorial'): await page.tutorial.focus(linked,'с тем состоянием проекта',label='Состояние, из которого создан MP3')
+        await focus('#detail .project-state-row','Если после этого',label='Новое состояние сохранено отдельно')
+        if hasattr(page,'tutorial'): await page.tutorial.focus(linked,'уже существующая',label='Связь прежнего MP3 сохранена')
+        await at('новая финальная версия')
+        await page.locator('#detail .version-history > summary').click()
+        await focus('#detail .workflow-speaker')
+    elif number == 6:
         await page.locator('nav[aria-label="Аудиопортал"] a[href="Audio-Archive.html"]').click()
         await page.get_by_role("heading", name="Аудиоархив").wait_for()
     elif number == 7:
+        await at('Создать запись')
         await page.locator("#archive-create-open").click()
+        await at("Для записи указывается название")
         await page.locator("#archive-create-name").fill(title)
         await page.locator("#archive-create-recorded").fill("2026-09-28T12:00")
         if not await page.locator("#archive-create-name").input_value() == title:
@@ -272,6 +352,7 @@ async def perform(page, scene: dict, base: str, cue=None):
         if await page.locator("#archive-create-list li").count() != 3:
             raise RuntimeError("three selected synthetic tracks not visible")
     elif number == 9:
+        await at('Добавить дорожки')
         await page.locator("#archive-create-add").click()
         await page.locator("#archive-create-files").set_input_files(str(TRACKS[1]))
         await at('Выбрать заново')
@@ -283,9 +364,11 @@ async def perform(page, scene: dict, base: str, cue=None):
         await page.locator("#archive-create-submit").click()
         await page.locator("#detail-title").wait_for(timeout=60_000)
     elif number == 12:
+        await at('искать по названию')
         await page.locator('#filters input[name="search"]').fill(title)
         await page.locator("#record-picker-search").click()
         await page.locator("#session-list").get_by_text(title).first.wait_for()
+        await at("сортировать и фильтровать")
         await page.locator(".secondary-filters summary").click()
         await page.locator('#filters select[name="sort"]').select_option("title")
         await page.locator("#record-picker-recent").click()
@@ -293,11 +376,13 @@ async def perform(page, scene: dict, base: str, cue=None):
         await page.locator('nav[aria-label="Аудиопортал"] a[href="Audio-Editor.html"]').click()
         await page.locator("#source-session-mode-archive").wait_for()
     elif number == 14:
+        await at('Из аудиоархива')
         await page.locator("#source-session-mode-archive").click()
         item = page.locator("#source-session-list .source-session-item").filter(has_text=title).first
         await item.get_by_role("button", name="Выбрать").click()
         await page.locator("#workflow-choice").wait_for(state="visible", timeout=60_000)
     elif number == 15:
+        await at('выбрать файлы')
         await page.locator("#processor-file").set_input_files([str(path) for path in TRACKS])
         await page.locator("#source-session-use-local").click()
         await page.locator("#workflow-choice").wait_for(state="visible", timeout=60_000)
@@ -306,6 +391,7 @@ async def perform(page, scene: dict, base: str, cue=None):
             raise RuntimeError("local import unexpectedly linked to Archive")
         await page.locator("#source-session-mode-device").click()
     elif number == 17:
+        await at('сохранить запись в Архив')
         await page.locator("#source-session-mode-device").click()
         await page.locator("#processor-save-incoming").click()
         await page.locator("#source-session-ingest-dialog").wait_for(state="visible")
@@ -313,12 +399,16 @@ async def perform(page, scene: dict, base: str, cue=None):
         await page.locator("#source-session-ingest-submit").click()
         await page.locator("#current-recording-heading").get_by_text(title).wait_for(timeout=60_000)
     elif number == 18:
+        await focus("#open-local-announcement","Анонс-мейкер",kind="element")
+        await focus("#open-local-speaker","Спикерская",kind="element")
         if not await page.locator("#open-local-announcement").is_visible() or not await page.locator("#open-local-speaker").is_visible():
             raise RuntimeError("both editor modes not visible")
     elif number == 23:
+        await at('Анонс-мейкер')
         await page.locator("#open-local-announcement").click()
         await page.locator("#announcement-processor-card").wait_for(state="visible", timeout=60_000)
     elif number == 30:
+        await at('Спикерская')
         await page.locator("#open-local-speaker").click()
         await page.locator("#speaker-editor").wait_for(state="visible", timeout=60_000)
     elif number == 24:
@@ -330,6 +420,10 @@ async def perform(page, scene: dict, base: str, cue=None):
             raise RuntimeError("announcement Solo did not engage")
     elif number == 25:
         await page.locator("#processor-source-zoom-in").click()
+        await at("изменение высоты дорожек")
+        await page.locator("#processor-source-scale-mode").click()
+        await page.locator("#processor-source-zoom-in").click()
+        await page.locator("#processor-source-scale-mode").click()
         await at('Вписать')
         await page.locator("#processor-source-zoom-fit").click()
         await at('Follow')
@@ -370,26 +464,31 @@ async def perform(page, scene: dict, base: str, cue=None):
         if not await page.locator("#processor-download").is_visible():
             raise RuntimeError("announcement MP3 download missing")
         await page.locator("#processor-download").click()
+        await at("готовый материал можно также сохранить")
         await page.locator("#source-session-publish-announcement").click()
         await page.locator("#source-session-publication-dialog").wait_for(state="visible")
         await page.locator("#source-session-publication-submit").click()
         await page.locator("#source-session-publication-dialog").wait_for(state="hidden", timeout=120_000)
     elif number == 31:
+        await at('включить улучшение звука')
         row = page.locator("#speaker-editor-tracks .speaker-track").first
         await row.locator('[data-dsp-field="enhancement"]').check()
         await at('Отдельно доступно')
         await row.locator('[data-dsp-field="leveling"]').check()
         await at('Компрессия')
-        await row.locator('[data-dsp-field="compression"]').evaluate("""input => {
-          input.value='2'; input.dispatchEvent(new Event('input',{bubbles:true}));
-          input.dispatchEvent(new Event('change',{bubbles:true}));}""")
+        await row.locator('[data-dsp-field="compression"]').press('Home')
+        await row.locator('[data-dsp-field="compression"]').press('ArrowRight')
+        await row.locator('[data-dsp-field="compression"]').press('ArrowRight')
         settings = await page.evaluate("""async () =>
           (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload.trackProcessing[0]""")
         if [settings[key] for key in ("enhancement", "leveling", "compression")] != ["gentle", "on", "medium"]:
             raise RuntimeError("independent track DSP selection failed")
     elif number == 32:
+        await at('индикаторы уровня')
         await page.locator("#speaker-editor-source-audio-play").click()
         await page.locator("#speaker-editor-tracks .audio-meter").first.wait_for()
+        await focus('#speaker-editor .audio-meter--master','Если появляется CLIP',label='Слишком высокий уровень')
+        await page.locator('#speaker-editor .audio-meter--master [data-clipped="true"]').wait_for(timeout=8000)
     elif number == 33:
         row = page.locator("#speaker-editor-tracks .speaker-track").last
         await row.locator('[data-action="solo"]').click()
@@ -420,43 +519,49 @@ async def perform(page, scene: dict, base: str, cue=None):
         await page.locator("#speaker-editor-source-audio-loop").click()
         edge = page.locator("#speaker-editor-tracks .speaker-boundary--start").first
         if await edge.count():
-            await edge.focus()
-            await page.keyboard.press("ArrowRight")
+            await move_edge(edge)
         if await page.locator("#speaker-editor-source-audio-loop").get_attribute("aria-pressed") != "true":
             raise RuntimeError("Speaker Loop did not engage")
     elif number == 37:
+        await drag_speaker_selection(page)
         await select_speaker_range(page, "2", "3")
         await page.locator("#speaker-editor-set-start").click()
         await at('Таким же образом')
         await select_speaker_range(page, "15", "16")
         await page.locator("#speaker-editor-set-end").click()
     elif number == 38:
+        await at('Вырезать')
         await add_speaker_edit(page, "cut")
     elif number == 39:
         await restore_speaker_edit(page, "cut")
     elif number == 40:
+        await at('Тишина')
         await add_speaker_edit(page, "silence")
     elif number == 41:
         await restore_speaker_edit(page, "silence")
     elif number == 42:
         edge = page.locator('#speaker-editor-tracks [data-edge="start"]').first
         before = await edge.get_attribute("aria-valuenow")
-        await edge.focus()
-        await page.keyboard.press("ArrowRight")
+        await move_edge(edge)
         if await edge.get_attribute("aria-valuenow") == before:
             raise RuntimeError("region boundary did not move")
-        await page.locator("#speaker-editor-selection-start").fill("2.5")
+        await at("точными числовыми значениями")
+        await select_speaker_range(page,"2.5","5.5")
     elif number == 43:
         await page.locator("#speaker-editor-undo").click()
         await at('Повторить')
         await page.locator("#speaker-editor-redo").click()
+        await focus('#speaker-editor-source-audio-play','клавишей пробела',kind='element')
+        await page.locator('#speaker-editor-source-audio-play').press('Space')
     elif number == 45:
+        await at('проект сохраняется')
         await save_speaker_project(page)
     elif number == 46:
         await page.locator("#speaker-editor-save").click()
         await page.locator("#speaker-local-save-confirm").click()
         await page.wait_for_function("document.querySelector('#speaker-editor-status').dataset.dirty === 'false'", timeout=120_000)
     elif number == 47:
+        await at('Создать финальную версию')
         await page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=60_000)
         await page.locator("#speaker-editor-render").click()
         await page.locator("#speaker-editor-result").wait_for(state="visible", timeout=120_000)
@@ -464,8 +569,11 @@ async def perform(page, scene: dict, base: str, cue=None):
     elif number == 48:
         if not await page.locator("#speaker-editor-result-duration").inner_text():
             raise RuntimeError("final result duration missing")
-        await page.locator("#speaker-editor-result").scroll_into_view_if_needed()
+        await focus('#speaker-editor-result-audio','прослушать',kind='element')
+        await page.locator('#speaker-editor-result-audio').press('Space')
+        await focus('#speaker-editor-download','скачать',kind='element')
     elif number == 49:
+        await at('скачивание файла')
         if not await page.locator("#speaker-editor-download").is_visible():
             raise RuntimeError("local final download missing")
         await page.locator("#speaker-editor-download").click()
@@ -475,35 +583,41 @@ async def perform(page, scene: dict, base: str, cue=None):
         await page.locator("#speaker-editor-save-submit").click()
         await page.locator("#speaker-editor-save-dialog").wait_for(state="hidden", timeout=120_000)
     elif number == 51:
+        await at('её проект')
         async with page.expect_popup() as opened:
             await page.locator("#detail .project-section").get_by_role("link", name="Продолжить обработку").click()
         popup = await opened.value
         await popup.locator("#speaker-editor").wait_for(state="visible", timeout=60_000)
         return popup
     elif number == 52:
+        await at('Истории проекта')
         history = page.locator("#detail .project-disclosure")
         await history.locator(":scope > summary").click()
+        await focus("#detail .project-state-row","Там видно")
         if await history.locator(".project-state-row").count() < 3:
             raise RuntimeError("three saved project states not visible")
     elif number == 53:
+        await at('Продолжить с этого состояния')
         history = page.locator("#detail .project-disclosure")
-        await history.locator(":scope > summary").click()
         old = history.locator(".project-state-row").last
         await old.get_by_role("link", name="Продолжить с этого состояния").click()
         await page.locator("#speaker-editor").wait_for(state="visible", timeout=60_000)
     elif number == 54:
+        await at('финальные версии')
         versions = page.locator("#detail .version-history")
         await versions.locator(":scope > summary").click()
         speaker = versions.locator(".workflow-speaker")
         await speaker.get_by_role("button", name="Прослушать").first.click()
         await page.locator("#player").wait_for(state="visible", timeout=60_000)
     elif number == 55:
+        await focus('#detail .project-disclosure','конкретным состоянием проекта')
+        await at('вернуться именно')
         history = page.locator("#detail .project-disclosure")
-        await history.locator(":scope > summary").click()
         linked = history.locator(".project-state-row").filter(has_text="Связанные финальные версии:").first
         await linked.get_by_role("link", name="Продолжить с этого состояния").click()
         await page.locator("#speaker-editor").wait_for(state="visible", timeout=60_000)
     elif number == 56:
+        await at('изменить название')
         management = page.locator("#detail .record-management")
         await management.locator(":scope > summary").click()
         await page.locator("#metadata-title").fill(title + " · исправлено")
@@ -526,6 +640,12 @@ async def perform(page, scene: dict, base: str, cue=None):
     elif number == 59:
         danger = page.locator("#detail .danger-zone")
         await danger.locator(":scope > summary").click()
+        await at('удаление исходных дорожек')
+        await danger.get_by_role('button',name='Удалить исходные дорожки').click()
+        await page.locator('#delete-dialog').wait_for(state='visible')
+        await focus('#delete-retained','проекты и результаты могут остаться')
+        await page.locator('#delete-cancel').click()
+        await at('запись можно удалить полностью')
         await danger.get_by_role("button", name="Удалить запись полностью").click()
         await page.locator("#delete-dialog").wait_for(state="visible")
         if not await page.locator("#delete-removed").inner_text():

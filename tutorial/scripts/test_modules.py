@@ -61,6 +61,7 @@ class ModuleTests(unittest.TestCase):
             self.assertEqual(timeline['aac_encodes'],0)
             self.assertNotIn('[calm]',(out/'tutorial.ru.srt').read_text())
             self.assertEqual((out/'index.html').read_text().count(' → '),7)
+            self.assertEqual((out/'index.html').read_text().count(' · −2 с'),59)
             # Tampered evidence fails closed without any paid recovery request.
             (root/'N03/timing.json').write_text('{}')
             self.assertIsNone(modules.cached(spec,n03,root))
