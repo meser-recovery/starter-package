@@ -1,6 +1,6 @@
 # S11 visual corrective v2 — six-scene approval pilot
 
-Scope: **015, 016, 029, 032, 050, 059 only**. Await visual approval before any of the other 45 browser recaptures or full MP4 assembly. PR #60 remains open; no merge or production mutation.
+Historical pilot scope: **015, 016, 029, 032, 050, 059 only**. The user approved this pilot and authorized the full rollout with an additional semantic cursor lifecycle rule. The preserved pilot artifacts below remain unchanged; the continuation is recorded in [VISUAL-CORRECTIVE-V2-FULL.md](VISUAL-CORRECTIVE-V2-FULL.md). PR #60 remains open; no merge or production mutation.
 
 ## Implementation
 

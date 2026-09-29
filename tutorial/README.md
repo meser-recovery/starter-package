@@ -97,3 +97,22 @@ All pilot output is isolated under `generated/pilot/`. A preservation baseline c
 The procedural Canvas source is `animations/pilot.html`. It depicts audio waveforms and edits directly; it has no remote assets or dependencies. Timing comes from each variant's exact ElevenLabs alignment. Changing a neighboring fragment invalidates B/C audio cache; changing the visual source or rendering code invalidates only pilot visual cache. The original no-context cache hash remains compatible. A/B omit `voice_settings` as before; historical provider-side default values were not recorded in old caches and cannot be reconstructed exactly.
 
 Provider reference: [ElevenLabs Create speech with timing](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps).
+
+## Approved visual corrective v2 rollout
+
+The six-scene pilot was approved. The follow-up adds an automatic semantic cursor lifecycle to every browser capture. Concrete controls use cursor only; semantic sections use an outline on the actual element. The cursor starts hidden, hides after a target disappears, changes identity, becomes occluded or moves away, and re-enters near the next explicit target. Dialog/menu transitions never reuse old cursor coordinates. Gestures have an explicit start/end lifecycle. Click feedback precedes transition hiding; a stable unchanged target may retain its cursor.
+
+The full revision is isolated under `generated/visual-corrective-v2-full/`. It reads the existing N01–N08 audio/alignment cache and the nine approved animation clips; missing or stale audio fails without a TTS fallback. Browser scenes are recaptured against the process-local loopback Meser frontend. `corrective_scenes.py` contains only real-UI choreography, with a separate fingerprint per scene for selective visual retries. Neither `tutorial.yaml` nor canonical narration is edited.
+
+```sh
+venv/bin/python tutorial/scripts/corrective_full.py check
+venv/bin/python tutorial/scripts/verify_cursor_lifecycle.py
+venv/bin/python tutorial/scripts/corrective_full.py capture
+# Optional selective visual retry; no audio regeneration:
+venv/bin/python tutorial/scripts/corrective_full.py capture --scenes 15,16,29,32,50,59
+venv/bin/python tutorial/scripts/corrective_full.py assemble
+venv/bin/python tutorial/scripts/corrective_full.py verify
+python3 tutorial/scripts/serve_modules.py --directory tutorial/generated/visual-corrective-v2-full --port 4198
+```
+
+The preserved generated inputs and `evidence/preservation-before.json` are required for this continuation. Review: `http://127.0.0.1:4198/index.html`. The previous full candidate and six-scene approval pilot remain in their original directories. Validation rejects an outlined control, displaced section geometry, visible orphan cursor, late cue, insufficient dwell, rapid post-action movement, missing drag evidence or an overrun of the existing alignment range. The final PCM soundtrack and subtitles must match the preceding candidate byte for byte; the MP4 uses one final AAC encode from that continuous PCM timeline.

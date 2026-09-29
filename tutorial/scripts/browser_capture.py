@@ -25,7 +25,7 @@ def visual_hash(scene: dict) -> str:
     for path in sorted([*FRONTEND.glob("Audio-*.html"), *FRONTEND.glob("scripts/*.mjs"),
                         *FRONTEND.glob("scripts/*.js"), *FRONTEND.glob("styles/*.css"),
                         ROOT / "fixtures/recipes/synthetic-zoom-v1.json", ROOT / "scripts/fixtures.py",
-                        *FIXTURES.glob("*.wav"), Path(__file__), ROOT / "scripts/scenes.py", ROOT / "scripts/capture_director.py", ROOT / "scripts/capture_overlay.js"]):
+                        *FIXTURES.glob("*.wav"), Path(__file__), ROOT / "scripts/scenes.py", ROOT / "scripts/capture_director.py", ROOT / "scripts/capture_geometry.py", ROOT / "scripts/capture_overlay.js"]):
         digest.update(str(path.relative_to(ROOT.parent)).encode())
         digest.update(path.read_bytes())
     payload = {"visual": scene["visual"], "initial_state": scene["initial_state"],
@@ -150,7 +150,9 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
                 await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 88,
                                                          "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
             await page.evaluate(repaint)
-            await asyncio.sleep(max(1.0, target_duration - (asyncio.get_running_loop().time() - started)))
+            # Director already enforces a stable post-action hold. Do not add a
+            # second one-second hold that pushes a late action beyond its scene.
+            await asyncio.sleep(max(.1, target_duration - (asyncio.get_running_loop().time() - started)))
             alerts = page.locator('[role="alert"]:visible')
             if await alerts.count():
                 raise RuntimeError(f"unexpected browser error banner: {await alerts.first.inner_text()}")

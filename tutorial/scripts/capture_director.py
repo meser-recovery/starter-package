@@ -33,14 +33,22 @@ class Director:
         box=await locator.bounding_box()
         if not box:raise RuntimeError('Real UI target unavailable: '+str(locator))
         x=box['x']+box['width']/2;y=box['y']+box['height']/2
+        state=await self.page.evaluate('window.__s11Capture.audit()')
+        if isinstance(state,dict) and state.get('cursorState')=='hidden':
+            self.point=(max(18,min(1890,x-85)),max(18,min(1042,y+55)))
         duration=min(.7,max(.3,math.hypot(x-self.point[0],y-self.point[1])/1800))
         pending=self.pending if consume else None
         if pending:await asyncio.sleep(max(0,pending[1]-duration-self.now()))
-        await locator.evaluate('el=>window.__s11Capture.aim(el)')
+        entry=await locator.evaluate('el=>window.__s11Capture.aim(el)')
+        if isinstance(entry,dict):self.point=tuple(entry['point'])
         await audit(self.page)
         movement_start=self.now()
         await self.move(x,y,duration=duration)
         arrival=self.now()
+        await self.page.evaluate('window.__s11Capture.arrived()')
+        state=await audit(self.page)
+        if isinstance(state,dict) and not state.get('cursorVisible'):
+            raise RuntimeError('cursor target lost its meaning before arrival: '+str(locator))
         self.arrival={'seconds':arrival,'phrase_end':pending[2] if pending else None,'phrase':pending[0] if pending else None}
         if pending:
             error=arrival-pending[1]
@@ -78,13 +86,17 @@ class Director:
         if not self.arrival:raise RuntimeError('action without cursor arrival')
         earliest=max(self.arrival['seconds']+.75,(self.arrival['phrase_end'] or 0)+.25)
         await asyncio.sleep(max(0,earliest-self.now()))
-        await audit(self.page)
+        state=await audit(self.page)
+        if isinstance(state,dict) and not state.get('cursorVisible'):
+            raise RuntimeError('action lost its semantic cursor target during dwell')
         self.events.append({'type':'action-timing','seconds':self.now(),'arrival_seconds':self.arrival['seconds'],
                             'phrase_end_seconds':self.arrival['phrase_end'],'minimum_dwell_seconds':.75,
                             'dwell_seconds':self.now()-self.arrival['seconds'],'phrase':self.arrival['phrase']})
         await self.page.evaluate("window.__s11Capture.clear('action')")
     async def after_action(self):
         self.post_until=self.now()+.45
+        self.events.append({'type':'action-complete','seconds':self.now(),'hold_until_seconds':self.post_until})
+        await self.page.evaluate('window.__s11Capture.afterAction()')
         await audit(self.page)
         await asyncio.sleep(max(0,self.post_until-self.now()))
     async def wait_pending(self):
@@ -116,13 +128,27 @@ class CaptureLocator:
     async def click(self,**kwargs):
         await self.d.aim(self.raw)
         href=await self.raw.get_attribute('href');nav=bool(href and not href.startswith(('#','blob:','data:')) and not await self.raw.get_attribute('download'))
-        if nav:self.d.ready=False
         element_id=await self.raw.get_attribute('id')
         if element_id in ('archive-create-pick','archive-create-add','archive-create-replace','import-replace','import-add'):self.d.file_picker_id=element_id
         await self.d.before_action()
-        start=self.d.now();await self.raw.click(**kwargs)
+        start=self.d.now()
+        if nav:
+            # Record the real press feedback and a hidden-cursor frame BEFORE
+            # pausing capture for navigation. Pausing before click would omit
+            # feedback and freeze the old pointer over the transition.
+            await self.d.page.mouse.down();await asyncio.sleep(.13)
+            await self.d.page.evaluate("window.__s11Capture.hide('navigation-action')")
+            await self.d.page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+            await asyncio.sleep(.04)
+            self.d.events.append({'type':'navigation-feedback','seconds':self.d.now(),'press_seconds':start,'cursor_hidden_before_transition':True})
+            self.d.ready=False
+            if await self.raw.get_attribute('target')=='_blank':await self.d.page.mouse.up()
+            else:
+                async with self.d.page.expect_navigation(wait_until='domcontentloaded'):
+                    await self.d.page.mouse.up()
+        else:await self.raw.click(delay=130,**kwargs)
         self.d.events.append({'type':'click','seconds':start,'target':str(self.raw),'ripple':True})
-        if not nav:await self.d.after_action()
+        await self.d.after_action()
     async def check(self,**kwargs):
         if not await self.raw.is_checked():await self.click(**kwargs)
     async def fill(self,value,**kwargs):
@@ -141,17 +167,20 @@ class CaptureLocator:
             target=self.d.page.locator(candidates[element_id]).first
             await self.d.aim(target)
             await self.d.before_action()
-            await self.d.page.mouse.down();await self.d.page.mouse.up()
+            await self.d.page.mouse.down();await asyncio.sleep(.13);await self.d.page.mouse.up()
         self.d.file_picker_id=None
+        await self.d.page.evaluate("window.__s11Capture.hide('file-selection')")
         await self.raw.set_input_files(files,**kwargs)
         self.d.events.append({'type':'file-selection','seconds':self.d.now(),'target':str(target),'synthetic_only':True});await self.d.after_action()
     async def select_option(self,value,**kwargs):
-        await self.d.aim(self.raw);await self.d.before_action();await self.raw.click()
+        await self.d.aim(self.raw);await self.d.before_action();await self.raw.click(delay=130)
+        await self.d.page.evaluate("window.__s11Capture.hide('native-select')")
         await asyncio.sleep(.25)
         await self.raw.select_option(value,**kwargs)
         await self.raw.press('Tab')
         if await self.raw.input_value()!=value:raise RuntimeError('real dropdown selection failed')
         self.d.events.append({'type':'select','seconds':self.d.now(),'target':str(self.raw)})
+        await self.d.after_action()
     async def focus(self,**kwargs):
         await self.d.aim(self.raw);await self.raw.focus(**kwargs)
     async def press(self,key,**kwargs):
@@ -159,7 +188,6 @@ class CaptureLocator:
         self.d.events.append({'type':'key','key':key,'seconds':self.d.now(),'target':str(self.raw)})
     async def scroll_into_view_if_needed(self,**kwargs):
         await self.raw.scroll_into_view_if_needed(**kwargs)
-        await self.d.highlight(self.raw)
     async def wait_for(self,**kwargs):
         await self.raw.wait_for(**kwargs)
         if not self.d.ready:await self.d.stable()
@@ -167,12 +195,35 @@ class CaptureLocator:
 
 class CaptureMouse:
     def __init__(self,d):self.d=d
-    async def move(self,x,y,**kwargs):await self.d.move(x,y)
+    async def move(self,x,y,**kwargs):
+        if not self.d.down:
+            await asyncio.sleep(max(0,self.d.post_until-self.d.now()))
+            pending=self.d.pending
+            # A new gesture enters near its own semantic region. Approach is
+            # scheduled before the phrase; mouse-down follows a visible dwell.
+            if pending:await asyncio.sleep(max(0,pending[1]-.7-self.d.now()))
+            entry=await self.d.page.evaluate('p=>window.__s11Capture.gestureAt(...p)',[x,y])
+            self.d.point=tuple(entry['point'])
+            duration=min(.7,max(.3,math.hypot(x-self.d.point[0],y-self.d.point[1])/1800))
+            if pending:await asyncio.sleep(max(0,pending[1]-duration-self.d.now()))
+            movement_start=self.d.now()
+            await self.d.move(x,y,duration=duration)
+            arrival=self.d.now()
+            self.d.arrival={'seconds':arrival,'phrase_end':pending[2] if pending else None,'phrase':pending[0] if pending else None}
+            if pending:
+                self.d.cues.append({'phrase':pending[0],'target_seconds':pending[1],'phrase_end_seconds':pending[2],
+                    'actual_seconds':arrival,'movement_start_seconds':movement_start,'kind':'gesture-arrival','error_seconds':arrival-pending[1]})
+                self.d.pending=None
+                if self.d.timing.get('strict_choreography') and abs(arrival-pending[1])>.18:
+                    raise RuntimeError('gesture arrival missed '+pending[0])
+        else:await self.d.move(x,y)
     async def down(self,**kwargs):
-        await self.d.wait_pending()
+        await self.d.before_action()
+        await self.d.page.evaluate('window.__s11Capture.gestureStart()')
         await self.d.page.mouse.down(**kwargs);self.d.down=True;self.d.events.append({'type':'drag-start','seconds':self.d.now(),'point':self.d.point})
     async def up(self,**kwargs):
-        await self.d.page.mouse.up(**kwargs);self.d.down=False;self.d.events.append({'type':'drag-end','seconds':self.d.now(),'point':self.d.point});await asyncio.sleep(.2)
+        await self.d.page.mouse.up(**kwargs);self.d.down=False;self.d.events.append({'type':'drag-end','seconds':self.d.now(),'point':self.d.point})
+        await self.d.page.evaluate('window.__s11Capture.gestureEnd()');await self.d.after_action()
 
 
 class CapturePage:
