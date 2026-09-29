@@ -116,4 +116,12 @@ class ModuleTests(unittest.TestCase):
         self.assertFalse(any(result[len(source)+240:]))
         self.assertGreater(abs(source[-1]),.02*32768)  # Old zero padding had a real discontinuity.
 
+    def test_capture_clock_jump_cannot_pass_after_video_retiming(self):
+        evidence={'retime_factor':1,'alignment_action_cues':[{'target_seconds':5.44,'actual_seconds':5.440768}]}
+        assembly.browser_action_errors('049-final-download-save',evidence)
+        # Observed interrupted capture: action happened on time, but video was compressed 67x.
+        evidence['retime_factor']=.015000659
+        with self.assertRaisesRegex(AssertionError,'browser action timing drift'):
+            assembly.browser_action_errors('049-final-download-save',evidence)
+
 if __name__=='__main__':unittest.main()

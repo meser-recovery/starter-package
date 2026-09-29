@@ -147,6 +147,15 @@ def assemble(spec):
     return {'final':str(final),'duration_seconds':timeline['duration_seconds'],'scenes':len(rows),'aac_encodes':1}
 
 
+def browser_action_errors(scene_id,evidence):
+    errors=[]
+    for cue in evidence.get('alignment_action_cues',[]):
+        error=abs(cue['actual_seconds']*evidence['retime_factor']-cue['target_seconds'])
+        assert error<=.1, f"browser action timing drift: {scene_id} ({error:.3f}s)"
+        errors.append(error)
+    return errors
+
+
 def verify(spec):
     content=validate(); manifest=json.loads((OUT/'manifest.json').read_text()); info=ffprobe(Path(manifest['final']))
     assert manifest['spec_sha256']==sha(ROOT/'tutorial.yaml')
@@ -156,8 +165,10 @@ def verify(spec):
     assert len(animation)==13
     for m,row in zip(spec['narration_modules'],manifest['timeline']['modules']):
         hit=cached(spec,m); assert hit and hit['metadata']['audio_sha256']==row['source_audio_sha256']
+    browser_cue_errors=[]
     for scene in spec['scenes']:
-        assert visual_cached(spec,scene,scene_timing(spec,scene))
+        meta=visual_cached(spec,scene,scene_timing(spec,scene));assert meta
+        browser_cue_errors.extend(browser_action_errors(scene['id'],meta.get('browser_evidence',{})))
     streams=info['streams'];video=next(s for s in streams if s['codec_type']=='video');audio=next(s for s in streams if s['codec_type']=='audio')
     assert (video['codec_name'],video['width'],video['height'],video['r_frame_rate'])==('h264',1920,1080,'30/1')
     assert audio['codec_name']=='aac'
@@ -175,5 +186,7 @@ def verify(spec):
             'acoustic_boundaries':boundary_report['acoustic_status'],
             'independent_asr_windows':len(boundary_report.get('independent_asr',{}).get('windows',[])),
             'speech_boundary_check':boundary_report.get('speech_boundary_check',{}).get('status','NOT_RUN'),
+            'browser_action_cues':len(browser_cue_errors),
+            'max_browser_cue_error_seconds':max(browser_cue_errors,default=0),
             'human_prosody_review':boundary_report['human_prosody_review']}
     write_json(OUT/'verification.json',report);return report
