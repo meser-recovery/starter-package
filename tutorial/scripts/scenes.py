@@ -355,8 +355,10 @@ async def perform(page, scene: dict, base: str, cue=None):
     elif number == 27:
         await page.locator("#processor-run").click()
         await page.locator("#processor-result").wait_for(state="visible", timeout=120_000)
+        await page.locator("#processor-result").scroll_into_view_if_needed()
     elif number == 28:
         await page.wait_for_function("document.querySelector('#processor-processed-duration').textContent.trim().length>0", timeout=30_000)
+        await page.locator("#processor-result").scroll_into_view_if_needed()
     elif number == 29:
         if not await page.locator("#processor-download").is_visible():
             raise RuntimeError("announcement MP3 download missing")
@@ -451,9 +453,11 @@ async def perform(page, scene: dict, base: str, cue=None):
         await page.wait_for_function("!document.getElementById('speaker-editor-render').disabled", timeout=60_000)
         await page.locator("#speaker-editor-render").click()
         await page.locator("#speaker-editor-result").wait_for(state="visible", timeout=120_000)
+        await page.locator("#speaker-editor-result").scroll_into_view_if_needed()
     elif number == 48:
         if not await page.locator("#speaker-editor-result-duration").inner_text():
             raise RuntimeError("final result duration missing")
+        await page.locator("#speaker-editor-result").scroll_into_view_if_needed()
     elif number == 49:
         if not await page.locator("#speaker-editor-download").is_visible():
             raise RuntimeError("local final download missing")
