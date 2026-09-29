@@ -32,7 +32,7 @@ class Director:
         if pending and pending[1]<.8: pending=None; self.pending=None
         if pending:
             await asyncio.sleep(max(0,pending[1]-duration-.08-self.now()))
-        await self.page.evaluate('args=>window.__s11Capture.focus(...args)',[box,label,kind])
+        await locator.evaluate('(el,args)=>window.__s11Capture.focus(el.getBoundingClientRect().toJSON(),...args,el)',[label,kind])
         await self.move(x,y,duration=duration);await asyncio.sleep(.08)
         if pending:
             self.cues.append({'phrase':pending[0],'target_seconds':pending[1],'actual_seconds':self.now(),'kind':kind})
@@ -77,7 +77,7 @@ class CaptureLocator:
         dialogs=self.d.page.locator('dialog[open]')
         if await dialogs.count():
             box=await dialogs.last.bounding_box()
-            if box:await self.d.page.evaluate('args=>window.__s11Capture.focus(...args)',[box,'','dialog'])
+            if box:await dialogs.last.evaluate("el=>window.__s11Capture.focus(el.getBoundingClientRect().toJSON(),'','dialog',el)")
             self.d.events.append({'type':'focus','kind':'dialog','seconds':self.d.now(),'target':str(dialogs.last)})
     async def check(self,**kwargs):
         if not await self.raw.is_checked():await self.click(**kwargs)
@@ -86,7 +86,7 @@ class CaptureLocator:
         if await form.count():
             box=await form.bounding_box()
             if box:
-                await self.d.page.evaluate('args=>window.__s11Capture.focus(...args)',[box,'','section'])
+                await form.evaluate("el=>window.__s11Capture.focus(el.getBoundingClientRect().toJSON(),'','section',el)")
                 await asyncio.sleep(.2)
         await self.d.aim(self.raw);await self.raw.focus()
         typ=await self.raw.get_attribute('type')
