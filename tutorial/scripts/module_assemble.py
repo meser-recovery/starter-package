@@ -8,6 +8,18 @@ from assemble import ffprobe,timestamp
 from validate import validate
 
 
+def boundary_padding(last_sample, frames, rate):
+    """Continue the final sample into added silence, then decay over at most 5 ms.
+
+    Only newly appended samples are shaped; decoded speech is never faded.
+    """
+    padding=array.array('h',[0])*frames
+    count=min(frames,round(rate*.005))
+    if count>1:
+        for i in range(count): padding[i]=round(last_sample*(1-i/(count-1)))
+    return padding
+
+
 def pcm_timeline(spec):
     folder=OUT/'audio'; folder.mkdir(parents=True,exist_ok=True)
     config=spec['module_assembly']; rate=config['sample_rate']; pause=round(config['boundary_pause_seconds']*rate)
@@ -20,13 +32,14 @@ def pcm_timeline(spec):
             source=Path(hit['folder'])/'narration.mp3'
             pcm=subprocess.check_output(['ffmpeg','-v','error','-i',str(source),'-ac','1','-ar',str(rate),'-f','s16le','-'])
             samples=array.array('h'); samples.frombytes(pcm)
-            frames=max(len(samples),round(hit['timing']['duration_seconds']*rate))
+            frames=max(len(samples)+round(rate*.005),round(hit['timing']['duration_seconds']*rate))
             if index:
                 previous=rows[-1]
                 boundaries.append({'from':previous['module_id'],'to':module['id'],'seconds':cursor/rate,
                                    'review_start_seconds':max(0,cursor/rate-5),
                                    'inserted_silence_seconds':pause/rate,
-                                   'left_join_sample_abs':abs(old_last)/32768,
+                                   'left_decoded_sample_abs':abs(old_last)/32768,
+                                   'left_join_sample_abs':0.0,
                                    'right_join_sample_abs':abs(samples[0])/32768})
                 out.writeframesraw(bytes(pause*2)); cursor+=pause
             decoded_peak=max(abs(x) for x in samples)/32768
@@ -36,9 +49,12 @@ def pcm_timeline(spec):
             row={'module_id':module['id'],'start_sample':cursor,'start_seconds':cursor/rate,
                  'duration_seconds':frames/rate,'source_duration_seconds':hit['timing']['duration_seconds'],
                  'frames':frames,'decoded_frames':len(samples),'source_audio_sha256':hit['metadata']['audio_sha256'],
+                 'decoded_pcm_sha256':hashlib.sha256(pcm).hexdigest(),
+                 'tail_padding_frames':frames-len(samples),'padding_decay_max_seconds':.005,
                  'peak_dbfs':20*math.log10(max(decoded_peak,1e-9)),'speech_rms_dbfs':20*math.log10(max(rms,1e-9)),
                  'scene_ids':module['scene_ids'],'timing_sha256':hit['metadata']['timing_sha256']}
-            out.writeframesraw(pcm); out.writeframesraw(bytes((frames-len(samples))*2))
+            out.writeframesraw(pcm)
+            out.writeframesraw(boundary_padding(samples[-1],frames-len(samples),rate).tobytes())
             cursor+=frames; row['end_seconds']=cursor/rate; rows.append(row); old_last=samples[-1]
     master.with_suffix('.tmp.wav').replace(master)
     for i,b in enumerate(boundaries):
@@ -49,7 +65,8 @@ def pcm_timeline(spec):
         b['right_start_seconds']=right['start_seconds']
     result={'sample_rate':rate,'channels':1,'format':'PCM s16le','frames':cursor,'duration_seconds':cursor/rate,
             'modules':rows,'boundaries':boundaries,'master_sha256':sha(master),'aac_encodes':0,
-            'crossfades':False,'speech_trimmed':False}
+            'crossfades':False,'speech_trimmed':False,'decoded_speech_samples_modified':False,
+            'boundary_padding':'At most 5 ms decay in appended non-speech padding only'}
     write_json(folder/'timeline.json',result)
     return result
 

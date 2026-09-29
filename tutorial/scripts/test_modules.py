@@ -1,5 +1,5 @@
 """Offline contract tests: paid calls mocked, real MP3 decode and PCM assembly."""
-import base64,copy,io,json,subprocess,tempfile,unittest,wave
+import array,base64,copy,io,json,subprocess,tempfile,unittest,wave
 from pathlib import Path
 from unittest.mock import patch
 import modules
@@ -107,5 +107,13 @@ class ModuleTests(unittest.TestCase):
         self.assertEqual(speech_checks({'windows':rows})['status'],'PASS')
         rows[-2]['transcript']='Можно работать.'
         self.assertEqual(speech_checks({'windows':rows})['status'],'REVIEW')
+
+    def test_nonzero_source_tail_has_no_step_and_speech_is_unchanged(self):
+        source=array.array('h',[1000,-2000,12000]);original=source.tobytes()
+        result=source+assembly.boundary_padding(source[-1],2400,48000)
+        self.assertEqual(result[:len(source)].tobytes(),original)
+        self.assertLess(max(abs(result[i]-result[i-1]) for i in range(len(source),len(result))),.02*32768)
+        self.assertFalse(any(result[len(source)+240:]))
+        self.assertGreater(abs(source[-1]),.02*32768)  # Old zero padding had a real discontinuity.
 
 if __name__=='__main__':unittest.main()
