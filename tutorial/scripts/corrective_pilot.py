@@ -23,6 +23,10 @@ async def prepare_pilot(page,scene,base):
                 ('Тест уровня 1.wav','Тест уровня 2.wav','Тест уровня 3.wav','Участник.wav')]
         if not all(p.is_file() for p in tracks):raise RuntimeError('Existing synthetic CLIP fixtures unavailable')
         await import_local(page,base,'speaker',tracks)
+        # Data-model readiness can precede the real waveform UI repaint.
+        await page.wait_for_function("""() => !document.querySelector('#speaker-editor-source-audio-play').disabled &&
+            !document.querySelector('#speaker-editor').textContent.includes('Подготовка формы сигнала')""",timeout=60000)
+        await page.screenshot()  # Flush the ready compositor surface before CDP starts.
     else:await prepare(page,scene,base)
     if number==59:
         await page.locator('#detail .danger-zone > summary').click()

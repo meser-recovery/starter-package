@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 """Review only the six v2 clips, synchronized with unchanged original module MP3s."""
-import argparse,hashlib,json
+import argparse,hashlib,json,subprocess
 from functools import partial
 from http.server import ThreadingHTTPServer
 from urllib.parse import urlparse
 from corrective_pilot import OUT,ALLOWED,LEAD,preservation
 from modules import scene_timing
+from module_assemble import stable_entry_filter
 from serve_pilot import Handler
 from validate import ROOT
 
@@ -16,6 +17,17 @@ def build():
         if int(scene['id'][:3]) not in ALLOWED:continue
         meta=json.loads((OUT/'scenes'/f"{scene['id']}.json").read_text())
         timing=scene_timing(spec,scene)
+        source=OUT/'scenes'/f"{scene['id']}.mp4"
+        clip=OUT/'review-scenes'/source.name;clip.parent.mkdir(exist_ok=True)
+        identity=hashlib.sha256(source.read_bytes()+stable_entry_filter(True).encode()).hexdigest()
+        stamp=clip.with_suffix('.json')
+        if not clip.is_file() or not stamp.is_file() or json.loads(stamp.read_text()).get('source_identity')!=identity:
+            # Replace only compositor frame zero with frame one. Keep every later
+            # frame at its original PTS; this is video only, with no audio input.
+            subprocess.run(['ffmpeg','-v','error','-y','-i',str(source),'-an',
+                '-vf','fps=30,'+stable_entry_filter(True),'-c:v','libx264','-preset','veryfast',
+                '-crf','18','-pix_fmt','yuv420p',str(clip)],check=True)
+            stamp.write_text(json.dumps({'source_identity':identity,'filter':stable_entry_filter(True),'audio_encodes':0}))
         rows.append({'id':scene['id'],'text':scene['narration'],'duration':meta['duration_seconds'],
                      'module':timing['module_id'],'audio_start':timing['range_start_seconds'],
                      'spoken_duration':timing['duration_seconds'],'lead':LEAD,
@@ -50,7 +62,7 @@ function sync(){
 function tick(){sync();requestAnimationFrame(tick)}requestAnimationFrame(tick);
 function seek(value){v.currentTime=Math.max(0,Math.min(row.duration,value));a.currentTime=audioPosition();sync()}
 async function select(index){pause();changing=true;row=rows[index];$('error').textContent='';
- v.src='scenes/'+row.id+'.mp4';a.src='narration/'+row.module+'.mp3';a.currentTime=row.audio_start;v.currentTime=0;
+ v.src='review-scenes/'+row.id+'.mp4';a.src='narration/'+row.module+'.mp3';a.currentTime=row.audio_start;v.currentTime=0;
  $('title').textContent=row.id;$('seek').max=row.duration;$('seek').value=0;$('canonical').textContent=row.text;
  $('info').textContent='Visual '+fmt(row.duration)+' · Narration '+fmt(row.spoken_duration)+' · '+row.module+' ['+fmt(row.audio_start)+'–'+fmt(row.audio_start+row.spoken_duration)+'] · 0 TTS · unchanged MP3';
  document.querySelectorAll('#scenes button').forEach((b,i)=>b.setAttribute('aria-current',i===index));

@@ -10,7 +10,9 @@ def run():
     for number in ALLOWED:
         files=list((OUT/'scenes').glob(f'{number:03d}-*.mp4'))
         if len(files)!=1:raise RuntimeError(f'Expected one clip for {number}')
-        p=files[0];meta=json.loads(p.with_suffix('.json').read_text());ch=meta['choreography']
+        source=files[0];meta=json.loads(source.with_suffix('.json').read_text());ch=meta['choreography']
+        p=OUT/'review-scenes'/source.name
+        assert p.is_file(),'Build the review clips before final validation'
         info=json.loads(subprocess.check_output(['ffprobe','-v','error','-show_streams','-of','json',str(p)]))
         assert [s['codec_type'] for s in info['streams']]==['video'],'Pilot must reference existing audio without encoding it'
         subprocess.run(['ffmpeg','-v','error','-xerror','-i',str(p),'-f','null','-'],check=True)

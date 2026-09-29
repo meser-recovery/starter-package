@@ -9,8 +9,8 @@ Scope: **015, 016, 029, 032, 050, 059 only**. Await visual approval before any o
 - Pointer arrival is scheduled against the existing character alignment. Movement starts before the cue. Click waits until both **arrival + 0.75 s** and **phrase end + 0.25 s**; post-action hold is **0.45 s**.
 - Highlight identity includes the element, its parent, tag, ID, role, type, href and accessible label (or text). Dynamic meter readings do not change its stable accessible identity. Actions, removal, replacement, role/identity changes, hiding and modal occlusion clear stale highlights.
 - Continuous browser auditing rejects control outlines. A screenshot pixel gate checks every section outline against its semantic target, with a **2 px** maximum tolerance. Failed capture aborts before publishing its video.
-- `corrective_pilot.py` has an explicit six-scene allowlist and no audio generation/assembly path. Missing narration cache is an error. Existing CLIP WAV fixtures are reused read-only.
-- `corrective_review.py` plays silent visual clips alongside the original module MP3s using their existing timing ranges. No new audio files or audio encodes. Each clip has 1.2 s visual lead-in for the first pointer approach and a stable tail.
+- `corrective_pilot.py` has an explicit six-scene allowlist and no audio generation/assembly path. Missing narration cache is an error. Existing CLIP WAV fixtures are reused read-only. Scene 032 waits for the actual waveform UI to finish loading before capture.
+- `corrective_review.py` plays silent visual clips alongside the original module MP3s using their existing timing ranges. No new audio files or audio encodes. Each clip has 1.2 s visual lead-in for the first pointer approach and a stable tail. Review clips replace the stale first compositor frame with the next real frame using the existing `stable_entry_filter`; subsequent frame times remain unchanged.
 
 ## Regression evidence
 
@@ -27,7 +27,7 @@ Generated evidence and videos are ignored by Git, under `tutorial/generated/visu
 | 015 | 11.133 s | 7.440 s | cursor only |
 | 016 | 24.100 s | 20.408 s | 1 |
 | 029 | 21.300 s | 17.594 s | 1 |
-| 032 | 12.467 s | 8.772 s | 2 |
+| 032 | 12.500 s | 8.772 s | 2 |
 | 050 | 22.633 s | 18.946 s | 4 |
 | 059 | 28.467 s | 24.765 s | 2 |
 
@@ -45,8 +45,13 @@ Commands from repository root (existing generated narration, fixtures and preser
 venv/bin/python -m unittest discover -s tutorial/scripts -p 'test*.py'
 venv/bin/python tutorial/scripts/verify_capture_v2.py
 venv/bin/python tutorial/scripts/corrective_pilot.py --scenes 15,16,29,32,50,59
+venv/bin/python tutorial/scripts/corrective_review.py
 venv/bin/python tutorial/scripts/validate_corrective_pilot.py
 venv/bin/python tutorial/scripts/corrective_review.py --serve --port 4197
 ```
 
 34 offline tests passed. The Chromium geometry regression and six-scene validation passed. Detailed machine-readable results: `evidence/geometry-regression.json`, `evidence/pilot-validation.json`, `evidence/preservation.json`, per-scene capture metadata and section screenshots. The existing full candidate remains unchanged.
+
+## Changed files
+
+`browser_capture.py`, `capture_director.py`, `capture_overlay.js`, `capture_geometry.py`, `corrective_pilot.py`, `corrective_review.py`, `validate_corrective_pilot.py`, `verify_capture_v2.py`, `test_capture_v2.py` under `tutorial/scripts/`, plus this report. Production frontend files and `tutorial.yaml` are unchanged.
