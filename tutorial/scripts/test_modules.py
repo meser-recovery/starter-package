@@ -100,4 +100,12 @@ class ModuleTests(unittest.TestCase):
             self.assertEqual(request['voice_settings'],{'stability':.5})
             self.assertEqual(set(request),{'text','model_id','language_code','voice_settings'})
 
+    def test_asr_missing_opening_words_fails_boundary_check(self):
+        from module_audio_qa import speech_checks
+        rows=[{'module_id':f'N{i:02}','window':w,'expected_boundary_phrase':'В Аудиоархиве можно работать.',
+               'transcript':'В Аудиоархиве можно работать.'} for i in range(1,9) for w in ('opening','ending')]
+        self.assertEqual(speech_checks({'windows':rows})['status'],'PASS')
+        rows[-2]['transcript']='Можно работать.'
+        self.assertEqual(speech_checks({'windows':rows})['status'],'REVIEW')
+
 if __name__=='__main__':unittest.main()

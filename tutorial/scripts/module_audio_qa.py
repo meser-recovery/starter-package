@@ -9,6 +9,24 @@ from modules import ROOT,cached,sha,write_json
 from module_visuals import OUT
 
 
+def speech_checks(evidence):
+    def normalized(text):
+        return re.sub(r'[^а-яa-z0-9]', '', text.lower().replace('ё', 'е'))
+    rows=[]
+    for row in evidence['windows']:
+        expected=normalized(row['expected_boundary_phrase']); actual=normalized(row['transcript'])
+        edge=actual.startswith(expected) if row['window']=='opening' else actual.endswith(expected)
+        tags=bool(re.search(r'calm|conversational|калм|конверсейш',row['transcript'],re.I))
+        rows.append({'module_id':row['module_id'],'window':row['window'],
+                     'complete_boundary_phrase':edge,'boundary_phrase_count':actual.count(expected),
+                     'delivery_tags_detected':tags,'status':'PASS' if edge and actual.count(expected)==1 and not tags else 'REVIEW'})
+    coverage={(r['module_id'],r['window']) for r in rows}
+    complete=coverage=={(f'N{i:02}',w) for i in range(1,9) for w in ('opening','ending')} and len(rows)==16
+    return {'status':'PASS' if complete and all(r['status']=='PASS' for r in rows) else 'REVIEW',
+            'method':'Independent ASR boundary phrase presence/order; punctuation and word spacing normalized; no phoneme/prosody claim.',
+            'windows':rows}
+
+
 def boundary_checks(spec):
     timeline=json.loads((OUT/'audio/timeline.json').read_text())
     with wave.open(str(OUT/'audio/master.wav')) as source:
@@ -47,6 +65,7 @@ def boundary_checks(spec):
         evidence=json.loads(asr.read_text())
         if evidence.get('source_audio_sha256')=={row['module_id']:row['audio_sha256'] for row in tags}:
             report['independent_asr']=evidence
+            report['speech_boundary_check']=speech_checks(evidence)
     write_json(OUT/'audio/boundary-validation.json',report)
     return report
 

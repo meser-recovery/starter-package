@@ -217,6 +217,13 @@ async def prepare(page, scene: dict, base: str):
             await import_archive(page, base, title, "announcement")
         else:
             await import_local(page, base, None if number == 23 else "announcement")
+        if number in (27, 28, 29):
+            # Demonstrate the Russian-only workflow explained in scenes 019–022.
+            rows = page.locator("#processor-file-info .processor-track")
+            for source in ("Спикер.wav", "Участник.wav"):
+                await rows.filter(has_text=source).locator('[data-track-action="remove"]').click()
+            if await rows.count() != 2:
+                raise RuntimeError("announcement must process exactly the two translator tracks")
         if number in (28, 29):
             await page.locator("#processor-run").click()
             await page.locator("#processor-result").wait_for(state="visible", timeout=120_000)

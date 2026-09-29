@@ -151,10 +151,12 @@ def verify(spec):
     from module_audio_qa import boundary_checks
     boundary_report=boundary_checks(spec)
     assert boundary_report['acoustic_status']=='PASS', 'module acoustic boundary check needs review'
+    assert boundary_report.get('speech_boundary_check',{}).get('status')!='REVIEW', 'ASR boundary mismatch needs review'
     report={'status':'PASS','content_validation':content,'modules':8,'scenes':60,'new_explanatory_scenes':13,
             'real_browser_scenes':47,'subtitle_cues':len(cues),'full_decode':manifest['full_decode'],
             'aac_encodes':1,'production_mutation_requests':0,'duration_seconds':manifest['final_duration_seconds'],
             'acoustic_boundaries':boundary_report['acoustic_status'],
             'independent_asr_windows':len(boundary_report.get('independent_asr',{}).get('windows',[])),
+            'speech_boundary_check':boundary_report.get('speech_boundary_check',{}).get('status','NOT_RUN'),
             'human_prosody_review':boundary_report['human_prosody_review']}
     write_json(OUT/'verification.json',report);return report
