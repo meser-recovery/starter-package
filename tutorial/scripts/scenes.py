@@ -648,6 +648,7 @@ async def perform(page, scene: dict, base: str, cue=None):
         await at('запись можно удалить полностью')
         await danger.get_by_role("button", name="Удалить запись полностью").click()
         await page.locator("#delete-dialog").wait_for(state="visible")
+        await focus('#delete-dialog','Перед необратимыми действиями',kind='dialog')
         if not await page.locator("#delete-removed").inner_text():
             raise RuntimeError("deletion consequence preview missing")
     else:
