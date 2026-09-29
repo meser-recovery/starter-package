@@ -42,7 +42,7 @@ def frame_listing(frames, frame_times):
         for i, frame in enumerate(frames))
 
 
-async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, destination=None) -> dict:
+async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, destination=None, prepare_scene=prepare, perform_scene=perform) -> dict:
     from playwright.async_api import async_playwright
     from capture_director import Director, CapturePage
 
@@ -56,11 +56,11 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
     parsed = urlparse(base_url)
     if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1"):
         raise RuntimeError("browser capture requires loopback demo server")
-    target_duration = narration["duration_seconds"] + sum(scene["padding"].values())
+    target_duration = narration["duration_seconds"] + sum(scene["padding"].values()) + narration.get("visual_lead_seconds", 0) + narration.get("visual_tail_seconds", 0)
     dest, meta_path = (destination, destination.with_suffix('.json')) if destination else output_paths(scene)
     current_hash = visual_hash(scene)
     if timing:
-        current_hash = hashlib.sha256((current_hash + timing['timing_identity']).encode()).hexdigest()
+        current_hash = hashlib.sha256((current_hash + timing['timing_identity'] + json.dumps({k:v for k,v in timing.items() if k.startswith('visual_') or k=='strict_choreography'},sort_keys=True)).encode()).hexdigest()
     if dest.is_file() and meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text())
@@ -94,7 +94,7 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
                     await route.abort()
             await context.route("http://**/*", guard)
             await context.route("https://**/*", guard)
-            await prepare(page, scene, base_url)
+            await prepare_scene(page, scene, base_url)
             if errors:
                 raise RuntimeError(f"browser preparation errors: {errors[:3]}")
             await page.evaluate('window.__s11Capture.start()')
@@ -126,8 +126,9 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
               e.style.backgroundColor=n++%2?'#fff':'#000';},33)}"""
             await page.evaluate(repaint)
             try:
-                opened = await perform(CapturePage(page, director), scene, base_url, cue=director.cue if timing else None)
-            except BaseException:
+                opened = await perform_scene(CapturePage(page, director), scene, base_url, cue=director.cue if timing else None)
+            except BaseException as error:
+                meta_path.with_suffix('.failure.json').write_text(json.dumps({'error':str(error),'events':director.events,'cues':director.cues},ensure_ascii=False,indent=2))
                 stopping=True
                 await cdp.send('Page.stopScreencast')
                 if pending:await asyncio.gather(*pending,return_exceptions=True)

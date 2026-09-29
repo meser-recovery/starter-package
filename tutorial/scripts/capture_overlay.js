@@ -1,44 +1,110 @@
-/* Capture-only layer. Never imported by the production frontend. */
+/* Capture-only instrumentation. Never imported by the production frontend. */
 (() => {
-  try { sessionStorage.getItem('s11-tutorial-capture'); } catch { return; }
-  const key='s11-tutorial-capture';
-  let focusTarget=null,focusKind='element',focusGeometry='';
-  let root,cursor,focus,last=JSON.parse(sessionStorage.getItem(key+'-point')||'[150,180]');
-  const events=()=>JSON.parse(sessionStorage.getItem(key+'-events')||'[]');
-  const log=(type,extra={})=>{const rows=events();rows.push({type,t:performance.now(),...extra});sessionStorage.setItem(key+'-events',JSON.stringify(rows));};
-  function install(){
-    if(!document.body)return;
-    if(!root){
-      root=document.createElement('div');root.id='__s11-overlay';root.setAttribute('aria-hidden','true');
-      root.innerHTML=`<style>#__s11-overlay{position:fixed;inset:0;pointer-events:none;z-index:2147483647}#__s11-cursor{position:fixed;width:25px;height:34px;transition:left 30ms linear,top 30ms linear;filter:drop-shadow(0 2px 2px #0009);z-index:3;transform:translate(-2px,-2px)}#__s11-focus{position:fixed;border:3px solid #19bce6;border-radius:9px;box-shadow:0 0 0 3px #ffffffa0,0 0 18px #19bce655;display:none;z-index:1}#__s11-focus span{position:absolute;top:-30px;left:0;white-space:nowrap;background:#073448;color:white;padding:2px 9px;border-radius:4px;font:17px Arial}.s11-ring{position:fixed;width:20px;height:20px;border:3px solid #ffc63d;border-radius:50%;transform:translate(-50%,-50%);animation:s11-click .5s ease-out forwards;z-index:2}@keyframes s11-click{to{width:48px;height:48px;opacity:0}}#__s11-cursor[data-down=true]{filter:drop-shadow(0 0 5px #ffc63d)} </style><div id="__s11-focus"><span></span></div><svg id="__s11-cursor" viewBox="0 0 25 34"><path d="M3 2L3 27L9 21L14 32L19 29L14 19L23 18Z" fill="#172e40" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
-      cursor=root.querySelector('#__s11-cursor');focus=root.querySelector('#__s11-focus');
-    }
-    const modal=Array.from(document.querySelectorAll('dialog[open]')).at(-1);const host=modal||document.body;
-    if(root.parentElement!==host)host.append(root);
-    root.style.display=sessionStorage.getItem(key)==='on'?'block':'none';
-    cursor.style.left=last[0]+'px';cursor.style.top=last[1]+'px';
-  }
-  function paintFocus(rect,kind){const geometry=[rect.x,rect.y,rect.width,rect.height,kind].join(',');if(geometry===focusGeometry&&focus.style.display==='block')return;focusGeometry=geometry;Object.assign(focus.style,{display:'block',left:Math.max(3,rect.x-5)+'px',top:Math.max(32,rect.y-5)+'px',width:Math.min(innerWidth-8,rect.width+10)+'px',height:Math.min(innerHeight-38,rect.height+10)+'px',boxShadow:kind==='element'?'0 0 0 3px #ffffffa0,0 0 18px #19bce655':'0 0 0 3000px #051d301c,0 0 0 3px #ffffffa0'});}
-  function followFocus(){
-    if(focusTarget){
-      const rect=focusTarget.getBoundingClientRect();
-      if(!focusTarget.isConnected||!rect.width||!rect.height){focus.style.display='none';focusTarget=null;}
-      else paintFocus(rect,focusKind);
-    }
-    requestAnimationFrame(followFocus);
-  }
-  requestAnimationFrame(followFocus);
-  const move=e=>{last=[e.clientX,e.clientY];sessionStorage.setItem(key+'-point',JSON.stringify(last));install();};
-  document.addEventListener('pointermove',move,true);
-  document.addEventListener('pointerdown',e=>{move(e);if(root.style.display==='none')return;cursor.dataset.down='true';const r=document.createElement('div');r.className='s11-ring';r.style.left=e.clientX+'px';r.style.top=e.clientY+'px';root.append(r);setTimeout(()=>r.remove(),520);log('pointerdown',{x:e.clientX,y:e.clientY,ring:true});},true);
-  document.addEventListener('pointerup',()=>{if(cursor)cursor.dataset.down='false';if(sessionStorage.getItem(key)==='on')log('pointerup');},true);
-  window.__s11Capture={
-    start(){if(sessionStorage.getItem(key)!=='on')sessionStorage.setItem(key+'-events','[]');sessionStorage.setItem(key,'on');install();},
-    focus(rect,label,kind,target=null){install();focusTarget=target;focusKind=kind;paintFocus(rect,kind);focus.querySelector('span').textContent=label||'';focus.querySelector('span').style.display=label?'block':'none';log('focus',{kind,label});},
-    setPoint(point){last=point;sessionStorage.setItem(key+'-point',JSON.stringify(last));install();},
-    clear(){focusTarget=null;if(focus)focus.style.display='none';},
-    evidence(){return {events:events(),cursorVisible:!!cursor&&root.style.display!=='none',point:last};}
+  const key = 's11-tutorial-capture';
+  try { sessionStorage.getItem(key); } catch { return; }
+  const sectionClass = '__s11-section-highlight';
+  const controls = 'button,a,input,select,textarea,summary,[role="button"],[role="link"],[role="switch"],[role="checkbox"],[role="textbox"],[role="slider"]';
+  let root, cursor, section = null, control = null, identity = null, parent = null;
+  const failures = new Set();
+  let last = JSON.parse(sessionStorage.getItem(key + '-point') || '[150,180]');
+  const events = () => JSON.parse(sessionStorage.getItem(key + '-events') || '[]');
+  const log = (type, extra = {}) => {
+    const rows = events(); rows.push({type, t: performance.now(), ...extra});
+    sessionStorage.setItem(key + '-events', JSON.stringify(rows));
   };
-  document.addEventListener('DOMContentLoaded',()=>{install();new MutationObserver(()=>{const host=Array.from(document.querySelectorAll('dialog[open]')).at(-1)||document.body;if(root?.parentElement!==host)install();}).observe(document.body,{subtree:true,attributes:true,attributeFilter:['open'],childList:true});});
-  install();
+  const active = () => sessionStorage.getItem(key) === 'on';
+  const signature = el => [el.tagName, el.id, el.getAttribute('role'), el.getAttribute('type'), el.getAttribute('href'), el.getAttribute('aria-label') || el.textContent.trim().replace(/\s+/g, ' ')].join('|');
+  function clear(reason = 'explicit') {
+    if (section) { section.classList.remove(sectionClass); log('section-clear', {reason}); }
+    section = null; identity = null; parent = null;
+    document.querySelectorAll('.' + sectionClass).forEach(el => el.classList.remove(sectionClass));
+  }
+  function install() {
+    if (!document.body) return;
+    if (!root) {
+      const style = document.createElement('style');
+      style.textContent = `html.__s11-capture-active,html.__s11-capture-active *{cursor:none!important}
+        html.__s11-capture-active :is(${controls}):focus{outline:none!important}
+        .${sectionClass}{outline:3px solid rgb(25,188,230)!important;outline-offset:3px!important}
+        #__s11-overlay{position:fixed;inset:0;margin:0;padding:0;border:0;width:100vw;height:100vh;background:transparent;overflow:visible;pointer-events:none;z-index:2147483647}
+        #__s11-overlay::backdrop{background:transparent;pointer-events:none}
+        #__s11-cursor{position:absolute;width:25px;height:34px;filter:drop-shadow(0 2px 2px #0009);transform:translate(-2px,-2px)}
+        .s11-ring{position:absolute;width:20px;height:20px;border:3px solid #ffc63d;border-radius:50%;transform:translate(-50%,-50%);animation:s11-click .5s ease-out forwards}
+        @keyframes s11-click{to{width:48px;height:48px;opacity:0}}`;
+      document.head.append(style);
+      root = document.createElement('div'); root.id = '__s11-overlay';
+      // A manual popover has viewport coordinates in the top layer. Never reparent
+      // this into a dialog: transformed dialogs establish a different coordinate space.
+      root.setAttribute('popover', 'manual'); root.setAttribute('aria-hidden', 'true');
+      root.innerHTML = '<svg id="__s11-cursor" viewBox="0 0 25 34"><path d="M3 2L3 27L9 21L14 32L19 29L14 19L23 18Z" fill="#172e40" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>';
+      document.body.append(root); cursor = root.firstElementChild;
+    }
+    document.documentElement.classList.toggle('__s11-capture-active', active());
+    if (active() && !root.matches(':popover-open')) root.showPopover();
+    cursor.style.left = last[0] + 'px'; cursor.style.top = last[1] + 'px';
+  }
+  function validateIdentity() {
+    if (!section) return;
+    const modal = [...document.querySelectorAll('dialog[open]')].at(-1);
+    if (!section.isConnected || !section.checkVisibility() || section.parentElement !== parent || signature(section) !== identity ||
+        (modal && section !== modal && !modal.contains(section))) clear('target-hidden-replaced-or-changed');
+  }
+  function audit() {
+    validateIdentity();
+    const violations = [];
+    if (control?.isConnected && control.checkVisibility()) {
+      const s = getComputedStyle(control);
+      if ((s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || control.classList.contains(sectionClass)) violations.push('cursor target displays an outline');
+    }
+    const highlighted = [...document.querySelectorAll('.' + sectionClass)];
+    if (highlighted.some(el => el.matches(controls))) violations.push('concrete control has section highlight');
+    if (highlighted.some(el => el !== section)) violations.push('stale highlight class');
+    let geometry = null;
+    if (section) {
+      const s = getComputedStyle(section), r = section.getBoundingClientRect();
+      if (s.outlineStyle !== 'solid' || parseFloat(s.outlineWidth) !== 3 || parseFloat(s.outlineOffset) !== 3 || s.outlineColor !== 'rgb(25, 188, 230)') violations.push('section outline style changed');
+      geometry = {target: r.toJSON(), outlineWidth: 3, outlineOffset: 3, semantic: signature(section)};
+    }
+    violations.forEach(v => failures.add(v));
+    return {violations: [...failures], geometry, cursorVisible: !!cursor && cursor.style.visibility !== 'hidden', point: last, viewport: [innerWidth, innerHeight]};
+  }
+  function refreshTopLayer() {
+    validateIdentity();
+    if (!root || !active()) return;
+    // Re-show in front of newly opened native modal, without changing coordinates.
+    root.hidePopover(); root.showPopover();
+  }
+  document.addEventListener('pointermove', e => {
+    last = [e.clientX, e.clientY]; sessionStorage.setItem(key + '-point', JSON.stringify(last)); install();
+  }, true);
+  document.addEventListener('pointerdown', e => {
+    clear('action'); if (!active()) return;
+    const ring = document.createElement('div'); ring.className = 's11-ring';
+    ring.style.left = e.clientX + 'px'; ring.style.top = e.clientY + 'px'; root.append(ring);
+    setTimeout(() => ring.remove(), 520); log('pointerdown', {x:e.clientX,y:e.clientY,ring:true});
+  }, true);
+  window.__s11Capture = {
+    start() { failures.clear(); if (!active()) sessionStorage.setItem(key + '-events', '[]'); sessionStorage.setItem(key, 'on'); install(); },
+    aim(el) { install(); clear('cursor-target'); control = el; cursor.style.visibility = 'visible'; log('cursor-target', {semantic: signature(el)}); },
+    highlight(el, label = '') {
+      install(); clear('next-section'); control = null;
+      if (el.matches(controls)) throw Error('Cannot section-highlight a concrete control');
+      const modal = [...document.querySelectorAll('dialog[open]')].at(-1);
+      if (modal && el !== modal && !modal.contains(el)) throw Error('Cannot highlight behind an open dialog');
+      section = el; parent = el.parentElement; identity = signature(el);
+      el.classList.add(sectionClass); cursor.style.visibility = 'hidden'; log('section-highlight', {label,semantic:identity});
+    },
+    setPoint(point) { last = point; sessionStorage.setItem(key + '-point', JSON.stringify(last)); install(); },
+    clear, audit,
+    evidence() { return {...audit(), events: events()}; }
+  };
+  function ready() {
+    install();
+    new MutationObserver(records => {
+      validateIdentity();
+      if (records.some(r => r.type === 'attributes' && r.attributeName === 'open')) refreshTopLayer();
+    }).observe(document.body, {subtree:true,childList:true,characterData:true,attributes:true,attributeFilter:['open','id','role','type','href','hidden','style','class']});
+    function frame() { if (active()) audit(); requestAnimationFrame(frame); } requestAnimationFrame(frame);
+  }
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', ready); else ready();
 })();
