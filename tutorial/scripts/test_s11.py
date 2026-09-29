@@ -34,7 +34,7 @@ class TutorialSafetyTests(unittest.TestCase):
 
     def test_approved_pack_and_complete_mapping(self):
         result = validate()
-        self.assertEqual((result["scene_count"], result["chapter_count"], result["paragraph_count"]), (60, 9, 132))
+        self.assertEqual((result["scene_count"], result["chapter_count"], result["paragraph_count"]), (60, 9, 133))
 
     def test_narration_rewrite_fails_closed(self):
         self.altered(lambda spec: spec["scenes"][0].__setitem__("narration", "Другой текст"))
@@ -54,7 +54,7 @@ class TutorialSafetyTests(unittest.TestCase):
         settings = self.spec["narration"]
         baseline = content_hash(scene, settings)
         for key, value in (("voice_id", "other"), ("model_id", "other"), ("output_format", "other"),
-                           ("voice_settings", {"stability": .5}), ("pronunciation", {"dictionary": "v2"})):
+                           ("voice_settings", {"stability": 1}), ("pronunciation", {"dictionary": "v2"})):
             changed = {**settings, key: value}
             self.assertNotEqual(content_hash(scene, changed), baseline)
         self.assertNotEqual(content_hash({**scene, "narration": scene["narration"] + " "}, settings), baseline)

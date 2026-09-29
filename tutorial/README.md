@@ -1,39 +1,63 @@
 # Meser Audio Tutorial production pipeline
 
-The approved [Canonical Content Pack](content/meser-audio-tutorial-canonical-content-pack.md) is the content authority. `tutorial.yaml` is the executable build specification and uses JSON syntax, a YAML 1.2 subset, so the pipeline needs no YAML parser package. The validator fails with `CONTENT_DRIFT` if the approved pack identity, narration, captions, scene coverage, or storyboard goals differ. A semantic change must be approved in the Content Pack before the build specification changes.
+The [Canonical Content Pack](content/meser-audio-tutorial-canonical-content-pack.md) controls approved content. `tutorial.yaml` is the executable specification (JSON syntax, a YAML 1.2 subset). `CONTENT_DRIFT` fails closed on changed narration, captions, storyboard goals, mapping or approved pack hash. The approved closing is paragraph n133. The versioned [Narration Module Map](content/S11-Narration-Module-Map.md) defines N01–N08.
 
-Run from the repository root. Python 3.12+, Node 22+, FFmpeg/ffprobe, and the existing `requirements-test.txt` Playwright dependency are required for full media generation. `venv/bin/python` below denotes any Python with Playwright installed.
+## Current full candidate: continuous v3 modules
+
+Run from the repository root with Python 3.12+, Node 22+, FFmpeg/ffprobe and the existing Playwright test dependency (`requirements-test.txt`). No additional package is required for generation/assembly. `venv/bin/python` means the local Python with Playwright installed.
 
 ```sh
 python3 tutorial/scripts/build.py validate
-python3 tutorial/scripts/build.py dry-run
-python3 tutorial/scripts/build.py dry-run --scene 038-speaker-global-cut
-python3 tutorial/scripts/fixtures.py
-python3 tutorial/scripts/test_s11.py
-python3 tutorial/scripts/build.py verify  # after complete local assembly
+python3 -m unittest discover -s tutorial/scripts -p 'test*.py'
+python3 tutorial/scripts/build.py dry-run --all-modules
+venv/bin/python tutorial/scripts/build.py narration --all-modules
+venv/bin/python tutorial/scripts/build.py visual --all-modules
+venv/bin/python tutorial/scripts/build.py assemble
+venv/bin/python tutorial/scripts/build.py verify
+python3 tutorial/scripts/module_audio_qa.py
+python3 tutorial/scripts/serve_modules.py --port 4195
 ```
 
-The one build entrypoint is `tutorial/scripts/build.py`. It supports `all`, `narration`, `visual`, `assemble`, `dry-run`, `validate`, and full-candidate `verify`, with `--scene ID`, `--chapter NAME`, or `--slice` selection. `--slice` is the two-scene vertical slice (animation 002 and real Meser browser scene 006). `narration --scene ID --force` explicitly spends credits to regenerate that scene. `visual --animations-only` selects graphics. A selected scene/chapter produces a separately named candidate; only an unfiltered complete build writes `generated/final/meser-audio-tutorial-ru.mp4`.
+Review: `http://127.0.0.1:4195/index.html`. The loopback server implements HTTP byte ranges for reliable seeking. The page provides all eight module starts, seven boundaries starting five seconds before the join, all 60 scene starts, canonical text, the exact profile, MP4, PCM WAV, SRT/VTT and evidence. Generated media is local and ignored by Git.
 
-For browser capture, start the existing in-memory preview with a tutorial-specific part size for the synthetic WAVs:
+- N01: 001–005; N02: 006–018; N03: 019–022; N04: 023–029.
+- N05: 030–036; N06: 037–043; N07: 044–055; N08: 056–060.
+- Voice `LHi3adMlU7AICv8Yxpmm`, `eleven_v3`, `ru`, `mp3_44100_128`, `{"stability":0.5}`; prefix `[calm] [conversational]` followed by a newline.
+- Each module is **one continuous POST** to `/v1/text-to-speech/{voice_id}/with-timestamps`. Its exact scene narrations are joined with two newlines. No scene TTS requests, audio splitting, old fragments or AAC scene concat are used in the current pipeline.
+- The key is read from `ELEVENLABS_API_KEY` or local `~/.codex/.env`, never printed, saved or served. The endpoint, body (without credentials), response ID, HTTP status, hashes and paid-request ledger are retained under `generated/narration-modules/`.
+- Cache identity covers module ID, ordered scene IDs, exact canonical text, complete profile and module-scoped pronunciation dictionary locators. No pronunciation override is configured. Canonical text remains independent from delivery instructions and dictionaries; pronunciation needs speech review.
+- Exact character alignment supplies scene ranges, sentence/phrase ranges and visual cues. Delivery tags are excluded from scene text and subtitles. Hashes cover audio bytes and timing as well as source text, so a new take invalidates dependent visuals even if its request text is unchanged.
+
+## Selective regeneration
 
 ```sh
-S11_PREVIEW_PART_BYTES=262144 node tests/safety/s10b_preview_server.mjs 4185 http://localhost:4185
-venv/bin/python tutorial/scripts/build.py all --slice --base-url http://localhost:4185
+python3 tutorial/scripts/build.py dry-run --module N03
+python3 tutorial/scripts/build.py dry-run --module N03 --force
+venv/bin/python tutorial/scripts/build.py narration --module N03 --force
+venv/bin/python tutorial/scripts/build.py visual --module N03
+venv/bin/python tutorial/scripts/build.py assemble
+venv/bin/python tutorial/scripts/build.py verify
+# Reuse valid cache; only N03 may spend narration credits if missing/stale:
+venv/bin/python tutorial/scripts/build.py all --module N03
 ```
 
-The preview serves the real protected frontend and real gateway logic with a process-local `MemoryRepository`. Its synthetic password is `local-test-password`. A new server process resets demo state. The default preview behavior used by existing safety tests stays at 1024-byte parts. Capture rejects non-loopback origins and blocks all browser requests outside the local preview. No production Archive endpoint or credential is used.
-For a full build, omit `--base-url`; the entrypoint starts a fresh in-memory preview for each browser scene so recordings cannot share demo Archive state.
+`--scene 020-one-translator` expands to N03; `--chapter NAME` selects complete matching modules. `--force` requires one explicit module and narration/dry-run mode. An incomplete selective build fails when global assembly needs missing unselected modules; it never generates them implicitly. Dry-run reports each reusable module, exact request count/character count and timing-dependent visual misses. Paid errors are not automatically retried; a successfully returned response is retained in `pending/` even if later validation fails.
 
-The ElevenLabs key is loaded from `ELEVENLABS_API_KEY` or local `~/.codex/.env`; it is never copied to the repository or output. Each scene's cache hash covers exact text, voice, model, output format, voice settings, and pronunciation configuration. A valid MP3 and character alignment with a matching hash avoids a second API request. Generated media is ignored by Git under `tutorial/generated/`. The recipe in `fixtures/recipes/` contains only deterministic, speech-free synthetic tones and disturbances.
+## Visuals and final audio
 
-Scene review clips and a local HTML index are written under `generated/review/`. A successful complete assembly writes SRT/VTT, `generated/manifests/build.json`, and the 1920×1080/30 fps H.264/AAC master. FFmpeg decodes the candidate before atomic rename. `generated/` is intentionally local review evidence and is not committed.
+All 13 explanatory scenes (001–005, 011, 019–022, 044, 050, 060) use `animations/modules.html` and `module-visuals.js`, extending the pilot's waveform/object/transformation language. Phrase anchors in `visual_cues` map to returned v3 character timestamps. The historical card renderer is not a fallback. The other 47 scenes capture the real Meser frontend and semantic actions from a fresh local in-memory Archive preview. Synthetic speech-free fixtures are deterministic. Outbound browser requests are blocked; only the local preview can receive mutations. Production credentials and Archive data are not used.
+
+`generated/module-candidate/` contains the new candidate. The eight MP3 sources are decoded to 48 kHz mono PCM, placed once on a continuous WAV timeline, with 0.35 seconds of silence between modules. Actual speech is never cut or crossfaded. The master soundtrack is AAC-encoded exactly once while muxing the final H.264 1920×1080/30 fps MP4. Visual segments contain **no audio**; their video-only concat does not join encoded soundtracks. Subtitles use the same global PCM offsets. Scene narration audio files are never created.
+
+`module_audio_qa.py` checks exact inserted silence, boundary sample discontinuities, aligned speech gaps and loudness changes. Optional independently produced local ASR evidence is accepted only when all source audio hashes match. These checks supplement full decoding; human assessment of natural delivery remains available through boundary review controls. Generated acoustic and speech evidence is kept separate from the immutable request/timestamp evidence.
+
+Provider reference: [ElevenLabs Create speech with timing](https://elevenlabs.io/docs/api-reference/text-to-speech/convert-with-timestamps).
 
 ## Limited narration and visuals pilot (001–006)
 
-The approved greeting was prepended to the existing first canonical paragraph; all later paragraph references and scene definitions remain unchanged. The original full candidate is retained as historical review evidence. It does not contain the new greeting and is not a current build of the revised source. Do not run an unfiltered full build for this pilot.
+The approved greeting was prepended to the existing first canonical paragraph; all later paragraph references and scene definitions remain unchanged. The original full candidate is retained as historical review evidence. It does not contain the new greeting and is not a current build of the revised source. The module build below is the current full candidate; historical pilot commands remain explicitly isolated.
 
-`tutorial.yaml` also specifies the pilot selection, three variants, visual source, and narration anchors that drive animation timing. The pilot uses the same Voice ID/model in all variants. A preserves the existing request method and copies valid current caches into its own directory. B adds the preceding/following scene text via ElevenLabs `previous_text`/`next_text`. C adds one explicit voice settings configuration. The first scene has no previous context; scene 006 uses the unchanged text of 007 as next context without generating 007. The context is separate from the spoken request `text` and is covered by the narration hash. Exact alignment validation rejects any response that includes extra context characters.
+`tutorial.yaml` also specifies the pilot selection, three variants, visual source, and narration anchors that drive animation timing. The pilot retains its historical Multilingual v2 profile in `pilot.narration_profile`; all A/B/C variants use that profile. A preserves the existing request method and copies valid current caches into its own directory. B adds the preceding/following scene text via ElevenLabs `previous_text`/`next_text`. C adds one explicit voice settings configuration. The first scene has no previous context; scene 006 uses the unchanged text of 007 as next context without generating 007. The context is separate from the spoken request `text` and is covered by the narration hash. Exact alignment validation rejects any response that includes extra context characters.
 
 ```sh
 venv/bin/python tutorial/scripts/build.py validate --pilot

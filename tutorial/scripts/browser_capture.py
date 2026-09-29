@@ -35,12 +35,12 @@ def visual_hash(scene: dict) -> str:
     return hashlib.sha256(json.dumps(payload, ensure_ascii=False, sort_keys=True).encode()).hexdigest()
 
 
-async def capture(scene: dict, settings: dict, base_url: str) -> dict:
+async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, destination=None) -> dict:
     from playwright.async_api import async_playwright
 
     if scene["visual"]["type"] != "browser":
         raise RuntimeError("browser_capture received non-browser scene")
-    narration = cached(scene, settings)
+    narration = timing or cached(scene, settings)
     if not narration:
         raise RuntimeError(f"narration missing or stale: {scene['id']}")
     if not all(path.exists() for path in FIXTURES.glob("*.wav")) or len(list(FIXTURES.glob("*.wav"))) != 4:
@@ -49,8 +49,10 @@ async def capture(scene: dict, settings: dict, base_url: str) -> dict:
     if parsed.scheme != "http" or parsed.hostname not in ("localhost", "127.0.0.1"):
         raise RuntimeError("browser capture requires loopback demo server")
     target_duration = narration["duration_seconds"] + sum(scene["padding"].values())
-    dest, meta_path = output_paths(scene)
+    dest, meta_path = (destination, destination.with_suffix('.json')) if destination else output_paths(scene)
     current_hash = visual_hash(scene)
+    if timing:
+        current_hash = hashlib.sha256((current_hash + timing['timing_identity']).encode()).hexdigest()
     if dest.is_file() and meta_path.is_file():
         try:
             meta = json.loads(meta_path.read_text())
@@ -64,6 +66,8 @@ async def capture(scene: dict, settings: dict, base_url: str) -> dict:
     with tempfile.TemporaryDirectory(prefix="meser-s11-browser-") as temp:
         folder = Path(temp)
         frames = []
+        frame_times = []
+        cue_evidence = []
         async with async_playwright() as playwright:
             browser = await playwright.chromium.launch(headless=True)
             context = await browser.new_context(viewport={"width": 1920, "height": 1080}, device_scale_factor=1,
@@ -101,6 +105,7 @@ async def capture(scene: dict, settings: dict, base_url: str) -> dict:
                 frame = folder / f"{len(frames):06d}.jpg"
                 frame.write_bytes(base64.b64decode(event["data"]))
                 frames.append(frame)
+                frame_times.append(event['metadata'].get('timestamp', 0))
                 try:
                     await cdp.send("Page.screencastFrameAck", {"sessionId": event["sessionId"]})
                 except Exception:
@@ -116,7 +121,18 @@ async def capture(scene: dict, settings: dict, base_url: str) -> dict:
                 e.style='position:fixed;bottom:0;right:0;width:1px;height:1px;z-index:2147483647';document.body.append(e)}
               e.style.backgroundColor=n++%2?'#fff':'#000';},33)}"""
             await page.evaluate(repaint)
-            opened = await perform(page, scene, base_url)
+            async def cue(phrase):
+                if timing:
+                    index = scene['narration'].find(phrase)
+                    if index < 0:
+                        raise RuntimeError(f'unknown browser phrase cue: {phrase}')
+                    target = timing['alignment']['character_start_times_seconds'][index]
+                    await asyncio.sleep(max(0, target - (asyncio.get_running_loop().time() - started)))
+                    cue_evidence.append({'phrase': phrase, 'target_seconds': target,
+                                         'actual_seconds': asyncio.get_running_loop().time() - started})
+            if timing:
+                await cue(scene['narration'].split('.')[0])
+            opened = await perform(page, scene, base_url, cue=cue)
             if opened is not None:
                 stopping = True
                 await cdp.send("Page.stopScreencast")
@@ -144,10 +160,18 @@ async def capture(scene: dict, settings: dict, base_url: str) -> dict:
         if len(frames) < 20:
             raise RuntimeError(f"browser capture produced only {len(frames)} frames")
         elapsed = max(target_duration, asyncio.get_running_loop().time() - started)
+        input_args = ['-framerate', '30', '-i', str(folder / '%06d.jpg')]
+        if timing:
+            # Preserve actual capture time, including still frames and semantic cue waits.
+            listing = folder / 'frames.ffconcat'
+            listing.write_text('ffconcat version 1.0\n' + ''.join(
+                f"file '{frame}'\nduration {max(.001, frame_times[i+1]-frame_times[i]) if i+1<len(frames) else .034:.6f}\n"
+                for i, frame in enumerate(frames)))
+            input_args = ['-safe', '0', '-f', 'concat', '-i', str(listing)]
+            elapsed = max(target_duration, frame_times[-1]-frame_times[0])
         tail_pad = max(2.0, elapsed - len(frames) / 30 + 1)
         candidate = dest.with_suffix(".tmp.mp4")
-        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-framerate", "30", "-i",
-                        str(folder / "%06d.jpg"), "-t", str(elapsed),
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", *input_args, "-t", str(elapsed),
                         "-vf", f"scale=1920:1080,tpad=stop_mode=clone:stop_duration={tail_pad:.3f},fps=30",
                         "-c:v", "libx264", "-preset", "veryfast", "-crf", "22", "-pix_fmt", "yuv420p",
                         str(candidate)], check=True)
@@ -158,6 +182,7 @@ async def capture(scene: dict, settings: dict, base_url: str) -> dict:
         meta = {"scene_id": scene["id"], "visual_hash": current_hash,
                 "duration_seconds": info["duration_seconds"], "frame_count": len(frames),
                 "network_requests": dict(network), "production_mutation_requests": 0,
+                "alignment_action_cues": cue_evidence,
                 "expected_state": "PASS", "browser_errors": 0}
         meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2))
         return {**meta, "cache": "MISS"}

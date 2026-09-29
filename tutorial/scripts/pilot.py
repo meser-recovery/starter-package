@@ -61,7 +61,7 @@ def selection(spec: dict) -> list[dict]:
 
 def parameters(spec: dict, variant: str, scene: dict) -> tuple[dict, dict]:
     config = spec["pilot"]["variants"][variant]
-    settings = {**spec["narration"]}
+    settings = {**spec["pilot"].get("narration_profile", spec["narration"])}
     if config["voice_settings"] is not None:
         settings["voice_settings"] = config["voice_settings"]
     context = {}

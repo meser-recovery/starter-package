@@ -41,7 +41,7 @@ class PilotTests(unittest.TestCase):
                 body = request_body(scene, settings, context)
                 self.assertEqual(body["text"], scene["narration"])
                 self.assertEqual(settings["voice_id"], self.spec["narration"]["voice_id"])
-                self.assertEqual(settings["model_id"], self.spec["narration"]["model_id"])
+                self.assertEqual(settings["model_id"], self.spec["pilot"]["narration_profile"]["model_id"])
                 if variant == "a-current":
                     self.assertEqual(context, {})
                 else:

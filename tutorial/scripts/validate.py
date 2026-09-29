@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_PACK_SHA256 = "298d7b54918f6983d2ec1d2b2454d52992e9db4b4d3617ec3e00905149e49ee8"
+APPROVED_PACK_SHA256 = "6e024611d7165172f7c996f027be8281d5c6de02410822799a65a6257933841f"
 REQUIRED_ANIMATIONS = {
     "zoom-multitrack", "archive-hierarchy", "one-translator",
     "multiple-translators", "project-vs-final", "summary",
@@ -108,7 +108,7 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
     if digest != APPROVED_PACK_SHA256 or digest != spec["tutorial"]["canonical_content"]["sha256"]:
         fail("Canonical Content Pack identity/hash changed")
     paragraphs, rows, blocks = canonical_items(raw.decode("utf-8"))
-    if len(paragraphs) != 132 or len(rows) != 60:
+    if len(paragraphs) != 133 or len(rows) != 60:
         fail("approved narration/storyboard count changed")
     ids, used_narration, used_storyboard, seen_animations = set(), [], [], set()
     chapters = spec["tutorial"]["chapters"]
@@ -156,6 +156,20 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
     for scene in spec["scenes"]:
         if any(dep not in ids for dep in scene["dependencies"]):
             fail(f"unresolved scene dependency: {scene['id']}")
+    from modules import BOUNDS
+    expected_modules = [{"id": f"N{i:02d}", "scene_ids": [s["id"] for s in spec["scenes"][a-1:b]]}
+                        for i, (a, b) in enumerate(BOUNDS, 1)]
+    if [{k: m[k] for k in ("id", "scene_ids")} for m in spec["narration_modules"]] != expected_modules:
+        fail("approved N01–N08 scene membership/order changed")
+    if set(spec["visual_cues"]) != ids:
+        fail("visual cue coverage changed")
+    for scene in spec["scenes"]:
+        previous = -1
+        for cue in spec["visual_cues"][scene["id"]]:
+            index = scene["narration"].find(cue["text"])
+            if index < 0 or index <= previous or not 0 <= cue["phase"] < 1:
+                fail("unresolved or unordered visual phrase cue: " + scene["id"])
+            previous = index
     return {"status": "PASS", "pack_path": str(pack_path), "pack_sha256": digest,
             "scene_count": len(ids), "chapter_count": len(chapters), "paragraph_count": len(paragraphs)}
 

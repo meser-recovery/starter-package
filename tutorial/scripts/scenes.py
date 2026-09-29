@@ -245,7 +245,10 @@ async def prepare(page, scene: dict, base: str):
         raise RuntimeError(f"browser scene setup not implemented: {scene['id']}")
 
 
-async def perform(page, scene: dict, base: str):
+async def perform(page, scene: dict, base: str, cue=None):
+    async def at(phrase):
+        if cue:
+            await cue(phrase)
     number = int(scene["id"][:3])
     title = f"Учебная запись S11 {number:03d}"
     if number == 6:
@@ -264,6 +267,7 @@ async def perform(page, scene: dict, base: str):
     elif number == 9:
         await page.locator("#archive-create-add").click()
         await page.locator("#archive-create-files").set_input_files(str(TRACKS[1]))
+        await at('Выбрать заново')
         await page.locator("#archive-create-replace").click()
         await page.locator("#archive-create-files").set_input_files([str(path) for path in TRACKS[:3]])
         if await page.locator("#archive-create-list li").count() != 3:
@@ -313,13 +317,17 @@ async def perform(page, scene: dict, base: str):
     elif number == 24:
         rows = page.locator("#processor-file-info .processor-track")
         await rows.first.locator('[data-track-action="solo"]').click()
+        await at('Mute')
         await rows.nth(1).locator('[data-track-action="mute"]').click()
         if await rows.first.locator('[data-track-action="solo"]').get_attribute("aria-pressed") != "true":
             raise RuntimeError("announcement Solo did not engage")
     elif number == 25:
         await page.locator("#processor-source-zoom-in").click()
+        await at('Вписать')
         await page.locator("#processor-source-zoom-fit").click()
+        await at('Follow')
         await page.locator("#processor-source-follow").click()
+        await at('Небольшой участок')
         wave = page.locator("#processor-file-info .processor-waveform").first
         box = await wave.bounding_box()
         if not box:
@@ -337,8 +345,10 @@ async def perform(page, scene: dict, base: str):
             raise RuntimeError("announcement Loop did not engage")
     elif number == 26:
         await page.locator("#processor-expand").click()
+        await at('изменить цвета')
         await page.locator('#processor-file-info .processor-track input[type="color"]').first.fill("#27b3a0")
         await page.locator('#processor-file-info [data-track-action="move-down"]').first.click()
+        await at('убрать ошибочно')
         await page.locator('#processor-file-info [data-track-action="remove"]').last.click()
         if await page.locator("#processor-file-info .processor-track").count() != 3:
             raise RuntimeError("erroneous announcement track not removed")
@@ -358,7 +368,9 @@ async def perform(page, scene: dict, base: str):
     elif number == 31:
         row = page.locator("#speaker-editor-tracks .speaker-track").first
         await row.locator('[data-dsp-field="enhancement"]').check()
+        await at('Отдельно доступно')
         await row.locator('[data-dsp-field="leveling"]').check()
+        await at('Компрессия')
         await row.locator('[data-dsp-field="compression"]').evaluate("""input => {
           input.value='2'; input.dispatchEvent(new Event('input',{bubbles:true}));
           input.dispatchEvent(new Event('change',{bubbles:true}));}""")
@@ -372,21 +384,28 @@ async def perform(page, scene: dict, base: str):
     elif number == 33:
         row = page.locator("#speaker-editor-tracks .speaker-track").last
         await row.locator('[data-action="solo"]').click()
+        await at('Mute')
         await row.locator('[data-action="mute"]').click()
+        await at('Если дорожка вообще')
         await row.get_by_role("button", name="Исключить из микса").click()
         if not await row.evaluate("element => element.classList.contains('is-excluded')"):
             raise RuntimeError("track exclusion did not affect project")
+        await at('Исходная дорожка')
         await row.get_by_role("button", name="Вернуть в микс").click()
     elif number == 34:
         row = page.locator("#speaker-editor-tracks .speaker-track").first
         await row.locator('input[type="color"]').fill("#27b3a0")
         await row.get_by_role("button", name="Вниз").click()
+        await at('Рабочую область')
         await page.locator("#speaker-editor-expand").click()
     elif number == 35:
         await page.locator("#speaker-editor-zoom-in").click()
-        await page.locator("#speaker-editor-follow").click()
+        await at('Кнопка')
         await page.locator("#speaker-editor-zoom-fit").click()
+        await at('Тем же регулятором')
         await page.locator("#speaker-editor-scale-mode").click()
+        await at("При включённой функции Follow")
+        await page.locator("#speaker-editor-follow").click()
     elif number == 36:
         await drag_speaker_selection(page)
         await page.locator("#speaker-editor-source-audio-loop").click()
@@ -399,6 +418,7 @@ async def perform(page, scene: dict, base: str):
     elif number == 37:
         await select_speaker_range(page, "2", "3")
         await page.locator("#speaker-editor-set-start").click()
+        await at('Таким же образом')
         await select_speaker_range(page, "15", "16")
         await page.locator("#speaker-editor-set-end").click()
     elif number == 38:
@@ -419,6 +439,7 @@ async def perform(page, scene: dict, base: str):
         await page.locator("#speaker-editor-selection-start").fill("2.5")
     elif number == 43:
         await page.locator("#speaker-editor-undo").click()
+        await at('Повторить')
         await page.locator("#speaker-editor-redo").click()
     elif number == 45:
         await save_speaker_project(page)
@@ -437,6 +458,7 @@ async def perform(page, scene: dict, base: str):
         if not await page.locator("#speaker-editor-download").is_visible():
             raise RuntimeError("local final download missing")
         await page.locator("#speaker-editor-download").click()
+        await at('Чтобы готовая')
         await page.locator("#speaker-editor-archive-save").click()
         await page.locator("#speaker-editor-save-dialog").wait_for(state="visible")
         await page.locator("#speaker-editor-save-submit").click()
@@ -482,6 +504,7 @@ async def perform(page, scene: dict, base: str):
         await management.locator(":scope > summary").click()
         await management.get_by_role("button", name="Убрать из рабочего списка").click()
         await management.get_by_role("button", name="Вернуть в рабочий список").wait_for(timeout=60_000)
+        await at('вернуть обратно')
         await management.get_by_role("button", name="Вернуть в рабочий список").click()
     elif number == 58:
         versions = page.locator("#detail .version-history")
