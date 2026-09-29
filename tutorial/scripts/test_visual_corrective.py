@@ -2,6 +2,7 @@
 import unittest,json,subprocess,tempfile,asyncio
 from types import SimpleNamespace
 from capture_director import Director
+from module_visuals import browser_timeline_factor
 from pathlib import Path
 from browser_capture import frame_listing
 from video_qa import inspect_frames
@@ -16,6 +17,14 @@ class VideoBoundaryTests(unittest.TestCase):
             raw=subprocess.check_output(['ffprobe','-v','error','-safe','0','-f','concat','-i',str(listing),'-show_packets','-of','json'])
             pts=[float(p['pts_time']) for p in json.loads(raw)['packets']]
             for actual,expected in zip(pts,times):self.assertAlmostEqual(actual,expected-times[0],places=5)
+
+    def test_extra_idle_tail_never_speeds_up_aligned_actions(self):
+        evidence={'duration_seconds':9.2,'choreography':{'events':[{'seconds':8.025}]}}
+        factor=browser_timeline_factor(8.4,evidence)
+        self.assertLess(abs(5.761*factor-5.733),.03)
+        evidence['choreography']['events'][0]['seconds']=9.0
+        with self.assertRaisesRegex(RuntimeError,'exceeds'):
+            browser_timeline_factor(8.4,evidence)
 
     def test_normal_hard_cut_is_allowed(self):
         a=bytes([35,70,110,180]*100);b=bytes([210,150,90,40]*100)

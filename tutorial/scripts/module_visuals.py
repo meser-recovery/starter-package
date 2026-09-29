@@ -40,6 +40,17 @@ def phase_at(second,cues,duration):
     return 1.
 
 
+def browser_timeline_factor(target,evidence):
+    events=evidence.get('choreography',{}).get('events',[])
+    if max((e['seconds'] for e in events),default=0)>target+1/30:
+        raise RuntimeError('browser choreography exceeds its alignment range; adjust actions, never speed them up')
+    if evidence['duration_seconds']>target+1.1:
+        raise RuntimeError('browser capture overran its alignment range beyond the final idle hold')
+    # CDP timestamps are real time. Extra terminal still frames may be trimmed;
+    # a short rounding gap may be padded. Neither changes gesture/cue speed.
+    return 1.0
+
+
 async def render(spec,scenes,base_url=None):
     from playwright.async_api import async_playwright
     from browser_capture import capture as browser_capture
@@ -72,8 +83,8 @@ async def render(spec,scenes,base_url=None):
                     except RuntimeError as error:
                         if attempt or not str(error).startswith('browser capture produced only'): raise
                 captured=probe(raw)['duration_seconds']
-                speed=target/captured
-                filters=f'setpts={speed:.12f}*PTS,fps=30,tpad=stop_mode=clone:stop_duration=1'
+                speed=browser_timeline_factor(target,evidence)
+                filters='fps=30,tpad=stop_mode=clone:stop_duration=1'
                 # Review captions are canonical overlays, never TTS instructions.
                 caption_file=None
                 if scene['captions']:
