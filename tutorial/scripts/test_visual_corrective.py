@@ -3,6 +3,7 @@ import unittest,json,subprocess,tempfile,asyncio
 from types import SimpleNamespace
 from capture_director import Director
 from module_visuals import browser_timeline_factor
+from module_assemble import stable_entry_filter
 from pathlib import Path
 from browser_capture import frame_listing
 from video_qa import inspect_frames
@@ -25,6 +26,11 @@ class VideoBoundaryTests(unittest.TestCase):
         evidence['choreography']['events'][0]['seconds']=9.0
         with self.assertRaisesRegex(RuntimeError,'exceeds'):
             browser_timeline_factor(8.4,evidence)
+
+    def test_entry_stabilization_replaces_only_initial_frame(self):
+        source=b''.join(bytes([v])*4 for v in (255,80,90,100))
+        result=subprocess.run(['ffmpeg','-v','error','-f','rawvideo','-pixel_format','gray','-video_size','2x2','-framerate','30','-i','pipe:0','-vf',stable_entry_filter(True),'-frames:v','4','-pix_fmt','gray','-f','rawvideo','pipe:1'],input=source,capture_output=True,check=True).stdout
+        self.assertEqual(result,b''.join(bytes([v])*4 for v in (80,80,90,100)))
 
     def test_normal_hard_cut_is_allowed(self):
         a=bytes([35,70,110,180]*100);b=bytes([210,150,90,40]*100)

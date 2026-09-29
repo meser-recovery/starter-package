@@ -106,6 +106,12 @@ def review(spec,manifest):
     module_review.review(spec,manifest)
 
 
+def stable_entry_filter(browser):
+    # The first compositor sample may predate the capture-only focus layer.
+    # Hold the next real frame at both PTS 0 and 1/30; later frame times stay intact.
+    return 'trim=start_frame=1,tpad=start=1:start_mode=clone,setpts=N/(30*TB)' if browser else 'null'
+
+
 def assemble(spec):
     content=validate(); OUT.mkdir(parents=True,exist_ok=True)
     timeline=pcm_timeline(spec); rows,caption_count=subtitles(spec,timeline)
@@ -118,7 +124,7 @@ def assemble(spec):
         end=rows[i+1]['start_seconds'] if i+1<len(rows) else timeline['duration_seconds']
         count=round(end*30)-round(row['start_seconds']*30)
         row.update(visual_source=meta['source'],visual_hash=meta['visual_hash'],video_frames=count)
-        sources.append((visual_path(scene),count))
+        sources.append((visual_path(scene),count,scene["visual"]["type"]=="browser"))
     final=OUT/'meser-audio-tutorial-v3.mp4';candidate=final.with_suffix('.tmp.mp4')
     # Decode cacheable sources sequentially to a single raw frame stream. The final
     # encoder generates continuous PTS; encoded packets/GOPs never cross a join.
@@ -131,9 +137,9 @@ def assemble(spec):
     with log.open('wb') as errors:
         encoder=subprocess.Popen(command,stdin=subprocess.PIPE,stderr=errors)
         try:
-            for source,count in sources:
+            for source,count,is_browser in sources:
                 decoder=subprocess.Popen(['ffmpeg','-v','error','-i',str(source),'-an',
-                    '-vf','scale=1920:1080,fps=30,tpad=stop_mode=clone:stop_duration=10',
+                    '-vf','scale=1920:1080,fps=30,'+stable_entry_filter(is_browser)+',tpad=stop_mode=clone:stop_duration=10',
                     '-frames:v',str(count),'-pix_fmt','yuv420p','-f','rawvideo','pipe:1'],stdout=subprocess.PIPE,stderr=errors)
                 copied=0
                 try:
@@ -157,6 +163,7 @@ def assemble(spec):
               'final':str(final),'final_sha256':sha(final),'final_duration_seconds':float(ffprobe(final)['format']['duration']),
               'audio_pipeline':'8 MP3 decodes → continuous PCM s16le timeline → one final AAC encode',
               'video_pipeline':'60 visual decodes → continuous raw yuv420p / 30 fps → one final H.264 encode',
+              'video_entry_stabilization':'Browser frame 1 held at PTS 0 and 1/30; all subsequent frame times unchanged',
               'h264_final_encodes':1,'raw_video_frames':total_bytes//frame_bytes,'ffmpeg_final_command':command,'production_mutation_requests':0,'full_decode':'PASS'}
     write_json(OUT/'manifest.json',manifest);review(spec,manifest)
     from module_audio_qa import boundary_checks
