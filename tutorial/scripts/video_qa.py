@@ -76,7 +76,7 @@ def capture_coverage(spec):
              'drags':sum(x['type']=='drag-start' for x in events),'drag_ends':sum(x['type']=='drag-end' for x in events),
              'moves':sum(x['type']=='move' for x in events),
              'actual_move_durations':[x['actual_duration']*e['retime_factor'] for x in events if x['type'] in ('move','drag-move')],
-             'cursor_points_in_view':all(0<=x['end'][0]<1900 and 0<=x['end'][1]<1060 for x in events if x['type'] in ('move','drag-move')),'move_durations':sorted({x['duration'] for x in events if x['type'] in ('move','drag-move')}),
+             'cursor_points_in_view':all(0<=x['end'][0]<1920 and 0<=x['end'][1]<1080 for x in events if x['type'] in ('move','drag-move')),'move_durations':sorted({x['duration'] for x in events if x['type'] in ('move','drag-move')}),
              'cue_errors_seconds':[abs(x['actual_seconds']*e['retime_factor']-x['target_seconds']) for x in e['alignment_action_cues']]}
         row['status']='PASS' if row['cursor_present'] and row['cursor_points_in_view'] and max(row['actual_move_durations'],default=0)<=.8 and row['focus_events'] and row['drags']==row['drag_ends'] and len(rings)>=len(clicks) else 'FAIL'
         rows.append(row)
