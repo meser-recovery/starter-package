@@ -2,7 +2,7 @@
 (() => {
   try { sessionStorage.getItem('s11-tutorial-capture'); } catch { return; }
   const key='s11-tutorial-capture';
-  let focusTarget=null,focusKind='element';
+  let focusTarget=null,focusKind='element',focusGeometry='';
   let root,cursor,focus,last=JSON.parse(sessionStorage.getItem(key+'-point')||'[150,180]');
   const events=()=>JSON.parse(sessionStorage.getItem(key+'-events')||'[]');
   const log=(type,extra={})=>{const rows=events();rows.push({type,t:performance.now(),...extra});sessionStorage.setItem(key+'-events',JSON.stringify(rows));};
@@ -10,7 +10,7 @@
     if(!document.body)return;
     if(!root){
       root=document.createElement('div');root.id='__s11-overlay';root.setAttribute('aria-hidden','true');
-      root.innerHTML=`<style>#__s11-overlay{position:fixed;inset:0;pointer-events:none;z-index:2147483647}#__s11-cursor{position:fixed;width:25px;height:34px;filter:drop-shadow(0 2px 2px #0009);z-index:3;transform:translate(-2px,-2px)}#__s11-focus{position:fixed;border:3px solid #19bce6;border-radius:9px;box-shadow:0 0 0 3px #ffffffa0,0 0 18px #19bce655;display:none;z-index:1}#__s11-focus span{position:absolute;top:-30px;left:0;white-space:nowrap;background:#073448;color:white;padding:2px 9px;border-radius:4px;font:17px Arial}.s11-ring{position:fixed;width:20px;height:20px;border:3px solid #ffc63d;border-radius:50%;transform:translate(-50%,-50%);animation:s11-click .5s ease-out forwards;z-index:2}@keyframes s11-click{to{width:48px;height:48px;opacity:0}}#__s11-cursor[data-down=true]{filter:drop-shadow(0 0 5px #ffc63d)} </style><div id="__s11-focus"><span></span></div><svg id="__s11-cursor" viewBox="0 0 25 34"><path d="M3 2L3 27L9 21L14 32L19 29L14 19L23 18Z" fill="#172e40" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
+      root.innerHTML=`<style>#__s11-overlay{position:fixed;inset:0;pointer-events:none;z-index:2147483647}#__s11-cursor{position:fixed;width:25px;height:34px;transition:left 30ms linear,top 30ms linear;filter:drop-shadow(0 2px 2px #0009);z-index:3;transform:translate(-2px,-2px)}#__s11-focus{position:fixed;border:3px solid #19bce6;border-radius:9px;box-shadow:0 0 0 3px #ffffffa0,0 0 18px #19bce655;display:none;z-index:1}#__s11-focus span{position:absolute;top:-30px;left:0;white-space:nowrap;background:#073448;color:white;padding:2px 9px;border-radius:4px;font:17px Arial}.s11-ring{position:fixed;width:20px;height:20px;border:3px solid #ffc63d;border-radius:50%;transform:translate(-50%,-50%);animation:s11-click .5s ease-out forwards;z-index:2}@keyframes s11-click{to{width:48px;height:48px;opacity:0}}#__s11-cursor[data-down=true]{filter:drop-shadow(0 0 5px #ffc63d)} </style><div id="__s11-focus"><span></span></div><svg id="__s11-cursor" viewBox="0 0 25 34"><path d="M3 2L3 27L9 21L14 32L19 29L14 19L23 18Z" fill="#172e40" stroke="white" stroke-width="2" stroke-linejoin="round"/></svg>`;
       cursor=root.querySelector('#__s11-cursor');focus=root.querySelector('#__s11-focus');
     }
     const modal=Array.from(document.querySelectorAll('dialog[open]')).at(-1);const host=modal||document.body;
@@ -18,7 +18,7 @@
     root.style.display=sessionStorage.getItem(key)==='on'?'block':'none';
     cursor.style.left=last[0]+'px';cursor.style.top=last[1]+'px';
   }
-  function paintFocus(rect,kind){Object.assign(focus.style,{display:'block',left:Math.max(3,rect.x-5)+'px',top:Math.max(32,rect.y-5)+'px',width:Math.min(innerWidth-8,rect.width+10)+'px',height:Math.min(innerHeight-38,rect.height+10)+'px',boxShadow:kind==='element'?'0 0 0 3px #ffffffa0,0 0 18px #19bce655':'0 0 0 3000px #051d301c,0 0 0 3px #ffffffa0'});}
+  function paintFocus(rect,kind){const geometry=[rect.x,rect.y,rect.width,rect.height,kind].join(',');if(geometry===focusGeometry&&focus.style.display==='block')return;focusGeometry=geometry;Object.assign(focus.style,{display:'block',left:Math.max(3,rect.x-5)+'px',top:Math.max(32,rect.y-5)+'px',width:Math.min(innerWidth-8,rect.width+10)+'px',height:Math.min(innerHeight-38,rect.height+10)+'px',boxShadow:kind==='element'?'0 0 0 3px #ffffffa0,0 0 18px #19bce655':'0 0 0 3000px #051d301c,0 0 0 3px #ffffffa0'});}
   function followFocus(){
     if(focusTarget){
       const rect=focusTarget.getBoundingClientRect();

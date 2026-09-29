@@ -1,6 +1,5 @@
 """Capture-only pointer/focus choreography around real Playwright controls."""
 import asyncio,math
-from playwright.async_api import Locator
 
 
 class Director:
@@ -14,13 +13,17 @@ class Director:
         self.pending=(phrase,self.timing['alignment']['character_start_times_seconds'][index])
     async def move(self,x,y,*,duration=None):
         a,b=self.point;duration=duration or min(.7,max(.3,math.hypot(x-a,y-b)/1800))
-        count=max(12,round(duration*40));start=asyncio.get_running_loop().time()
+        count=max(8,round(duration*20));start=asyncio.get_running_loop().time()
+        dispatched=[]
         for i in range(1,count+1):
             t=i/count;u=t*t*(3-2*t)
-            await self.page.mouse.move(a+(x-a)*u,b+(y-b)*u)
             await asyncio.sleep(max(0,start+duration*t-asyncio.get_running_loop().time()))
+            # Dispatch at the planned cadence. A modal/backdrop can delay CDP
+            # acknowledgements; serially awaiting each would stretch the gesture.
+            dispatched.append(asyncio.create_task(self.page.mouse.move(a+(x-a)*u,b+(y-b)*u)))
+        await asyncio.gather(*dispatched)
         self.point=(x,y)
-        self.events.append({'type':'drag-move' if self.down else 'move','seconds':self.now(),'duration':duration,'start':[a,b],'end':[x,y]})
+        self.events.append({'type':'drag-move' if self.down else 'move','seconds':self.now(),'duration':duration,'actual_duration':asyncio.get_running_loop().time()-start,'start':[a,b],'end':[x,y]})
     async def aim(self,locator,kind='element',label='',consume=True):
         await locator.scroll_into_view_if_needed()
         box=await locator.bounding_box()
@@ -60,6 +63,7 @@ class Director:
 class CaptureLocator:
     def __init__(self,raw,director):self.raw=raw;self.d=director
     def __getattr__(self,name):
+        from playwright.async_api import Locator
         item=getattr(self.raw,name)
         if isinstance(item,Locator):return CaptureLocator(item,self.d)
         if name in ('locator','get_by_role','get_by_text','get_by_label','filter','nth'):

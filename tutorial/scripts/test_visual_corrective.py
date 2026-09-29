@@ -1,5 +1,7 @@
 """Regression gates for the corrective master and capture layer."""
-import unittest,json,subprocess,tempfile
+import unittest,json,subprocess,tempfile,asyncio
+from types import SimpleNamespace
+from capture_director import Director
 from pathlib import Path
 from browser_capture import frame_listing
 from video_qa import inspect_frames
@@ -28,6 +30,19 @@ class VideoBoundaryTests(unittest.TestCase):
     def test_smooth_small_motion_is_allowed(self):
         frames=[bytes([40+i,90+i,140+i,190+i]*100) for i in range(9)]
         self.assertEqual(inspect_frames(frames)['status'],'PASS')
+
+
+class PointerCadenceTests(unittest.IsolatedAsyncioTestCase):
+    async def test_slow_modal_acknowledgements_do_not_stretch_movement(self):
+        sent=[];loop=asyncio.get_running_loop()
+        async def move(x,y):
+            sent.append((loop.time(),x,y));await asyncio.sleep(.12)
+        director=Director(SimpleNamespace(mouse=SimpleNamespace(move=move)),{},None,loop.time())
+        await director.move(600,400,duration=.3)
+        self.assertEqual(len(sent),8)
+        self.assertLess(sent[-1][0]-sent[0][0],.4)
+        self.assertLess(director.events[-1]['actual_duration'],.65)
+        self.assertTrue(all(b[1]>a[1] for a,b in zip(sent,sent[1:])))
 
 
 if __name__=='__main__':unittest.main()

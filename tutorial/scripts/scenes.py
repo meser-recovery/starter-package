@@ -233,6 +233,7 @@ async def prepare(page, scene: dict, base: str):
             await page.locator("#workflow-choice").wait_for(state="visible", timeout=60_000)
     elif number in (17, 18):
         await import_local(page, base)
+        if number==17:await page.locator('#source-session-mode-device').click()
     elif 23 <= number <= 29:
         if number == 29:
             await import_archive(page, base, title, "announcement")
@@ -391,13 +392,12 @@ async def perform(page, scene: dict, base: str, cue=None):
             raise RuntimeError("local import unexpectedly linked to Archive")
         await page.locator("#source-session-mode-device").click()
     elif number == 17:
-        await at('сохранить запись в Архив')
-        await page.locator("#source-session-mode-device").click()
         await page.locator("#processor-save-incoming").click()
         await page.locator("#source-session-ingest-dialog").wait_for(state="visible")
-        await page.locator("#source-session-ingest-name").fill(title)
+        record_title=await page.locator("#source-session-ingest-name").input_value()
+        await at('сохранить запись в Архив')
         await page.locator("#source-session-ingest-submit").click()
-        await page.locator("#current-recording-heading").get_by_text(title).wait_for(timeout=60_000)
+        await page.locator("#current-recording-heading").get_by_text(record_title).wait_for(timeout=60_000)
     elif number == 18:
         await focus("#open-local-announcement","Анонс-мейкер",kind="element")
         await focus("#open-local-speaker","Спикерская",kind="element")
