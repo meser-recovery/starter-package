@@ -36,6 +36,16 @@ class VideoBoundaryTests(unittest.TestCase):
         a=bytes([35,70,110,180]*100);b=bytes([210,150,90,40]*100)
         self.assertEqual(inspect_frames([a]*4+[b]*5)['status'],'PASS')
 
+    def test_mp4_entry_filter_preserves_30fps_and_tail_padding(self):
+        with tempfile.TemporaryDirectory() as folder:
+            source=Path(folder)/'source.mp4'
+            subprocess.run(['ffmpeg','-v','error','-f','lavfi','-i','color=c=gray:s=16x16:r=30',
+                            '-frames:v','30','-c:v','libx264',str(source)],check=True)
+            result=subprocess.check_output(['ffmpeg','-v','error','-i',str(source),
+                '-vf','fps=30,'+stable_entry_filter(True)+',tpad=stop_mode=clone:stop_duration=1',
+                '-frames:v','60','-pix_fmt','gray','-f','rawvideo','pipe:1'])
+            self.assertEqual(len(result),60*16*16)
+
     def test_black_white_and_initialization_flash_fail(self):
         a=bytes([45,90,130,180]*100);b=bytes([65,95,150,195]*100)
         for bad in (bytes(400),bytes([255])*400,bytes([230,20,240,15]*100)):

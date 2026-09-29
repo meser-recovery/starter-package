@@ -109,7 +109,7 @@ def review(spec,manifest):
 def stable_entry_filter(browser):
     # The first compositor sample may predate the capture-only focus layer.
     # Hold the next real frame at both PTS 0 and 1/30; later frame times stay intact.
-    return 'trim=start_frame=1,tpad=start=1:start_mode=clone,setpts=N/(30*TB)' if browser else 'null'
+    return 'trim=start_frame=1,tpad=start=1:start_mode=clone,setpts=N/(30*TB),fps=30' if browser else 'null'
 
 
 def assemble(spec):
