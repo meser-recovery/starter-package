@@ -35,10 +35,11 @@ function oneTranslator(p){
 const R1=[[1,4],[11,14],[18,22]],R2=[[4,8],[12,15],[20,22]],COMMON=[[8,11],[15,18],[22,24]];
 function translators(p,common){
   base(common?'22':'21',common?'Сокращается только общая тишина':'Два переводчика · общий порядок разговора');
-  label('Переводчик 1',114,417,C.teal);label('Переводчик 2',114,619,C.blue);
+  label('Переводчик 1',114,417,C.teal);label('Переводчик 2',114,619,C.gold);
+  ctx.fillStyle=C.bg;ctx.fillRect(94,993,850,80);circle(102,1022,5,C.teal);text('Переводчик 1',124,1030,23,C.teal);circle(366,1022,5,C.gold);text('Переводчик 2',388,1030,23,C.gold);
   const shorten=common?ramp(p,.42,.78):0;
   const sequential=common?0:ramp(p,.32,.52)*(1-ramp(p,.58,.7));
-  for(const[y,segments,color]of [[430,R1,C.teal],[630,R2,C.blue]])audioLane(410+(y===630?sequential*620:0),y,1250*(1-sequential*.5),segments,color,shorten,COMMON);
+  for(const[y,segments,color]of [[430,R1,C.teal],[630,R2,C.gold]])audioLane(410+(y===630?sequential*620:0),y,1250*(1-sequential*.5),segments,color,shorten,COMMON);
   if(common){alpha(1-shorten,()=>{for(const[a,b]of COMMON){box(410+compressedTime(a,shorten,COMMON)/24*1250,347,(compressedTime(b,shorten,COMMON)-compressedTime(a,shorten,COMMON))/24*1250,360,3,'#bd761130')}});alpha(ramp(p,.16,.34),()=>{box(410+compressedTime(12,shorten,COMMON)/24*1250,347,2/24*1250,360,0,'#087df117');label('Есть речь → сохраняем',1130,325,C.blue)});alpha(shorten,()=>{label('Обе дорожки сокращены синхронно',635,816,C.teal);file(1610,849,C.teal,'MP3',.58)});}
   else{const seq=ramp(p,.32,.52)*(1-ramp(p,.58,.7));alpha(seq,()=>{line(412,830,1660,830,C.red,3);text('По очереди — порядок нарушается',650,900,30,C.red,600);line(885,790,947,858,C.red,5);line(947,790,885,858,C.red,5)});alpha(ramp(p,.72,.9),()=>{line(410,330,410,730,C.teal,4);line(1660,330,1660,730,C.teal,4);text('Общее время · совпадения речи сохранены',610,872,30,C.teal,600)});}
 }
