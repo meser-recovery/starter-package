@@ -40,9 +40,37 @@
         "pronunciation": {"type": "object"}
       }
     },
-    "scenes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scene"}}
+    "scenes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/scene"}},
+    "pilot": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["scene_ids", "visual_source", "variants", "visual_cues"],
+      "properties": {
+        "scene_ids": {"const": ["001-purpose", "002-zoom-multitrack", "003-announcement-benefit", "004-speaker-benefit", "005-two-tools", "006-archive-open"]},
+        "visual_source": {"const": "animations/pilot.html"},
+        "variants": {
+          "type": "object", "additionalProperties": false,
+          "required": ["a-current", "b-context", "c-tuned"],
+          "properties": {
+            "a-current": {"$ref": "#/$defs/pilotVariant"},
+            "b-context": {"$ref": "#/$defs/pilotVariant"},
+            "c-tuned": {"$ref": "#/$defs/pilotVariant"}
+          }
+        },
+        "visual_cues": {"type": "object"}
+      }
+    }
   },
   "$defs": {
+    "pilotVariant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["label", "context", "voice_settings"],
+      "properties": {
+        "label": {"type": "string", "minLength": 1},
+        "context": {"enum": ["none", "neighbors"]},
+        "voice_settings": {"type": ["object", "null"]}
+      }
+    },
     "scene": {
       "type": "object",
       "required": ["id", "chapter", "canonical_refs", "narration", "captions", "visual", "initial_state", "expected_state", "assertions", "fixture_set", "dependencies", "regenerate", "padding", "target_seconds", "transforms"],

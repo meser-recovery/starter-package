@@ -29,8 +29,8 @@ jobs:
           node-version: '24.7.0'
       - name: Check repository contract
         run: python3 tests/safety/check_site.py
-      - name: Check S11 tutorial content and deterministic fixtures
-        run: python3 tutorial/scripts/test_s11.py
+      - name: Check S11 tutorial content, pilot boundaries and deterministic fixtures
+        run: python3 -m unittest discover -s tutorial/scripts -p 'test*.py'
       - name: Check gateway syntax
         run: npm --prefix gateway/audio-archive run check
       - name: Run gateway test suite

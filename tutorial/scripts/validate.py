@@ -8,7 +8,7 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_PACK_SHA256 = "523c29b093a40ac3b1f3c6fc07d4058a9275ed3e0c3883efd0876af033e59c03"
+APPROVED_PACK_SHA256 = "298d7b54918f6983d2ec1d2b2454d52992e9db4b4d3617ec3e00905149e49ee8"
 REQUIRED_ANIMATIONS = {
     "zoom-multitrack", "archive-hierarchy", "one-translator",
     "multiple-translators", "project-vs-final", "summary",

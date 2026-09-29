@@ -7,6 +7,7 @@ import json
 import re
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 
 from fixtures import generate
@@ -59,8 +60,10 @@ class TutorialSafetyTests(unittest.TestCase):
         self.assertNotEqual(content_hash({**scene, "narration": scene["narration"] + " "}, settings), baseline)
 
     def test_fixture_generation_is_byte_deterministic(self):
-        first = generate()
-        second = generate()
+        # Tests must not rewrite the full tutorial's protected working fixtures.
+        with tempfile.TemporaryDirectory() as folder, patch("fixtures.OUTPUT_DIR", Path(folder)):
+            first = generate()
+            second = generate()
         self.assertEqual(first, second)
         self.assertEqual(len(first["track_sha256"]), 4)
 

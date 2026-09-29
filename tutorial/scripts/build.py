@@ -69,16 +69,23 @@ def main() -> None:
     parser.add_argument("--scene")
     parser.add_argument("--chapter")
     parser.add_argument("--slice", action="store_true", help="mandatory vertical-slice scenes")
+    parser.add_argument("--pilot", action="store_true", help="isolated A/B/C pilot, scenes 001–006 only")
     parser.add_argument("--animations-only", action="store_true")
     parser.add_argument("--base-url", help="reuse an existing loopback in-memory preview")
     parser.add_argument("--force", action="store_true")
     args = parser.parse_args()
+    if args.pilot and any((args.scene, args.chapter, args.slice, args.animations_only, args.force, args.base_url)):
+        parser.error("--pilot is isolated; do not combine it with other selection/capture flags")
     if sum(bool(x) for x in (args.scene, args.chapter, args.slice)) > 1:
         parser.error("select only one of --scene, --chapter, --slice")
     if args.force and (args.mode != "narration" or not args.scene):
         parser.error("--force requires narration --scene")
     result = validate()
     spec = json.loads((ROOT / "tutorial.yaml").read_text())
+    if args.pilot:
+        from pilot import run
+        run(args.mode, spec)
+        return
     if args.mode == "validate":
         print(json.dumps(result, ensure_ascii=False))
         return

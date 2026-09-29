@@ -9,7 +9,7 @@
     "fps": 30,
     "canonical_content": {
       "source": "content/meser-audio-tutorial-canonical-content-pack.md",
-      "sha256": "523c29b093a40ac3b1f3c6fc07d4058a9275ed3e0c3883efd0876af033e59c03",
+      "sha256": "298d7b54918f6983d2ec1d2b2454d52992e9db4b4d3617ec3e00905149e49ee8",
       "policy": "fail_on_content_drift"
     },
     "chapters": [
@@ -45,7 +45,7 @@
         ],
         "captions": []
       },
-      "narration": "Как вам известно, мы записываем спикерские собрания. Готовые записи затем добавляются на сайт «Нам по пути», а также используются анонс-мейкером, который прослушивает спикерскую и готовит по ней краткое текстовое резюме для анонса.",
+      "narration": "Привет. Позвольте представить вам несколько новых возможностей, доступных на сайте Мэсэр в разделе для служащих. Как вам известно, мы записываем спикерские собрания. Готовые записи затем добавляются на сайт «Нам по пути», а также используются анонс-мейкером, который прослушивает спикерскую и готовит по ней краткое текстовое резюме для анонса.",
       "visual": {
         "type": "animation",
         "goal": "Название ролика → карточка спикерской → сайт → текстовый анонс",
@@ -2231,5 +2231,151 @@
       "transforms": [],
       "captions": []
     }
-  ]
+  ],
+  "pilot": {
+    "scene_ids": [
+      "001-purpose",
+      "002-zoom-multitrack",
+      "003-announcement-benefit",
+      "004-speaker-benefit",
+      "005-two-tools",
+      "006-archive-open"
+    ],
+    "visual_source": "animations/pilot.html",
+    "variants": {
+      "a-current": {
+        "label": "A — CURRENT",
+        "context": "none",
+        "voice_settings": null
+      },
+      "b-context": {
+        "label": "B — CONTEXT",
+        "context": "neighbors",
+        "voice_settings": null
+      },
+      "c-tuned": {
+        "label": "C — TUNED",
+        "context": "neighbors",
+        "voice_settings": {
+          "stability": 0.45,
+          "similarity_boost": 0.75,
+          "style": 0.0,
+          "use_speaker_boost": true,
+          "speed": 0.96
+        }
+      }
+    },
+    "visual_cues": {
+      "001-purpose": [
+        {
+          "text": "Привет.",
+          "phase": 0
+        },
+        {
+          "text": "Как вам известно",
+          "phase": 0.3
+        },
+        {
+          "text": "Готовые записи",
+          "phase": 0.55
+        },
+        {
+          "text": "а также используются",
+          "phase": 0.75
+        }
+      ],
+      "002-zoom-multitrack": [
+        {
+          "text": "Обычно запись",
+          "phase": 0
+        },
+        {
+          "text": "Но Zoom",
+          "phase": 0.25
+        },
+        {
+          "text": "Вместо одного",
+          "phase": 0.48
+        },
+        {
+          "text": "Такая возможность",
+          "phase": 0.82
+        }
+      ],
+      "003-announcement-benefit": [
+        {
+          "text": "Это даёт",
+          "phase": 0
+        },
+        {
+          "text": "Например",
+          "phase": 0.12
+        },
+        {
+          "text": "Можно оставить",
+          "phase": 0.32
+        },
+        {
+          "text": "автоматически сократить",
+          "phase": 0.6
+        },
+        {
+          "text": "гораздо более короткий",
+          "phase": 0.86
+        }
+      ],
+      "004-speaker-benefit": [
+        {
+          "text": "Раздельные дорожки",
+          "phase": 0
+        },
+        {
+          "text": "У разных участников",
+          "phase": 0.1
+        },
+        {
+          "text": "При поканальной",
+          "phase": 0.25
+        },
+        {
+          "text": "Так же отдельно",
+          "phase": 0.46
+        },
+        {
+          "text": "Если в собрание",
+          "phase": 0.65
+        },
+        {
+          "text": "Если возникли",
+          "phase": 0.79
+        },
+        {
+          "text": "А если запись",
+          "phase": 0.91
+        }
+      ],
+      "005-two-tools": [
+        {
+          "text": "Для работы",
+          "phase": 0
+        },
+        {
+          "text": "Аудиоархив позволяет",
+          "phase": 0.23
+        },
+        {
+          "text": "Здесь же",
+          "phase": 0.43
+        },
+        {
+          "text": "Аудиоредактор позволяет",
+          "phase": 0.55
+        },
+        {
+          "text": "и выбрать",
+          "phase": 0.72
+        }
+      ]
+    }
+  }
 }
