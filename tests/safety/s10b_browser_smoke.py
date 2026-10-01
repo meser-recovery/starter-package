@@ -97,7 +97,10 @@ def run(browser_type, base_url):
             if message.type == 'error' and message.text.startswith('S10B_REVOKE_DURING_PAGEHIDE ') else None)
     page.add_init_script("""(() => {
       let pageHiding = false;
-      addEventListener('pagehide', () => { pageHiding = true; }, { capture: true });
+      addEventListener('pagehide', () => {
+        pageHiding = true;
+        queueMicrotask(() => { pageHiding = false; });
+      }, { capture: true });
       const revoke = URL.revokeObjectURL.bind(URL);
       URL.revokeObjectURL = url => {
         if (pageHiding) console.error('S10B_REVOKE_DURING_PAGEHIDE ' + url);
