@@ -220,6 +220,11 @@ function setSourceLoading(visible, { title = "Открываем запись…
   }
 }
 
+function revokeObjectUrlLater(url) {
+  if (!url) return;
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function clearOutputPlayback(revokeUrl = true) {
   const audio = byId("announcement-audio");
   audio.pause();
@@ -228,7 +233,7 @@ function clearOutputPlayback(revokeUrl = true) {
   byId("announcement-download").removeAttribute("href");
   byId("announcement-download").removeAttribute("download");
   byId("announcement-playback").hidden = true;
-  if (state.outputUrl && revokeUrl) URL.revokeObjectURL(state.outputUrl);
+  if (state.outputUrl && revokeUrl) revokeObjectUrlLater(state.outputUrl);
   state.outputUrl = null;
 }
 
@@ -844,7 +849,7 @@ async function openArchivedOutput(session, output, workflow = "announcement", do
     const file = workflow === "speaker" ? await reconstructSpeakerOutput(metadata, gateway.speakerPartFetch(metadata)) :
       await reconstructAnnouncementOutput(metadata, gateway.announcementPartFetch(metadata));
     if (sequence !== state.outputSequence || auth !== state.authSequence || state.resultArchive !== workflow || state.activeManifest?.id !== currentSessionId || currentSessionId !== session.id) return;
-    if (state.outputUrl) URL.revokeObjectURL(state.outputUrl);
+    clearOutputPlayback();
     state.outputUrl = URL.createObjectURL(file);
     const link = byId("announcement-download");
     link.href = state.outputUrl;
