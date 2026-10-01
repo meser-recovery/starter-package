@@ -307,11 +307,16 @@ function clearAudio(audio) {
   audio.load();
 }
 
+function revokeObjectUrlLater(url) {
+  if (!url) return;
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function clearResult(revokeUrl = true) {
   result.hidden = true;
   cancelAnimationFrame(resultPlayheadFrame);
   clearAudio(resultAudio);
-  if (resultURL && revokeUrl) URL.revokeObjectURL(resultURL);
+  if (resultURL && revokeUrl) revokeObjectUrlLater(resultURL);
   resultURL = null;
   resultWaveformSamples = null; resultWaveformFile = null;
   resultDuration = NaN;
@@ -1111,7 +1116,7 @@ function syncInputFiles() {
 
 function revokeTrackURLs(track, revokeUrl = true) {
   sourceDetail.clear();
-  if (track.sourceURL && revokeUrl) URL.revokeObjectURL(track.sourceURL);
+  if (track.sourceURL && revokeUrl) revokeObjectUrlLater(track.sourceURL);
   track.sourceURL = null;
   track.samples = null;
 }
