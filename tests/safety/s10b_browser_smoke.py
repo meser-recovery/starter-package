@@ -91,15 +91,16 @@ def run(browser_type, base_url):
     page_errors = []
     writes = []
     outbound = []
-    revoked_attached_media = []
+    pagehide_revokes = []
     page.on('pageerror', lambda error: page_errors.append(str(error)))
-    page.on('console', lambda message: revoked_attached_media.append(message.text)
-            if message.type == 'error' and message.text.startswith('S10B_REVOKED_ATTACHED_MEDIA ') else None)
+    page.on('console', lambda message: pagehide_revokes.append(message.text)
+            if message.type == 'error' and message.text.startswith('S10B_REVOKE_DURING_PAGEHIDE ') else None)
     page.add_init_script("""(() => {
+      let pageHiding = false;
+      addEventListener('pagehide', () => { pageHiding = true; }, { capture: true });
       const revoke = URL.revokeObjectURL.bind(URL);
       URL.revokeObjectURL = url => {
-        const attached = [...document.querySelectorAll('audio')].some(audio => audio.src === url || audio.currentSrc === url);
-        if (attached) console.error('S10B_REVOKED_ATTACHED_MEDIA ' + url);
+        if (pageHiding) console.error('S10B_REVOKE_DURING_PAGEHIDE ' + url);
         return revoke(url);
       };
     })();""")
@@ -190,7 +191,7 @@ def run(browser_type, base_url):
     speaker_source_transition(page, base_url, writes, False)
     speaker_source_transition(page, base_url, writes, True)
     assert not page_errors, page_errors
-    assert not revoked_attached_media, revoked_attached_media
+    assert not pagehide_revokes, pagehide_revokes
     assert not outbound, outbound
     browser.close()
 
