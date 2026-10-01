@@ -155,11 +155,16 @@ function attentionFor(session) {
   return (state.maintenance?.transactions || []).filter(operation => operation.sessionId === session.id);
 }
 
+function revokeObjectUrlLater(url) {
+  if (!url) return;
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function clearPlayback(revokeUrl = true) {
   generations.play.next();
   $('audio').pause(); $('audio').removeAttribute('src'); $('audio').load();
   $('download').removeAttribute('href'); $('download').removeAttribute('download');
-  if (state.url && revokeUrl) URL.revokeObjectURL(state.url);
+  if (state.url && revokeUrl) revokeObjectUrlLater(state.url);
   state.url = null; $('player').hidden = true; $('playback-status').textContent = '';
 }
 function closeDetail({ updateUrl = true } = {}) {
