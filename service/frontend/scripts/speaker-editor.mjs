@@ -178,13 +178,18 @@ function updateSelectionDuration() {
   }
 }
 
+function revokeObjectUrlLater(url) {
+  if (!url) return;
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function clearCandidate() {
   state.presentationEpoch += 1;
   state.candidate = null; state.resultSamples = null;
   byId("result").hidden = true;
   byId("result-audio").pause(); byId("result-audio").removeAttribute("src"); byId("result-audio").load();
   byId("download").removeAttribute("href"); byId("download").removeAttribute("download");
-  if (state.candidateUrl) URL.revokeObjectURL(state.candidateUrl);
+  if (state.candidateUrl) revokeObjectUrlLater(state.candidateUrl);
   state.candidateUrl = null;
 }
 
@@ -1757,7 +1762,7 @@ async function teardown() {
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
   detachTrackMedia();
   await cancelRender(); state.operation = null; clearCandidate();
-  for (const track of state.tracks) if (track.url) URL.revokeObjectURL(track.url);
+  for (const track of state.tracks) if (track.url) revokeObjectUrlLater(track.url);
   state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.loadedPayload = null; state.loadedCurrentDraft = false; state.legacyInvalidCuts = []; state.history = null;
   state.draft = null; state.projectState = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.loadProjectState = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
   state.waveformProvider = null; state.waveformDiagnostics = []; updateDiagnosticDisclosure();
