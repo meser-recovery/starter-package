@@ -307,11 +307,11 @@ function clearAudio(audio) {
   audio.load();
 }
 
-function clearResult() {
+function clearResult(revokeUrl = true) {
   result.hidden = true;
   cancelAnimationFrame(resultPlayheadFrame);
   clearAudio(resultAudio);
-  if (resultURL) URL.revokeObjectURL(resultURL);
+  if (resultURL && revokeUrl) URL.revokeObjectURL(resultURL);
   resultURL = null;
   resultWaveformSamples = null; resultWaveformFile = null;
   resultDuration = NaN;
@@ -1109,9 +1109,9 @@ function syncInputFiles() {
   }
 }
 
-function revokeTrackURLs(track) {
+function revokeTrackURLs(track, revokeUrl = true) {
   sourceDetail.clear();
-  if (track.sourceURL) URL.revokeObjectURL(track.sourceURL);
+  if (track.sourceURL && revokeUrl) URL.revokeObjectURL(track.sourceURL);
   track.sourceURL = null;
   track.samples = null;
 }
@@ -1620,9 +1620,9 @@ window.addEventListener("pagehide", () => {
   stop();
   engine?.terminate();
   engine = null;
-  clearResult();
+  clearResult(false);
   clearPreviewAudios(true);
-  for (const track of tracks) revokeTrackURLs(track);
+  for (const track of tracks) revokeTrackURLs(track, false);
 });
 window.addEventListener("pageshow", (event) => {
   if (event.persisted && tracks.length) {
