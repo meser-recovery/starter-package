@@ -72,26 +72,51 @@ def main() -> None:
     result = validate()
     spec = json.loads((ROOT / "tutorial.yaml").read_text())
     if spec["schema_version"] == 2:
+        from audio_approval import approved_path, validate_approval
         if args.pilot:
             parser.error("historical pilot is unavailable for the approved B01–B14 source")
         if args.chapter:
             parser.error("select an approved B-block; old chapters are historical")
         if args.mode == "validate":
             print(json.dumps(result, ensure_ascii=False)); return
+        if args.mode in ("visual", "assemble", "verify"):
+            if args.module != "B01" or args.all_modules or args.scene or args.force:
+                raise RuntimeError("review gate: only B01 visual/assembly is authorized")
+            validate_approval(spec, "B01")
+            from b01_block import visual, assemble, verify
+            if args.mode == "visual":
+                import asyncio
+                print(json.dumps(asyncio.run(visual()), ensure_ascii=False, indent=2))
+            elif args.mode == "assemble":
+                print(json.dumps(assemble(), ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(verify(), ensure_ascii=False, indent=2))
+            return
         if args.mode not in ("dry-run", "narration"):
-            raise RuntimeError("visual/assembly migration is pending; audio-only B01 review gate is active")
+            raise RuntimeError("review gate: current B-block pipeline supports only selective audio and B01 visual/assembly")
         try:
             selected = selection(spec, args.module, args.scene, args.chapter)
         except ValueError as error:
             parser.error(str(error))
         if args.mode == "dry-run":
             print(json.dumps({"content_validation": result, **plan(spec, selected, args.force),
-                              "review_gate": "B01_AUDIO_PENDING",
-                              "visual_changes": "NOT_PREPARED"}, ensure_ascii=False, indent=2)); return
-        if len(selected) != 1 or selected[0]["id"] != spec["review_policy"]["first_audio_block"] or args.module != "B01":
-            raise RuntimeError("review gate: only narration --module B01 is authorized before B01 audio approval")
+                              "review_gate": "B01_BLOCK_PENDING",
+                              "approved_audio": "B01", "visual_changes": "B01_ONLY"}, ensure_ascii=False, indent=2)); return
+        if len(selected) != 1 or args.module != selected[0]["id"]:
+            raise RuntimeError("review gate: select exactly one B-block for narration")
+        module_id = selected[0]["id"]
+        if approved_path(module_id).exists():
+            validate_approval(spec, module_id)
+            raise RuntimeError(f"{module_id} audio is approved and immutable; TTS is forbidden")
+        index = spec['review_policy']['block_order'].index(module_id)
+        if index:
+            previous = spec['review_policy']['block_order'][index-1]
+            from audio_approval import validate_block_approval
+            validate_block_approval(previous)
+            if not selected[0].get('tts', {}).get('semantic_reviewed'):
+                raise RuntimeError(f"{module_id} needs a documented semantic pause review before TTS")
         info, cache = generate(spec, selected[0], force=args.force)
-        print(json.dumps({"module_id": "B01", "cache": cache,
+        print(json.dumps({"module_id": module_id, "cache": cache,
                           "duration_seconds": info["timing"]["duration_seconds"],
                           "audio_sha256": info["metadata"]["audio_sha256"],
                           "timing_sha256": info["metadata"]["timing_sha256"]}, ensure_ascii=False)); return

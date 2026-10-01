@@ -4,7 +4,7 @@
     "language": "ru-RU",
     "canonical_content": {
       "source": "content/meser-audio-tutorial-canonical-content-pack.md",
-      "sha256": "a9719129460e3130537d03419b0f20ae10710e28fec71944516c5545a36e881e",
+      "sha256": "b83e243b9d469de7df121eff527c675be8fb180021dc7925259292c6a092e321",
       "policy": "fail_on_content_drift"
     }
   },

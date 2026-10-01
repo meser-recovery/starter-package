@@ -10,6 +10,7 @@ from unittest.mock import patch
 
 import modules
 import build
+from audio_approval import scene_timing as approved_scene_timing, validate_approval
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
 
@@ -103,18 +104,50 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual([i for i, b in enumerate(changed["narration_modules"])
                           if modules.narration_hash(changed, b) != before[i]], [1])
 
-    def test_dry_run_only_selected_block_spends(self):
+    def test_approved_b01_never_spends_even_with_force(self):
         with tempfile.TemporaryDirectory() as folder:
-            rows = modules.plan(self.spec, [self.spec["narration_modules"][0]], root=Path(folder))
-        self.assertEqual(rows["tts_requests"], 1)
-        self.assertEqual([r["module_id"] for r in rows["modules"] if r["tts_requests"]], ["B01"])
+            rows = modules.plan(self.spec, [self.spec["narration_modules"][0]], force=True, root=Path(folder))
+        self.assertEqual(rows["tts_requests"], 0)
+        self.assertEqual(rows["modules"][0]["cache"], "APPROVED")
+        with self.assertRaisesRegex(RuntimeError, "approved and immutable"):
+            modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
         self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
 
     def test_audio_review_gate_rejects_other_blocks_before_provider_call(self):
         with patch("sys.argv", ["build.py", "narration", "--module", "B02"]), patch.object(build, "generate") as provider:
-            with self.assertRaisesRegex(RuntimeError, "review gate"):
+            with self.assertRaisesRegex(RuntimeError, "complete block approval"):
                 build.main()
             provider.assert_not_called()
+
+    def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
+        if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():
+            self.skipTest("approved large audio is an ignored local review artifact")
+        approval = validate_approval(self.spec, "B01")
+        self.assertEqual(approval["record"]["status"], "AUDIO_APPROVED")
+        self.assertEqual(len(approval["record"]["insertions"]), 6)
+        for scene in self.spec["scenes"][:3]:
+            timing = approved_scene_timing(self.spec, scene, approval)
+            self.assertEqual("".join(timing["alignment"]["characters"]), scene["narration"])
+            self.assertGreater(timing["duration_seconds"], 0)
+
+    def test_later_block_requires_manual_semantic_map_without_copying_b01_tags(self):
+        spec = copy.deepcopy(self.spec)
+        block = spec["narration_modules"][1]
+        offset = block["narration"].index("Запись в режиме")
+        block["tts"] = {"opening_tag": "", "semantic_reviewed": True,
+                        "pauses": [{"after_offset": offset,
+                                    "reason": "Объяснение двух режимов записи закончено; далее показаны преимущества раздельных дорожек."}]}
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", dir=ROOT, delete=False) as file:
+            json.dump(spec, file, ensure_ascii=False)
+            path = Path(file.name)
+        try:
+            self.assertEqual(validate(path)["status"], "PASS")
+        finally:
+            path.unlink(missing_ok=True)
+        request, indices = modules.request_text_and_indices(spec, block)
+        self.assertEqual(request.count("[pause]"), 1)
+        self.assertNotIn("[slowly]", request)
+        self.assertEqual("".join(request[i] for i in indices), block["narration"])
 
 
 if __name__ == "__main__":

@@ -49,7 +49,8 @@ def request_text_and_indices(spec, module):
     tts=module.get('tts',{}) if spec['schema_version']==2 else {}
     prefix=spec['narration']['delivery_prefix']
     if tts:
-        prefix+=' '+tts['opening_tag']
+        if tts['opening_tag']:
+            prefix+=' '+tts['opening_tag']
     parts=[prefix+'\n']; indices=[]; position=len(parts[0])
     pauses={row['after_offset'] for row in tts.get('pauses',[])}
     for offset,char in enumerate(canonical):
@@ -142,6 +143,8 @@ def cached(spec, module, root=CACHE):
 
 
 def generate(spec,module,force=False,root=CACHE):
+    if spec['schema_version']==2 and (ROOT/'approvals'/f"{module['id']}-audio.json").exists():
+        raise RuntimeError(f"{module['id']} audio is approved and immutable; TTS is forbidden")
     hit=cached(spec,module,root)
     if hit and not force:
         return hit,'HIT'
@@ -214,10 +217,16 @@ def selection(spec, module_id=None, scene_id=None, chapter=None):
 
 def plan(spec,selected,force=False,root=CACHE):
     ids={m['id'] for m in selected}; rows=[]
-    for module in spec['narration_modules']:
+    for index,module in enumerate(spec['narration_modules']):
         hit=cached(spec,module,root)
-        spend=module['id'] in ids and (force or not hit)
-        rows.append({'module_id':module['id'],'selected':module['id'] in ids,'cache':'HIT' if hit else 'MISS',
+        approved=spec['schema_version']==2 and (ROOT/'approvals'/f"{module['id']}-audio.json").exists()
+        ready=True
+        if spec['schema_version']==2 and index:
+            previous=spec['narration_modules'][index-1]['id']
+            ready=(ROOT/'approvals'/f'{previous}-block.json').exists() and bool(module.get('tts',{}).get('semantic_reviewed'))
+        spend=module['id'] in ids and ready and not approved and (force or not hit)
+        rows.append({'module_id':module['id'],'selected':module['id'] in ids,
+                     'cache':'APPROVED' if approved else 'LOCKED' if not ready else 'HIT' if hit else 'MISS',
                      'tts_requests':int(spend),'canonical_characters':len(spoken_text(spec,module)),
                      'characters_to_generate':len(request_body(spec,module)['text']) if spend else 0,
                      'narration_hash':narration_hash(spec,module),'scene_ids':module['scene_ids']})

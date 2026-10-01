@@ -9,7 +9,7 @@ from pathlib import Path
 from content_model import approved_structure
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_PACK_SHA256 = "a9719129460e3130537d03419b0f20ae10710e28fec71944516c5545a36e881e"
+APPROVED_PACK_SHA256 = "b83e243b9d469de7df121eff527c675be8fb180021dc7925259292c6a092e321"
 
 
 class ContentDrift(ValueError):
@@ -111,7 +111,18 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
             ):
                 fail("B01 TTS pauses must match the reviewed semantic transitions")
         elif "tts" in block:
-            fail(f"{bid} TTS markup is outside current audio review")
+            tts = block["tts"]
+            pauses = tts["pauses"]
+            offsets = [p["after_offset"] for p in pauses]
+            if (tts.get("semantic_reviewed") is not True or tts["opening_tag"] not in ("", "[slowly]")
+                    or offsets != sorted(set(offsets))
+                    or any(not isinstance(p["after_offset"], int)
+                           or p["after_offset"] <= 0
+                           or p["after_offset"] >= len(block["narration"])
+                           or not (block["narration"][p["after_offset"]-1].isspace()
+                                   or block["narration"][p["after_offset"]].isspace())
+                           or len(p["reason"].strip()) < 12 for p in pauses)):
+                fail(f"{bid} needs a reviewed, reasoned semantic pause map")
         expected_block_ids = [f"{bid}-{number:03d}" for number, _ in source_block["scene_units"]]
         expected_ids.extend(expected_block_ids)
         if block["scene_ids"] != expected_block_ids:
