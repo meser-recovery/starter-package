@@ -220,7 +220,7 @@ function setSourceLoading(visible, { title = "Открываем запись…
   }
 }
 
-function clearOutputPlayback() {
+function clearOutputPlayback(revokeUrl = true) {
   const audio = byId("announcement-audio");
   audio.pause();
   audio.removeAttribute("src");
@@ -228,7 +228,7 @@ function clearOutputPlayback() {
   byId("announcement-download").removeAttribute("href");
   byId("announcement-download").removeAttribute("download");
   byId("announcement-playback").hidden = true;
-  if (state.outputUrl) URL.revokeObjectURL(state.outputUrl);
+  if (state.outputUrl && revokeUrl) URL.revokeObjectURL(state.outputUrl);
   state.outputUrl = null;
 }
 
@@ -1875,7 +1875,7 @@ byId("delete-dialog").addEventListener("close", () => {
   const focus = state.deleteTarget?.focus; state.deleteTarget = null; ++state.deleteSequence;
   if (focus?.isConnected) focus.focus(); else byId("refresh").focus();
 });
-window.addEventListener("pagehide", () => { state.preparationController?.abort(); clearOutputPlayback(); });
+window.addEventListener("pagehide", () => { state.preparationController?.abort(); clearOutputPlayback(false); });
 
 await initialize();
 
