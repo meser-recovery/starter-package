@@ -5,7 +5,8 @@ from pathlib import Path
 from modules import ROOT,identity,sha,write_json,scene_timing
 from capture import probe
 
-OUT=ROOT/json.loads((ROOT/'tutorial.yaml').read_text())['module_assembly']['output_directory']
+# The v1 visual pipeline is historical while the approved v2 spec is audio-only.
+OUT=ROOT/json.loads((ROOT/'content/historical/tutorial-N01-N08.yaml').read_text())['module_assembly']['output_directory']
 
 
 def paths(scene):

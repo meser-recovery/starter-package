@@ -38,6 +38,8 @@ def members(spec, module):
 
 
 def spoken_text(spec, module):
+    if spec['schema_version'] == 1:
+        return '\n\n'.join(s['narration'] for s in members(spec,module))
     return module['narration']
 
 
@@ -52,6 +54,10 @@ def request_body(spec, module):
 
 
 def narration_hash(spec, module):
+    if spec['schema_version'] == 1:
+        return identity({'module_id':module['id'],'ordered_scene_ids':module['scene_ids'],
+                         'canonical_spoken_text':spoken_text(spec,module),
+                         'profile':spec['narration'],'pronunciation_configuration':module['pronunciation_dictionary_locators']})
     return identity({'model_version':spec['schema_version'],'module_id':module['id'],
                      'ordered_scene_mapping':[(s['id'],s['start_offset'],s['end_offset']) for s in members(spec,module)],
                      'canonical_spoken_text':spoken_text(spec,module),
@@ -66,9 +72,11 @@ def map_timing(spec, module, alignment, duration):
     if len(starts)!=len(request) or len(ends)!=len(request) or not all(0<=a<=b<=duration+.1 for a,b in zip(starts,ends)) or any(a>b for a,b in zip(starts,starts[1:])):
         raise RuntimeError('invalid module character timing')
     prefix=len(spec['narration']['delivery_prefix'])+1
-    ranges=[]
+    legacy=spec['schema_version']==1
+    offset=0; ranges=[]
     for scene in members(spec,module):
-        text=scene['narration']; offset=scene['start_offset']; n=len(text); r=prefix+offset
+        if not legacy: offset=scene['start_offset']
+        text=scene['narration']; n=len(text); r=prefix+offset
         assert request[r:r+n]==text
         first=next((i for i,c in enumerate(text) if not c.isspace()),None)
         last=next((i for i in range(n-1,-1,-1) if not text[i].isspace()),None)
@@ -80,8 +88,9 @@ def map_timing(spec, module, alignment, duration):
                                   'start_seconds':starts[r+match.start()],'end_seconds':ends[r+match.end()-1]})
         ranges.append({'module_id':module['id'],'scene_id':scene['id'],
                        'scene_start_seconds':starts[r+first],'scene_end_seconds':ends[r+last],
-                       'canonical_start_offset':offset,'canonical_end_offset':scene['end_offset'],
+                       'canonical_start_offset':offset,'canonical_end_offset':offset+n if legacy else scene['end_offset'],
                        'request_start_offset':r,'phrases':phrase_ranges})
+        if legacy: offset+=n+2
     # Full continuous module is covered once, including pauses between logical scenes.
     for i,row in enumerate(ranges):
         row['range_start_seconds']=0.0 if i==0 else row['scene_start_seconds']

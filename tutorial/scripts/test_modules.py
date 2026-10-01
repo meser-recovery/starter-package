@@ -11,7 +11,7 @@ from validate import ROOT
 class ModuleTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.spec=json.loads((ROOT/'tutorial.yaml').read_text())
+        cls.spec=json.loads((ROOT/'content/historical/tutorial-N01-N08.yaml').read_text())
         cls.audio=subprocess.check_output(['ffmpeg','-v','error','-f','lavfi','-i','anullsrc=r=44100:cl=mono','-t','2','-f','mp3','-'])
 
     def response(self,spec,module):
@@ -44,7 +44,8 @@ class ModuleTests(unittest.TestCase):
                 plan=modules.plan(spec,[n03],force=True,root=root)
                 self.assertEqual(plan['tts_requests'],1)
                 self.assertEqual([r['module_id'] for r in plan['modules'] if r['tts_requests']],['N03'])
-                self.assertEqual(len((root/'requests.jsonl').read_text().splitlines()),9)
+                events=[json.loads(line)['event'] for line in (root/'requests.jsonl').read_text().splitlines()]
+                self.assertEqual((events.count('started'),events.count('response')),(9,9))
             local_cache=lambda s,m:modules.cached(s,m,root)
             local_timing=lambda s,scene:modules.scene_timing(s,scene,root)
             with patch.object(assembly,'OUT',out),patch.object(assembly,'cached',local_cache),patch.object(assembly,'scene_timing',local_timing):

@@ -15,6 +15,8 @@ Only the last command can contact ElevenLabs, and only for B01 while its audio r
 
 `dry-run --all-modules` is read-only and reports the planned requests for each selected block. Audio generation of B02–B14 and all visual, capture, assembly and video modes are gated until the corresponding review stages and visual migration. The previous implementation and commands below are historical reference only.
 
+The old pilot/module regression tests run against the preserved [v1 specification](content/historical/tutorial-N01-N08.yaml); the current v2 validation and B01 gate use `tutorial.yaml`.
+
 ## Historical N01–N08 candidate and visual corrections
 
 The [Canonical Content Pack](content/meser-audio-tutorial-canonical-content-pack.md) controls approved content. `tutorial.yaml` is the executable specification (JSON syntax, a YAML 1.2 subset). `CONTENT_DRIFT` fails closed on changed narration, captions, storyboard goals, mapping or approved pack hash. The approved closing is paragraph n133. The versioned [Narration Module Map](content/S11-Narration-Module-Map.md) defines N01–N08.

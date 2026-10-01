@@ -16,7 +16,7 @@ from validate import ROOT
 class PilotTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.spec = json.loads((ROOT / "tutorial.yaml").read_text())
+        cls.spec = json.loads((ROOT / "content/historical/tutorial-N01-N08.yaml").read_text())
 
     def test_only_six_approved_scenes_and_three_variants(self):
         self.assertEqual(len(pilot.selection(self.spec)), 6)
