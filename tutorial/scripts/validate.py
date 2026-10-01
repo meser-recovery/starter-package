@@ -1,18 +1,15 @@
 #!/usr/bin/env python3
-"""Mechanical schema and approved-content checks. No semantic rewrite judge."""
+"""Fail-closed S11 audio content validation against the approved Content Pack."""
 from __future__ import annotations
 
 import hashlib
 import json
 import re
 from pathlib import Path
+from content_model import approved_structure
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_PACK_SHA256 = "6e024611d7165172f7c996f027be8281d5c6de02410822799a65a6257933841f"
-REQUIRED_ANIMATIONS = {
-    "zoom-multitrack", "one-translator",
-    "multiple-translators", "summary",
-}
+APPROVED_PACK_SHA256 = "a9719129460e3130537d03419b0f20ae10710e28fec71944516c5545a36e881e"
 
 
 class ContentDrift(ValueError):
@@ -31,18 +28,13 @@ def schema_check(value, schema, root, path="$" ):
         return schema_check(value, root["$defs"][ref.split("/")[-1]], root, path)
     if "const" in schema and value != schema["const"]:
         fail(f"schema {path}: expected {schema['const']!r}")
-    if "enum" in schema and value not in schema["enum"]:
-        fail(f"schema {path}: value outside enum")
     types = schema.get("type")
     if types:
         types = [types] if isinstance(types, str) else types
-        tests = {
-            "object": lambda v: isinstance(v, dict),
-            "array": lambda v: isinstance(v, list),
-            "string": lambda v: isinstance(v, str),
-            "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
-            "null": lambda v: v is None,
-        }
+        tests = {"object": lambda v: isinstance(v, dict), "array": lambda v: isinstance(v, list),
+                 "string": lambda v: isinstance(v, str),
+                 "number": lambda v: isinstance(v, (int, float)) and not isinstance(v, bool),
+                 "null": lambda v: v is None}
         if not any(tests[t](value) for t in types):
             fail(f"schema {path}: expected {types}")
     if isinstance(value, dict):
@@ -58,11 +50,8 @@ def schema_check(value, schema, root, path="$" ):
     if isinstance(value, list):
         if len(value) < schema.get("minItems", 0) or len(value) > schema.get("maxItems", float("inf")):
             fail(f"schema {path}: item count")
-        for i, child in enumerate(schema.get("prefixItems", [])):
-            if i < len(value):
-                schema_check(value[i], child, root, f"{path}[{i}]")
-        if "items" in schema:
-            for i, item in enumerate(value):
+        for i, item in enumerate(value):
+            if "items" in schema:
                 schema_check(item, schema["items"], root, f"{path}[{i}]")
     if isinstance(value, str):
         if len(value) < schema.get("minLength", 0):
@@ -74,30 +63,12 @@ def schema_check(value, schema, root, path="$" ):
             fail(f"schema {path}: below minimum")
 
 
-def canonical_items(pack: str):
-    try:
-        narration = pack.split("# PART A · Canonical Russian Narration", 1)[1].split("# PART B", 1)[0]
-        storyboard = pack.split("# PART B · Approved Storyboard / Visual Coverage", 1)[1].split("# PART C", 1)[0]
-        captions = pack.split("# PART D · On-screen captions", 1)[1].split("# PART E", 1)[0]
-    except IndexError:
-        fail("Canonical Content Pack sections missing")
-    paragraphs = [p.strip() for p in narration.split("\n\n")
-                  if p.strip() and p.strip() != "---" and not p.strip().startswith("## ")]
-    rows = {}
-    for line in storyboard.splitlines():
-        match = re.match(r"^\| (\d+) \| (.*?) \| (.*?) \| (.*?) \| (.*?) \|$", line)
-        if match:
-            number, meaning, goal, visual_type, target = match.groups()
-            rows[f"b{int(number):03d}"] = {"meaning": meaning, "goal": goal, "type": visual_type, "target": target}
-    blocks = {match.group(1): match.group(2).strip() for match in
-              re.finditer(r"## (.*?)\n\n```text\n(.*?)\n```", captions, re.S)}
-    return {f"n{i:03d}": text for i, text in enumerate(paragraphs, 1)}, rows, blocks
-
-
 def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
-    # JSON is a strict YAML 1.2 subset; this avoids an extra parser dependency.
-    spec = json.loads(spec_path.read_text(encoding="utf-8"))
-    schema = json.loads((ROOT / "schemas/tutorial.schema.json").read_text(encoding="utf-8"))
+    try:
+        spec = json.loads(spec_path.read_text(encoding="utf-8"))
+        schema = json.loads((ROOT / "schemas/tutorial.schema.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError) as error:
+        fail(f"spec/schema unreadable: {error}")
     schema_check(spec, schema, schema)
     source = spec["tutorial"]["canonical_content"]["source"]
     pack_path = (ROOT / source).resolve()
@@ -107,75 +78,53 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
     digest = hashlib.sha256(raw).hexdigest()
     if digest != APPROVED_PACK_SHA256 or digest != spec["tutorial"]["canonical_content"]["sha256"]:
         fail("Canonical Content Pack identity/hash changed")
-    paragraphs, rows, blocks = canonical_items(raw.decode("utf-8"))
-    if len(paragraphs) != 133 or len(rows) != 60:
-        fail("approved narration/storyboard count changed")
-    ids, used_narration, used_storyboard, seen_animations = set(), [], [], set()
-    chapters = spec["tutorial"]["chapters"]
-    if len(chapters) != len(set(chapters)) or len(chapters) != 9:
-        fail("chapter coverage changed")
-    if len(spec["scenes"]) != 60:
-        fail("required storyboard scenes missing")
-    for scene in spec["scenes"]:
-        sid = scene["id"]
-        if sid in ids:
-            fail(f"duplicate scene ID: {sid}")
-        ids.add(sid)
-        if scene["chapter"] not in chapters:
-            fail(f"unknown chapter: {sid}")
-        refs = scene["canonical_refs"]
-        nrefs, brefs, crefs = refs["narration"], refs["storyboard"], refs["captions"]
-        if any(ref not in paragraphs for ref in nrefs) or any(ref not in rows for ref in brefs):
-            fail(f"unresolved canonical refs: {sid}")
-        if any(ref not in blocks for ref in crefs):
-            fail(f"unresolved caption refs: {sid}")
-        if scene["narration"] != "\n\n".join(paragraphs[ref] for ref in nrefs):
-            fail(f"narration differs from approved text: {sid}")
-        if scene["captions"] != [blocks[ref] for ref in crefs]:
-            fail(f"caption differs from approved text: {sid}")
-        if len(brefs) != 1 or scene["visual"]["goal"] != rows[brefs[0]]["goal"]:
-            fail(f"visual goal differs from storyboard: {sid}")
-        if scene["expected_state"] != rows[brefs[0]]["meaning"]:
-            fail(f"scene meaning differs from storyboard: {sid}")
-        if scene["target_seconds"] != rows[brefs[0]]["target"]:
-            fail(f"scene timing reference differs from storyboard: {sid}")
-        if scene["transforms"]:
-            fail(f"transform requires explicit fragment mapping: {sid}")
-        if scene["fixture_set"] not in (None, "synthetic-zoom-v1"):
-            fail(f"unresolved fixture set: {sid}")
-        used_narration.extend(nrefs)
-        used_storyboard.extend(brefs)
-        if scene["visual"]["animation"]:
-            seen_animations.add(scene["visual"]["animation"])
-    if sorted(used_narration) != sorted(paragraphs):
-        fail("unmapped or duplicated narration")
-    if sorted(used_storyboard) != sorted(rows):
-        fail("missing or duplicated storyboard scene")
-    # Concrete Archive/Editor objects must be shown in the real local frontend.
-    for number in ('005','011','044','050'):
-        scene=next(s for s in spec['scenes'] if s['id'].startswith(number+'-'))
-        if scene['visual']['type']!='browser': fail('Real UI required: '+scene['id'])
-    if not REQUIRED_ANIMATIONS.issubset(seen_animations):
-        fail("required explanatory animation missing")
-    for scene in spec["scenes"]:
-        if any(dep not in ids for dep in scene["dependencies"]):
-            fail(f"unresolved scene dependency: {scene['id']}")
-    from modules import BOUNDS
-    expected_modules = [{"id": f"N{i:02d}", "scene_ids": [s["id"] for s in spec["scenes"][a-1:b]]}
-                        for i, (a, b) in enumerate(BOUNDS, 1)]
-    if [{k: m[k] for k in ("id", "scene_ids")} for m in spec["narration_modules"]] != expected_modules:
-        fail("approved N01–N08 scene membership/order changed")
-    if set(spec["visual_cues"]) != ids:
-        fail("visual cue coverage changed")
-    for scene in spec["scenes"]:
-        previous = -1
-        for cue in spec["visual_cues"][scene["id"]]:
-            index = scene["narration"].find(cue["text"])
-            if index < 0 or index <= previous or not 0 <= cue["phase"] < 1:
-                fail("unresolved or unordered visual phrase cue: " + scene["id"])
-            previous = index
+    try:
+        canonical, approved = approved_structure(raw.decode("utf-8"))
+    except (UnicodeError, ValueError) as error:
+        fail(str(error))
+    blocks = spec["narration_modules"]
+    scenes = spec["scenes"]
+    expected_order = [b["id"] for b in approved]
+    if spec["review_policy"]["block_order"] != expected_order:
+        fail("review block order changed")
+    if [b["id"] for b in blocks] != expected_order:
+        fail("block membership/order changed")
+    expected_ids = []
+    scene_index = 0
+    for block, source_block in zip(blocks, approved):
+        bid = block["id"]
+        for key, expected in (("title", source_block["title"]),
+                              ("canonical_start_offset", source_block["start"]),
+                              ("canonical_end_offset", source_block["end"]),
+                              ("narration", source_block["narration"])):
+            if block[key] != expected:
+                fail(f"{bid} {key} differs from approved source")
+        expected_block_ids = [f"{bid}-{number:03d}" for number, _ in source_block["scene_units"]]
+        expected_ids.extend(expected_block_ids)
+        if block["scene_ids"] != expected_block_ids:
+            fail(f"{bid} scene membership/order changed")
+        previous_end = 0
+        for (number, description), sid in zip(source_block["scene_units"], expected_block_ids):
+            scene = scenes[scene_index]
+            scene_index += 1
+            if scene["id"] != sid or scene["block_id"] != bid or scene["number"] != number:
+                fail(f"scene ID/block/number differs from approved map: {sid}")
+            if scene["goal"] != description:
+                fail(f"scene goal differs from approved map: {sid}")
+            start, end = scene["start_offset"], scene["end_offset"]
+            if not isinstance(start, int) or not isinstance(end, int) or start != previous_end or end <= start or end > len(block["narration"]):
+                fail(f"missing, duplicated or reordered fragment: {sid}")
+            if scene["narration"] != block["narration"][start:end] or not scene["narration"].strip():
+                fail(f"scene narration differs from approved fragment: {sid}")
+            if scene["captions"]:
+                fail(f"unapproved caption: {sid}")
+            previous_end = end
+        if previous_end != len(block["narration"]):
+            fail(f"incomplete block narration: {bid}")
+    if [s["id"] for s in scenes] != expected_ids or scene_index != 54:
+        fail("scene order or count changed")
     return {"status": "PASS", "pack_path": str(pack_path), "pack_sha256": digest,
-            "scene_count": len(ids), "chapter_count": len(chapters), "paragraph_count": len(paragraphs)}
+            "block_count": 14, "scene_count": 54, "canonical_characters": len(canonical)}
 
 
 if __name__ == "__main__":

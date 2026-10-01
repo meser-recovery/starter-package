@@ -71,6 +71,30 @@ def main() -> None:
         parser.error("--animations-only is a visual selection")
     result = validate()
     spec = json.loads((ROOT / "tutorial.yaml").read_text())
+    if spec["schema_version"] == 2:
+        if args.pilot:
+            parser.error("historical pilot is unavailable for the approved B01–B14 source")
+        if args.chapter:
+            parser.error("select an approved B-block; old chapters are historical")
+        if args.mode == "validate":
+            print(json.dumps(result, ensure_ascii=False)); return
+        if args.mode not in ("dry-run", "narration"):
+            raise RuntimeError("visual/assembly migration is pending; audio-only B01 review gate is active")
+        try:
+            selected = selection(spec, args.module, args.scene, args.chapter)
+        except ValueError as error:
+            parser.error(str(error))
+        if args.mode == "dry-run":
+            print(json.dumps({"content_validation": result, **plan(spec, selected, args.force),
+                              "review_gate": "B01_AUDIO_PENDING",
+                              "visual_changes": "NOT_PREPARED"}, ensure_ascii=False, indent=2)); return
+        if len(selected) != 1 or selected[0]["id"] != spec["review_policy"]["first_audio_block"] or args.module != "B01":
+            raise RuntimeError("review gate: only narration --module B01 is authorized before B01 audio approval")
+        info, cache = generate(spec, selected[0], force=args.force)
+        print(json.dumps({"module_id": "B01", "cache": cache,
+                          "duration_seconds": info["timing"]["duration_seconds"],
+                          "audio_sha256": info["metadata"]["audio_sha256"],
+                          "timing_sha256": info["metadata"]["timing_sha256"]}, ensure_ascii=False)); return
     if args.pilot:
         from pilot import run
         run(args.mode, spec)

@@ -1,0 +1,103 @@
+"""Offline S11 audio-first mapping, alignment and review-gate regressions."""
+from __future__ import annotations
+
+import copy
+import json
+import tempfile
+import unittest
+from pathlib import Path
+from unittest.mock import patch
+
+import modules
+import build
+from content_model import approved_structure
+from validate import ContentDrift, ROOT, validate
+
+
+class AudioBlockTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.spec = json.loads((ROOT / "tutorial.yaml").read_text())
+
+    def changed(self, mutate):
+        spec = copy.deepcopy(self.spec)
+        mutate(spec)
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".json", dir=ROOT, delete=False) as file:
+            json.dump(spec, file, ensure_ascii=False)
+            path = Path(file.name)
+        try:
+            with self.assertRaisesRegex(ContentDrift, "CONTENT_DRIFT"):
+                validate(path)
+        finally:
+            path.unlink(missing_ok=True)
+
+    def test_exact_approved_mapping(self):
+        result = validate()
+        self.assertEqual((result["block_count"], result["scene_count"]), (14, 54))
+        canonical, approved = approved_structure((ROOT / "content/meser-audio-tutorial-canonical-content-pack.md").read_text())
+        self.assertEqual(self.spec["narration_modules"][0]["narration"], approved[0]["narration"])
+        self.assertEqual(self.spec["narration_modules"][-1]["narration"][-20:], "Спасибо за внимание.")
+        self.assertEqual([s["id"] for s in self.spec["scenes"][:3]], ["B01-001", "B01-002", "B01-003"])
+        self.assertEqual(len(canonical), result["canonical_characters"])
+
+    def test_content_drift_rejects_phrase_gap_duplicate_order_title_scene_caption_hash(self):
+        self.changed(lambda s: s["scenes"][0].__setitem__("narration", "Привет."))
+        self.changed(lambda s: s["scenes"][1].__setitem__("start_offset", s["scenes"][1]["start_offset"] + 1))
+        self.changed(lambda s: s["scenes"][1].__setitem__("start_offset", s["scenes"][1]["start_offset"] - 1))
+        self.changed(lambda s: s["scenes"].__setitem__(slice(0, 2), list(reversed(s["scenes"][:2]))))
+        self.changed(lambda s: s["narration_modules"][0].__setitem__("title", "Другой заголовок"))
+        self.changed(lambda s: s["scenes"][0].__setitem__("block_id", "B02"))
+        self.changed(lambda s: s["scenes"][0].__setitem__("goal", "Другая сцена"))
+        self.changed(lambda s: s["scenes"][0]["captions"].append("Новый титр"))
+        self.changed(lambda s: s["tutorial"]["canonical_content"].__setitem__("sha256", "0" * 64))
+
+    def test_one_continuous_request_and_scene_alignment(self):
+        block = self.spec["narration_modules"][0]
+        body = modules.request_body(self.spec, block)
+        self.assertEqual(body["text"], "[calm] [conversational]\n" + block["narration"])
+        self.assertNotIn(block["title"], body["text"])
+        text = body["text"]
+        length = len(text)
+        alignment = {"characters": list(text),
+                     "character_start_times_seconds": [i * .05 for i in range(length)],
+                     "character_end_times_seconds": [(i + 1) * .05 for i in range(length)]}
+        timing = modules.map_timing(self.spec, block, alignment, length * .05)
+        self.assertEqual(len(timing["scenes"]), 3)
+        self.assertEqual(timing["scenes"][0]["range_start_seconds"], 0)
+        self.assertEqual(timing["scenes"][-1]["range_end_seconds"], length * .05)
+        self.assertEqual("".join(s["narration"] for s in modules.members(self.spec, block)), block["narration"])
+        broken = copy.deepcopy(alignment)
+        broken["characters"][0] = "X"
+        with self.assertRaises(RuntimeError):
+            modules.map_timing(self.spec, block, broken, length * .05)
+
+    def test_hash_scope_and_selection(self):
+        blocks = self.spec["narration_modules"]
+        before = [modules.narration_hash(self.spec, b) for b in blocks]
+        self.assertEqual([b["id"] for b in modules.selection(self.spec, module_id="B01")], ["B01"])
+        changed = copy.deepcopy(self.spec)
+        changed["scenes"][0]["end_offset"] += 1
+        self.assertEqual([i for i, b in enumerate(changed["narration_modules"])
+                          if modules.narration_hash(changed, b) != before[i]], [0])
+        changed = copy.deepcopy(self.spec)
+        changed["narration_modules"][1]["pronunciation_dictionary_locators"] = [
+            {"pronunciation_dictionary_id": "example", "version_id": "v2"}]
+        self.assertEqual([i for i, b in enumerate(changed["narration_modules"])
+                          if modules.narration_hash(changed, b) != before[i]], [1])
+
+    def test_dry_run_only_selected_block_spends(self):
+        with tempfile.TemporaryDirectory() as folder:
+            rows = modules.plan(self.spec, [self.spec["narration_modules"][0]], root=Path(folder))
+        self.assertEqual(rows["tts_requests"], 1)
+        self.assertEqual([r["module_id"] for r in rows["modules"] if r["tts_requests"]], ["B01"])
+        self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
+
+    def test_audio_review_gate_rejects_other_blocks_before_provider_call(self):
+        with patch("sys.argv", ["build.py", "narration", "--module", "B02"]), patch.object(build, "generate") as provider:
+            with self.assertRaisesRegex(RuntimeError, "review gate"):
+                build.main()
+            provider.assert_not_called()
+
+
+if __name__ == "__main__":
+    unittest.main()

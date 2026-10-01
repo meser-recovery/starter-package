@@ -4,16 +4,17 @@ import base64
 import hashlib
 import json
 import re
+import shutil
 import subprocess
 import urllib.error
 import urllib.request
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 from narration import api_key, probe_duration
 from validate import ROOT
 
-CACHE = ROOT / 'generated/narration-modules'
-BOUNDS = [(1,5),(6,18),(19,22),(23,29),(30,36),(37,43),(44,55),(56,60)]
+CACHE = ROOT / 'generated/narration-blocks-v2'
 
 
 def sha(path):
@@ -37,7 +38,7 @@ def members(spec, module):
 
 
 def spoken_text(spec, module):
-    return '\n\n'.join(s['narration'] for s in members(spec,module))
+    return module['narration']
 
 
 def request_body(spec, module):
@@ -51,7 +52,8 @@ def request_body(spec, module):
 
 
 def narration_hash(spec, module):
-    return identity({'module_id':module['id'],'ordered_scene_ids':module['scene_ids'],
+    return identity({'model_version':spec['schema_version'],'module_id':module['id'],
+                     'ordered_scene_mapping':[(s['id'],s['start_offset'],s['end_offset']) for s in members(spec,module)],
                      'canonical_spoken_text':spoken_text(spec,module),
                      'profile':spec['narration'],'pronunciation_configuration':module['pronunciation_dictionary_locators']})
 
@@ -64,20 +66,22 @@ def map_timing(spec, module, alignment, duration):
     if len(starts)!=len(request) or len(ends)!=len(request) or not all(0<=a<=b<=duration+.1 for a,b in zip(starts,ends)) or any(a>b for a,b in zip(starts,starts[1:])):
         raise RuntimeError('invalid module character timing')
     prefix=len(spec['narration']['delivery_prefix'])+1
-    offset=0; ranges=[]
+    ranges=[]
     for scene in members(spec,module):
-        text=scene['narration']; n=len(text); r=prefix+offset
+        text=scene['narration']; offset=scene['start_offset']; n=len(text); r=prefix+offset
         assert request[r:r+n]==text
+        first=next((i for i,c in enumerate(text) if not c.isspace()),None)
+        last=next((i for i in range(n-1,-1,-1) if not text[i].isspace()),None)
+        if first is None or last is None: raise RuntimeError('empty scene narration')
         phrase_ranges=[]
         for match in re.finditer(r'\S(?:[^.!?]*?)[.!?](?=\s|$)|\S[^.!?]*$',text):
             phrase_ranges.append({'text':match.group(),'canonical_start_offset':offset+match.start(),
                                   'canonical_end_offset':offset+match.end(),
                                   'start_seconds':starts[r+match.start()],'end_seconds':ends[r+match.end()-1]})
         ranges.append({'module_id':module['id'],'scene_id':scene['id'],
-                       'scene_start_seconds':starts[r],'scene_end_seconds':ends[r+n-1],
-                       'canonical_start_offset':offset,'canonical_end_offset':offset+n,
+                       'scene_start_seconds':starts[r+first],'scene_end_seconds':ends[r+last],
+                       'canonical_start_offset':offset,'canonical_end_offset':scene['end_offset'],
                        'request_start_offset':r,'phrases':phrase_ranges})
-        offset+=n+2
     # Full continuous module is covered once, including pauses between logical scenes.
     for i,row in enumerate(ranges):
         row['range_start_seconds']=0.0 if i==0 else row['scene_start_seconds']
@@ -113,19 +117,29 @@ def generate(spec,module,force=False,root=CACHE):
     url=f"https://api.elevenlabs.io/v1/text-to-speech/{profile['voice_id']}/with-timestamps?output_format={profile['output_format']}"
     payload=json.dumps(body,ensure_ascii=False).encode()
     request=urllib.request.Request(url,payload,{'xi-api-key':api_key(),'Content-Type':'application/json'},method='POST')
-    attempt={'module_id':module['id'],'narration_hash':narration_hash(spec,module),'force':force,
+    attempt={'attempt_id':uuid.uuid4().hex,'module_id':module['id'],'narration_hash':narration_hash(spec,module),'force':force,
              'started_utc':datetime.now(timezone.utc).isoformat(),'endpoint':url,'characters':len(spoken_text(spec,module)),
              'request_body_sha256':hashlib.sha256(payload).hexdigest()}
     with (root/'requests.jsonl').open('a') as log:
-        log.write(json.dumps(attempt)+'\n')
+        log.write(json.dumps({**attempt,'event':'started'})+'\n')
     try:
         with urllib.request.urlopen(request,timeout=480) as response:
             result=json.load(response); request_id=response.headers.get('request-id'); status=response.status
     except urllib.error.HTTPError as error:
+        with (root/'requests.jsonl').open('a') as log:
+            log.write(json.dumps({'attempt_id':attempt['attempt_id'],'event':'http_error','http_status':error.code})+'\n')
         raise RuntimeError(f"ElevenLabs HTTP {error.code} for {module['id']}; no automatic retry") from None
+    except Exception as error:
+        with (root/'requests.jsonl').open('a') as log:
+            log.write(json.dumps({'attempt_id':attempt['attempt_id'],'event':'transport_error','error_type':type(error).__name__})+'\n')
+        raise
+    with (root/'requests.jsonl').open('a') as log:
+        log.write(json.dumps({'attempt_id':attempt['attempt_id'],'event':'response','http_status':status,
+                              'request_id':request_id})+'\n')
     # Preserve the paid response before validation so failures can be diagnosed without another request.
+    pending=folder/'pending'/attempt['attempt_id']; pending.mkdir(parents=True,exist_ok=True)
+    write_json(pending/'raw-response.json',result)
     audio=base64.b64decode(result.pop('audio_base64'),validate=True)
-    pending=folder/'pending'; pending.mkdir(exist_ok=True)
     (pending/'narration.mp3').write_bytes(audio)
     write_json(pending/'response-timing.json',result)
     write_json(pending/'request.json',body)
@@ -140,6 +154,12 @@ def generate(spec,module,force=False,root=CACHE):
     write_json(pending/'metadata.json',meta)
     (pending/'canonical-spoken-text.txt').write_text(spoken_text(spec,module))
     (pending/'request-text.txt').write_text(body['text'])
+    if hit:
+        archive=folder/'takes'/hit['metadata']['audio_sha256']
+        archive.mkdir(parents=True,exist_ok=True)
+        for name in ['narration.mp3','timing.json','request.json','request-text.txt','canonical-spoken-text.txt','response-timing.json','metadata.json']:
+            source=folder/name
+            if source.exists() and not (archive/name).exists(): shutil.copy2(source,archive/name)
     for name in ['narration.mp3','timing.json','request.json','request-text.txt','canonical-spoken-text.txt','response-timing.json','metadata.json']:
         (pending/name).replace(folder/name)
     hit=cached(spec,module,root)
@@ -184,7 +204,7 @@ def scene_timing(spec,scene,root=CACHE):
            'character_start_times_seconds':[max(0,x-start) for x in a['character_start_times_seconds'][first:last]],
            'character_end_times_seconds':[max(0,x-start) for x in a['character_end_times_seconds'][first:last]]}
     cue_list=[]
-    for cue in spec['visual_cues'][scene['id']]:
+    for cue in spec.get('visual_cues',{}).get(scene['id'],[]):
         index=scene['narration'].index(cue['text'])
         cue_list.append({'text':cue['text'],'phase':cue['phase'],'seconds':local['character_start_times_seconds'][index]})
     return {**row,'alignment':local,'duration_seconds':length,'visual_cues':cue_list,

@@ -1,5 +1,22 @@
 # Meser Audio Tutorial production pipeline
 
+## Current S11 audio review: B01 first
+
+The [Canonical Content Pack](content/meser-audio-tutorial-canonical-content-pack.md) is the exact narration source. `tutorial.yaml` and its fail-closed `CONTENT_DRIFT` validator map all 14 approved B-blocks and 54 technical scene units without changing PART A. The [current block map](content/S11-Narration-Module-Map.md) names each block; N01–N08 and their generated artifacts are historical.
+
+```sh
+python3 tutorial/scripts/build.py validate
+PYTHONPATH=tutorial/scripts python3 -m unittest -v tutorial/scripts/test_audio_blocks.py
+python3 tutorial/scripts/build.py dry-run --module B01
+python3 tutorial/scripts/build.py narration --module B01
+```
+
+Only the last command can contact ElevenLabs, and only for B01 while its audio review is pending. A valid cache hit makes zero new TTS requests. The request is one continuous B01 text with `[calm] [conversational]` as delivery metadata, using voice `LHi3adMlU7AICv8Yxpmm`, `eleven_v3`, `ru`, stability `0.5`, and `mp3_44100_128`. The ignored `generated/narration-blocks-v2/B01/` folder retains MP3, alignment/timing, exact transcript, request metadata and hashes; `requests.jsonl` records attempts without the API key. Rejected or unvalidated paid responses remain under `pending/`, and prior valid takes are archived under `takes/` when replaced.
+
+`dry-run --all-modules` is read-only and reports the planned requests for each selected block. Audio generation of B02–B14 and all visual, capture, assembly and video modes are gated until the corresponding review stages and visual migration. The previous implementation and commands below are historical reference only.
+
+## Historical N01–N08 candidate and visual corrections
+
 The [Canonical Content Pack](content/meser-audio-tutorial-canonical-content-pack.md) controls approved content. `tutorial.yaml` is the executable specification (JSON syntax, a YAML 1.2 subset). `CONTENT_DRIFT` fails closed on changed narration, captions, storyboard goals, mapping or approved pack hash. The approved closing is paragraph n133. The versioned [Narration Module Map](content/S11-Narration-Module-Map.md) defines N01–N08.
 
 ## Current full candidate: continuous v3 modules

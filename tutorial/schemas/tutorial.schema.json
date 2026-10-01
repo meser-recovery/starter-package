@@ -1,466 +1,83 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "Meser audio tutorial build specification",
+  "title": "S11 approved audio block specification",
   "type": "object",
-  "required": [
-    "schema_version",
-    "tutorial",
-    "narration",
-    "scenes",
-    "narration_modules",
-    "module_assembly",
-    "visual_cues"
-  ],
   "additionalProperties": false,
+  "required": ["schema_version", "tutorial", "narration", "review_policy", "scenes", "narration_modules"],
   "properties": {
-    "schema_version": {
-      "const": 1
-    },
+    "schema_version": {"const": 2},
     "tutorial": {
-      "type": "object",
-      "required": [
-        "language",
-        "resolution",
-        "fps",
-        "canonical_content",
-        "chapters"
-      ],
-      "additionalProperties": false,
+      "type": "object", "additionalProperties": false,
+      "required": ["language", "canonical_content"],
       "properties": {
-        "language": {
-          "const": "ru-RU"
-        },
-        "resolution": {
-          "prefixItems": [
-            {
-              "const": 1920
-            },
-            {
-              "const": 1080
-            }
-          ],
-          "minItems": 2,
-          "maxItems": 2
-        },
-        "fps": {
-          "const": 30
-        },
+        "language": {"const": "ru-RU"},
         "canonical_content": {
-          "type": "object",
-          "required": [
-            "source",
-            "sha256",
-            "policy"
-          ],
-          "additionalProperties": false,
+          "type": "object", "additionalProperties": false,
+          "required": ["source", "sha256", "policy"],
           "properties": {
-            "source": {
-              "type": "string",
-              "minLength": 1
-            },
-            "sha256": {
-              "type": "string",
-              "pattern": "^[a-f0-9]{64}$"
-            },
-            "policy": {
-              "const": "fail_on_content_drift"
-            }
-          }
-        },
-        "chapters": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
+            "source": {"const": "content/meser-audio-tutorial-canonical-content-pack.md"},
+            "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+            "policy": {"const": "fail_on_content_drift"}
           }
         }
       }
     },
     "narration": {
-      "type": "object",
-      "required": [
-        "provider",
-        "voice_id",
-        "model_id",
-        "output_format",
-        "voice_settings",
-        "pronunciation",
-        "language_code",
-        "delivery_prefix"
-      ],
-      "additionalProperties": false,
+      "type": "object", "additionalProperties": false,
+      "required": ["provider", "voice_id", "model_id", "output_format", "voice_settings", "pronunciation", "language_code", "delivery_prefix"],
       "properties": {
-        "provider": {
-          "const": "elevenlabs"
-        },
-        "voice_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "model_id": {
-          "type": "string",
-          "minLength": 1
-        },
-        "output_format": {
-          "type": "string",
-          "minLength": 1
-        },
+        "provider": {"const": "elevenlabs"},
+        "voice_id": {"const": "LHi3adMlU7AICv8Yxpmm"},
+        "model_id": {"const": "eleven_v3"},
+        "output_format": {"const": "mp3_44100_128"},
         "voice_settings": {
-          "type": "object"
+          "type": "object", "additionalProperties": false,
+          "required": ["stability"], "properties": {"stability": {"const": 0.5}}
         },
-        "pronunciation": {
-          "type": "object"
-        },
-        "language_code": {
-          "const": "ru"
-        },
-        "delivery_prefix": {
-          "type": "string",
-          "minLength": 1
-        }
+        "pronunciation": {"type": "object", "additionalProperties": false, "properties": {}},
+        "language_code": {"const": "ru"},
+        "delivery_prefix": {"const": "[calm] [conversational]"}
       }
     },
-    "scenes": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/scene"
-      }
-    },
-    "pilot": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "scene_ids",
-        "visual_source",
-        "variants",
-        "visual_cues"
-      ],
+    "review_policy": {
+      "type": "object", "additionalProperties": false,
+      "required": ["first_audio_block", "block_order", "require_previous_block_approval", "final_requires_all_block_approvals"],
       "properties": {
-        "scene_ids": {
-          "const": [
-            "001-purpose",
-            "002-zoom-multitrack",
-            "003-announcement-benefit",
-            "004-speaker-benefit",
-            "005-two-tools",
-            "006-archive-open"
-          ]
-        },
-        "visual_source": {
-          "const": "animations/pilot.html"
-        },
-        "variants": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "a-current",
-            "b-context",
-            "c-tuned"
-          ],
-          "properties": {
-            "a-current": {
-              "$ref": "#/$defs/pilotVariant"
-            },
-            "b-context": {
-              "$ref": "#/$defs/pilotVariant"
-            },
-            "c-tuned": {
-              "$ref": "#/$defs/pilotVariant"
-            }
-          }
-        },
-        "visual_cues": {
-          "type": "object"
-        },
-        "narration_profile": {
-          "type": "object"
-        }
+        "first_audio_block": {"const": "B01"},
+        "block_order": {"type": "array", "minItems": 14, "maxItems": 14, "items": {"type": "string", "pattern": "^B(0[1-9]|1[0-4])$"}},
+        "require_previous_block_approval": {"const": true},
+        "final_requires_all_block_approvals": {"const": true}
       }
     },
-    "narration_modules": {
-      "type": "array",
-      "minItems": 8,
-      "maxItems": 8,
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": [
-          "id",
-          "scene_ids",
-          "pronunciation_dictionary_locators"
-        ],
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^N0[1-8]$"
-          },
-          "scene_ids": {
-            "type": "array",
-            "minItems": 1,
-            "items": {
-              "type": "string"
-            }
-          },
-          "pronunciation_dictionary_locators": {
-            "type": "array",
-            "items": {
-              "type": "object",
-              "additionalProperties": false,
-              "required": [
-                "pronunciation_dictionary_id",
-                "version_id"
-              ],
-              "properties": {
-                "pronunciation_dictionary_id": {
-                  "type": "string",
-                  "minLength": 1
-                },
-                "version_id": {
-                  "type": "string",
-                  "minLength": 1
-                }
-              }
-            },
-            "maxItems": 3
-          }
-        }
-      }
-    },
-    "module_assembly": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "sample_rate",
-        "channels",
-        "boundary_pause_seconds",
-        "output_directory",
-        "animation_source"
-      ],
-      "properties": {
-        "sample_rate": {
-          "const": 48000
-        },
-        "channels": {
-          "const": 1
-        },
-        "boundary_pause_seconds": {
-          "type": "number",
-          "minimum": 0
-        },
-        "output_directory": {
-          "const": "generated/visual-corrective"
-        },
-        "animation_source": {
-          "const": "animations/modules.html"
-        }
-      }
-    },
-    "visual_cues": {
-      "type": "object"
-    }
+    "scenes": {"type": "array", "minItems": 54, "maxItems": 54, "items": {"$ref": "#/$defs/scene"}},
+    "narration_modules": {"type": "array", "minItems": 14, "maxItems": 14, "items": {"$ref": "#/$defs/block"}}
   },
   "$defs": {
-    "pilotVariant": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "label",
-        "context",
-        "voice_settings"
-      ],
+    "scene": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "block_id", "number", "goal", "start_offset", "end_offset", "narration", "captions"],
       "properties": {
-        "label": {
-          "type": "string",
-          "minLength": 1
-        },
-        "context": {
-          "enum": [
-            "none",
-            "neighbors"
-          ]
-        },
-        "voice_settings": {
-          "type": [
-            "object",
-            "null"
-          ]
-        }
+        "id": {"type": "string", "pattern": "^B(0[1-9]|1[0-4])-[0-9]{3}$"},
+        "block_id": {"type": "string", "pattern": "^B(0[1-9]|1[0-4])$"},
+        "number": {"type": "number", "minimum": 1},
+        "goal": {"type": "string", "minLength": 1},
+        "start_offset": {"type": "number", "minimum": 0},
+        "end_offset": {"type": "number", "minimum": 1},
+        "narration": {"type": "string", "minLength": 1},
+        "captions": {"type": "array", "maxItems": 0, "items": {"type": "string"}}
       }
     },
-    "scene": {
-      "type": "object",
-      "required": [
-        "id",
-        "chapter",
-        "canonical_refs",
-        "narration",
-        "captions",
-        "visual",
-        "initial_state",
-        "expected_state",
-        "assertions",
-        "fixture_set",
-        "dependencies",
-        "regenerate",
-        "padding",
-        "target_seconds",
-        "transforms"
-      ],
-      "additionalProperties": false,
+    "block": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "title", "canonical_start_offset", "canonical_end_offset", "scene_ids", "narration", "pronunciation_dictionary_locators"],
       "properties": {
-        "id": {
-          "type": "string",
-          "pattern": "^[0-9]{3}-[a-z0-9-]+$"
-        },
-        "chapter": {
-          "type": "string",
-          "minLength": 1
-        },
-        "canonical_refs": {
-          "type": "object",
-          "required": [
-            "narration",
-            "storyboard",
-            "captions"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "narration": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "pattern": "^n[0-9]{3}$"
-              }
-            },
-            "storyboard": {
-              "type": "array",
-              "minItems": 1,
-              "items": {
-                "type": "string",
-                "pattern": "^b[0-9]{3}$"
-              }
-            },
-            "captions": {
-              "type": "array",
-              "items": {
-                "type": "string",
-                "minLength": 1
-              }
-            }
-          }
-        },
-        "narration": {
-          "type": "string",
-          "minLength": 1
-        },
-        "captions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "visual": {
-          "type": "object",
-          "required": [
-            "type",
-            "goal",
-            "animation",
-            "action"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "type": {
-              "enum": [
-                "browser",
-                "animation"
-              ]
-            },
-            "goal": {
-              "type": "string",
-              "minLength": 1
-            },
-            "animation": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "action": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        },
-        "initial_state": {
-          "type": "string",
-          "minLength": 1
-        },
-        "expected_state": {
-          "type": "string",
-          "minLength": 1
-        },
-        "assertions": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "fixture_set": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "dependencies": {
-          "type": "array",
-          "items": {
-            "type": "string"
-          }
-        },
-        "regenerate": {
-          "const": "on-hash-change"
-        },
-        "padding": {
-          "type": "object",
-          "required": [
-            "head",
-            "tail"
-          ],
-          "additionalProperties": false,
-          "properties": {
-            "head": {
-              "type": "number",
-              "minimum": 0
-            },
-            "tail": {
-              "type": "number",
-              "minimum": 0
-            }
-          }
-        },
-        "target_seconds": {
-          "type": "string",
-          "minLength": 1
-        },
-        "transforms": {
-          "type": "array",
-          "items": {
-            "enum": [
-              "split_paragraph",
-              "omit_mouse_motion",
-              "technical_numbers_to_caption",
-              "pause_only"
-            ]
-          }
-        }
+        "id": {"type": "string", "pattern": "^B(0[1-9]|1[0-4])$"},
+        "title": {"type": "string", "minLength": 1},
+        "canonical_start_offset": {"type": "number", "minimum": 0},
+        "canonical_end_offset": {"type": "number", "minimum": 1},
+        "scene_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^B(0[1-9]|1[0-4])-[0-9]{3}$"}},
+        "narration": {"type": "string", "minLength": 1},
+        "pronunciation_dictionary_locators": {"type": "array", "maxItems": 3, "items": {"type": "object"}}
       }
     }
   }
