@@ -1735,6 +1735,19 @@ function detachTrackMedia() {
   byId("preview-audios").replaceChildren();
 }
 
+function detachForPageHide() {
+  state.sourceEpoch += 1;
+  state.preparation?.abort();
+  state.operation?.abort();
+  detachTrackMedia();
+  const resultAudio = byId("result-audio");
+  resultAudio.pause();
+  resultAudio.removeAttribute("src");
+  resultAudio.load();
+  byId("download").removeAttribute("href");
+  byId("download").removeAttribute("download");
+}
+
 async function teardown() {
   trackPresentation = ""; syncEditPreview(null);
   meters.clear();
@@ -1864,7 +1877,7 @@ const help = workspace.querySelector(".audio-help"), helpSummary = help?.querySe
 const syncHelpDisclosure = () => helpSummary?.setAttribute("aria-expanded", String(help.open));
 help?.addEventListener("toggle", syncHelpDisclosure); syncHelpDisclosure();
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
-window.addEventListener("pagehide", () => { void teardown(); });
+window.addEventListener("pagehide", detachForPageHide);
 
 for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click", () => {
   try { const value = Number(byId(`selection-${kind}`).value); commitPayload(setRecordingBoundary(state.payload, state.originalDuration, kind, value), "граница записи"); }
