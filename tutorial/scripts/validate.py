@@ -101,19 +101,15 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
                 fail(f"{bid} {key} differs from approved source")
         if bid == "B01":
             tts = block.get("tts")
-            if not tts or tts["opening_tag"] != "[slowly]" or not 0.7 <= tts["speed"] < 1:
+            if not tts or tts["opening_tag"] != "[slowly]":
                 fail("B01 delivery settings invalid")
-            processing = tts["review_processing"]
-            if not 0.7 <= processing["tempo"] < 1 or not 0.8 <= processing["thought_pause_seconds"] <= 1.0 or not 1.2 <= processing["subtopic_pause_seconds"] <= 1.5:
-                fail("B01 review pacing outside approved ranges")
-            boundaries = {m.end() for m in re.finditer("\n\n", block["narration"])}
-            boundaries.update((7, 893, 1331))
             pauses = tts["pauses"]
-            if [p["after_offset"] for p in pauses] != sorted(boundaries) or any(
-                not isinstance(p["after_offset"], int) or not isinstance(p["count"], int)
-                or p["count"] not in (1, 2) for p in pauses
+            if [p["after_offset"] for p in pauses] != [450, 795, 999, 1409, 1699, 1902] or any(
+                not isinstance(p["after_offset"], int)
+                or block["narration"][p["after_offset"]-2:p["after_offset"]] != "\n\n"
+                or not p["reason"].strip() for p in pauses
             ):
-                fail("B01 TTS pauses must cover approved semantic boundaries exactly")
+                fail("B01 TTS pauses must match the reviewed semantic transitions")
         elif "tts" in block:
             fail(f"{bid} TTS markup is outside current audio review")
         expected_block_ids = [f"{bid}-{number:03d}" for number, _ in source_block["scene_units"]]

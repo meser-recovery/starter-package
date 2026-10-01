@@ -598,68 +598,30 @@
       "pronunciation_dictionary_locators": [],
       "tts": {
         "opening_tag": "[slowly]",
-        "speed": 0.7,
-        "review_processing": {
-          "tempo": 0.84,
-          "thought_pause_seconds": 1.0,
-          "subtopic_pause_seconds": 1.4
-        },
         "pauses": [
           {
-            "after_offset": 7,
-            "count": 1
-          },
-          {
-            "after_offset": 130,
-            "count": 1
-          },
-          {
-            "after_offset": 358,
-            "count": 2
-          },
-          {
             "after_offset": 450,
-            "count": 2
-          },
-          {
-            "after_offset": 540,
-            "count": 1
+            "reason": "Представление новых инструментов завершено; далее объясняется, какие собрания записывает группа."
           },
           {
             "after_offset": 795,
-            "count": 1
-          },
-          {
-            "after_offset": 893,
-            "count": 1
+            "reason": "Закончено описание подготовки записи; далее объясняется, почему эта работа трудна для обычного пользователя."
           },
           {
             "after_offset": 999,
-            "count": 1
-          },
-          {
-            "after_offset": 1160,
-            "count": 1
-          },
-          {
-            "after_offset": 1331,
-            "count": 1
+            "reason": "Проблема редактирования изложена; далее начинается отдельная задача анонс-мейкера."
           },
           {
             "after_offset": 1409,
-            "count": 2
-          },
-          {
-            "after_offset": 1542,
-            "count": 1
+            "reason": "Описаны затраты времени и потеря внимания; далее представлены две новые функции как решение."
           },
           {
             "after_offset": 1699,
-            "count": 1
+            "reason": "Описана функция для анонс-мейкера; далее — функция подготовки финальной спикерской."
           },
           {
             "after_offset": 1902,
-            "count": 2
+            "reason": "Обе функции объяснены; далее указано, где их найти на портале."
           }
         ]
       }

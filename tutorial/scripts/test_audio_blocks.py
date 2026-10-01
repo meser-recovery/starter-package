@@ -55,13 +55,13 @@ class AudioBlockTests(unittest.TestCase):
         block = self.spec["narration_modules"][0]
         body = modules.request_body(self.spec, block)
         self.assertTrue(body["text"].startswith("[calm] [conversational] [slowly]\n"))
-        self.assertEqual(body["voice_settings"], {"stability": 0.5, "speed": 0.7})
+        self.assertEqual(body["voice_settings"], {"stability": 0.5})
         text, indices = modules.request_text_and_indices(self.spec, block)
         self.assertEqual(text, body["text"])
         self.assertEqual("".join(text[i] for i in indices), block["narration"])
-        self.assertEqual(text.count("[long pause]"), 11)
-        self.assertEqual(text.count("[pause]"), 7)
-        self.assertEqual(text.count("[slowly]"), 15)
+        self.assertEqual(text.count("[pause]"), 6)
+        self.assertEqual(text.count("[slowly]"), 1)
+        self.assertIn("Привет. Позвольте", text)
         self.assertNotIn(block["title"], body["text"])
         text = body["text"]
         length = len(text)
@@ -85,7 +85,8 @@ class AudioBlockTests(unittest.TestCase):
 
     def test_b01_tts_markup_stays_outside_canonical_source(self):
         self.changed(lambda s: s["narration_modules"][0]["tts"]["pauses"].pop())
-        self.changed(lambda s: s["narration_modules"][0]["tts"].__setitem__("speed", 1.1))
+        self.changed(lambda s: s["narration_modules"][0]["tts"]["pauses"][0].__setitem__("reason", ""))
+        self.changed(lambda s: s["narration_modules"][0]["tts"]["pauses"][0].__setitem__("after_offset", 7))
         self.changed(lambda s: s["narration_modules"][1].__setitem__("tts", copy.deepcopy(s["narration_modules"][0]["tts"])))
 
     def test_hash_scope_and_selection(self):

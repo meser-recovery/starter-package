@@ -51,18 +51,12 @@ def request_text_and_indices(spec, module):
     if tts:
         prefix+=' '+tts['opening_tag']
     parts=[prefix+'\n']; indices=[]; position=len(parts[0])
-    pauses={row['after_offset']:row['count'] for row in tts.get('pauses',[])}
+    pauses={row['after_offset'] for row in tts.get('pauses',[])}
     for offset,char in enumerate(canonical):
         indices.append(position)
         parts.append(char); position+=1
-        count=pauses.get(offset+1,0)
-        if count:
-            paragraph_break=canonical[offset-1:offset+1]=='\n\n'
-            tags='[long pause]' if paragraph_break else '[pause]'
-            if count==2:
-                tags+=' [pause]'
-            tags+=' [slowly]'
-            markup=(' '+tags) if canonical[offset+1].isspace() else (tags+' ')
+        if offset+1 in pauses:
+            markup=' [pause]' if canonical[offset+1].isspace() else '[pause] '
             parts.append(markup); position+=len(markup)
     return ''.join(parts),indices
 
@@ -71,8 +65,6 @@ def request_body(spec, module):
     settings=spec['narration']
     request_text,_=request_text_and_indices(spec,module)
     voice_settings=dict(settings['voice_settings'])
-    if spec['schema_version']==2 and module.get('tts'):
-        voice_settings['speed']=module['tts']['speed']
     body={'text':request_text,
           'model_id':settings['model_id'],'language_code':settings['language_code'],
           'voice_settings':voice_settings}
