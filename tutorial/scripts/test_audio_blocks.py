@@ -11,6 +11,7 @@ from unittest.mock import patch
 import modules
 import build
 from audio_approval import scene_timing as approved_scene_timing, validate_approval
+from b01_block import check_embedded_subtitles
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
 
@@ -148,6 +149,20 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(request.count("[pause]"), 1)
         self.assertNotIn("[slowly]", request)
         self.assertEqual("".join(request[i] for i in indices), block["narration"])
+
+    def test_embedded_mp4_subtitles_reject_missing_final_cue(self):
+        source = ('1\n00:00:01,000 --> 00:00:02,000\nПервый.\n\n'
+                  '2\n00:00:02,100 --> 00:00:03,000\nи «Спикерская».\n')
+        with tempfile.TemporaryDirectory() as folder:
+            srt = Path(folder) / 'source.srt'
+            srt.write_text(source)
+            with patch('b01_block.subprocess.check_output', return_value=source.split('\n\n')[0] + '\n'):
+                with self.assertRaisesRegex(RuntimeError, 'incomplete: 1/2 cues'):
+                    check_embedded_subtitles(Path(folder) / 'candidate.mp4', srt, 'Первый. и «Спикерская».')
+            with patch('b01_block.subprocess.check_output', return_value=source):
+                result = check_embedded_subtitles(Path(folder) / 'candidate.mp4', srt, 'Первый. и «Спикерская».')
+                self.assertEqual(result['embedded_subtitle_cues'], 2)
+                self.assertEqual(result['last_embedded_subtitle_end_seconds'], 3.0)
 
 
 if __name__ == "__main__":

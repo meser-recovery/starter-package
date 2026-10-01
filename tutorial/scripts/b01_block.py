@@ -113,9 +113,31 @@ async def perform(page, scene: dict, base: str, cue) -> None:
         await director.wait_pending()
         await page.evaluate("document.querySelector('[data-stage=new] .card:last-child').style.boxShadow='0 18px 68px #167cc566'")
     elif scene['id'] == 'B01-003':
+        # Arrive on the real menu item as the section is introduced, then open
+        # it while its name is spoken. The generic click waits for the entire
+        # phrase to finish, which leaves almost no time to see the editor.
+        await cue('в разделе')
+        target = page.raw.locator('a[href="Audio-Editor.html"]')
+        await director.aim(target)
         await cue('Редактирование аудио')
-        await page.locator('a[href="Audio-Editor.html"]').click()
+        await director.wait_pending()
+        await director.before_action()
+        press = director.now()
+        await page.raw.mouse.down()
+        await asyncio.sleep(.13)
+        await page.evaluate("window.__s11Capture.hide('navigation-action')")
+        await page.evaluate('() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
+        await asyncio.sleep(.04)
+        director.events.append({'type': 'navigation-feedback', 'seconds': director.now(),
+                                'press_seconds': press, 'cursor_hidden_before_transition': True})
+        director.ready = False
+        async with page.raw.expect_navigation(wait_until='domcontentloaded'):
+            await page.raw.mouse.up()
+        director.events.append({'type': 'click', 'seconds': press, 'target': str(target), 'ripple': True})
+        await director.after_action()
         await page.get_by_role('heading', name='Редактирование аудио').wait_for()
+        await page.raw.screenshot()
+        await page.evaluate('() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
         await director.highlight(page.locator('.editor-page-heading'))
         await page.evaluate("window.__s11Capture.hide('context-change')")
     else:
@@ -199,6 +221,40 @@ def subtitles(scenes: list[dict], timings: list[dict]) -> list[tuple[float, floa
     return cues
 
 
+def parse_srt(body: str) -> list[tuple[float, float, str]]:
+    def seconds(value: str) -> float:
+        hours, minutes, rest = value.split(':')
+        return int(hours)*3600 + int(minutes)*60 + float(rest.replace(',', '.'))
+
+    cues = []
+    for block in re.split(r'\n\s*\n', body.strip()):
+        lines = block.splitlines()
+        if lines[0].isdigit():
+            lines = lines[1:]
+        match = re.fullmatch(r'(\d\d:\d\d:\d\d,\d{3}) --> (\d\d:\d\d:\d\d,\d{3})', lines[0])
+        if not match or len(lines) < 2:
+            raise RuntimeError('invalid extracted B01 subtitle cue')
+        cues.append((seconds(match[1]), seconds(match[2]), ' '.join(' '.join(lines[1:]).split())))
+    return cues
+
+
+def check_embedded_subtitles(video: Path, source_srt: Path, canonical_text: str) -> dict:
+    """Compare every subtitle decoded from the delivered MP4 with alignment SRT."""
+    source = parse_srt(source_srt.read_text())
+    embedded = parse_srt(subprocess.check_output([
+        'ffmpeg', '-v', 'error', '-xerror', '-i', str(video), '-map', '0:s:0',
+        '-f', 'srt', '-'], text=True))
+    if len(embedded) != len(source):
+        raise RuntimeError(f'B01 MP4 embedded subtitles incomplete: {len(embedded)}/{len(source)} cues')
+    for index, (actual, expected) in enumerate(zip(embedded, source), 1):
+        if actual[2] != expected[2] or abs(actual[0]-expected[0]) > .003 or abs(actual[1]-expected[1]) > .003:
+            raise RuntimeError(f'B01 MP4 embedded subtitle cue {index} differs from alignment SRT')
+    if ' '.join(cue[2] for cue in embedded) != canonical_text or any('[' in cue[2] or ']' in cue[2] for cue in embedded):
+        raise RuntimeError('B01 MP4 embedded subtitles differ from canonical narration')
+    return {'embedded_subtitle_cues': len(embedded),
+            'last_embedded_subtitle_end_seconds': embedded[-1][1]}
+
+
 def assemble() -> dict:
     spec, approval, scenes = inputs()
     if not (OUT / 'visual-capture.json').is_file():
@@ -219,9 +275,13 @@ def assemble() -> dict:
         data = wav.readframes(wav.getnframes())
         if data[:lead_samples*2] != bytes(lead_samples*2) or data[lead_samples*2:] != approved_pcm:
             raise RuntimeError('B01 video timeline changed approved speech samples')
-    duration = LEAD_SECONDS + approval['wav_duration_seconds']
+    audio_duration = LEAD_SECONDS + approval['wav_duration_seconds']
+    # The provider alignment extends a few milliseconds past decoded PCM.
+    # Keep one complete visual frame through the final subtitle, without
+    # changing the approved WAV or inserting silence inside the block.
+    visual_duration = math.ceil(max(audio_duration, cues[-1][1]) * FPS) / FPS
     bounds = [0, LEAD_SECONDS + timings[1]['range_start_seconds'],
-              LEAD_SECONDS + timings[2]['range_start_seconds'], duration]
+              LEAD_SECONDS + timings[2]['range_start_seconds'], visual_duration]
     counts = [round(bounds[i+1]*FPS)-round(bounds[i]*FPS) for i in range(3)]
     if min(counts) <= 0:
         raise RuntimeError('invalid B01 scene frame count')
@@ -245,7 +305,7 @@ def assemble() -> dict:
             decoder = subprocess.Popen(['ffmpeg', '-v', 'error', '-xerror', '-i', str(path), '-an',
                                         '-vf', 'scale=1920:1080,fps=30,trim=start_frame=1,'
                                                'tpad=start=1:start_mode=clone,setpts=N/(30*TB),'
-                                               'tpad=stop_mode=clone:stop_duration=10',
+                                               'tpad=stop_mode=clone:stop=300',
                                         '-r', str(FPS), '-frames:v', str(count), '-pix_fmt', 'yuv420p',
                                         '-f', 'rawvideo', 'pipe:1'], stdout=subprocess.PIPE)
             copied = 0
@@ -265,6 +325,8 @@ def assemble() -> dict:
             encoder.kill(); encoder.wait()
     subprocess.run(['ffmpeg', '-v', 'error', '-xerror', '-i', str(candidate), '-f', 'null', '-'],
                    check=True, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE)
+    expected_text = ' '.join(' '.join(s['narration'].split()) for s in scenes)
+    subtitle_check = check_embedded_subtitles(candidate, OUT / 'B01.ru.srt', expected_text)
     candidate.replace(final)
     info = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_streams',
                                                '-show_format', '-of', 'json', str(final)]))
@@ -272,7 +334,7 @@ def assemble() -> dict:
     audio = next(s for s in info['streams'] if s['codec_type'] == 'audio')
     if (video['codec_name'], video['width'], video['height']) != ('h264', 1920, 1080) or audio['codec_name'] != 'aac':
         raise RuntimeError('B01 output stream format invalid')
-    if abs(float(info['format']['duration']) - duration) > .08:
+    if abs(float(info['format']['duration']) - visual_duration) > .08:
         raise RuntimeError('B01 video/audio duration mismatch')
     report = {'status': 'READY FOR B01 BLOCK REVIEW', 'block_id': 'B01',
               'approved_mp3_sha256': approval['record']['approved_take']['mp3_sha256'],
@@ -282,9 +344,11 @@ def assemble() -> dict:
               'audio_source': str(approval['wav_path']), 'video_audio_timeline': str(timeline),
               'video_audio_timeline_preserves_approved_pcm': True,
               'video_audio_lead_seconds': LEAD_SECONDS, 'internal_audio_silence_added_seconds': 0,
+              'visual_tail_seconds': visual_duration - audio_duration,
               'video': str(final), 'video_sha256': sha(final),
               'duration_seconds': float(info['format']['duration']),
               'scene_frame_counts': dict(zip(SCENE_IDS, counts)), 'subtitle_cues': len(cues),
+              **subtitle_check,
               'tts_requests': 0, 'production_mutation_requests': 0,
               'capture_cue_errors_seconds': {r['scene_id']: r['cue_errors_seconds'] for r in capture_report['scenes']}}
     write_json(OUT / 'report.json', report)
@@ -332,10 +396,7 @@ def verify() -> dict:
     if streams['audio']['codec_name'] != 'aac' or streams['subtitle']['codec_name'] != 'mov_text':
         raise RuntimeError('B01 audio/subtitle streams invalid')
     expected_text = ' '.join(' '.join(s['narration'].split()) for s in scenes)
-    srt_text = re.sub(r'\d+\n\d\d:\d\d:\d\d,\d{3} --> \d\d:\d\d:\d\d,\d{3}\n', '',
-                      (OUT / 'B01.ru.srt').read_text())
-    if ' '.join(srt_text.split()) != expected_text or '[' in srt_text:
-        raise RuntimeError('B01 subtitles differ from canonical words or contain TTS tags')
+    subtitle_check = check_embedded_subtitles(video_path, OUT / 'B01.ru.srt', expected_text)
     decoded = subprocess.check_output(['ffmpeg', '-v', 'error', '-xerror', '-i', str(video_path),
                                        '-map', '0:a:0', '-ac', '1', '-ar', str(RATE),
                                        '-c:a', 'pcm_s16le', '-f', 's16le', '-'])
@@ -376,6 +437,15 @@ def verify() -> dict:
                         and abs(luminance[i-1]-luminance[i+1]) < 10]
     if isolated_flashes:
         raise RuntimeError(f'B01 contains isolated brightness flashes: {isolated_flashes[:8]}')
+    scene3_start = sum(report['scene_frame_counts'][sid] for sid in SCENE_IDS[:2])
+    editor_entry = next((i for i in range(scene3_start+1, frames)
+                         if luminance[i]-luminance[i-1] > 50), None)
+    if editor_entry is None:
+        raise RuntimeError('B01 editor page never appears in the final MP4')
+    editor_entry_seconds = editor_entry / FPS
+    editor_inspection_seconds = frames / FPS - editor_entry_seconds
+    if editor_entry_seconds > 121.6 or editor_inspection_seconds < 2.5:
+        raise RuntimeError('B01 editor appears too late for final-phrase inspection')
     errors = []
     capture_rows = {row['scene_id']: row for row in json.loads((OUT / 'visual-capture.json').read_text())['scenes']}
     for scene in scenes:
@@ -393,6 +463,13 @@ def verify() -> dict:
             raise RuntimeError('B01 local browser capture did not pass')
         if meta['choreography']['overlay']['violations']:
             raise RuntimeError('B01 cursor or highlight geometry violation')
+        if scene['id'] == 'B01-003':
+            events = meta['choreography']['overlay']['events']
+            hides = [i for i, event in enumerate(events)
+                     if event['type'] == 'cursor-hide' and event.get('reason') == 'navigation-action']
+            if (len(hides) != 1 or any(event['type'] == 'cursor-show' for event in events[hides[0]+1:])
+                    or meta['choreography']['overlay']['cursorVisible']):
+                raise RuntimeError('B01 cursor must stay hidden after editor navigation')
         errors.extend(abs(c['error_seconds']) for c in meta['alignment_action_cues'] if 'error_seconds' in c)
         errors.extend(abs(c['actual_seconds']-c['target_seconds']) for c in meta['alignment_action_cues']
                       if 'error_seconds' not in c)
@@ -404,9 +481,13 @@ def verify() -> dict:
               'approved_pcm_preserved_in_timeline': True,
               'aac_zero_lag_correlation': correlations[0],
               'aac_shifted_correlations': correlations,
-              'subtitle_cues': report['subtitle_cues'], 'subtitle_matches_canonical_text': True,
+              'subtitle_cues': subtitle_check['embedded_subtitle_cues'],
+              'last_embedded_subtitle_end_seconds': subtitle_check['last_embedded_subtitle_end_seconds'],
+              'subtitle_matches_canonical_text': True,
               'video_frames': frames, 'blank_frames': len(blank),
               'isolated_flash_frames': len(isolated_flashes),
+              'editor_first_frame_seconds': editor_entry_seconds,
+              'editor_inspection_seconds': editor_inspection_seconds,
               'max_visual_cue_error_seconds': max(errors, default=0),
               'new_tts_requests': 0, 'production_mutation_requests': 0}
     write_json(OUT / 'verification.json', result)
