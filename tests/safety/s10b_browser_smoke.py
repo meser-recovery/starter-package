@@ -95,14 +95,14 @@ def run(browser_type, base_url):
     page.on('pageerror', lambda error: page_errors.append(str(error)))
     page.on('console', lambda message: revoked_attached_media.append(message.text)
             if message.type == 'error' and message.text.startswith('S10B_REVOKED_ATTACHED_MEDIA ') else None)
-    page.add_init_script("""() => {
+    page.add_init_script("""(() => {
       const revoke = URL.revokeObjectURL.bind(URL);
       URL.revokeObjectURL = url => {
         const attached = [...document.querySelectorAll('audio')].some(audio => audio.src === url || audio.currentSrc === url);
         if (attached) console.error('S10B_REVOKED_ATTACHED_MEDIA ' + url);
         return revoke(url);
       };
-    }""")
+    })();""")
     page.on('request', lambda request: (
         writes.append((request.method, request.url)) if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and '/v1/source-sessions' in request.url else None,
         outbound.append(request.url) if not (request.url.startswith(base_url) or request.url.startswith(f'blob:{base_url}/')) else None
