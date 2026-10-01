@@ -54,7 +54,14 @@ class AudioBlockTests(unittest.TestCase):
     def test_one_continuous_request_and_scene_alignment(self):
         block = self.spec["narration_modules"][0]
         body = modules.request_body(self.spec, block)
-        self.assertEqual(body["text"], "[calm] [conversational]\n" + block["narration"])
+        self.assertTrue(body["text"].startswith("[calm] [conversational] [slowly]\n"))
+        self.assertEqual(body["voice_settings"], {"stability": 0.5, "speed": 0.7})
+        text, indices = modules.request_text_and_indices(self.spec, block)
+        self.assertEqual(text, body["text"])
+        self.assertEqual("".join(text[i] for i in indices), block["narration"])
+        self.assertEqual(text.count("[long pause]"), 11)
+        self.assertEqual(text.count("[pause]"), 7)
+        self.assertEqual(text.count("[slowly]"), 15)
         self.assertNotIn(block["title"], body["text"])
         text = body["text"]
         length = len(text)
@@ -66,10 +73,20 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(timing["scenes"][0]["range_start_seconds"], 0)
         self.assertEqual(timing["scenes"][-1]["range_end_seconds"], length * .05)
         self.assertEqual("".join(s["narration"] for s in modules.members(self.spec, block)), block["narration"])
+        with patch.object(modules, "cached", return_value={"timing": timing, "metadata": {"audio_sha256": "fixture"}}):
+            for scene in modules.members(self.spec, block):
+                local = modules.scene_timing(self.spec, scene)["alignment"]
+                self.assertEqual("".join(local["characters"]), scene["narration"])
+                self.assertNotIn("[pause]", "".join(local["characters"]))
         broken = copy.deepcopy(alignment)
         broken["characters"][0] = "X"
         with self.assertRaises(RuntimeError):
             modules.map_timing(self.spec, block, broken, length * .05)
+
+    def test_b01_tts_markup_stays_outside_canonical_source(self):
+        self.changed(lambda s: s["narration_modules"][0]["tts"]["pauses"].pop())
+        self.changed(lambda s: s["narration_modules"][0]["tts"].__setitem__("speed", 1.1))
+        self.changed(lambda s: s["narration_modules"][1].__setitem__("tts", copy.deepcopy(s["narration_modules"][0]["tts"])))
 
     def test_hash_scope_and_selection(self):
         blocks = self.spec["narration_modules"]

@@ -77,7 +77,32 @@
         "canonical_end_offset": {"type": "number", "minimum": 1},
         "scene_ids": {"type": "array", "minItems": 1, "items": {"type": "string", "pattern": "^B(0[1-9]|1[0-4])-[0-9]{3}$"}},
         "narration": {"type": "string", "minLength": 1},
-        "pronunciation_dictionary_locators": {"type": "array", "maxItems": 3, "items": {"type": "object"}}
+        "pronunciation_dictionary_locators": {"type": "array", "maxItems": 3, "items": {"type": "object"}},
+        "tts": {
+          "type": "object", "additionalProperties": false,
+          "required": ["opening_tag", "speed", "pauses", "review_processing"],
+          "properties": {
+            "opening_tag": {"type": "string", "const": "[slowly]"},
+            "speed": {"type": "number", "minimum": 0.7},
+            "review_processing": {
+              "type": "object", "additionalProperties": false,
+              "required": ["tempo", "thought_pause_seconds", "subtopic_pause_seconds"],
+              "properties": {
+                "tempo": {"type": "number", "minimum": 0.7},
+                "thought_pause_seconds": {"type": "number", "minimum": 0.8},
+                "subtopic_pause_seconds": {"type": "number", "minimum": 1.2}
+              }
+            },
+            "pauses": {"type": "array", "minItems": 1, "items": {
+              "type": "object", "additionalProperties": false,
+              "required": ["after_offset", "count"],
+              "properties": {
+                "after_offset": {"type": "number", "minimum": 1},
+                "count": {"type": "number", "minimum": 1}
+              }
+            }}
+          }
+        }
       }
     }
   }

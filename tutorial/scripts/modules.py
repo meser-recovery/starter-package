@@ -43,11 +43,39 @@ def spoken_text(spec, module):
     return module['narration']
 
 
+def request_text_and_indices(spec, module):
+    """Return provider text and canonical-character positions within that text."""
+    canonical=spoken_text(spec,module)
+    tts=module.get('tts',{}) if spec['schema_version']==2 else {}
+    prefix=spec['narration']['delivery_prefix']
+    if tts:
+        prefix+=' '+tts['opening_tag']
+    parts=[prefix+'\n']; indices=[]; position=len(parts[0])
+    pauses={row['after_offset']:row['count'] for row in tts.get('pauses',[])}
+    for offset,char in enumerate(canonical):
+        indices.append(position)
+        parts.append(char); position+=1
+        count=pauses.get(offset+1,0)
+        if count:
+            paragraph_break=canonical[offset-1:offset+1]=='\n\n'
+            tags='[long pause]' if paragraph_break else '[pause]'
+            if count==2:
+                tags+=' [pause]'
+            tags+=' [slowly]'
+            markup=(' '+tags) if canonical[offset+1].isspace() else (tags+' ')
+            parts.append(markup); position+=len(markup)
+    return ''.join(parts),indices
+
+
 def request_body(spec, module):
     settings=spec['narration']
-    body={'text':settings['delivery_prefix']+'\n'+spoken_text(spec,module),
+    request_text,_=request_text_and_indices(spec,module)
+    voice_settings=dict(settings['voice_settings'])
+    if spec['schema_version']==2 and module.get('tts'):
+        voice_settings['speed']=module['tts']['speed']
+    body={'text':request_text,
           'model_id':settings['model_id'],'language_code':settings['language_code'],
-          'voice_settings':settings['voice_settings']}
+          'voice_settings':voice_settings}
     if module['pronunciation_dictionary_locators']:
         body['pronunciation_dictionary_locators']=module['pronunciation_dictionary_locators']
     return body
@@ -61,7 +89,8 @@ def narration_hash(spec, module):
     return identity({'model_version':spec['schema_version'],'module_id':module['id'],
                      'ordered_scene_mapping':[(s['id'],s['start_offset'],s['end_offset']) for s in members(spec,module)],
                      'canonical_spoken_text':spoken_text(spec,module),
-                     'profile':spec['narration'],'pronunciation_configuration':module['pronunciation_dictionary_locators']})
+                     'profile':spec['narration'],'tts':module.get('tts'),
+                     'pronunciation_configuration':module['pronunciation_dictionary_locators']})
 
 
 def map_timing(spec, module, alignment, duration):
@@ -69,15 +98,18 @@ def map_timing(spec, module, alignment, duration):
     if not alignment or ''.join(alignment['characters'])!=request:
         raise RuntimeError('module alignment differs from exact request text')
     starts,ends=alignment['character_start_times_seconds'],alignment['character_end_times_seconds']
-    if len(starts)!=len(request) or len(ends)!=len(request) or not all(0<=a<=b<=duration+.1 for a,b in zip(starts,ends)) or any(a>b for a,b in zip(starts,starts[1:])):
+    # Allow a small end-of-file difference between provider timing and MP3 duration.
+    if len(starts)!=len(request) or len(ends)!=len(request) or not all(0<=a<=b<=duration+.25 for a,b in zip(starts,ends)) or any(a>b for a,b in zip(starts,starts[1:])):
         raise RuntimeError('invalid module character timing')
+    _,canonical_indices=request_text_and_indices(spec,module)
     prefix=len(spec['narration']['delivery_prefix'])+1
     legacy=spec['schema_version']==1
     offset=0; ranges=[]
     for scene in members(spec,module):
         if not legacy: offset=scene['start_offset']
-        text=scene['narration']; n=len(text); r=prefix+offset
-        assert request[r:r+n]==text
+        text=scene['narration']; n=len(text); r=prefix+offset if legacy else canonical_indices[offset]
+        positions=[r+i for i in range(n)] if legacy else canonical_indices[offset:offset+n]
+        assert ''.join(request[i] for i in positions)==text
         first=next((i for i,c in enumerate(text) if not c.isspace()),None)
         last=next((i for i in range(n-1,-1,-1) if not text[i].isspace()),None)
         if first is None or last is None: raise RuntimeError('empty scene narration')
@@ -85,9 +117,9 @@ def map_timing(spec, module, alignment, duration):
         for match in re.finditer(r'\S(?:[^.!?]*?)[.!?](?=\s|$)|\S[^.!?]*$',text):
             phrase_ranges.append({'text':match.group(),'canonical_start_offset':offset+match.start(),
                                   'canonical_end_offset':offset+match.end(),
-                                  'start_seconds':starts[r+match.start()],'end_seconds':ends[r+match.end()-1]})
+                                  'start_seconds':starts[positions[match.start()]],'end_seconds':ends[positions[match.end()-1]]})
         ranges.append({'module_id':module['id'],'scene_id':scene['id'],
-                       'scene_start_seconds':starts[r+first],'scene_end_seconds':ends[r+last],
+                       'scene_start_seconds':starts[positions[first]],'scene_end_seconds':ends[positions[last]],
                        'canonical_start_offset':offset,'canonical_end_offset':offset+n if legacy else scene['end_offset'],
                        'request_start_offset':r,'phrases':phrase_ranges})
         if legacy: offset+=n+2
@@ -195,7 +227,7 @@ def plan(spec,selected,force=False,root=CACHE):
         spend=module['id'] in ids and (force or not hit)
         rows.append({'module_id':module['id'],'selected':module['id'] in ids,'cache':'HIT' if hit else 'MISS',
                      'tts_requests':int(spend),'canonical_characters':len(spoken_text(spec,module)),
-                     'characters_to_generate':len(spoken_text(spec,module)) if spend else 0,
+                     'characters_to_generate':len(request_body(spec,module)['text']) if spend else 0,
                      'narration_hash':narration_hash(spec,module),'scene_ids':module['scene_ids']})
     return {'modules':rows,'tts_requests':sum(x['tts_requests'] for x in rows),
             'characters_to_generate':sum(x['characters_to_generate'] for x in rows),
@@ -208,10 +240,15 @@ def scene_timing(spec,scene,root=CACHE):
     if not hit: raise RuntimeError('module cache missing/stale: '+module['id'])
     row=next(r for r in hit['timing']['scenes'] if r['scene_id']==scene['id'])
     start=row['range_start_seconds']; length=row['range_end_seconds']-start
-    a=hit['timing']['alignment']; first=row['request_start_offset']; last=first+len(scene['narration'])
-    local={'characters':a['characters'][first:last],
-           'character_start_times_seconds':[max(0,x-start) for x in a['character_start_times_seconds'][first:last]],
-           'character_end_times_seconds':[max(0,x-start) for x in a['character_end_times_seconds'][first:last]]}
+    a=hit['timing']['alignment']
+    if spec['schema_version']==1:
+        first=row['request_start_offset']; positions=range(first,first+len(scene['narration']))
+    else:
+        _,indices=request_text_and_indices(spec,module)
+        positions=indices[scene['start_offset']:scene['end_offset']]
+    local={'characters':[a['characters'][i] for i in positions],
+           'character_start_times_seconds':[max(0,a['character_start_times_seconds'][i]-start) for i in positions],
+           'character_end_times_seconds':[max(0,a['character_end_times_seconds'][i]-start) for i in positions]}
     cue_list=[]
     for cue in spec.get('visual_cues',{}).get(scene['id'],[]):
         index=scene['narration'].index(cue['text'])
