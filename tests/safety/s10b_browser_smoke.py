@@ -92,18 +92,35 @@ def run(browser_type, base_url):
     writes = []
     outbound = []
     pagehide_revokes = []
-    page.on('pageerror', lambda error: page_errors.append(str(error)))
-    page.on('console', lambda message: pagehide_revokes.append(message.text)
-            if message.type == 'error' and message.text.startswith('S10B_REVOKE_DURING_PAGEHIDE ') else None)
+    blob_events = []
+    failed_requests = []
+    phase = ['initial page']
+    page.on('pageerror', lambda error: page_errors.append({
+        'phase': phase[0], 'page': page.url, 'message': str(error),
+        'stack': getattr(error, 'stack', None),
+        'recent_blob_events': blob_events[-16:], 'recent_failed_requests': failed_requests[-8:]
+    }))
+    page.on('console', lambda message: (
+        pagehide_revokes.append(message.text) if message.type == 'error' and message.text.startswith('S10B_REVOKE_DURING_PAGEHIDE ') else None,
+        blob_events.append(message.text) if message.text.startswith('S10B_BLOB_') else None
+    ))
+    page.on('requestfailed', lambda request: failed_requests.append((request.url, request.failure)))
     page.add_init_script("""(() => {
       let pageHiding = false;
       addEventListener('pagehide', () => {
         pageHiding = true;
         queueMicrotask(() => { pageHiding = false; });
       }, { capture: true });
+      const create = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = blob => {
+        const url = create(blob);
+        console.debug('S10B_BLOB_CREATE ' + url + ' ' + new Error().stack);
+        return url;
+      };
       const revoke = URL.revokeObjectURL.bind(URL);
       URL.revokeObjectURL = url => {
         if (pageHiding) console.error('S10B_REVOKE_DURING_PAGEHIDE ' + url);
+        console.debug('S10B_BLOB_REVOKE ' + url + ' ' + new Error().stack);
         return revoke(url);
       };
     })();""")
@@ -111,6 +128,7 @@ def run(browser_type, base_url):
         writes.append((request.method, request.url)) if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and '/v1/source-sessions' in request.url else None,
         outbound.append(request.url) if not (request.url.startswith(base_url) or request.url.startswith(f'blob:{base_url}/')) else None
     ))
+    phase[0] = 'Archive create/save'
     login(page, base_url)
     assert page.locator('#archive-create-open').is_visible()
     assert page.locator('#archive-create-files').get_attribute('multiple') is not None
@@ -157,6 +175,7 @@ def run(browser_type, base_url):
     assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 1
     assert_fits(page, (320, 390, 768, 1280))
 
+    phase[0] = 'Editor device source replacement'
     page.goto(f'{base_url}/Audio-Editor.html')
     page.locator('#source-session-mode-device').click()
     assert_fits(page, (320, 390, 768, 1280))
@@ -173,6 +192,7 @@ def run(browser_type, base_url):
     assert page.locator('#import-files li').count() == 1
     assert not page.locator('#processor-file').is_visible()
 
+    phase[0] = 'Archive session expiry and reconnect'
     page.goto(f'{base_url}/Audio-Archive.html')
     page.locator('#archive-create-open').click()
     page.locator('#archive-create-name').fill('S10B после входа')
@@ -191,7 +211,9 @@ def run(browser_type, base_url):
     assert page.locator('#detail-title').inner_text() == 'S10B после входа'
     assert 'retry.wav' in page.locator('#detail-body').inner_text()
     assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 3
+    phase[0] = 'Speaker source A to B, different names'
     speaker_source_transition(page, base_url, writes, False)
+    phase[0] = 'Speaker source A to B, same name'
     speaker_source_transition(page, base_url, writes, True)
     assert not page_errors, page_errors
     assert not pagehide_revokes, pagehide_revokes
