@@ -9,6 +9,7 @@ import inspect
 import json
 import math
 import re
+import shutil
 import subprocess
 import wave
 from pathlib import Path
@@ -20,15 +21,25 @@ from build import demo_server
 from modules import cached, map_timing, request_text_and_indices, sha, write_json
 from validate import ROOT, validate
 
-OUT = ROOT / 'generated/b02-visual-v2-review'
+OUT = ROOT / 'generated/b02-visual-v3-review'
+PRIOR_OUT = ROOT / 'generated/b02-visual-v2-review'
 AUDIO = ROOT / 'generated/narration-blocks-v2/B02'
-DIAGRAM = ROOT / 'animations/b02-tracks-v2.html'
+DIAGRAM = ROOT / 'animations/b02-tracks-v3.html'
 SCENE_IDS = ('B02-004', 'B02-005', 'B02-006', 'B02-007')
 LEAD_SECONDS = .6
 RATE = 44100
 FPS = 30
 FRAME_BYTES = 1920 * 1080 * 3 // 2
 VARIANT = 'B02-review-01'
+PRIOR_VIDEO_SHA256 = 'd78d7823dcfb6881692d99730fc5a610c3ff54ccc3891d65c23c466f6c8b8b0a'
+PRESERVED_SCENES = {
+    'B02-005': '495c9cc4bdb3b0f330d0886a041edb85190d477e26d155d3d10d2bef74e9aad6',
+    'B02-007': '07e1326a40ab6890ab6240635c7ef78e6b2e3a0e193014957b2c2a86519ae2b0',
+}
+PRESERVED_SUBTITLES = {
+    'srt': '46a6f6abd4b962c29fc226f1223fa870ff7c13f639966413bfdd1a1600e1759f',
+    'vtt': 'a6f0114b2d6955e1674ec8b3c30b35ea0a00a79c5c4041f54e8630cc4ce4276f',
+}
 
 
 def inputs() -> tuple[dict, dict, list[dict]]:
@@ -110,12 +121,16 @@ def scene_timing(spec: dict, scene: dict, audio: dict) -> dict:
 
 def source_identity() -> str:
     recipe = '\n'.join(inspect.getsource(fn) for fn in (capture_spec, prepare, perform))
-    return hashlib.sha256(recipe.encode() + DIAGRAM.read_bytes()).hexdigest()
+    assets = (ROOT / 'assets/s11/recording-computer.svg',
+              ROOT / 'assets/s11/recording-cloud.svg',
+              ROOT / 'assets/s11/nam-poputi-catalog-2026-10-02.png')
+    return hashlib.sha256(recipe.encode() + DIAGRAM.read_bytes() +
+                          b''.join(path.read_bytes() for path in assets)).hexdigest()
 
 
 def capture_spec(scene: dict) -> dict:
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b02-signal-transform-v2'},
+                               'capture_pipeline_revision': 'b02-local-visual-corrections-v3'},
             'initial_state': scene['id'], 'expected_state': 'B02 continuous waveform transformation',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
@@ -128,7 +143,7 @@ async def prepare(page, scene: dict, base: str) -> None:
     timing = scene_timing(spec, scene, audio)
     await page.evaluate('args => window.configure(args.id,args.duration)',
                         {'id': scene['id'], 'duration': timing['duration_seconds']})
-    await page.wait_for_function('document.images.length === 0 || [...document.images].every(i => i.complete)')
+    await page.wait_for_function('window.assetsLoaded === true')
     await page.screenshot()
 
 
@@ -138,6 +153,8 @@ async def perform(page, scene: dict, base: str, cue) -> None:
 
 async def visual() -> dict:
     spec, audio, scenes = inputs()
+    if sha(PRIOR_OUT / 'B02.mp4') != PRIOR_VIDEO_SHA256:
+        raise RuntimeError('prior B02 candidate changed')
     (OUT / 'scenes').mkdir(parents=True, exist_ok=True)
     rows = []
     with demo_server(None) as base:
@@ -146,9 +163,17 @@ async def visual() -> dict:
             timing.update(visual_lead_seconds=LEAD_SECONDS if scene['id'] == SCENE_IDS[0] else 0.,
                           visual_source_sha256=source_identity(), strict_choreography=False)
             destination = OUT / 'scenes' / f"{scene['id']}.mp4"
-            evidence = await capture(capture_spec(scene), spec['narration'], base,
-                                     timing=timing, destination=destination,
-                                     prepare_scene=prepare, perform_scene=perform)
+            if scene['id'] in PRESERVED_SCENES:
+                prior = PRIOR_OUT / 'scenes' / f"{scene['id']}.mp4"
+                if sha(prior) != PRESERVED_SCENES[scene['id']]:
+                    raise RuntimeError('preserved B02 scene changed: ' + scene['id'])
+                shutil.copy2(prior, destination)
+                shutil.copy2(prior.with_suffix('.json'), destination.with_suffix('.json'))
+                evidence = json.loads(destination.with_suffix('.json').read_text())
+            else:
+                evidence = await capture(capture_spec(scene), spec['narration'], base,
+                                         timing=timing, destination=destination,
+                                         prepare_scene=prepare, perform_scene=perform)
             if max((event['seconds'] for event in evidence['choreography']['events']), default=0) > timing['duration_seconds'] + timing['visual_lead_seconds'] + .1:
                 raise RuntimeError('B02 choreography exceeds scene duration')
             if evidence['choreography']['overlay']['cursorVisible']:
@@ -156,7 +181,8 @@ async def visual() -> dict:
             row = {'scene_id': scene['id'], 'visual': str(destination), 'sha256': sha(destination),
                    'duration_seconds': evidence['duration_seconds'],
                    'cue_errors_seconds': [c['actual_seconds']-c['target_seconds'] for c in evidence['alignment_action_cues']],
-                   'production_mutation_requests': evidence['production_mutation_requests']}
+                   'production_mutation_requests': evidence['production_mutation_requests'],
+                   'preserved_from_previous_candidate': scene['id'] in PRESERVED_SCENES}
             rows.append(row)
             print(json.dumps(row, ensure_ascii=False), flush=True)
     report = {'status': 'PASS', 'block_id': 'B02', 'source_mp3_sha256': audio['metadata']['source_mp3_sha256'],
@@ -203,6 +229,9 @@ def assemble() -> dict:
         raise RuntimeError('B02 capture does not match reviewed audio and scene map')
     timings = [scene_timing(spec, scene, audio) for scene in scenes]
     cues = subtitles(scenes, timings)
+    for suffix, digest in PRESERVED_SUBTITLES.items():
+        if sha(OUT / f'B02.ru.{suffix}') != digest:
+            raise RuntimeError('B02 subtitles changed during visual-only correction')
     with wave.open(str(audio['wav_path'])) as wav:
         final_pcm = wav.readframes(wav.getnframes())
     lead_samples = round(LEAD_SECONDS * RATE)
@@ -366,10 +395,17 @@ def verify() -> dict:
         timing = scene_timing(spec, scene, audio)
         visual_inputs = {'visual_lead_seconds': LEAD_SECONDS if scene['id'] == SCENE_IDS[0] else 0.,
                          'visual_source_sha256': source_identity(), 'strict_choreography': False}
-        expected_hash = hashlib.sha256((browser_visual_hash(capture_spec(scene)) +
-            timing['timing_identity'] + json.dumps(visual_inputs, sort_keys=True)).encode()).hexdigest()
-        if meta['visual_hash'] != expected_hash:
-            raise RuntimeError('B02 conceptual capture is stale: ' + scene['id'])
+        if scene['id'] in PRESERVED_SCENES:
+            prior = PRIOR_OUT / 'scenes' / f"{scene['id']}.mp4"
+            if (sha(prior) != PRESERVED_SCENES[scene['id']]
+                    or sha(OUT / 'scenes' / f"{scene['id']}.mp4") != sha(prior)
+                    or meta != json.loads(prior.with_suffix('.json').read_text())):
+                raise RuntimeError('B02 preserved scene differs from prior candidate: ' + scene['id'])
+        else:
+            expected_hash = hashlib.sha256((browser_visual_hash(capture_spec(scene)) +
+                timing['timing_identity'] + json.dumps(visual_inputs, sort_keys=True)).encode()).hexdigest()
+            if meta['visual_hash'] != expected_hash:
+                raise RuntimeError('B02 corrected capture is stale: ' + scene['id'])
         if meta['expected_state'] != 'PASS' or meta['browser_errors'] or meta['production_mutation_requests']:
             raise RuntimeError('B02 capture was not isolated or did not pass')
         overlay = meta['choreography']['overlay']
