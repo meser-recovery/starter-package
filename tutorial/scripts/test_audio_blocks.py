@@ -14,6 +14,7 @@ from audio_approval import scene_timing as approved_scene_timing, validate_appro
 from b01_block import check_embedded_subtitles
 from b03_block import pointer_pixels_in_mp4
 from b04_block import pointer_check as b04_pointer_check
+from b05_block import pointer_pixels_in_mp4 as b05_pointer_check
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
 
@@ -116,8 +117,8 @@ class AudioBlockTests(unittest.TestCase):
             modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
         self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
 
-    def test_audio_review_gate_rejects_b05_before_provider_call(self):
-        with patch("sys.argv", ["build.py", "narration", "--module", "B05"]), patch.object(build, "generate") as provider:
+    def test_audio_review_gate_rejects_b06_before_provider_call(self):
+        with patch("sys.argv", ["build.py", "narration", "--module", "B06"]), patch.object(build, "generate") as provider:
             with self.assertRaisesRegex(RuntimeError, "complete block approval"):
                 build.main()
             provider.assert_not_called()
@@ -150,6 +151,15 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(state['approved_alignment_sha256'], '7f01cd1d688f828803314b3a21812594c8cdad6b12a0988a4f15c2df1d9584d1')
         self.assertEqual(state['subtitle_srt_sha256'], 'c8d10fdb6016abcf70559d02f21d17d22531171ad301db335f11989cd7b3d543')
         self.assertEqual(state['embedded_subtitle_cues'], 8)
+
+    def test_b04_block_approval_pins_audio_alignment_and_subtitles(self):
+        state = validate_block_approval('B04')
+        self.assertEqual(state['status'], 'BLOCK_APPROVED')
+        self.assertEqual(state['video_sha256'], 'f14978c373710fd5b8e5a579a4f718079ada4ea1e0ffd2dd24409d80a52b99bb')
+        self.assertEqual(state['approved_mp3_sha256'], '6472a15a2ed87fbc654d265f54e34f0e6412bd8b3bba0214fe41f73f94214dfd')
+        self.assertEqual(state['approved_alignment_sha256'], '3fe1b93d9085b1d60a58b5f11b35c49f55c024d180a29aa195ba5ad2a3bcd242')
+        self.assertEqual(state['subtitle_srt_sha256'], '0ebb613fd7bc21a997e9bcb575d54e9fcf4a9ae39bdd33a89d042c71e8c1f623')
+        self.assertEqual(state['embedded_subtitle_cues'], 2)
 
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():
@@ -221,6 +231,22 @@ class AudioBlockTests(unittest.TestCase):
         arrival['box']['x'] += 500
         with self.assertRaisesRegex(RuntimeError, 'click misses rendered button'):
             b04_pointer_check(folder / 'B04.mp4', broken)
+
+    def test_b05_context_clicks_use_rendered_buttons_and_hide_cursor(self):
+        folder = ROOT / 'generated/b05-block-review'
+        if not (folder / 'B05.mp4').is_file():
+            self.skipTest('large B05 review candidate is an ignored local artifact')
+        evidence = json.loads((folder / 'scenes/B05-014.json').read_text())
+        checks = b05_pointer_check(folder / 'B05.mp4', evidence, 1730 / 30,
+                                   'B05-014', folder / 'qa-clicks/B05-014')
+        self.assertEqual([row['status'] for row in checks], ['PASS', 'PASS'])
+        self.assertTrue(all(row['cursor_hidden_in_final_mp4'] for row in checks))
+        broken = copy.deepcopy(evidence)
+        arrival = next(e for e in broken['choreography']['events'] if e['type'] == 'cursor-arrival')
+        arrival['box']['x'] -= 400
+        with self.assertRaisesRegex(RuntimeError, 'misses its rendered button'):
+            b05_pointer_check(folder / 'B05.mp4', broken, 1730 / 30,
+                              'B05-014', folder / 'qa-clicks/B05-014')
 
 
 if __name__ == "__main__":

@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B04",
+  "decision_date": "2026-10-02",
+  "video": "generated/b04-block-review/B04.mp4",
+  "video_sha256": "f14978c373710fd5b8e5a579a4f718079ada4ea1e0ffd2dd24409d80a52b99bb",
+  "duration_seconds": 9.033333333333333,
+  "approved_audio_record": "approvals/B04-audio.json",
+  "approved_audio_record_sha256": "9bc206c78f634948d141cf49c9ea508b91aa5ef6470f85c2feb55f281f929d96",
+  "approved_mp3_sha256": "6472a15a2ed87fbc654d265f54e34f0e6412bd8b3bba0214fe41f73f94214dfd",
+  "approved_wav_sha256": "e1d4ff75db4ac5e82f035984decdcc36eb73c0a1246f55538d510f97e08816a1",
+  "approved_pcm_sha256": "bd15d1aca861503084da860697134e865a4656fb63be6b85e22d6a25d7ae70e6",
+  "approved_alignment": "generated/narration-blocks-v2/B04/B04-review-01-timing.json",
+  "approved_alignment_sha256": "3fe1b93d9085b1d60a58b5f11b35c49f55c024d180a29aa195ba5ad2a3bcd242",
+  "canonical_text_sha256": "98dad99eb91de3a0572714a8849d057601124cf02eaef18450a6508b40069776",
+  "subtitle_srt": "generated/b04-block-review/B04.ru.srt",
+  "subtitle_srt_sha256": "0ebb613fd7bc21a997e9bcb575d54e9fcf4a9ae39bdd33a89d042c71e8c1f623",
+  "subtitle_vtt": "generated/b04-block-review/B04.ru.vtt",
+  "subtitle_vtt_sha256": "54f773451d1343d2776718f6d8a720e8ef7d8e345566bc1488451ea25fb49f77",
+  "embedded_subtitle_cues": 2,
+  "last_embedded_subtitle_end_seconds": 9.004,
+  "video_audio_timeline": "generated/b04-block-review/B04-video-timeline.wav",
+  "video_audio_timeline_sha256": "c060d4feafff05b35db43456c83081f3d27bcfd1d9f11d4db0df214a022c2b75",
+  "scene_sources": [
+    {
+      "path": "generated/b04-block-review/scenes/B04-010.mp4",
+      "sha256": "ecd55f5e2e47f168d923737a78e2b8aef2de35feb087c8733fcfdf465e1ff513"
+    }
+  ],
+  "report": "generated/b04-block-review/report.json",
+  "report_sha256": "ad97102b4e61b5de0796637ec19ae15bd79220e9cd622506d0e00cc8a38fbdd8",
+  "verification": "generated/b04-block-review/verification.json",
+  "verification_sha256": "3f61f6b74c5e269ad092ae6c57090726f6f6be5811c61973f5cfed3ba5f1105f"
+}
