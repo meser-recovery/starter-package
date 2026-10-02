@@ -1198,9 +1198,11 @@ function moveTrack(id, offset) {
 function createOperation(kind) {
   let cancelOperation;
   const cancelled = new Promise((resolve) => { cancelOperation = resolve; });
+  const controller = new AbortController();
   const operation = {
     kind,
-    cancel: () => cancelOperation({ cancelled: true }),
+    signal: controller.signal,
+    cancel: () => { controller.abort(); cancelOperation({ cancelled: true }); },
     wait: async (promise) => {
       const value = await Promise.race([promise, cancelled]);
       if (active !== operation) throw new Error(CANCELLED);
@@ -1265,7 +1267,7 @@ async function buildWaveform(track, currentEngine, operation) {
     try { track.duration = await readTrackDuration(track, operation); } catch { /* Native playback may still be usable. */ }
     track.waveformWidth = waveformWidth(track.duration);
     renderTracks();
-    const reader = createWaveformReader(undefined, currentEngine);
+    const reader = createWaveformReader(operation.signal, currentEngine);
     try { track.samples = await operation.wait(reader.read(track.file, track.duration)); }
     finally { reader.dispose(); }
     track.waveformWidth = track.samples.length;
@@ -1465,7 +1467,7 @@ async function buildResultWaveform(currentEngine, operation, duration) {
   try {
     resultDuration = duration;
     resultWaveformWidth = waveformWidth(duration);
-    const reader = createWaveformReader(undefined, currentEngine);
+    const reader = createWaveformReader(operation.signal, currentEngine);
     try { resultWaveformSamples = await operation.wait(reader.read(resultWaveformFile, duration)); }
     finally { reader.dispose(); }
     const element = document.createElement("canvas");
