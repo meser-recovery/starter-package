@@ -1,6 +1,8 @@
 # B03 · block review
 
-Status: **READY FOR B03 BLOCK REVIEW**. B01 and B02 remain `BLOCK_APPROVED`; B04–B14 remain gated.
+Status: **BLOCK_APPROVED**. B01 and B02 remain `BLOCK_APPROVED`; B04 is the next review block and B05–B14 remain gated.
+
+The accepted second candidate is pinned by `approvals/B03-audio.json` and `approvals/B03-block.json`. Exact SHA-256: MP4 `6535356a17c3b2cb885a423a41418ac3ca6616d97b32568f1512e485966d6206`; reviewed MP3 `5bf198675f2f3f9c0e24e759418034d0558020318ccde5182554da5523faec9a`; reviewed WAV `1d5f565d482674ffe3f9619bc7b726d3d854d5ea8de27d4614221b4a99896ead`; PCM `5a0bf2c5e71da2937112faa8543bed4c04fc7b54cf5bcaa65635e41c4fb56f78`; alignment `7f01cd1d688f828803314b3a21812594c8cdad6b12a0988a4f15c2df1d9584d1`; SRT `c8d10fdb6016abcf70559d02f21d17d22531171ad301db335f11989cd7b3d543`; VTT `40a79968e9989c67af64ca34b3ae27b023ff42d559d129b1223c5a6a2b2cf4e5`. No B03 source or generated artifact is changed by the B04 build.
 
 The canonical B03 text in `tutorial.yaml` and the Content Pack is unchanged. One continuous ElevenLabs request generated `narration-blocks-v2/B03/narration.mp3` with the established voice/model/profile. Two pauses were marked at canonical offsets 83 and 291. The review map records their distinct meanings and measured intervals. No silence was added: the first unvoiced boundary was ambiguous, and the second was already sufficient. No speed, pitch, gain, or voice processing was applied. The review WAV is a direct decode of the provider MP3; removing zero inserted samples trivially restores the source PCM because the insertion map is empty. The original MP3 and alignment are retained.
 

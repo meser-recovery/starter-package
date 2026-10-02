@@ -674,6 +674,13 @@
     {
       "id": "B04",
       "title": "Два режима обработки",
+      "tts": {
+        "opening_tag": "[slowly]",
+        "semantic_reviewed": true,
+        "pauses": [
+          {"after_offset": 78, "reason": "Названы оба доступных режима; далее внимание переходит к первому из них — Анонс-мейкеру."}
+        ]
+      },
       "canonical_start_offset": 4769,
       "canonical_end_offset": 4895,
       "scene_ids": [
