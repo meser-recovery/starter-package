@@ -20,14 +20,15 @@ from modules import sha, write_json
 from scenes import login
 from validate import ROOT, validate
 
-OUT = ROOT / 'generated/b01-visual-v2-review'
+OUT = ROOT / 'generated/b01-visual-v3-review'
 SCENE_IDS = ('B01-001', 'B01-002', 'B01-003')
 LEAD_SECONDS = .6
 RATE = 44100
 FPS = 30
 FRAME_BYTES = 1920 * 1080 * 3 // 2
-DIAGRAM = ROOT / 'animations/b01-explainer-v2.html'
+DIAGRAM = ROOT / 'animations/b01-explainer-v3.html'
 SITE_SCREENSHOT = ROOT / 'assets/s11/nam-poputi-catalog-2026-10-02.png'
+PRO_EDITOR_SCREENSHOT = ROOT / 'assets/s11/logic-pro-main-window-apple.png'
 
 VISUAL_ANCHORS = {
     'meeting': 'Как вам известно',
@@ -37,15 +38,13 @@ VISUAL_ANCHORS = {
     'filter': 'убрать мешающие частоты',
     'site': 'сайт «Нам по пути»',
     'difficulty': 'Для человека',
-    'novice': 'Но для обычного',
     'announcement': 'Кроме того, эта же запись',
     'ideas': 'выделяет основные мысли',
     'cost': 'При этом анонс-мейкеру',
     'original': 'игнорировать голос оригинала',
-    'focus': 'С таким подходом',
     'new': 'Учитывая недостатки',
     'short': 'Для анонс-мейкера появилась',
-    'translator': 'остаётся только голос переводчика',
+    'isolate': 'за счёт того',
     'final': 'А для подготовки финальной',
     'tools': 'простые инструменты редактирования',
 }
@@ -66,7 +65,8 @@ def visual_schedule(scene: dict, timing: dict) -> dict[str, float]:
 
 def source_identity() -> str:
     recipe = '\n'.join(inspect.getsource(fn) for fn in (visual_schedule, capture_spec, prepare, perform))
-    return hashlib.sha256(recipe.encode() + DIAGRAM.read_bytes() + SITE_SCREENSHOT.read_bytes()).hexdigest()
+    return hashlib.sha256(recipe.encode() + DIAGRAM.read_bytes() + SITE_SCREENSHOT.read_bytes() +
+                          PRO_EDITOR_SCREENSHOT.read_bytes()).hexdigest()
 
 
 def inputs() -> tuple[dict, dict, list[dict]]:
@@ -81,7 +81,7 @@ def inputs() -> tuple[dict, dict, list[dict]]:
 
 def capture_spec(scene: dict) -> dict:
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b01-explaining-motion-v2'},
+                               'capture_pipeline_revision': 'b01-semantic-simplification-v3'},
             'initial_state': 'local-public-site' if scene['id'] == 'B01-001' else
                              'conceptual-process' if scene['id'] == 'B01-002' else 'local-service-home',
             'expected_state': 'approved B01 semantic visual', 'assertions': [],
@@ -92,7 +92,7 @@ async def prepare(page, scene: dict, base: str) -> None:
     scene_id = scene['id']
     if scene_id == 'B01-002':
         await page.goto(DIAGRAM.as_uri())
-        await page.wait_for_function('typeof window.configure === "function" && document.getElementById("nam-poputi").complete')
+        await page.wait_for_function('typeof window.configure === "function" && ["nam-poputi", "logic-pro"].every(id => {const im=document.getElementById(id); return im.complete && im.naturalWidth>0})')
         spec, approval, _ = inputs()
         await page.evaluate('(schedule) => window.configure(schedule)', visual_schedule(scene, scene_timing(spec, scene, approval)))
     else:
