@@ -89,7 +89,7 @@ def scene_timing(spec, module, scene, timing, metadata, audio_duration):
 
 def capture_spec(scene):
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b07-real-speaker-controls-and-processing-v1'},
+                               'capture_pipeline_revision': 'b07-stable-editor-and-semantic-screen-holds-v2'},
             'initial_state': 'speaker-source-tracks', 'expected_state': 'B07 explained action completed',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
@@ -113,7 +113,10 @@ async def prepare(page, scene, base):
         await track(page, 'Спикер.wav').scroll_into_view_if_needed()
         await install_explainer(page, 'leveling', visible=False)
     elif scene['id'] == 'B07-021':
-        await track(page, 'Участник.wav').scroll_into_view_if_needed()
+        # The next scene starts on the same upper editor view as scene 020.
+        # Auto-scrolling to Mute during preparation made the first two CDP
+        # frames show a different document position before it snapped back.
+        await page.evaluate('window.scrollTo(0, 0)')
         await install_explainer(page, 'monitor', visible=False)
     else:
         row = track(page, 'Участник.wav')
@@ -123,6 +126,8 @@ async def prepare(page, scene, base):
         await row.get_by_role('button', name='Исключить из микса').scroll_into_view_if_needed()
         await install_explainer(page, 'monitor', visible=False)
     await page.wait_for_timeout(150)
+    if scene['id'] == 'B07-021':
+        await page.evaluate('async()=>{window.scrollTo(0,0);await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}')
 
 
 async def install_explainer(page, mode, *, visible):
@@ -156,15 +161,32 @@ async def semantic_moment(cue, phrase):
     await cue.__self__.wait_pending()
 
 
+async def stable_editor_click(page, locator):
+    """Capture the real press, then resume frames only after the editor is ready."""
+    director = page.tutorial
+    await director.aim(locator.raw)
+    await director.before_action()
+    pressed_at = director.now()
+    await director.page.mouse.down()
+    await asyncio.sleep(.13)  # show the actual click feedback on the button
+    await page.evaluate("window.__s11Capture.hide('speaker-opening')")
+    await page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
+    await director.pause_capture()
+    await director.page.mouse.up()
+    director.events.append({'type':'click','seconds':pressed_at,'target':str(locator.raw),'ripple':True})
+    await page.locator('#speaker-editor').wait_for(state='visible', timeout=60000)
+    await page.wait_for_function("document.querySelectorAll('#speaker-editor-tracks .speaker-track canvas').length===4 && !document.querySelector('#speaker-editor-tracks .speaker-source-pending')", timeout=60000)
+    await page.evaluate('async()=>{window.scrollTo(0,0);await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}')
+    await page.wait_for_timeout(250)
+    await director.resume_capture()
+    await director.after_action()
+
+
 async def perform(page, scene, base, cue):
     scene_id = scene['id']
     if scene_id == 'B07-019':
         await cue('«Спикерская»')
-        await page.locator('#open-local-speaker').click()
-        await page.locator('#speaker-editor').wait_for(state='visible', timeout=60000)
-        await page.wait_for_function("document.querySelectorAll('#speaker-editor-tracks .speaker-track canvas').length===4", timeout=60000)
-        await page.evaluate("window.__s11Capture.hide('speaker-opened')")
-        await page.locator('#speaker-editor-tracks').scroll_into_view_if_needed()
+        await stable_editor_click(page, page.locator('#open-local-speaker'))
         await semantic_moment(cue, 'Для каждой дорожки доступны три вида обработки')
         await track(page, 'Спикер.wav').scroll_into_view_if_needed()
     elif scene_id == 'B07-020':
@@ -181,11 +203,15 @@ async def perform(page, scene, base, cue):
         await semantic_moment(cue, 'один участник записан заметно тише')
         await animation_phase(page, 'leveling-done')
         await cue('Компрессия уменьшает разницу')
+        # cue() schedules the next control arrival; it does not wait. Keep the
+        # two-wave source, amplitude change and result visible until that cue.
+        await asyncio.sleep(max(0, cue.__self__.pending[1] - .65 - cue.__self__.now()))
         await animation_phase(page, '', hide=True)
         await row.locator('[data-dsp-field="compression"]').click()
         await page.wait_for_function("async () => (await import('./scripts/speaker-editor.mjs')).getSpeakerSaveState().payload.trackProcessing[0].compression!=='off'")
         await page.evaluate("window.__s11Capture.hide('compression-set')")
-        await install_explainer(page, 'compression', visible=True)
+        await install_explainer(page, 'compression', visible=False)
+        await animation_phase(page, 'compression-start', show=True)
         await semantic_moment(cue, 'в рамках одной и той же дорожки')
         await animation_phase(page, 'compression-done')
         await semantic_moment(cue, 'Все эти настройки доступны')
@@ -425,6 +451,31 @@ def pointer_pixels_in_mp4(video:Path,evidence:dict,scene_start:float,scene_id:st
     return checks
 
 
+def visual_transition_anomalies(raw:bytes, *, width=48, height=27, fps=FPS):
+    """Find brief A→B→A screens and clustered full-frame capture jumps."""
+    pixels=width*height
+    if len(raw)%pixels:
+        raise RuntimeError('B07 visual transition scan received partial frame')
+    frames=[memoryview(raw)[i:i+pixels] for i in range(0,len(raw),pixels)]
+    sampled=range(0,pixels,2)
+    def distance(a,b):
+        return sum(abs(frames[a][i]-frames[b][i]) for i in sampled)/len(sampled)
+    jumps=[i for i in range(1,len(frames)) if distance(i-1,i)>20]
+    anomalies=[]
+    for position,start in enumerate(jumps):
+        for end in jumps[position+1:]:
+            if end-start>30:break
+            if distance(start-1,end)<5 and distance(start-1,(start+end)//2)>20:
+                anomalies.append({'type':'brief_screen_return','start_frame':start,'end_frame':end,
+                                  'start_seconds':start/fps,'end_seconds':end/fps})
+                break
+    for start,end in zip(jumps,jumps[1:]):
+        if end-start<=18 and not any(a['start_frame']==start and a['end_frame']==end for a in anomalies):
+            anomalies.append({'type':'clustered_screen_jumps','start_frame':start,'end_frame':end,
+                              'start_seconds':start/fps,'end_seconds':end/fps})
+    return sorted(anomalies,key=lambda row:(row['start_frame'],row['end_frame']))
+
+
 def verify():
     spec,module,scenes,metadata,timing,pcm,_=inputs()
     report=json.loads((OUT/'report.json').read_text());video=OUT/'B07.mp4'
@@ -471,6 +522,9 @@ def verify():
     flash=[i for i in range(1,frames-1) if abs(lum[i]-lum[i-1])>35 and abs(lum[i]-lum[i+1])>35 and abs(lum[i-1]-lum[i+1])<10]
     if blank or flash:
         raise RuntimeError(f'B07 blank/flash frames: {blank[:5]} / {flash[:5]}')
+    transition_anomalies=visual_transition_anomalies(small)
+    if transition_anomalies:
+        raise RuntimeError(f'B07 brief screen/scroll transitions: {transition_anomalies[:5]}')
     visual_report=json.loads((OUT/'visual-capture.json').read_text())
     cue_errors=[];pointer=[];cursor_violations=[]
     elapsed=0
@@ -493,7 +547,8 @@ def verify():
             'aac_zero_lag_correlation':corr[0],'subtitle_cues':checked['embedded_subtitle_cues'],
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
             'subtitle_matches_canonical_text':True,'video_frames':frames,
-            'blank_frames':0,'isolated_flash_frames':0,'cursor_violations':0,
+            'blank_frames':0,'isolated_flash_frames':0,'visual_transition_anomalies':[],
+            'cursor_violations':0,
             'max_visual_cue_error_seconds':max(cue_errors) if cue_errors else None,
             'rendered_pointer_clicks':pointer,'new_tts_requests':0,'production_mutation_requests':0}
     write_json(OUT/'verification.json',result)

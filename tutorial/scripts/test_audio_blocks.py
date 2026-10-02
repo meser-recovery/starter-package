@@ -16,7 +16,7 @@ from b03_block import pointer_pixels_in_mp4
 from b04_block import pointer_check as b04_pointer_check
 from b05_block import pointer_pixels_in_mp4 as b05_pointer_check
 from b06_block import pointer_pixels_in_mp4 as b06_pointer_check
-from b07_block import pointer_pixels_in_mp4 as b07_pointer_check
+from b07_block import pointer_pixels_in_mp4 as b07_pointer_check, visual_transition_anomalies
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
 
@@ -303,6 +303,26 @@ class AudioBlockTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'pointer tip is outside|misses its rendered button'):
             b07_pointer_check(folder / 'B07.mp4', broken, scene_start,
                               'B07-022', folder / 'qa-clicks/B07-022')
+
+    def test_b07_transition_scan_catches_brief_screen_and_scroll_return(self):
+        frame=lambda value:bytes([value])*(48*27)
+        brief=frame(30)*12+frame(220)*24+frame(30)*12
+        rebound=frame(30)*12+frame(90)*2+frame(30)*12
+        loading=frame(30)*12+frame(90)*2+frame(220)*12
+        self.assertIn('brief_screen_return', [a['type'] for a in visual_transition_anomalies(brief)])
+        self.assertIn('brief_screen_return', [a['type'] for a in visual_transition_anomalies(rebound)])
+        self.assertIn('clustered_screen_jumps', [a['type'] for a in visual_transition_anomalies(loading)])
+        self.assertEqual(visual_transition_anomalies(frame(30)*12+frame(220)*80), [])
+        rejected=ROOT/'generated/b07-block-review/history/rejected-058a0e14/B07.mp4'
+        if rejected.is_file():
+            import subprocess
+            raw=subprocess.check_output(['ffmpeg','-v','error','-i',str(rejected),
+                                         '-vf','scale=48:27:flags=area,format=gray','-r','30',
+                                         '-f','rawvideo','-'])
+            anomalies=visual_transition_anomalies(raw)
+            self.assertTrue(any(a['type']=='brief_screen_return' and 41<a['start_seconds']<42 for a in anomalies))
+            self.assertTrue(any(a['type']=='brief_screen_return' and 62<a['start_seconds']<63 for a in anomalies))
+            self.assertTrue(any(a['type']=='clustered_screen_jumps' and 4<a['start_seconds']<5 for a in anomalies))
 
 
 if __name__ == "__main__":

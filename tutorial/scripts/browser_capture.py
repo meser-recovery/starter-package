@@ -104,8 +104,12 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
             cdp = await context.new_cdp_session(page)
             pending = []
             stopping = False
-            async def receive(event):
-                if director.ready:
+            async def receive(event, ready_when_received):
+                # A screencast callback can be queued while capture is paused
+                # and run only after a slow page transition has completed.
+                # Preserve the capture state at receipt, so loading frames do
+                # not leak into the resumed recording.
+                if ready_when_received:
                     frame = folder / f"{len(frames):06d}.jpg"
                     frame.write_bytes(base64.b64decode(event["data"]))
                     frames.append(frame)
@@ -115,9 +119,21 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
                 except Exception:
                     if not stopping:
                         raise
-            cdp.on("Page.screencastFrame", lambda event: pending.append(asyncio.create_task(receive(event))))
-            await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 88,
-                                                     "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
+            cdp.on("Page.screencastFrame", lambda event: pending.append(asyncio.create_task(receive(event, director.ready))))
+            screencast_options={"format":"jpeg","quality":88,"maxWidth":1920,"maxHeight":1080,"everyNthFrame":1}
+            await cdp.send("Page.startScreencast", screencast_options)
+            async def pause_screencast():
+                director.ready=False
+                await cdp.send('Page.stopScreencast')
+                if pending:await asyncio.gather(*pending)
+                pending.clear()
+            async def resume_screencast():
+                # Restart on the settled page, not on queued frames from the
+                # waveform preparation or an old scroll position.
+                director.ready=True
+                await cdp.send('Page.startScreencast',screencast_options)
+            director.pause_capture=pause_screencast
+            director.resume_capture=resume_screencast
             started = director.started = asyncio.get_running_loop().time()
             repaint = """() => {if(window.__s11paint)clearInterval(window.__s11paint);let n=0;window.__s11paint=setInterval(()=>{
               let e=document.getElementById('__s11paint');
@@ -146,7 +162,7 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
                 await director.stable()
                 cdp = await context.new_cdp_session(page)
                 stopping = False
-                cdp.on("Page.screencastFrame", lambda event: pending.append(asyncio.create_task(receive(event))))
+                cdp.on("Page.screencastFrame", lambda event: pending.append(asyncio.create_task(receive(event, director.ready))))
                 await cdp.send("Page.startScreencast", {"format": "jpeg", "quality": 88,
                                                          "maxWidth": 1920, "maxHeight": 1080, "everyNthFrame": 1})
             await page.evaluate(repaint)
