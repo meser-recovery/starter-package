@@ -145,6 +145,8 @@ async def perform(page, scene: dict, base: str, cue) -> None:
 
 
 async def visual(only: str | None = None) -> dict:
+    if (ROOT / 'approvals/B01-block.json').exists():
+        raise RuntimeError('B01 complete block is approved and immutable')
     spec, approval, scenes = inputs()
     scene_dir = OUT / 'scenes'
     scene_dir.mkdir(parents=True, exist_ok=True)
@@ -256,6 +258,8 @@ def check_embedded_subtitles(video: Path, source_srt: Path, canonical_text: str)
 
 
 def assemble() -> dict:
+    if (ROOT / 'approvals/B01-block.json').exists():
+        raise RuntimeError('B01 complete block is approved and immutable')
     spec, approval, scenes = inputs()
     if not (OUT / 'visual-capture.json').is_file():
         raise RuntimeError('B01 visual capture missing; no generation fallback')

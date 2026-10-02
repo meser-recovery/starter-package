@@ -10,7 +10,7 @@ from unittest.mock import patch
 
 import modules
 import build
-from audio_approval import scene_timing as approved_scene_timing, validate_approval
+from audio_approval import scene_timing as approved_scene_timing, validate_approval, validate_block_approval
 from b01_block import check_embedded_subtitles
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
@@ -114,11 +114,21 @@ class AudioBlockTests(unittest.TestCase):
             modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
         self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
 
-    def test_audio_review_gate_rejects_other_blocks_before_provider_call(self):
-        with patch("sys.argv", ["build.py", "narration", "--module", "B02"]), patch.object(build, "generate") as provider:
+    def test_audio_review_gate_rejects_b03_before_provider_call(self):
+        with patch("sys.argv", ["build.py", "narration", "--module", "B03"]), patch.object(build, "generate") as provider:
             with self.assertRaisesRegex(RuntimeError, "complete block approval"):
                 build.main()
             provider.assert_not_called()
+
+    def test_b01_block_approval_is_exact_and_prevents_regeneration(self):
+        if not (ROOT / 'generated/b01-block-review/B01.mp4').is_file():
+            self.skipTest('approved B01 video is an ignored local review artifact')
+        block = validate_block_approval('B01')
+        self.assertEqual(block['video_sha256'], '90b1d7b28c67b623455b6d25da54184c9cf6cfa762a9935d2c091432994e3c51')
+        self.assertEqual(block['embedded_subtitle_cues'], 34)
+        with self.assertRaisesRegex(RuntimeError, 'approved and immutable'):
+            from b01_block import assemble
+            assemble()
 
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():

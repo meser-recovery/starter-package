@@ -19,6 +19,6 @@ The [Canonical Content Pack](meser-audio-tutorial-canonical-content-pack.md) is 
 | B13 | Проекты и версии | 046–051 |
 | B14 | Как найти запись и продолжить работу | 052–054 |
 
-One complete block is one continuous ElevenLabs request. B01 audio has `AUDIO_APPROVED`; its visual pass uses the pinned approved WAV and shifted alignment. Each later block first receives its own reasoned semantic pause map, then audio and visual review in sequence. The next block stays gated until the preceding complete block is approved. Final assembly uses only the approved block versions and does not call TTS again.
+One complete block is one continuous ElevenLabs request. B01 now has both `AUDIO_APPROVED` and `BLOCK_APPROVED`, pinned to its exact audio and MP4. B02 has its own reasoned semantic pause map and is the current complete-block review. The next block stays gated until the preceding complete block is approved. Final assembly uses only the approved block versions and does not call TTS again.
 
 The previous N01–N08 map is preserved as [historical material](historical/S11-Narration-Module-Map-N01-N08.md). Its source text, scene numbers, and ending do not apply to this production pass.

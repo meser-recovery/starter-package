@@ -72,7 +72,7 @@ def main() -> None:
     result = validate()
     spec = json.loads((ROOT / "tutorial.yaml").read_text())
     if spec["schema_version"] == 2:
-        from audio_approval import approved_path, validate_approval
+        from audio_approval import approved_path, validate_approval, validate_block_approval
         if args.pilot:
             parser.error("historical pilot is unavailable for the approved B01–B14 source")
         if args.chapter:
@@ -80,10 +80,16 @@ def main() -> None:
         if args.mode == "validate":
             print(json.dumps(result, ensure_ascii=False)); return
         if args.mode in ("visual", "assemble", "verify"):
-            if args.module != "B01" or args.all_modules or args.scene or args.force:
-                raise RuntimeError("review gate: only B01 visual/assembly is authorized")
-            validate_approval(spec, "B01")
-            from b01_block import visual, assemble, verify
+            if args.module not in ("B01", "B02") or args.all_modules or args.scene or args.force:
+                raise RuntimeError("review gate: only approved B01 verification and B02 visual/assembly are authorized")
+            if args.module == "B01":
+                validate_approval(spec, "B01")
+                if args.mode != "verify" and (ROOT / 'approvals/B01-block.json').exists():
+                    raise RuntimeError('B01 complete block is approved and immutable')
+                from b01_block import visual, assemble, verify
+            else:
+                validate_block_approval('B01')
+                from b02_block import visual, assemble, verify
             if args.mode == "visual":
                 import asyncio
                 print(json.dumps(asyncio.run(visual()), ensure_ascii=False, indent=2))
@@ -100,8 +106,8 @@ def main() -> None:
             parser.error(str(error))
         if args.mode == "dry-run":
             print(json.dumps({"content_validation": result, **plan(spec, selected, args.force),
-                              "review_gate": "B01_BLOCK_PENDING",
-                              "approved_audio": "B01", "visual_changes": "B01_ONLY"}, ensure_ascii=False, indent=2)); return
+                              "review_gate": "B02_BLOCK_PENDING",
+                              "approved_block": "B01", "visual_changes": "B02_ONLY"}, ensure_ascii=False, indent=2)); return
         if len(selected) != 1 or args.module != selected[0]["id"]:
             raise RuntimeError("review gate: select exactly one B-block for narration")
         module_id = selected[0]["id"]

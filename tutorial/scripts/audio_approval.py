@@ -29,7 +29,42 @@ def validate_block_approval(block_id: str) -> dict:
         if record['status'] != 'BLOCK_APPROVED' or record['block_id'] != block_id:
             raise ValueError('invalid block approval status')
         video = checked_file(record['video'], record['video_sha256'])
-    except (OSError, KeyError, ValueError) as error:
+        audio_record = approved_path(block_id)
+        if (record['approved_audio_record'] != str(audio_record.relative_to(ROOT))
+                or digest(audio_record.read_bytes()) != record['approved_audio_record_sha256']):
+            raise ValueError('approved audio record changed')
+        audio = json.loads(audio_record.read_text())['approved_take']
+        for approval_key, audio_key in (('approved_mp3_sha256', 'mp3_sha256'),
+                                        ('approved_wav_sha256', 'wav_sha256'),
+                                        ('approved_pcm_sha256', 'pcm_sha256'),
+                                        ('approved_alignment_sha256', 'alignment_sha256'),
+                                        ('canonical_text_sha256', 'canonical_text_sha256')):
+            if record[approval_key] != audio[audio_key]:
+                raise ValueError(f'{approval_key} differs from audio approval')
+        if record['approved_alignment'] != audio['alignment']:
+            raise ValueError('approved alignment path changed')
+        for name, hash_name in (('approved_alignment', 'approved_alignment_sha256'),
+                                ('subtitle_srt', 'subtitle_srt_sha256'),
+                                ('subtitle_vtt', 'subtitle_vtt_sha256'),
+                                ('video_audio_timeline', 'video_audio_timeline_sha256'),
+                                ('report', 'report_sha256'), ('verification', 'verification_sha256')):
+            checked_file(record[name], record[hash_name])
+        for scene in record['scene_sources']:
+            checked_file(scene['path'], scene['sha256'])
+        report = json.loads((ROOT / record['report']).read_text())
+        verification = json.loads((ROOT / record['verification']).read_text())
+        if (report['video_sha256'] != record['video_sha256']
+                or report['approved_alignment_sha256'] != record['approved_alignment_sha256']
+                or verification['status'] != 'PASS'
+                or verification['video_sha256'] != record['video_sha256']
+                or verification['subtitle_cues'] != record['embedded_subtitle_cues']
+                or verification['last_embedded_subtitle_end_seconds'] != record['last_embedded_subtitle_end_seconds']):
+            raise ValueError('B01 verification differs from block approval')
+        probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries',
+                                                    'format=duration', '-of', 'json', str(video)]))
+        if abs(float(probe['format']['duration']) - record['duration_seconds']) > .001:
+            raise ValueError('approved video duration changed')
+    except (OSError, KeyError, ValueError, subprocess.CalledProcessError) as error:
         raise RuntimeError(f'{block_id} complete block approval is required') from error
     return {**record, 'video_path': str(video)}
 
