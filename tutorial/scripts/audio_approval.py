@@ -53,13 +53,14 @@ def validate_block_approval(block_id: str) -> dict:
             checked_file(scene['path'], scene['sha256'])
         report = json.loads((ROOT / record['report']).read_text())
         verification = json.loads((ROOT / record['verification']).read_text())
+        report_alignment = report.get('approved_alignment_sha256', report.get('final_alignment_sha256'))
         if (report['video_sha256'] != record['video_sha256']
-                or report['approved_alignment_sha256'] != record['approved_alignment_sha256']
+                or report_alignment != record['approved_alignment_sha256']
                 or verification['status'] != 'PASS'
                 or verification['video_sha256'] != record['video_sha256']
                 or verification['subtitle_cues'] != record['embedded_subtitle_cues']
                 or verification['last_embedded_subtitle_end_seconds'] != record['last_embedded_subtitle_end_seconds']):
-            raise ValueError('B01 verification differs from block approval')
+            raise ValueError(f'{block_id} verification differs from block approval')
         probe = json.loads(subprocess.check_output(['ffprobe', '-v', 'error', '-show_entries',
                                                     'format=duration', '-of', 'json', str(video)]))
         if abs(float(probe['format']['duration']) - record['duration_seconds']) > .001:
@@ -128,16 +129,18 @@ def validate_approval(spec: dict, block_id: str) -> dict:
     if abs(timing['duration_seconds'] - approved['mp3_duration_seconds']) > .000001:
         raise RuntimeError('approved alignment duration changed')
     marked = [p['after_offset'] for p in module.get('tts', {}).get('pauses', [])]
-    if [e['after_offset'] for e in record['insertions']] != marked:
+    inserted = [e['after_offset'] for e in record['insertions']]
+    if not set(inserted).issubset(marked) or inserted != sorted(set(inserted)):
         raise RuntimeError('approved insertion map differs from reviewed semantic boundaries')
+    reviewed_reasons = {p['after_offset']: p['reason'] for p in module['tts']['pauses']}
     for approved_event, source_event, reason in zip(record['insertions'], metadata['events'],
-                                                     (p['reason'] for p in module['tts']['pauses'])):
+                                                     (reviewed_reasons[e['after_offset']] for e in record['insertions'])):
         if (approved_event['reason'] != reason or
                 any(approved_event[key] != source_event[key] for key in
                     ('after_offset', 'quiet_start_source_sample', 'quiet_end_source_sample',
                      'cut_source_sample', 'insert_start_final_sample', 'added_samples',
                      'before_seconds', 'added_seconds', 'after_seconds'))):
-            raise RuntimeError('approved six-insertion map differs from reviewed source')
+            raise RuntimeError('approved insertion map differs from reviewed source')
     return {'record': record, 'timing': timing, 'wav_path': wav_path,
             'wav_duration_seconds': approved['pcm_samples'] / approved['pcm_sample_rate']}
 

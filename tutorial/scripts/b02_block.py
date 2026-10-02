@@ -152,6 +152,8 @@ async def perform(page, scene: dict, base: str, cue) -> None:
 
 
 async def visual() -> dict:
+    if (ROOT / 'approvals/B02-block.json').exists():
+        raise RuntimeError('B02 complete block is approved and immutable')
     spec, audio, scenes = inputs()
     if sha(PRIOR_OUT / 'B02.mp4') != PRIOR_VIDEO_SHA256:
         raise RuntimeError('prior B02 candidate changed')
@@ -222,6 +224,8 @@ def subtitles(scenes: list[dict], timings: list[dict]) -> list[tuple[float, floa
 
 
 def assemble() -> dict:
+    if (ROOT / 'approvals/B02-block.json').exists():
+        raise RuntimeError('B02 complete block is approved and immutable')
     spec, audio, scenes = inputs()
     capture_report = json.loads((OUT / 'visual-capture.json').read_text())
     if (capture_report['source_mp3_sha256'] != audio['metadata']['source_mp3_sha256']
