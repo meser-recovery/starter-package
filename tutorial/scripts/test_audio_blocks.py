@@ -16,6 +16,7 @@ from b03_block import pointer_pixels_in_mp4
 from b04_block import pointer_check as b04_pointer_check
 from b05_block import pointer_pixels_in_mp4 as b05_pointer_check
 from b06_block import pointer_pixels_in_mp4 as b06_pointer_check
+from b07_block import pointer_pixels_in_mp4 as b07_pointer_check
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
 
@@ -118,8 +119,8 @@ class AudioBlockTests(unittest.TestCase):
             modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
         self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
 
-    def test_audio_review_gate_rejects_b07_before_provider_call(self):
-        with patch("sys.argv", ["build.py", "narration", "--module", "B07"]), patch.object(build, "generate") as provider:
+    def test_audio_review_gate_rejects_b08_before_provider_call(self):
+        with patch("sys.argv", ["build.py", "narration", "--module", "B08"]), patch.object(build, "generate") as provider:
             with self.assertRaisesRegex(RuntimeError, "complete block approval"):
                 build.main()
             provider.assert_not_called()
@@ -170,6 +171,15 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(state['approved_alignment_sha256'], 'd7dfc506c5f2f60e416921ca546b0d2b84661ae196afe248541a22082867d9a7')
         self.assertEqual(state['subtitle_srt_sha256'], '22e7c165ed12f0f1c3d953a1a26253ce930b9e65e75988a1c808ac3cca31b9a0')
         self.assertEqual(state['embedded_subtitle_cues'], 19)
+
+    def test_b06_block_approval_pins_audio_alignment_and_subtitles(self):
+        state = validate_block_approval('B06')
+        self.assertEqual(state['status'], 'BLOCK_APPROVED')
+        self.assertEqual(state['video_sha256'], '452afd7e19e1ecbc1542c1e42d00f03de5366f51d5fb802f2e445df9b2970ace')
+        self.assertEqual(state['approved_mp3_sha256'], 'c560975d78563940a1663ddb250a354fb0ddf825efec1c82af64fc019d5e5422')
+        self.assertEqual(state['approved_alignment_sha256'], '9d29d74893b89eb2fdec0933a0390ca7f52f5afda9d2cf3531ba1df14d373acb')
+        self.assertEqual(state['subtitle_srt_sha256'], '1cc04884d0dee793b3f05a777e931a115e3d51473206f8998963c2cd0d7583d8')
+        self.assertEqual(state['embedded_subtitle_cues'], 16)
 
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():
@@ -274,6 +284,25 @@ class AudioBlockTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'misses its rendered button'):
             b06_pointer_check(folder / 'B06.mp4', broken, scene_start,
                               'B06-018', folder / 'qa-clicks/B06-018')
+
+    def test_b07_mix_clicks_hit_rendered_controls_and_hide_cursor(self):
+        folder = ROOT / 'generated/b07-block-review'
+        if not (folder / 'B07.mp4').is_file():
+            self.skipTest('large B07 review candidate is an ignored local artifact')
+        report = json.loads((folder / 'report.json').read_text())
+        frames = report['scene_frame_counts']
+        scene_start = sum(frames[s] for s in ('B07-019', 'B07-020', 'B07-021')) / 30
+        evidence = json.loads((folder / 'scenes/B07-022.json').read_text())
+        checks = b07_pointer_check(folder / 'B07.mp4', evidence, scene_start,
+                                   'B07-022', folder / 'qa-clicks/B07-022')
+        self.assertEqual([row['status'] for row in checks], ['PASS', 'PASS'])
+        self.assertTrue(all(row['cursor_hidden_on_context_change'] for row in checks))
+        broken = copy.deepcopy(evidence)
+        arrival = next(e for e in broken['choreography']['events'] if e['type'] == 'cursor-arrival')
+        arrival['box']['x'] += 500
+        with self.assertRaisesRegex(RuntimeError, 'pointer tip is outside|misses its rendered button'):
+            b07_pointer_check(folder / 'B07.mp4', broken, scene_start,
+                              'B07-022', folder / 'qa-clicks/B07-022')
 
 
 if __name__ == "__main__":

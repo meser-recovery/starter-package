@@ -1,0 +1,38 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B07 · обработка звука</title>
+<style>
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f7fafc;font-family:system-ui,-apple-system,sans-serif}
+svg{width:100%;height:100%;display:block}.axis{stroke:#a8bbc9;stroke-width:3}.name{font-size:27px;font-weight:650;fill:#17374f}.title{font-size:35px;font-weight:650;fill:#17374f}.note{font-size:25px;font-weight:550;fill:#36576d}.wave{transition:transform 2.3s cubic-bezier(.28,.06,.2,1),opacity .7s ease;transform-box:fill-box;transform-origin:center}
+body.leveling-done .level-low{transform:scaleY(1.9)}body.leveling-done .level-high{transform:scaleY(.65)}
+body.compression-done .comp-low{transform:scaleY(1.55)}body.compression-done .comp-high{transform:scaleY(.62)}
+body.mute .preview-wave,body.excluded .preview-wave,body.restored .preview-wave{opacity:0}
+body.excluded .final-wave{opacity:0}body.restored .final-wave{opacity:1}
+</style>
+<svg viewBox="0 0 1536 864" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Разница между выравниванием дорожек, компрессией внутри дорожки и мониторингом">
+<rect width="1536" height="864" fill="#f7fafc"/><text id="title" x="85" y="95" class="title"></text><g id="content"></g></svg>
+<script>
+const mode=new URLSearchParams(location.search).get('mode')||'leveling';
+const ns='http://www.w3.org/2000/svg',root=document.querySelector('#content'),title=document.querySelector('#title');
+const el=(tag,a={},parent=root)=>{const n=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(a))n.setAttribute(k,v);parent.append(n);return n};
+const label=(x,y,t,cls='name')=>{let n=el('text',{x,y,class:cls});n.textContent=t;return n};
+function lane(y,name){label(90,y+9,name);el('line',{x1:420,y1:y,x2:1390,y2:y,class:'axis'})}
+function wave(x1,x2,y,amp,seed,color,cls=''){let top=[],bottom=[];for(let x=x1,i=0;x<=x2;x+=7,i++){const h=amp*(.30+.70*Math.abs(Math.sin((i+seed)*1.53)*Math.cos((i+seed)*.37)));top.push(`${x},${(y-h).toFixed(1)}`);bottom.push(`${x},${(y+h).toFixed(1)}`)}el('polygon',{points:[...top,...bottom.reverse()].join(' '),fill:color,class:`wave ${cls}`})}
+if(mode==='leveling'){
+ title.textContent='Выравнивание громкости между участниками';
+ lane(324,'Спикер');lane(538,'Переводчик');
+ for(const [a,b,s] of [[460,628,4],[682,871,11],[925,1120,17],[1176,1340,25]]){wave(a,b,324,76,s,'#2175ad','level-high');wave(a,b,538,27,s+5,'#159674','level-low')}
+ label(555,700,'Два голоса · общий уровень становится сопоставимым','note');
+}else if(mode==='compression'){
+ title.textContent='Компрессия внутри одной дорожки';lane(430,'Один голос');
+ for(const [a,b,amp,s] of [[460,590,24,4],[624,760,79,10],[795,925,26,17],[960,1105,86,22],[1142,1325,31,29]])wave(a,b,430,amp,s,'#2175ad',amp<40?'comp-low':'comp-high');
+ label(528,638,'Тихие и громкие фразы остаются на той же дорожке','note');
+}else{
+ title.textContent='Mute меняет только прослушивание';
+ lane(270,'Исходная дорожка');lane(430,'Прослушивание');lane(590,'Готовая запись');
+ for(const [a,b,s] of [[510,690,5],[790,980,12],[1090,1300,21]]){
+  wave(a,b,270,48,s,'#8a62b6');wave(a,b,430,48,s,'#2175ad','preview-wave');wave(a,b,590,48,s,'#2175ad','final-wave');
+ }
+ label(515,728,'Исходная дорожка остаётся в проекте','note');
+}
+window.b07SetPhase=(phase)=>{document.body.className=phase;if(mode==='monitor')title.textContent=phase==='excluded'?'Исключение меняет готовую запись':phase==='restored'?'Дорожка снова в финальном миксе':'Mute меняет только прослушивание'};
+</script></html>
