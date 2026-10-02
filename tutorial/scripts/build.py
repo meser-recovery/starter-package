@@ -81,7 +81,7 @@ def main() -> None:
             print(json.dumps(result, ensure_ascii=False)); return
         if args.mode in ("visual", "assemble", "verify"):
             if args.module not in ("B01", "B02") or args.all_modules or args.scene or args.force:
-                raise RuntimeError("review gate: only B01 visual revision and later B02 review are supported")
+                raise RuntimeError("review gate: only approved B01 verification and B02 review are supported")
             if args.module == "B01":
                 validate_approval(spec, "B01")
                 if args.mode != "verify" and (ROOT / 'approvals/B01-block.json').exists():
@@ -99,16 +99,16 @@ def main() -> None:
                 print(json.dumps(verify(), ensure_ascii=False, indent=2))
             return
         if args.mode not in ("dry-run", "narration"):
-            raise RuntimeError("review gate: current B-block pipeline supports only selective audio and B01 visual/assembly")
+            raise RuntimeError("review gate: current B-block pipeline supports only selective audio and B02 visual/assembly")
         try:
             selected = selection(spec, args.module, args.scene, args.chapter)
         except ValueError as error:
             parser.error(str(error))
         if args.mode == "dry-run":
             print(json.dumps({"content_validation": result, **plan(spec, selected, args.force),
-                              "review_gate": "B01_VISUAL_REVIEW_PENDING",
+                              "review_gate": "B01_BLOCK_APPROVED_B02_VISUAL_REVIEW",
                               "approved_audio": "B01", "preserved_b02_audio": True,
-                              "visual_changes": "B01_ONLY_UNTIL_REAPPROVED"}, ensure_ascii=False, indent=2)); return
+                              "visual_changes": "B02_ONLY_UNTIL_APPROVED"}, ensure_ascii=False, indent=2)); return
         if len(selected) != 1 or args.module != selected[0]["id"]:
             raise RuntimeError("review gate: select exactly one B-block for narration")
         module_id = selected[0]["id"]

@@ -120,16 +120,17 @@ class AudioBlockTests(unittest.TestCase):
                 build.main()
             provider.assert_not_called()
 
-    def test_b01_prior_video_approval_is_historical_and_gate_is_closed(self):
+    def test_b01_revised_video_approved_and_prior_version_historical(self):
         history = ROOT / 'approvals/historical/B01-block-approved-2026-10-02.json'
         old = json.loads(history.read_text())
         self.assertEqual(old['video_sha256'], '90b1d7b28c67b623455b6d25da54184c9cf6cfa762a9935d2c091432994e3c51')
         self.assertEqual(old['embedded_subtitle_cues'], 34)
-        state = json.loads((ROOT / 'approvals/B01-visual-review.json').read_text())
-        self.assertEqual(state['status'], 'VISUAL_CHANGES_REQUIRED')
+        state = validate_block_approval('B01')
+        self.assertEqual(state['status'], 'BLOCK_APPROVED')
+        self.assertEqual(state['video_sha256'], '8cf72d8e2b081eff6f6c4714410fa0cc901dfb09d8efa2148cb3236efa32e032')
         self.assertEqual(state['approved_mp3_sha256'], '93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377')
-        with self.assertRaisesRegex(RuntimeError, 'complete block approval is required'):
-            validate_block_approval('B01')
+        self.assertEqual(state['subtitle_srt_sha256'], 'c0ad60bd5a1f23dea186674e6bbee913b0e3663dc75fc0fd8a4fe71df9f0b3d9')
+        self.assertEqual(state['embedded_subtitle_cues'], 34)
 
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():

@@ -20,16 +20,15 @@ from build import demo_server
 from modules import cached, map_timing, request_text_and_indices, sha, write_json
 from validate import ROOT, validate
 
-OUT = ROOT / 'generated/b02-block-review'
+OUT = ROOT / 'generated/b02-visual-v2-review'
 AUDIO = ROOT / 'generated/narration-blocks-v2/B02'
-DIAGRAM = ROOT / 'animations/b02-tracks.html'
+DIAGRAM = ROOT / 'animations/b02-tracks-v2.html'
 SCENE_IDS = ('B02-004', 'B02-005', 'B02-006', 'B02-007')
 LEAD_SECONDS = .6
 RATE = 44100
 FPS = 30
 FRAME_BYTES = 1920 * 1080 * 3 // 2
 VARIANT = 'B02-review-01'
-INITIAL = dict(zip(SCENE_IDS, ('intro', 'benefits', 'speakerOnly', 'trackFix')))
 
 
 def inputs() -> tuple[dict, dict, list[dict]]:
@@ -116,50 +115,25 @@ def source_identity() -> str:
 
 def capture_spec(scene: dict) -> dict:
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b02-conceptual-tracks-v1'},
-            'initial_state': INITIAL[scene['id']], 'expected_state': 'B02 conceptual waveform',
+                               'capture_pipeline_revision': 'b02-signal-transform-v2'},
+            'initial_state': scene['id'], 'expected_state': 'B02 continuous waveform transformation',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
 
 
 async def prepare(page, scene: dict, base: str) -> None:
     await page.goto(DIAGRAM.as_uri())
-    await page.wait_for_function('typeof window.setStage === "function"')
-    await page.evaluate('name => window.setStage(name)', INITIAL[scene['id']])
-    if scene['id'] != 'B02-004':
-        await page.evaluate('window.hideBlockTitle()')
+    await page.wait_for_function('typeof window.configure === "function"')
+    spec, audio, _ = inputs()
+    timing = scene_timing(spec, scene, audio)
+    await page.evaluate('args => window.configure(args.id,args.duration)',
+                        {'id': scene['id'], 'duration': timing['duration_seconds']})
+    await page.wait_for_function('document.images.length === 0 || [...document.images].every(i => i.complete)')
     await page.screenshot()
 
 
 async def perform(page, scene: dict, base: str, cue) -> None:
-    director = page.tutorial
-
-    async def stage(phrase: str, name: str) -> None:
-        await cue(phrase)
-        await director.wait_pending()
-        await page.evaluate('name => window.setStage(name)', name)
-
-    sid = scene['id']
-    if sid == 'B02-004':
-        await asyncio.sleep(3.7)
-        await page.evaluate('window.hideBlockTitle()')
-        await stage('В первом режиме', 'common')
-        await stage('Во втором режиме', 'separate')
-        await stage('Начало и конец каждой дорожки', 'sync')
-    elif sid == 'B02-005':
-        await stage('Спикер и переводчик обычно говорят по очереди', 'alternating')
-        await stage('оставляя только дорожку переводчика', 'translator')
-        await stage('Их можно автоматически сократить', 'shorten')
-    elif sid == 'B02-006':
-        await stage('Раздельные дорожки также будут полезны', 'finalRecord')
-        await stage('У одного участника звук', 'issues')
-        await stage('Когда звук всех участников находится', 'commonProblem')
-    elif sid == 'B02-007':
-        await stage('Если в запись попал ненужный участник', 'exclude')
-        await stage('Если проблема относится сразу ко всей записи', 'globalCut')
-        await stage('Таким образом', 'summary')
-    else:
-        raise RuntimeError('unexpected B02 scene')
+    await page.evaluate('window.startAnimation()')
 
 
 async def visual() -> dict:
@@ -303,7 +277,7 @@ def assemble() -> dict:
               'video': str(final), 'video_sha256': sha(final),
               'duration_seconds': float(info['format']['duration']),
               'scene_frame_counts': dict(zip(SCENE_IDS, counts)), 'subtitle_cues': len(cues),
-              **subtitle_check, 'tts_requests': 1, 'production_mutation_requests': 0}
+              **subtitle_check, 'new_tts_requests': 0, 'production_mutation_requests': 0}
     write_json(OUT / 'report.json', report)
     (OUT / 'index.html').write_text(f'''<!doctype html><html lang="ru"><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1"><title>B02 · Review</title>
@@ -312,7 +286,7 @@ main{{max-width:1200px;margin:auto;padding:24px}}h1{{margin:0 0 6px;font-size:32
 video{{display:block;width:100%;aspect-ratio:16/9;background:#071522;border-radius:12px;margin:22px 0}}
 button,a{{color:#eaf5ff;background:#245c87;border:1px solid #5799c8;border-radius:8px;padding:10px 14px;margin:0 8px 8px 0;font:inherit;cursor:pointer}}
 a{{display:inline-block;text-decoration:none}}button:hover,a:hover{{background:#3179ad}}</style>
-<main><h1>B02 · Запись в виде отдельных аудиодорожек</h1><p>Полный блок для просмотра · B01 BLOCK_APPROVED · 1 TTS-запрос B02</p>
+<main><h1>B02 · Запись в виде отдельных аудиодорожек</h1><p>Полный блок для просмотра · B01 BLOCK_APPROVED · 0 новых TTS-запросов</p>
 <video id="review" controls playsinline preload="metadata"><source src="B02.mp4?v={sha(final)[:12]}" type="video/mp4">
 <track kind="subtitles" src="B02.ru.vtt" srclang="ru" label="Русские субтитры"></video>
 <nav aria-label="Сцены"><button data-seek="0">004 · Режимы записи</button>
@@ -404,7 +378,7 @@ def verify() -> dict:
             raise RuntimeError('B02 animation showed cursor or invalid overlay')
         errors.extend(abs(c.get('error_seconds', c['actual_seconds']-c['target_seconds']))
                       for c in meta['alignment_action_cues'])
-    if max(errors, default=0) > .18 or cursor_shows:
+    if (errors and max(errors) > .18) or cursor_shows:
         raise RuntimeError('B02 visual cues drift or conceptual cursor appeared')
     result = {'status': 'PASS', 'block_id': 'B02', 'video_sha256': report['video_sha256'],
               'source_mp3_sha256': audio['metadata']['source_mp3_sha256'],
@@ -417,8 +391,9 @@ def verify() -> dict:
               'subtitle_matches_canonical_text': True,
               'video_frames': frames, 'blank_frames': 0, 'isolated_flash_frames': 0,
               'cursor_show_events': cursor_shows,
-              'max_visual_cue_error_seconds': max(errors, default=0),
-              'tts_requests': 1, 'production_mutation_requests': 0}
+              'measured_visual_cue_count': len(errors),
+              'max_visual_cue_error_seconds': max(errors) if errors else None,
+              'new_tts_requests': 0, 'production_mutation_requests': 0}
     write_json(OUT / 'verification.json', result)
     return result
 
