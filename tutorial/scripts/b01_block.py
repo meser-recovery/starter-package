@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Capture and assemble only B01 from its immutable approved WAV/alignment."""
+"""Capture and assemble B01 visual revision from immutable approved WAV/alignment."""
 from __future__ import annotations
 
 import asyncio
@@ -20,18 +20,53 @@ from modules import sha, write_json
 from scenes import login
 from validate import ROOT, validate
 
-OUT = ROOT / 'generated/b01-block-review'
+OUT = ROOT / 'generated/b01-visual-v2-review'
 SCENE_IDS = ('B01-001', 'B01-002', 'B01-003')
 LEAD_SECONDS = .6
 RATE = 44100
 FPS = 30
 FRAME_BYTES = 1920 * 1080 * 3 // 2
-DIAGRAM = ROOT / 'animations/b01-relation.html'
+DIAGRAM = ROOT / 'animations/b01-explainer-v2.html'
+SITE_SCREENSHOT = ROOT / 'assets/s11/nam-poputi-catalog-2026-10-02.png'
+
+VISUAL_ANCHORS = {
+    'meeting': 'Как вам известно',
+    'edit': 'Обычно после собрания',
+    'trim': 'отредактировать начало и конец',
+    'level': 'разницей в громкости',
+    'filter': 'убрать мешающие частоты',
+    'site': 'сайт «Нам по пути»',
+    'difficulty': 'Для человека',
+    'novice': 'Но для обычного',
+    'announcement': 'Кроме того, эта же запись',
+    'ideas': 'выделяет основные мысли',
+    'cost': 'При этом анонс-мейкеру',
+    'original': 'игнорировать голос оригинала',
+    'focus': 'С таким подходом',
+    'new': 'Учитывая недостатки',
+    'short': 'Для анонс-мейкера появилась',
+    'translator': 'остаётся только голос переводчика',
+    'final': 'А для подготовки финальной',
+    'tools': 'простые инструменты редактирования',
+}
+
+
+def visual_schedule(scene: dict, timing: dict) -> dict[str, float]:
+    text = scene['narration']
+    starts = timing['alignment']['character_start_times_seconds']
+    schedule = {}
+    for key, phrase in VISUAL_ANCHORS.items():
+        offset = text.find(phrase)
+        if offset < 0 or text.find(phrase, offset + 1) >= 0:
+            raise RuntimeError(f'B01 visual anchor must be unique: {phrase}')
+        schedule[key] = starts[offset]
+    schedule['end'] = timing['duration_seconds']
+    return schedule
 
 
 def source_identity() -> str:
-    recipe = '\n'.join(inspect.getsource(fn) for fn in (capture_spec, prepare, perform))
-    return hashlib.sha256(recipe.encode() + DIAGRAM.read_bytes()).hexdigest()
+    recipe = '\n'.join(inspect.getsource(fn) for fn in (visual_schedule, capture_spec, prepare, perform))
+    return hashlib.sha256(recipe.encode() + DIAGRAM.read_bytes() + SITE_SCREENSHOT.read_bytes()).hexdigest()
 
 
 def inputs() -> tuple[dict, dict, list[dict]]:
@@ -46,7 +81,7 @@ def inputs() -> tuple[dict, dict, list[dict]]:
 
 def capture_spec(scene: dict) -> dict:
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b01-approved-audio-v1'},
+                               'capture_pipeline_revision': 'b01-explaining-motion-v2'},
             'initial_state': 'local-public-site' if scene['id'] == 'B01-001' else
                              'conceptual-process' if scene['id'] == 'B01-002' else 'local-service-home',
             'expected_state': 'approved B01 semantic visual', 'assertions': [],
@@ -57,7 +92,9 @@ async def prepare(page, scene: dict, base: str) -> None:
     scene_id = scene['id']
     if scene_id == 'B01-002':
         await page.goto(DIAGRAM.as_uri())
-        await page.wait_for_function('typeof window.setStage === "function"')
+        await page.wait_for_function('typeof window.configure === "function" && document.getElementById("nam-poputi").complete')
+        spec, approval, _ = inputs()
+        await page.evaluate('(schedule) => window.configure(schedule)', visual_schedule(scene, scene_timing(spec, scene, approval)))
     else:
         await login(page, base)
         if scene_id == 'B01-001':
@@ -67,10 +104,9 @@ async def prepare(page, scene: dict, base: str) -> None:
             await page.locator('a.service-link').evaluate('(el,url)=>el.href=url', base + '/')
             await page.evaluate('''() => {
               const title=document.createElement('div'); title.id='s11-b01-title';
-              title.textContent='Вступление';
-              title.style='position:fixed;left:38px;top:160px;z-index:2147483000;padding:25px 31px;'+
-                'border-radius:20px;background:rgba(255,255,255,.94);color:#123d61;'+
-                'font:700 54px/1.1 Arial,sans-serif;box-shadow:0 12px 40px #14345055;'+
+              title.textContent='01  /  Вступление';
+              title.style='position:fixed;left:78px;top:124px;z-index:2147483000;'+
+                'color:#fff;font:700 40px/1.1 Arial,sans-serif;text-shadow:0 2px 14px #102a4788;'+
                 'transition:opacity .5s;pointer-events:none';document.body.append(title);
             }''')
         else:
@@ -84,34 +120,27 @@ async def perform(page, scene: dict, base: str, cue) -> None:
     if scene['id'] == 'B01-001':
         await asyncio.sleep(3.8)
         await page.evaluate("document.getElementById('s11-b01-title').style.opacity='0'")
-        await director.highlight(page.locator('main'), 'На сайте Мэсэр собрана')
-        await cue('Для служащих')
+        await cue('в разделе «Для служащих»')
         await page.locator('a.service-link').click()
         await page.get_by_role('heading', name='Служебная страница').wait_for()
         # Same-tab navigation can leave the CDP screencast showing the old
         # compositor surface until another change. Force the ready UI frame now.
         await page.raw.screenshot()
         await page.evaluate("() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))")
-        await director.highlight(page.locator('.service-actions'), 'Google Диск')
+        await cue('Google Диск')
+        await director.aim(page.raw.locator('a[href="Google-Drive.html"]'))
+        await cue('Google Календарь')
+        await director.aim(page.raw.locator('a[href="Calendar.html"]'))
         await cue('Теперь к ним добавились')
         await director.aim(page.raw.locator('a[href="Audio-Editor.html"]'))
-        await asyncio.sleep(.8)
+        await cue('с записью и обработкой')
+        await director.wait_pending()
         await page.evaluate("window.__s11Capture.hide('context-change')")
     elif scene['id'] == 'B01-002':
-        for phrase, stage in [('Обычно после собрания', 'edit'),
-                              ('Для человека, знакомого', 'difficulty'),
-                              ('Кроме того, эта же запись', 'announcement'),
-                              ('При этом анонс-мейкеру', 'cost'),
-                              ('Учитывая недостатки', 'new')]:
+        await page.evaluate('window.startAnimation()')
+        for phrase in VISUAL_ANCHORS.values():
             await cue(phrase)
             await director.wait_pending()
-            await page.evaluate('name=>window.setStage(name)', stage)
-        await cue('Для анонс-мейкера появилась')
-        await director.wait_pending()
-        await page.evaluate("document.querySelector('[data-stage=new] .card:first-child').classList.add('accent')")
-        await cue('А для подготовки финальной')
-        await director.wait_pending()
-        await page.evaluate("document.querySelector('[data-stage=new] .card:last-child').style.boxShadow='0 18px 68px #167cc566'")
     elif scene['id'] == 'B01-003':
         # Arrive on the real menu item as the section is introduced, then open
         # it while its name is spoken. The generic click waits for the entire
@@ -138,7 +167,6 @@ async def perform(page, scene: dict, base: str, cue) -> None:
         await page.get_by_role('heading', name='Редактирование аудио').wait_for()
         await page.raw.screenshot()
         await page.evaluate('() => new Promise(r => requestAnimationFrame(() => requestAnimationFrame(r)))')
-        await director.highlight(page.locator('.editor-page-heading'))
         await page.evaluate("window.__s11Capture.hide('context-change')")
     else:
         raise RuntimeError('B01 capture contains an unexpected scene')

@@ -81,7 +81,7 @@ def main() -> None:
             print(json.dumps(result, ensure_ascii=False)); return
         if args.mode in ("visual", "assemble", "verify"):
             if args.module not in ("B01", "B02") or args.all_modules or args.scene or args.force:
-                raise RuntimeError("review gate: only approved B01 verification and B02 visual/assembly are authorized")
+                raise RuntimeError("review gate: only B01 visual revision and later B02 review are supported")
             if args.module == "B01":
                 validate_approval(spec, "B01")
                 if args.mode != "verify" and (ROOT / 'approvals/B01-block.json').exists():
@@ -106,8 +106,9 @@ def main() -> None:
             parser.error(str(error))
         if args.mode == "dry-run":
             print(json.dumps({"content_validation": result, **plan(spec, selected, args.force),
-                              "review_gate": "B02_BLOCK_PENDING",
-                              "approved_block": "B01", "visual_changes": "B02_ONLY"}, ensure_ascii=False, indent=2)); return
+                              "review_gate": "B01_VISUAL_REVIEW_PENDING",
+                              "approved_audio": "B01", "preserved_b02_audio": True,
+                              "visual_changes": "B01_ONLY_UNTIL_REAPPROVED"}, ensure_ascii=False, indent=2)); return
         if len(selected) != 1 or args.module != selected[0]["id"]:
             raise RuntimeError("review gate: select exactly one B-block for narration")
         module_id = selected[0]["id"]

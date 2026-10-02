@@ -120,15 +120,16 @@ class AudioBlockTests(unittest.TestCase):
                 build.main()
             provider.assert_not_called()
 
-    def test_b01_block_approval_is_exact_and_prevents_regeneration(self):
-        if not (ROOT / 'generated/b01-block-review/B01.mp4').is_file():
-            self.skipTest('approved B01 video is an ignored local review artifact')
-        block = validate_block_approval('B01')
-        self.assertEqual(block['video_sha256'], '90b1d7b28c67b623455b6d25da54184c9cf6cfa762a9935d2c091432994e3c51')
-        self.assertEqual(block['embedded_subtitle_cues'], 34)
-        with self.assertRaisesRegex(RuntimeError, 'approved and immutable'):
-            from b01_block import assemble
-            assemble()
+    def test_b01_prior_video_approval_is_historical_and_gate_is_closed(self):
+        history = ROOT / 'approvals/historical/B01-block-approved-2026-10-02.json'
+        old = json.loads(history.read_text())
+        self.assertEqual(old['video_sha256'], '90b1d7b28c67b623455b6d25da54184c9cf6cfa762a9935d2c091432994e3c51')
+        self.assertEqual(old['embedded_subtitle_cues'], 34)
+        state = json.loads((ROOT / 'approvals/B01-visual-review.json').read_text())
+        self.assertEqual(state['status'], 'VISUAL_CHANGES_REQUIRED')
+        self.assertEqual(state['approved_mp3_sha256'], '93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377')
+        with self.assertRaisesRegex(RuntimeError, 'complete block approval is required'):
+            validate_block_approval('B01')
 
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():
