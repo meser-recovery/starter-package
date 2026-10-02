@@ -12,6 +12,7 @@ import modules
 import build
 from audio_approval import scene_timing as approved_scene_timing, validate_approval, validate_block_approval
 from b01_block import check_embedded_subtitles
+from b03_block import pointer_pixels_in_mp4
 from content_model import approved_structure
 from validate import ContentDrift, ROOT, validate
 
@@ -183,6 +184,19 @@ class AudioBlockTests(unittest.TestCase):
                 result = check_embedded_subtitles(Path(folder) / 'candidate.mp4', srt, 'Первый. и «Спикерская».')
                 self.assertEqual(result['embedded_subtitle_cues'], 2)
                 self.assertEqual(result['last_embedded_subtitle_end_seconds'], 3.0)
+
+    def test_b03_rendered_clicks_reject_previous_candidate(self):
+        current = ROOT / 'generated/b03-block-review'
+        previous = current / 'history/pre-pointer-fix'
+        if not (current / 'B03.mp4').is_file() or not (previous / 'B03.mp4').is_file():
+            self.skipTest('large B03 review candidates are ignored local artifacts')
+        scene_start = 511 / 30
+        fixed_evidence = json.loads((current / 'scenes/B03-009.json').read_text())
+        checks = pointer_pixels_in_mp4(current / 'B03.mp4', fixed_evidence, scene_start)
+        self.assertEqual([row['status'] for row in checks], ['PASS', 'PASS'])
+        old_evidence = json.loads((previous / 'scenes/B03-009.json').read_text())
+        with self.assertRaisesRegex(RuntimeError, 'outside its rendered button in MP4'):
+            pointer_pixels_in_mp4(previous / 'B03.mp4', old_evidence, scene_start)
 
 
 if __name__ == "__main__":

@@ -30,6 +30,7 @@ RATE = 44100
 FPS = 30
 FRAME_BYTES = 1920 * 1080 * 3 // 2
 VARIANT = 'B03-review-01'
+PRESERVED_SCENE_008_SHA256 = '407dbe00a6b4136f99c65ed4205eddfb18a4c8756bff491e8bbcc3d4c3d9fb09'
 
 
 def inputs():
@@ -112,10 +113,11 @@ async def prepare(page, scene, base):
     else:
         await login(page, base)
         await create_archive(page, 'Пример записи собрания')
+        # Render the real 1536 × 864 viewport at 1920 × 1080. Scaling the
+        # captured frame scales the page, cursor and click ring together;
+        # CSS zoom on body scaled only the capture overlay a second time.
+        await page.set_viewport_size({'width': 1536, 'height': 864})
         await page.goto(base + '/Audio-Editor.html')
-        # Browser zoom preserves the real interface and its layout while making
-        # the source choices legible in the 1920 × 1080 tutorial frame.
-        await page.evaluate("document.body.style.zoom='1.25'")
         await page.locator('#source-session-mode-archive').wait_for(state='visible')
     await page.screenshot()
 
@@ -126,7 +128,10 @@ async def perform(page, scene, base, cue):
         return
     director = page.tutorial
     await cue('Аудиоархив')
-    await page.locator('#source-session-mode-archive').click()
+    # The whole choice tile is one HTML button, but the named action is its
+    # visible lower strip. Aim and click that strip so the pointer meets the
+    # words «Выбрать запись» shown to the viewer.
+    await page.locator('#source-session-mode-archive .source-choice__action').click()
     await page.locator('#source-session-list .source-session-item').first.wait_for(state='visible')
     await page.evaluate("window.__s11Capture.hide('modal-context')")
     await cue('воспользоваться ей')
@@ -148,9 +153,14 @@ async def visual():
             timing.update(visual_lead_seconds=LEAD_SECONDS if scene['id'] == SCENE_IDS[0] else 0.,
                           visual_source_sha256=source_identity(), strict_choreography=False)
             destination = OUT / 'scenes' / f"{scene['id']}.mp4"
-            evidence = await capture(capture_spec(scene), spec['narration'], base,
-                                     timing=timing, destination=destination,
-                                     prepare_scene=prepare, perform_scene=perform)
+            if scene['id'] == 'B03-008':
+                if sha(destination) != PRESERVED_SCENE_008_SHA256:
+                    raise RuntimeError('unchanged B03-008 scene differs from the first candidate')
+                evidence = json.loads(destination.with_suffix('.json').read_text())
+            else:
+                evidence = await capture(capture_spec(scene), spec['narration'], base,
+                                         timing=timing, destination=destination,
+                                         prepare_scene=prepare, perform_scene=perform)
             if evidence['browser_errors'] or evidence['production_mutation_requests']:
                 raise RuntimeError('B03 isolated scene capture failed')
             row = {'scene_id': scene['id'], 'visual': str(destination), 'sha256': sha(destination),
@@ -266,6 +276,87 @@ def assemble():
     return report
 
 
+def pointer_pixels_in_mp4(video: Path, scene_evidence: dict, scene_start: float,
+                          evidence_dir: Path | None = None) -> list[dict]:
+    """Locate the rendered click ring in decoded MP4 frames, not DOM space alone."""
+    events = scene_evidence['choreography']['events']
+    arrivals = [event for event in events if event['type'] == 'cursor-arrival']
+    clicks = [event for event in events if event['type'] == 'click']
+    viewport_width, viewport_height = scene_evidence['choreography']['overlay']['viewport']
+    if len(arrivals) != 2 or len(clicks) != 2:
+        raise RuntimeError('B03 must contain exactly two real source-selection clicks')
+
+    def sample(time_seconds: float, name: str | None = None) -> bytes:
+        command = ['ffmpeg', '-v', 'error', '-ss', f'{time_seconds:.6f}', '-i', str(video),
+                   '-frames:v', '1', '-f', 'image2pipe', '-vcodec', 'png', '-']
+        png = subprocess.check_output(command)
+        if name and evidence_dir:
+            (evidence_dir / name).write_bytes(png)
+        return png
+
+    def small_gray(time_seconds: float) -> bytes:
+        return subprocess.check_output(['ffmpeg', '-v', 'error', '-ss', f'{time_seconds:.6f}',
+                                        '-i', str(video), '-frames:v', '1', '-vf',
+                                        'scale=240:135:flags=area,format=gray',
+                                        '-f', 'rawvideo', '-'])
+
+    if evidence_dir:
+        evidence_dir.mkdir(parents=True, exist_ok=True)
+    checks = []
+    width, height = 960, 540
+    frame_size = width * height * 3
+    for index, (arrival, click) in enumerate(zip(arrivals, clicks), 1):
+        expected = arrival['box']
+        # CDP captures the whole 1536 × 864 viewport; FFmpeg scales it to
+        # 1920 × 1080. The same transform applies to UI, pointer and ring.
+        button = [expected['x'] * 1920 / viewport_width / 2,
+                  expected['y'] * 1080 / viewport_height / 2,
+                  (expected['x'] + expected['width']) * 1920 / viewport_width / 2,
+                  (expected['y'] + expected['height']) * 1080 / viewport_height / 2]
+        press = scene_start + click['seconds']
+        window_start = press - .3
+        rgb = subprocess.check_output(['ffmpeg', '-v', 'error', '-ss', f'{window_start:.6f}',
+                                       '-i', str(video), '-t', '0.9', '-vf',
+                                       'fps=30,scale=960:540,format=rgb24',
+                                       '-f', 'rawvideo', '-'])
+        strongest = (0, -1, None)
+        for frame_number in range(len(rgb) // frame_size):
+            frame = rgb[frame_number * frame_size:(frame_number + 1) * frame_size]
+            points = []
+            for y in range(height):
+                row = y * width * 3
+                for x in range(width):
+                    offset = row + x * 3
+                    red, green, blue = frame[offset:offset + 3]
+                    if (red >= 190 and 115 <= green <= 240 and blue <= 170
+                            and red > green + 8 and green > blue + 25):
+                        points.append((x, y))
+            if len(points) > strongest[0]:
+                strongest = (len(points), frame_number,
+                             [min(x for x, _ in points), min(y for _, y in points),
+                              max(x for x, _ in points), max(y for _, y in points)])
+        count, frame_number, ring = strongest
+        if count < 10 or ring is None or not (button[0] <= ring[0] <= ring[2] <= button[2]
+                                                and button[1] <= ring[1] <= ring[3] <= button[3]):
+            raise RuntimeError(f'B03 click {index} is outside its rendered button in MP4: '
+                               f'ring={ring}, button={button}, gold_pixels={count}')
+        ring_time = window_start + frame_number / FPS
+        before_time, after_time = ring_time - .35, ring_time + .65
+        before, after = small_gray(before_time), small_gray(after_time)
+        changed = sum(abs(a-b) >= 25 for a, b in zip(before, after)) / len(before)
+        if changed < .04:
+            raise RuntimeError(f'B03 click {index} did not change the rendered interface')
+        if evidence_dir:
+            for label, when in (('before', before_time), ('press', ring_time), ('after', after_time)):
+                sample(when, f'click-{index}-{label}.png')
+        checks.append({'click': index, 'button_box_half_resolution': button,
+                       'rendered_ring_box_half_resolution': ring,
+                       'ring_pixels': count, 'press_frame_seconds': ring_time,
+                       'before_frame_seconds': before_time, 'after_frame_seconds': after_time,
+                       'changed_pixel_fraction': changed, 'status': 'PASS'})
+    return checks
+
+
 def verify():
     spec,audio,scenes=inputs()
     report=json.loads((OUT/'report.json').read_text())
@@ -330,12 +421,17 @@ def verify():
             raise RuntimeError('B03 cursor remained visible after scene')
     if cursor_violations or (cue_errors and max(cue_errors)>.3):
         raise RuntimeError('B03 cursor lifecycle or cue synchronization failed')
+    scene_evidence = json.loads((OUT/'scenes/B03-009.json').read_text())
+    pointer_checks = pointer_pixels_in_mp4(video, scene_evidence,
+                                           report['scene_frame_counts']['B03-008']/FPS,
+                                           OUT/'qa-clicks')
     result={'status':'PASS','block_id':'B03','video_sha256':sha(video),
             'final_wav_sha256':audio['metadata']['wav_sha256'],'final_pcm_preserved_in_timeline':True,
             'aac_zero_lag_correlation':corr[0],'subtitle_cues':checked['embedded_subtitle_cues'],
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
             'subtitle_matches_canonical_text':True,'video_frames':frames,'blank_frames':0,'isolated_flash_frames':0,
             'cursor_violations':0,'max_visual_cue_error_seconds':max(cue_errors) if cue_errors else None,
+            'rendered_pointer_clicks':pointer_checks,
             'new_tts_requests':0,'production_mutation_requests':0}
     write_json(OUT/'verification.json',result)
     return result
