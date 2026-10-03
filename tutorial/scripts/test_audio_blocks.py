@@ -12,6 +12,7 @@ import modules
 import build
 from audio_approval import scene_timing as approved_scene_timing, validate_approval, validate_block_approval
 from b01_block import check_embedded_subtitles
+from b10_block import opening_scroll_pixels_in_mp4
 from b03_block import pointer_pixels_in_mp4
 from b04_block import pointer_check as b04_pointer_check
 from b05_block import pointer_pixels_in_mp4 as b05_pointer_check
@@ -137,6 +138,14 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(block['video_sha256'],
                          '5776bf60053d09fad28e0879119e5a9e41bf4daf294e72f411fb465dac2e10d0')
         self.assertEqual(block['embedded_subtitle_cues'], 36)
+
+    def test_b10_opening_scroll_rejects_prior_pre_scrolled_mp4(self):
+        history = ROOT / 'generated/b10-block-review/history/rejected-69ce928b/B10.mp4'
+        evidence = json.loads((ROOT / 'generated/b10-block-review/scenes/B10-035.json').read_text())
+        scroll = next(e for e in evidence['choreography']['events']
+                      if e['type'] == 'intentional-button-scroll')
+        with self.assertRaisesRegex(RuntimeError, 'does not show smooth opening scroll'):
+            opening_scroll_pixels_in_mp4(history, scroll)
 
     def test_b08_block_approval_pins_audio_alignment_and_subtitles(self):
         state = validate_block_approval('B08')

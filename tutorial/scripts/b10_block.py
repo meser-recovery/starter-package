@@ -33,6 +33,15 @@ FPS = 30
 FRAME_BYTES = 1920 * 1080 * 3 // 2
 VIEW_Y = 800
 START_Y = 500
+PRESERVED_SCENES = {
+    'B10-036': '6c2fb8c263e6848a8b35cf1887f3997998b3fe7a0f573db705acfa336fb886c9',
+    'B10-037': '8fd834f4490d2cb6f2d9a367ebacaaaa67ab29dc9164c67c90e318230e575f88',
+}
+PRESERVED_ASSETS = {
+    'B10.ru.srt': '09f4dcc78e9cc2cb325751a53fc3f59d4b14140c38201a0a37ed22069a599313',
+    'B10.ru.vtt': '37bc75179dc001e2975a80ef05da8c9b39bfd251c73e51e147d27b8cd8929e8c',
+    'B10-video-timeline.wav': '0b7a2fba7930a5505bbc6ab3a0fc2870e98be7bf62b5de916fa42e7d6096d725',
+}
 
 
 def inputs():
@@ -93,7 +102,7 @@ def scene_timing(spec, module, scene, timing, metadata, audio_duration):
 
 def capture_spec(scene):
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b10-stable-final-result-v1'},
+                               'capture_pipeline_revision': 'b10-top-to-render-v2' if scene['id']=='B10-035' else 'b10-stable-final-result-v1'},
             'initial_state': 'speaker-source-tracks', 'expected_state': 'B10 result action completed',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
@@ -111,8 +120,9 @@ async def assert_view(page, label, *, result, expected_y=VIEW_Y):
     if (state['scroll_x'] != 0 or abs(state['scroll_y'] - expected_y) > 1
             or state['viewport'] != [1728, 972]):
         raise RuntimeError(f'B10 {label} viewport moved: {state}')
-    if not state['render'] or not (0 < state['render']['y'] < 972):
-        raise RuntimeError(f'B10 {label} render button left frame: {state}')
+    if not state['render'] or (expected_y == 0 and state['render']['y'] < 972) or (
+            expected_y != 0 and not 0 < state['render']['y'] < 972):
+        raise RuntimeError(f'B10 {label} render button in wrong viewport position: {state}')
     if result:
         if not state['result_visible']:
             raise RuntimeError(f'B10 {label} result not visible')
@@ -125,6 +135,45 @@ async def assert_view(page, label, *, result, expected_y=VIEW_Y):
         page.tutorial.events.append({'type': 'stable-editor-view', 'seconds': page.tutorial.now(),
                                      'label': label, 'position': state})
     return state
+
+
+async def scroll_to_render(page):
+    """Show the edited project first, then move the real page to its render control."""
+    director = page.tutorial
+    await asyncio.sleep(max(0, 1.1-director.now()))
+    before = await page.evaluate('''() => ({scrollY:window.scrollY,
+      buttonY:document.querySelector('#speaker-editor-render').getBoundingClientRect().y,
+      cursorVisible:window.__s11Capture.audit().cursorVisible})''')
+    if before['scrollY'] != 0 or before['buttonY'] < 972 or before['cursorVisible']:
+        raise RuntimeError(f'B10 initial editor must be at the top with hidden cursor: {before}')
+    started = director.now()
+    motion = await page.evaluate('''async target => {
+      const from=window.scrollY,start=performance.now(),duration=1200,positions=[],cursorVisible=[];
+      await new Promise(resolve=>{
+        const step=now=>{
+          const p=Math.min(1,(now-start)/duration),e=p*p*(3-2*p);
+          window.scrollTo(0,from+(target-from)*e);
+          positions.push(Math.round(window.scrollY));
+          if(window.__s11Capture.audit().cursorVisible)cursorVisible.push(positions.length-1);
+          if(p<1)requestAnimationFrame(step);else resolve();
+        };requestAnimationFrame(step);
+      });
+      window.scrollTo(0,target);
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+      return {positions,cursorVisible};
+    }''', START_Y)
+    samples = motion['positions']
+    if (len(samples) < 20 or len(set(samples)) < 12 or samples[0] > 5
+            or samples[-1] != START_Y or any(b < a for a,b in zip(samples,samples[1:]))
+            or motion['cursorVisible']):
+        raise RuntimeError(f'B10 button scroll/cursor invalid: {motion}')
+    after = await assert_view(page, 'button reached', result=False, expected_y=START_Y)
+    if (after['render']['y'] < 400 or after['render']['y'] > 850
+            or await page.evaluate('window.__s11Capture.audit().cursorVisible')):
+        raise RuntimeError('B10 render button/cursor invalid after scroll')
+    director.events.append({'type':'intentional-button-scroll', 'start_seconds':started,
+                            'seconds':director.now(), 'from_y':0, 'to_y':START_Y,
+                            'sampled_scroll_positions':samples, 'cursor_visible_samples':0})
 
 
 async def scroll_to_result(page):
@@ -185,7 +234,7 @@ async def prepare(page, scene, base):
           arg=playback['paused_time_seconds'])
     # Only the scrollable canvas gains review headroom; the real controls,
     # waveform and result keep their native size and position relative to one another.
-    initial_y = START_Y if scene['id']=='B10-035' else VIEW_Y
+    initial_y = 0 if scene['id']=='B10-035' else VIEW_Y
     await page.evaluate(f"document.body.style.paddingBottom='600px';window.scrollTo(0,{initial_y})")
     await page.evaluate('async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}')
     await page.wait_for_timeout(300)
@@ -198,6 +247,7 @@ async def prepare(page, scene, base):
 async def perform(page, scene, base, cue):
     director = page.tutorial
     if scene['id'] == 'B10-035':
+        await scroll_to_render(page)
         await cue('Создать финальную версию')
         await page.locator('#speaker-editor-render').click()
         await page.locator('#speaker-editor-result').wait_for(state='visible', timeout=120000)
@@ -261,11 +311,24 @@ async def visual():
     spec, module, scenes, metadata, timing, _, duration = inputs()
     (OUT / 'scenes').mkdir(parents=True, exist_ok=True)
     recipe = '\n'.join(inspect.getsource(fn) for fn in
-                       (capture_spec, assert_view, scroll_to_result, assert_result, prepare, perform))
+                       (capture_spec, assert_view, scroll_to_render, scroll_to_result, assert_result, prepare, perform))
     identity = hashlib.sha256(recipe.encode()).hexdigest()
     rows = []
+    previous = json.loads((OUT/'visual-capture.json').read_text())
+    preserved = {row['scene_id']:row for row in previous['scenes']}
     with demo_server(None) as base:
         for scene in scenes:
+            if scene['id'] in PRESERVED_SCENES:
+                path = OUT/'scenes'/f"{scene['id']}.mp4"
+                row = preserved[scene['id']]
+                evidence = json.loads(path.with_suffix('.json').read_text())
+                if (sha(path) != PRESERVED_SCENES[scene['id']] or row['sha256'] != sha(path)
+                        or evidence['expected_state'] != 'PASS' or evidence['browser_errors']
+                        or evidence['production_mutation_requests']):
+                    raise RuntimeError(f"B10 approved visual continuation changed: {scene['id']}")
+                rows.append(row)
+                print(json.dumps({**row, 'cache':'PRESERVED'}, ensure_ascii=False), flush=True)
+                continue
             local = scene_timing(spec, module, scene, timing, metadata, duration)
             local.update(visual_lead_seconds=LEAD if scene['id'] == SCENE_IDS[0] else 0.,
                          visual_source_sha256=identity, strict_choreography=False)
@@ -426,11 +489,60 @@ def download_click_pixels_in_mp4(video, evidence, scene_start):
             'press_frame_seconds':start+best[1]/FPS}
 
 
+def opening_scroll_pixels_in_mp4(video, event):
+    """Measure the editor's vertical motion in decoded final MP4 frames."""
+    if ((event['from_y'], event['to_y']) != (0, START_Y)
+            or event['start_seconds'] < .6 or event['seconds'] > 3.5
+            or event['cursor_visible_samples'] != 0):
+        raise RuntimeError('B10 opening scroll evidence is invalid')
+    width,height,fps = 160,90,10
+    raw = subprocess.check_output(['ffmpeg','-v','error','-xerror','-i',str(video),
+                                   '-t',f"{event['seconds']+.8:.3f}",
+                                   '-vf',f'fps={fps},scale={width}:{height}:flags=area,format=gray',
+                                   '-f','rawvideo','-'])
+    frame_size = width*height
+    frames = [raw[i:i+frame_size] for i in range(0,len(raw),frame_size)]
+    if not frames or len(frames[-1]) != frame_size:
+        raise RuntimeError('B10 opening MP4 frames could not be decoded')
+    baseline = frames[round(max(.2,event['start_seconds']-.4)*fps)]
+    def shift(frame):
+        scores=[]
+        for distance in range(49):
+            score=0
+            for y in range(50,86,2):
+                a=y*width+25;b=(y-distance)*width+25
+                score+=sum(abs(baseline[a+x]-frame[b+x]) for x in range(0,105,2))
+            scores.append(score)
+        best=min(range(len(scores)), key=scores.__getitem__)
+        return best,scores[best]
+    start=round((event['start_seconds']-.2)*fps)
+    finish=round((event['seconds']+.2)*fps)
+    observations=[]
+    for i in range(start,finish+1):
+        distance,error=shift(frames[i])
+        observations.append({'seconds':i/fps,'vertical_shift_pixels':distance,
+                             'match_error':error})
+    offsets=[r['vertical_shift_pixels'] for r in observations]
+    middle=[r for r in observations if event['start_seconds']+.15 <= r['seconds'] <= event['seconds']-.15]
+    if (offsets[0] != 0 or not 44 <= offsets[-1] <= 48
+            or len({r['vertical_shift_pixels'] for r in middle}) < 4
+            or not any(8 <= r['vertical_shift_pixels'] <= 35 for r in middle)
+            or any(b<a-1 or b-a>10 for a,b in zip(offsets,offsets[1:]))
+            or max(r['match_error'] for r in observations) > 4500):
+        raise RuntimeError(f'B10 final MP4 does not show smooth opening scroll: {observations}')
+    return {'status':'PASS','source':'decoded final MP4','from_y':0,'to_y':START_Y,
+            'start_seconds':event['start_seconds'],'end_seconds':event['seconds'],
+            'sampled_frame_motion':observations,'cursor_hidden_during_scroll':True}
+
+
 def verify():
     spec,module,scenes,metadata,timing,pcm,_=inputs()
     report=json.loads((OUT/'report.json').read_text());video=OUT/'B10.mp4'
     if sha(video)!=report['video_sha256'] or report['final_wav_sha256']!=metadata['wav_sha256']:
         raise RuntimeError('B10 video or audio changed')
+    for name,digest in PRESERVED_ASSETS.items():
+        if sha(OUT/name)!=digest:
+            raise RuntimeError('B10 preserved audio/subtitle asset changed: '+name)
     with wave.open(str(OUT/'B10-video-timeline.wav')) as wav:
         timeline=wav.readframes(wav.getnframes())
     lead=round(LEAD*RATE)*2
@@ -472,14 +584,21 @@ def verify():
     flash=[i for i in range(1,frames-1) if abs(lum[i]-lum[i-1])>35 and abs(lum[i]-lum[i+1])>35 and abs(lum[i-1]-lum[i+1])<10]
     anomalies=visual_transition_anomalies(small)
     first_evidence=json.loads((OUT/'scenes/B10-035.json').read_text())
+    opening=[e for e in first_evidence['choreography']['events']
+             if e['type']=='intentional-button-scroll']
+    if len(opening)!=1:
+        raise RuntimeError('B10 opening scroll is missing')
+    opening_pixels=opening_scroll_pixels_in_mp4(video,opening[0])
     intentional=[e for e in first_evidence['choreography']['events']
                  if e['type']=='intentional-result-scroll']
     if len(intentional)!=1 or (intentional[0]['from_y'],intentional[0]['to_y'])!=(START_Y,VIEW_Y):
         raise RuntimeError('B10 intended result scroll was not recorded')
     scroll_end=intentional[0]['seconds']
+    scroll_windows=((opening[0]['start_seconds']-.2,opening[0]['seconds']+.2),
+                    (scroll_end-.9,scroll_end+.2))
     unexpected=[a for a in anomalies if not (a['type']=='clustered_screen_jumps'
-                and scroll_end-.9 <= a['start_seconds']
-                and a['end_seconds'] <= scroll_end+.2)]
+                and any(start<=a['start_seconds'] and a['end_seconds']<=end
+                        for start,end in scroll_windows))]
     if blank or flash or unexpected:
         raise RuntimeError(f'B10 blank/flash/return frames: {blank[:4]} / {flash[:4]} / {unexpected[:4]}')
     visual_report=json.loads((OUT/'visual-capture.json').read_text())
@@ -507,7 +626,7 @@ def verify():
                             pointer_pixels_in_mp4(video,evidence,elapsed,scene['id'],OUT/'qa-clicks'/scene['id']))
         elapsed+=report['scene_frame_counts'][scene['id']]/FPS
     if (len(pointers)!=2 or not playback or len(results)<3 or violations
-            or not view or any(abs(e['position']['scroll_y']-VIEW_Y)>1 for e in view)
+            or not view or any(abs(e['position']['scroll_y']-(START_Y if e['label']=='button reached' else VIEW_Y))>1 for e in view)
             or (cues and max(cues)>.35)):
         raise RuntimeError('B10 action, viewport or cue validation failed')
     result={'status':'PASS','block_id':'B10','video_sha256':sha(video),
@@ -516,6 +635,7 @@ def verify():
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
             'subtitle_matches_canonical_text':True,'video_frames':frames,
             'blank_frames':0,'isolated_flash_frames':0,'visual_transition_anomalies':unexpected,
+            'opening_scroll':opening_pixels,
             'intentional_result_scroll_seconds':{'start':scroll_end-.9,'end':scroll_end+.2},
             'rendered_pointer_clicks':pointers,'playback':playback,
             'result_statistics':results[-1]['statistics'],'archive_save_disabled':True,
