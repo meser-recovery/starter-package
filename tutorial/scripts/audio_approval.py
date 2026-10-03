@@ -83,6 +83,8 @@ def validate_approval(spec: dict, block_id: str) -> dict:
     record = json.loads(approved_path(block_id).read_text())
     if record['status'] != 'AUDIO_APPROVED' or record['block_id'] != block_id:
         raise RuntimeError(f'{block_id} has no valid AUDIO_APPROVED record')
+    if block_id == 'B09':
+        return validate_shortened_approval(spec, record)
     module = next(m for m in spec['narration_modules'] if m['id'] == block_id)
     approved, source = record['approved_take'], record['source']
     if digest(module['narration'].encode()) != approved['canonical_text_sha256']:
@@ -143,6 +145,65 @@ def validate_approval(spec: dict, block_id: str) -> dict:
             raise RuntimeError('approved insertion map differs from reviewed source')
     return {'record': record, 'timing': timing, 'wav_path': wav_path,
             'wav_duration_seconds': approved['pcm_samples'] / approved['pcm_sample_rate']}
+
+
+def validate_shortened_approval(spec: dict, record: dict) -> dict:
+    """B09's authorized sentence removal retains every other source PCM sample."""
+    module = next(m for m in spec['narration_modules'] if m['id'] == 'B09')
+    approved, source = record['approved_take'], record['source']
+    if digest(module['narration'].encode()) != approved['canonical_text_sha256']:
+        raise RuntimeError('B09 approval no longer matches canonical text')
+    checked_file(approved['mp3'], approved['mp3_sha256'])
+    wav_path = checked_file(approved['wav'], approved['wav_sha256'])
+    timing_path = checked_file(approved['alignment'], approved['alignment_sha256'])
+    source_mp3 = checked_file(source['mp3'], source['mp3_sha256'])
+    source_wav = checked_file(source['wav'], source['wav_sha256'])
+    checked_file(source['source_alignment'], source['source_alignment_sha256'])
+    metadata_ref = record['derivation_metadata']
+    metadata = json.loads(checked_file(metadata_ref['path'], metadata_ref['sha256']).read_text())
+    qa_ref = record['review_qa']
+    qa = json.loads(checked_file(qa_ref['path'], qa_ref['sha256']).read_text())
+    if qa['status'] != 'PASS':
+        raise RuntimeError('B09 review QA did not pass')
+    with wave.open(str(source_wav)) as wav:
+        if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) != (1, 2, 44100):
+            raise RuntimeError('B09 source WAV format changed')
+        source_pcm = wav.readframes(wav.getnframes())
+    if (digest(source_pcm) != source['decoded_pcm_sha256']
+            or len(source_pcm) // 2 != source['decoded_pcm_samples']):
+        raise RuntimeError('B09 source PCM changed')
+    decoded = subprocess.check_output(['ffmpeg', '-v', 'error', '-xerror', '-i', str(source_mp3),
+                                       '-map', '0:a:0', '-ac', '1', '-ar', '44100',
+                                       '-c:a', 'pcm_s16le', '-f', 's16le', '-'])
+    if decoded != source_pcm:
+        raise RuntimeError('B09 original provider MP3 changed')
+    with wave.open(str(wav_path)) as wav:
+        if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) != (1, 2, approved['pcm_sample_rate']):
+            raise RuntimeError('B09 approved WAV format changed')
+        pcm = wav.readframes(wav.getnframes())
+        samples = wav.getnframes()
+    if digest(pcm) != approved['pcm_sha256'] or samples != approved['pcm_samples']:
+        raise RuntimeError('B09 approved PCM changed')
+    cut_start, cut_end = record['deleted_source_sample_range']
+    if not (0 < cut_start < cut_end < len(source_pcm) // 2):
+        raise RuntimeError('B09 approved deletion range invalid')
+    if (metadata['cut_source_sample_range'] != [cut_start, cut_end]
+            or metadata['final_pcm_sha256'] != approved['pcm_sha256']
+            or metadata['wav_sha256'] != approved['wav_sha256']
+            or metadata['timing_sha256'] != approved['alignment_sha256']
+            or not metadata['source_pcm_recovered_exactly']
+            or metadata['new_tts_requests'] != 0
+            or metadata['speed_pitch_gain_processing']):
+        raise RuntimeError('B09 deletion provenance differs from approval')
+    if pcm != source_pcm[:cut_start * 2] + source_pcm[cut_end * 2:]:
+        raise RuntimeError('B09 retained source PCM changed')
+    timing = json.loads(timing_path.read_text())
+    if timing != map_timing(spec, module, timing['alignment'], timing['duration_seconds']):
+        raise RuntimeError('B09 approved alignment invalid')
+    if abs(timing['duration_seconds'] - samples / approved['pcm_sample_rate']) > .000001:
+        raise RuntimeError('B09 approved alignment duration changed')
+    return {'record': record, 'timing': timing, 'wav_path': wav_path,
+            'wav_duration_seconds': samples / approved['pcm_sample_rate']}
 
 
 def scene_timing(spec: dict, scene: dict, approval: dict) -> dict:

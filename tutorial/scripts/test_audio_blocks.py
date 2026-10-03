@@ -119,11 +119,24 @@ class AudioBlockTests(unittest.TestCase):
             modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
         self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
 
-    def test_audio_review_gate_rejects_b10_before_provider_call(self):
-        with patch("sys.argv", ["build.py", "narration", "--module", "B10"]), patch.object(build, "generate") as provider:
+    def test_audio_review_gate_rejects_b11_before_provider_call(self):
+        with patch("sys.argv", ["build.py", "narration", "--module", "B11"]), patch.object(build, "generate") as provider:
             with self.assertRaisesRegex(RuntimeError, "complete block approval"):
                 build.main()
             provider.assert_not_called()
+
+    def test_b09_shortened_take_and_block_approval_are_exact(self):
+        audio = validate_approval(self.spec, 'B09')['record']
+        block = validate_block_approval('B09')
+        self.assertEqual(audio['status'], 'AUDIO_APPROVED')
+        self.assertEqual(audio['approved_take']['mp3_sha256'],
+                         '4ab57ad66510b260e565d8ec5187631e8e2977d82e22824f148af5af27313750')
+        self.assertEqual(audio['approved_take']['alignment_sha256'],
+                         'c7991291bae2f4f7b54141f9c43af8fc1e39443179f356bbdc4184cff34ee247')
+        self.assertEqual(block['status'], 'BLOCK_APPROVED')
+        self.assertEqual(block['video_sha256'],
+                         '5776bf60053d09fad28e0879119e5a9e41bf4daf294e72f411fb465dac2e10d0')
+        self.assertEqual(block['embedded_subtitle_cues'], 36)
 
     def test_b08_block_approval_pins_audio_alignment_and_subtitles(self):
         state = validate_block_approval('B08')
