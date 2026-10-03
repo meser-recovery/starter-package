@@ -1,0 +1,105 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B11",
+  "decision_date": "2026-10-03",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B11/B11-review-01.mp3",
+    "mp3_sha256": "13baf74c3880f7178dafda4ca011cf74cb76e609ed39a5d859a25a8779399431",
+    "mp3_duration_seconds": 106.945306,
+    "wav": "generated/narration-blocks-v2/B11/B11-review-01.wav",
+    "wav_sha256": "eec4f43eb693aa90e4d76a8fcb05396f8bd957b244a62e856fd25bd3c1b0f80a",
+    "pcm_sha256": "94060fc7c7e04086a78767d0064d185e9b1132c02fcd760159a4fbb9aa811045",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 4715040,
+    "alignment": "generated/narration-blocks-v2/B11/B11-review-01-timing.json",
+    "alignment_sha256": "39dea9457fbc05e720d515029fbc783c4a93ee86b5c9825f09c0341a72a5854d",
+    "canonical_text_sha256": "75d1b71a047ff0ffc66ad58c1c3894d9521f1f956f9455f68517a61c02cd3475"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B11/narration.mp3",
+    "mp3_sha256": "a2bd294b9b1971fe0e8abc98cbb9abb14906af19fa1f60d3f8f4ef2a39a130de",
+    "source_alignment": "generated/narration-blocks-v2/B11/B11-review-01-source-timing.json",
+    "source_alignment_sha256": "6514fe39e9b200b88e8377895aba1c1618d44b872d540e662ad0b9d139762a84",
+    "decoded_pcm_sha256": "2802588b5989f064d7c65faac64c047d067a79ce40c059d951920877c6d0f124",
+    "decoded_pcm_samples": 4618152
+  },
+  "insertions": [
+    {
+      "after_offset": 207,
+      "reason": "Локальная обработка без Архива объяснена; далее начинается объяснение пользы хранения и передачи работы.",
+      "quiet_start_source_sample": 578270,
+      "quiet_end_source_sample": 597354,
+      "cut_source_sample": 587812,
+      "insert_start_final_sample": 587812,
+      "added_samples": 13991,
+      "before_seconds": 0.4327437641723356,
+      "added_seconds": 0.3172562358276644,
+      "after_seconds": 0.75
+    },
+    {
+      "after_offset": 480,
+      "reason": "Назначение Архива описано; далее начинается пример передачи работы между служащими.",
+      "quiet_start_source_sample": 1342405,
+      "quiet_end_source_sample": 1354872,
+      "cut_source_sample": 1348638,
+      "insert_start_final_sample": 1362629,
+      "added_samples": 22813,
+      "before_seconds": 0.28269841269841267,
+      "added_seconds": 0.5173015873015873,
+      "after_seconds": 0.8
+    },
+    {
+      "after_offset": 917,
+      "reason": "Пример передачи записи другому служащему завершён; далее начинается отдельный пример работы с другого устройства.",
+      "quiet_start_source_sample": 2471710,
+      "quiet_end_source_sample": 2485876,
+      "cut_source_sample": 2478793,
+      "insert_start_final_sample": 2515597,
+      "added_samples": 18909,
+      "before_seconds": 0.3212244897959184,
+      "added_seconds": 0.4287755102040816,
+      "after_seconds": 0.75
+    },
+    {
+      "after_offset": 1070,
+      "reason": "Оба сценария пользы Архива показаны; далее начинается последовательность создания записи.",
+      "quiet_start_source_sample": 2879938,
+      "quiet_end_source_sample": 2893865,
+      "cut_source_sample": 2886901,
+      "insert_start_final_sample": 2942614,
+      "added_samples": 21353,
+      "before_seconds": 0.3158049886621315,
+      "added_seconds": 0.48419501133786846,
+      "after_seconds": 0.8
+    },
+    {
+      "after_offset": 1587,
+      "reason": "Проверка выбранных файлов и размера завершена; далее выполняется сохранение записи.",
+      "quiet_start_source_sample": 4268653,
+      "quiet_end_source_sample": 4281906,
+      "cut_source_sample": 4275318,
+      "insert_start_final_sample": 4352384,
+      "added_samples": 19822,
+      "before_seconds": 0.3005215419501134,
+      "added_seconds": 0.4494784580498866,
+      "after_seconds": 0.75
+    }
+  ],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved audio. Build from this WAV and alignment.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B11/B11-review-01-metadata.json",
+    "sha256": "f746b1fdc3d2ed0e92641dc7e8948e458e9371b932145626105d9293db880b81"
+  },
+  "pause_review_qa": {
+    "path": "generated/b11-block-review/verification.json",
+    "sha256": "e261cd4380e917c39a008c6e86b9dad4e7c1bf54fe63501b2931fe14f115b877"
+  }
+}

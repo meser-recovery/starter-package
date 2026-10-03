@@ -1,6 +1,6 @@
 # B11 · Аудиоархив
 
-Status: **READY FOR B11 BLOCK REVIEW**. Scenes 038–041 follow the current Canonical Content Pack. B01–B10 remain approved and unchanged; B12–B14 are gated.
+Status: **AUDIO_APPROVED / BLOCK_APPROVED**. The user approved the exact MP4 SHA-256 `ce69f239312b0a2daec9117c133b78c86c9615b34423eb00d666470da3b4c9a5`. Scenes 038–041 follow the current Canonical Content Pack. The pinned audio, video, alignment, subtitles, and scene identities are in `approvals/B11-audio.json` and `approvals/B11-block.json`. B01–B11 remain approved and unchanged; B12 is in review, and B13–B14 are gated.
 
 The entire block was synthesized in **one continuous ElevenLabs request**: voice `LHi3adMlU7AICv8Yxpmm`, model `eleven_v3`, language `ru`, stability `0.5`, format `mp3_44100_128`, delivery prefix `[calm] [conversational] [slowly]`. The exact request and provider alignment are retained under `generated/narration-blocks-v2/B11/`. Original provider MP3 SHA-256: `a2bd294b9b1971fe0e8abc98cbb9abb14906af19fa1f60d3f8f4ef2a39a130de`; original alignment SHA-256: `6514fe39e9b200b88e8377895aba1c1618d44b872d540e662ad0b9d139762a84`.
 
