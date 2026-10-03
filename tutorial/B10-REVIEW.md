@@ -1,6 +1,6 @@
 # B10 · создание финальной версии
 
-Status: **READY FOR B10 BLOCK REVIEW**. Scenes 035–037 use the current Canonical Content Pack without changing its text or punctuation. B01–B09 remain approved and unchanged; B11–B14 are gated.
+Status: **AUDIO_APPROVED · BLOCK_APPROVED**. The user accepted the corrected MP4 with SHA-256 `32376f595a1e1e937341e26827698a3a9a416a1edc8c72b0b74a1dcf835bf58c`. `approvals/B10-audio.json` and `approvals/B10-block.json` pin the exact MP3, WAV/PCM, alignment, SRT/VTT, embedded cues and scene sources. Scenes 035–037 use the current Canonical Content Pack without changing its text or punctuation. B01–B10 are immutable; B11 is in review and later blocks remain gated.
 
 The block was synthesized in **one continuous ElevenLabs request** with voice `LHi3adMlU7AICv8Yxpmm`, model `eleven_v3`, language `ru`, stability `0.5`, format `mp3_44100_128` and opening delivery tag `[slowly]`. The provider MP3 is retained at `generated/narration-blocks-v2/B10/narration.mp3`, SHA-256 `e5b4cee8b3cfef3ed7d3c111832a1cac7ed1684221e6cae5fa38715bb8f5ccf2`. Its original alignment SHA-256 is `d54dae235d018dc6950c8e6b3752c3b7046148a6ad7763beb53df267d38cffb6`. No PCM silence was inserted and no speech speed, pitch or gain processing was applied. The decoded WAV/PCM are preserved under `generated/narration-blocks-v2/B10/` with SHA-256 `7210b5ca96f3c609aa2b41a552fef0e0dab70cbf78de98ed67b0a8d4cff7eac8` / `927bef4345f5fcece120d9b856739d43775a422e57c06a1e3bd3ed4ca46de78e`.
 
