@@ -9,7 +9,7 @@ from pathlib import Path
 from content_model import approved_structure
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_PACK_SHA256 = "6b95f795fdf033b06364a5d691b11f91a90f6c98cded157354d62cad4590ea4a"
+APPROVED_PACK_SHA256 = "4cfe5755e714671af42c1301b516be251b4fe66384b710d78fd7c33a098c5dfe"
 
 
 class ContentDrift(ValueError):

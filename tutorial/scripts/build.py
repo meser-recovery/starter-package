@@ -140,13 +140,21 @@ def main() -> None:
         except ValueError as error:
             parser.error(str(error))
         if args.mode == "dry-run":
-            print(json.dumps({"content_validation": result, **plan(spec, selected, args.force),
+            preview = plan(spec, selected, args.force)
+            if args.module == 'B09':
+                row = next(item for item in preview['modules'] if item['module_id'] == 'B09')
+                preview['tts_requests'] -= row['tts_requests']
+                preview['characters_to_generate'] -= row['characters_to_generate']
+                row.update(cache='DERIVED_PCM_CUT', tts_requests=0, characters_to_generate=0)
+            print(json.dumps({"content_validation": result, **preview,
                               "review_gate": "B01_TO_B08_BLOCK_APPROVED_B09_VISUAL_REVIEW",
                               "approved_audio": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08"],
                               "visual_changes": "B09_ONLY_UNTIL_APPROVED"}, ensure_ascii=False, indent=2)); return
         if len(selected) != 1 or args.module != selected[0]["id"]:
             raise RuntimeError("review gate: select exactly one B-block for narration")
         module_id = selected[0]["id"]
+        if module_id == 'B09':
+            raise RuntimeError('B09 uses the existing TTS with the approved PCM sentence removal; no new TTS is needed')
         if approved_path(module_id).exists():
             validate_approval(spec, module_id)
             raise RuntimeError(f"{module_id} audio is approved and immutable; TTS is forbidden")

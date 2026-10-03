@@ -189,8 +189,6 @@
 
 После создания выреза или участка тишины его границы можно изменить прямо на временной шкале, захватив соответствующий край выделения.
 
-Если требуется более точное редактирование, точные значения границ можно также указать вручную с помощью числовых полей.
-
 Чтобы отменить вырез или тишину, нужно сперва выбрать соответствующий выделенный фрагмент. При этом кнопка «Вырезать» становится кнопкой «Снять вырез», а кнопка «Тишина» — кнопкой «Снять тишину», в зависимости от того, какой фрагмент был выбран.
 
 После нажатия соответствующей кнопки эта правка снимается.
@@ -430,7 +428,7 @@
 
 Нарратив: от «Теперь перейдём непосредственно к монтажу записи» до «…снова применить отменённое изменение».
 
-Визуал: только реальный UI. Tool-first механика «Вырезать» / «Тишина»; draggable «Начало» / «Конец»; drag края существующего региона; numeric редактирование существующей правки через «Правки» + «Применить границы»; «Снять вырез» / «Снять тишину»; Undo / Redo. Capture начинается только после полной инициализации приложения.
+Визуал: только реальный UI. Tool-first механика «Вырезать» / «Тишина»; draggable «Начало» / «Конец»; drag края существующего региона; выбор выделенного фрагмента и «Снять вырез» / «Снять тишину»; Undo / Redo. Capture начинается только после полной инициализации приложения.
 
 ## B10 · Создаём финальную версию
 
@@ -476,7 +474,7 @@
 - B06: 015 run processing; 016 common-silence animation; 017 real result/reprocess; 018 download/archive-save affordances.
 - B07: 019 open Speaker; 020 enhancement/leveling/compression; 021 Solo/Mute; 022 exclude/restore mix.
 - B08: 023 color/order; 024 fullscreen; 025 time zoom/Fit; 026 height compact/expanded visibility; 027 Follow/Loop.
-- B09: 028 tool-first global cut; 029 tool-first track silence; 030 draggable start/end boundaries; 031 drag existing region edge; 032 numeric existing-region edit; 033 restore cut/silence; 034 Undo/Redo.
+- B09: 028 tool-first global cut; 029 tool-first track silence; 030 draggable start/end boundaries; 031 drag existing region edge; 032 recording and region boundary drags; 033 select an edited region; 034 restore cut/silence and Undo/Redo.
 - B10: 035 render final; 036 result/stats; 037 listen/download/archive prerequisite.
 - B11: 038 archive role overlay; 039 create metadata; 040 add/replace files; 041 save record.
 - B12: 042 save local record to archive; 043 archive workflow section; 044 announcement/speaker actions; 045 real archive↔editor navigation.
@@ -507,7 +505,7 @@
 3. Направляющий акцент применяется только для поиска цели среди других элементов или различения похожих. Для конкретного control достаточно одного уместного средства: аккуратного подъезда курсора, локальной подсветки, приближения участка либо приглушения окружения. Сохраняется контекст элемента. Не обводить весь сайт, экран, большую панель или уже очевидный объект; section outline не является действием по умолчанию.
 4. Действие происходит только после arrival + dwell; после действия оставляется visual hold для чтения результата.
 5. B08 compact-height проверяется визуально/screenshot QA: нижние controls и индикаторы должны реально исчезнуть из кадра и вернуться после увеличения высоты.
-6. B09 numeric editing существующей правки выполняется через реальный список «Правки» и кнопку «Применить границы».
+6. B09 после перетаскивания края сразу показывает выбор участка и снятие правки. Числовое редактирование в ролике не демонстрируется; возможность в приложении сохраняется.
 7. B09 «Начало» / «Конец» показываются draggable boundary markers; не использовать старую механику selection + set-start/set-end как основную демонстрацию.
 8. Не показывать случайные initialization/loading frames; capture starts only from stable intended state.
 9. Production Archive mutations = 0; все демонстрационные данные synthetic/loopback.

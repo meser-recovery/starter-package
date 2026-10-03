@@ -17,14 +17,14 @@ from audio_approval import validate_block_approval
 from b01_block import check_embedded_subtitles, timestamp
 from browser_capture import capture
 from build import demo_server
-from modules import cached, map_timing, request_text_and_indices, sha, write_json
+from modules import map_timing, request_text_and_indices, sha, write_json
+from b09_shorten import prepare as prepare_short_audio, VARIANT
 from scenes import import_local, login
 from validate import ROOT, validate
 
 OUT = ROOT / 'generated/b09-block-review'
 AUDIO = ROOT / 'generated/narration-blocks-v2/B09'
 SCENE_IDS = ('B09-028', 'B09-029', 'B09-030', 'B09-031', 'B09-032', 'B09-033', 'B09-034')
-VARIANT = 'B09-review-01'
 LEAD = .6
 RATE = 44100
 FPS = 30
@@ -36,31 +36,22 @@ def inputs():
     validate_block_approval('B07')
     spec = json.loads((ROOT / 'tutorial.yaml').read_text())
     module = next(m for m in spec['narration_modules'] if m['id'] == 'B09')
-    hit = cached(spec, module)
-    if not hit:
-        raise RuntimeError('B09 one-request narration is missing or stale')
-    metadata = json.loads((AUDIO / f'{VARIANT}-metadata.json').read_text())
-    review = json.loads((AUDIO / 'B09-review-map.json').read_text())
-    if (review['status'], review['block_id'], review['variant_id']) != ('SEMANTIC_REVIEWED', 'B09', 'review-01'):
-        raise RuntimeError('B09 semantic review map invalid')
+    metadata, timing, pcm = prepare_short_audio(spec, module)
     for path, digest in ((AUDIO / 'narration.mp3', metadata['source_mp3_sha256']),
-                         (AUDIO / f'{VARIANT}.mp3', metadata['mp3_sha256']),
                          (AUDIO / f'{VARIANT}.wav', metadata['wav_sha256']),
                          (AUDIO / f'{VARIANT}-timing.json', metadata['timing_sha256'])):
         if sha(path) != digest:
-            raise RuntimeError('B09 reviewed audio source changed: ' + str(path))
-    if (metadata['source_mp3_sha256'] != hit['metadata']['audio_sha256']
-            or metadata['new_tts_requests'] or metadata['speed_pitch_gain_processing']
-            or not metadata['source_pcm_recovered_exactly'] or metadata['events']):
-        raise RuntimeError('B09 review must preserve the one unmodified source take')
+            raise RuntimeError('B09 shortened audio source changed: ' + str(path))
+    if (metadata['new_tts_requests'] or metadata['speed_pitch_gain_processing']
+            or not metadata['source_pcm_recovered_exactly']):
+        raise RuntimeError('B09 shorter take must preserve all retained source PCM')
     with wave.open(str(AUDIO / f'{VARIANT}.wav')) as wav:
         if (wav.getnchannels(), wav.getsampwidth(), wav.getframerate()) != (1, 2, RATE):
             raise RuntimeError('B09 WAV format invalid')
         pcm = wav.readframes(wav.getnframes())
         duration = wav.getnframes() / RATE
     if hashlib.sha256(pcm).hexdigest() != metadata['final_pcm_sha256']:
-        raise RuntimeError('B09 PCM source changed')
-    timing = json.loads((AUDIO / f'{VARIANT}-timing.json').read_text())
+        raise RuntimeError('B09 shortened PCM differs from saved WAV')
     if timing != map_timing(spec, module, timing['alignment'], timing['duration_seconds']):
         raise RuntimeError('B09 alignment no longer maps to canonical text')
     scenes = [s for s in spec['scenes'] if s['id'] in SCENE_IDS]
@@ -88,7 +79,7 @@ def scene_timing(spec, module, scene, timing, metadata, audio_duration):
 
 def capture_spec(scene):
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b09-stable-region-view-v2'},
+                               'capture_pipeline_revision': 'b09-sentence-removal-v3'},
             'initial_state': 'speaker-source-tracks', 'expected_state': 'B09 explained action completed',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
@@ -135,68 +126,26 @@ async def raw_seed_edge(page, locator, delta_seconds):
     await page.mouse.up()
 
 
-async def raw_seed_numeric(page, key, edge, value):
-    region = inner_regions(await payload(page), key)[0]
-    row = page.locator(f'#speaker-editor-regions .speaker-region-row[data-region-id="{region["regionId"]}"]')
-    field = row.locator('input').nth(0 if edge == 'start' else 1)
-    await field.fill(str(value))
-    await row.get_by_role('button', name='Применить границы').click()
-    updated = inner_regions(await payload(page), key)[0]
-    if abs(updated[edge+'Seconds']-value) > .001:
-        raise RuntimeError('B09 seed numeric update did not commit')
-
-
-async def region_view(page, *, top=408, animate=False):
-    # The real region table extends below and to the right of the editor at
-    # this viewport. Move its native scroll containers once, then hold both
-    # offsets while the viewer sees the waveform and the numeric fields.
-    await page.evaluate("window.__s11Capture?.hide('region-view-transition')")
-    await page.evaluate('''async ({animate,top}) => {
-      const editor=document.querySelector('#speaker-editor');
-      const x0=editor.scrollLeft,y0=window.scrollY,x1=392,y1=top;
-      if(animate){
-        const duration=620,start=performance.now();
-        await new Promise(resolve=>{
-          const step=now=>{
-            const p=Math.min(1,(now-start)/duration),e=p*p*(3-2*p);
-            editor.scrollLeft=x0+(x1-x0)*e;
-            window.scrollTo(0,y0+(y1-y0)*e);
-            if(p<1)requestAnimationFrame(step);else resolve();
-          };requestAnimationFrame(step);
-        });
-      }
-      editor.scrollLeft=x1;window.scrollTo(0,y1);
-      window.__b09ReviewTop=y1;
-      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
-    }''',{'animate':animate,'top':top})
-    return await assert_region_view(page,'settled')
-
-
-async def assert_region_view(page,label):
+async def assert_normal_view(page,label):
     position=await page.evaluate('''() => {
       const editor=document.querySelector('#speaker-editor');
       const rect=s=>{const r=document.querySelector(s)?.getBoundingClientRect();return r&&{x:r.x,y:r.y,width:r.width,height:r.height}};
       return {window_x:window.scrollX,window_y:window.scrollY,editor_x:editor.scrollLeft,
-        expected_y:window.__b09ReviewTop,
         viewport:[window.innerWidth,window.innerHeight],
-        cut_field:rect('#speaker-editor-regions .speaker-region-row--cut input:nth-of-type(2)'),
-        silence_field:rect('#speaker-editor-regions .speaker-region-row--silence input:nth-of-type(1)'),
+        cut_button:rect('#speaker-editor-add-cut'),silence_button:rect('#speaker-editor-add-silence'),
+        undo_button:rect('#speaker-editor-undo'),redo_button:rect('#speaker-editor-redo'),
         translator_wave:rect('#speaker-editor-tracks .speaker-track:nth-child(2) .speaker-waveform')};
     }''')
-    if (position['window_x']!=0 or abs(position['window_y']-position['expected_y'])>1
-            or abs(position['editor_x']-392)>1 or position['viewport']!=[1728,972]):
-        raise RuntimeError(f'B09 {label} capture view drifted: {position}')
-    if position['expected_y']==408:
-        for name in ('cut_field','silence_field'):
-            box=position[name]
-            if box and not (0<=box['x'] and box['x']+box['width']<=1728
-                            and 0<=box['y'] and box['y']+box['height']<=972):
-                raise RuntimeError(f'B09 {label} {name} left the frame: {box}')
-    wave=position['translator_wave']
-    if not wave or not (0<=wave['y'] and wave['y']+wave['height']<=972):
-        raise RuntimeError(f'B09 {label} corresponding waveform left the frame: {wave}')
+    if (position['window_x']!=0 or position['window_y']!=0
+            or position['editor_x']!=0 or position['viewport']!=[1728,972]):
+        raise RuntimeError(f'B09 {label} normal editor view drifted: {position}')
+    for name in ('cut_button','silence_button','undo_button','redo_button','translator_wave'):
+        box=position[name]
+        if not box or not (0<=box['x'] and box['x']+box['width']<=1728
+                           and 0<=box['y'] and box['y']+box['height']<=972):
+            raise RuntimeError(f'B09 {label} {name} left the frame: {box}')
     if hasattr(page,'tutorial'):
-        page.tutorial.events.append({'type':'region-view-stable','seconds':page.tutorial.now(),
+        page.tutorial.events.append({'type':'normal-view-stable','seconds':page.tutorial.now(),
                                      'label':label,'position':position})
     return position
 
@@ -206,8 +155,7 @@ async def prepare(page, scene, base):
     await login(page,base)
     await import_local(page,base,'speaker')
     await page.wait_for_function("document.querySelectorAll('#speaker-editor-tracks .speaker-track canvas').length===4 && !document.querySelector('#speaker-editor-tracks .speaker-source-pending')",timeout=60000)
-    # Capture-only: native focus and changing region controls must not pull a
-    # settled viewport away from the demonstrated waveform and numeric fields.
+    # Capture-only: focus changes must not pull the settled editor viewport.
     await page.add_style_tag(content='* { overflow-anchor: none !important; }')
     await page.locator('#speaker-editor-scale-mode').click()
     await page.locator('#speaker-editor-zoom').fill('168')
@@ -231,17 +179,13 @@ async def prepare(page, scene, base):
         silence=inner_regions(await payload(page),'trackSilenceRegions')[0]
         await raw_seed_edge(page,track(page,'Переводчик 1.wav').locator(f'[data-region-id="{silence["regionId"]}"] [data-edge=end]'),.4)
     if scene_id == 'B09-034':
-        await page.locator('.speaker-regions > summary').click()
-    if scene_id == 'B09-034':
-        await raw_seed_numeric(page,'globalCuts','end',6.3)
-        await raw_seed_numeric(page,'trackSilenceRegions','start',9.1)
         cut=inner_regions(await payload(page),'globalCuts')[0]
         await track(page,'Спикер.wav').locator(f'[data-region-id="{cut["regionId"]}"]').first.click()
         if await page.locator('#speaker-editor-add-cut').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 selected cut not seeded')
     await page.locator('#speaker-editor-tracks .speaker-track').first.scroll_into_view_if_needed()
-    if scene_id=='B09-034':
-        await region_view(page)
+    if scene_id in ('B09-032','B09-033','B09-034'):
+        await assert_normal_view(page,'prepared')
     await page.evaluate('async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}')
     await page.wait_for_timeout(350)
 
@@ -374,61 +318,45 @@ async def perform(page,scene,base,cue):
         data=await payload(page)
         if len(data['globalCuts'])!=3 or len(inner_regions(data,'trackSilenceRegions'))!=1:
             raise RuntimeError('B09 final marker/edge edit count invalid')
+        await assert_normal_view(page,'boundary drags complete')
         await page.evaluate("window.__s11Capture.hide('edge-edits-complete')")
     elif scene_id=='B09-033':
-        await cue('требуется более')
-        await page.locator('.speaker-regions > summary').click()
-        await region_view(page,animate=True)
-        cut=inner_regions(await payload(page),'globalCuts')[0]
-        row=page.locator(f'#speaker-editor-regions .speaker-region-row[data-region-id="{cut["regionId"]}"]')
-        await cue('точные значения границ')
-        await row.locator('input').nth(1).fill('6.3')
-        await row.get_by_role('button', name='Применить границы').click()
-        await assert_region_view(page,'cut numeric edit')
-        silence=inner_regions(await payload(page),'trackSilenceRegions')[0]
-        row=page.locator(f'#speaker-editor-regions .speaker-region-row[data-region-id="{silence["regionId"]}"]')
-        await row.locator('input').nth(0).fill('9.1')
-        await row.get_by_role('button', name='Применить границы').click()
-        await assert_region_view(page,'silence numeric edit')
-        data=await payload(page)
-        if abs(inner_regions(data,'globalCuts')[0]['endSeconds']-6.3)>.001 or abs(inner_regions(data,'trackSilenceRegions')[0]['startSeconds']-9.1)>.001:
-            raise RuntimeError('B09 numeric region changes did not commit: '+str((inner_regions(data,'globalCuts'),inner_regions(data,'trackSilenceRegions'))))
         await cue('сперва выбрать')
-        cut=inner_regions(data,'globalCuts')[0]
+        cut=inner_regions(await payload(page),'globalCuts')[0]
         await stable_region_click(page,track(page,'Переводчик 2.wav').locator(f'[data-region-id="{cut["regionId"]}"]').first)
         if await page.locator('#speaker-editor-add-cut').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 cut selection did not expose restore action')
-        await assert_region_view(page,'cut selected')
+        await assert_normal_view(page,'cut selected')
         await page.evaluate("window.__s11Capture.hide('selected-cut')")
     elif scene_id=='B09-034':
-        await region_view(page,top=300,animate=True)
+        await assert_normal_view(page,'restore buttons visible')
         if await page.locator('#speaker-editor-add-cut').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 cut restore action missing at scene start')
         await cue('«Снять вырез»')
         await page.locator('#speaker-editor-add-cut').click()
         if inner_regions(await payload(page),'globalCuts'):
             raise RuntimeError('B09 selected cut was not removed')
-        await assert_region_view(page,'cut removed')
+        await assert_normal_view(page,'cut removed')
         silence=inner_regions(await payload(page),'trackSilenceRegions')[0]
         await stable_region_click(page,track(page,'Переводчик 1.wav').locator(f'[data-region-id="{silence["regionId"]}"]').first)
         if await page.locator('#speaker-editor-add-silence').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 selected silence did not expose restore action')
-        await assert_region_view(page,'silence selected')
+        await assert_normal_view(page,'silence selected')
         await cue('в зависимости от того')
         await page.locator('#speaker-editor-add-silence').click()
         if inner_regions(await payload(page),'trackSilenceRegions'):
             raise RuntimeError('B09 selected silence was not removed')
-        await assert_region_view(page,'silence removed')
+        await assert_normal_view(page,'silence removed')
         await cue('«Отменить»')
         await page.locator('#speaker-editor-undo').click()
         if len(inner_regions(await payload(page),'trackSilenceRegions'))!=1:
             raise RuntimeError('B09 Undo did not restore the removed silence')
-        await assert_region_view(page,'undo restored silence')
+        await assert_normal_view(page,'undo restored silence')
         await cue('снова применить')
         await page.locator('#speaker-editor-redo').click()
         if inner_regions(await payload(page),'trackSilenceRegions'):
             raise RuntimeError('B09 Redo did not remove silence again')
-        await assert_region_view(page,'redo removed silence')
+        await assert_normal_view(page,'redo removed silence')
         await page.evaluate("window.__s11Capture.hide('history-complete')")
     else:
         raise RuntimeError('unexpected B09 scene')
@@ -441,7 +369,9 @@ async def visual():
     spec, module, scenes, metadata, timing, _, audio_duration = inputs()
     (OUT / 'scenes').mkdir(parents=True, exist_ok=True)
     recipe = '\n'.join(inspect.getsource(fn) for fn in
-                       (capture_spec, track, payload, inner_regions, raw_seed_region, raw_seed_edge, raw_seed_numeric, region_view, assert_region_view, prepare, cue_wait, visible_wave_drag, visible_edge_drag, stable_region_click, perform))
+                       (capture_spec, track, payload, inner_regions, raw_seed_region, raw_seed_edge,
+                        assert_normal_view, prepare, cue_wait, visible_wave_drag,
+                        visible_edge_drag, stable_region_click, perform))
     identity = hashlib.sha256(recipe.encode()).hexdigest()
     rows = []
     with demo_server(None) as base:
@@ -557,10 +487,12 @@ def assemble():
     final=OUT/'B09.mp4';candidate.replace(final)
     report={'status':'READY FOR B09 BLOCK REVIEW','block_id':'B09','video':str(final),
             'video_sha256':sha(final),'duration_seconds':duration,
-            'source_mp3_sha256':metadata['source_mp3_sha256'],'final_mp3_sha256':metadata['mp3_sha256'],
+            'source_mp3_sha256':metadata['source_mp3_sha256'],
             'final_wav_sha256':metadata['wav_sha256'],'final_pcm_sha256':metadata['final_pcm_sha256'],
             'final_alignment_sha256':metadata['timing_sha256'],'video_audio_timeline':str(timeline),
             'video_audio_lead_seconds':LEAD,'internal_audio_silence_added_seconds':0,
+            'removed_audio_samples':metadata['removed_samples'],
+            'removed_audio_seconds':metadata['removed_seconds'],
             'scene_frame_counts':dict(zip(SCENE_IDS,counts)),
             'embedded_subtitle_cues':checked['embedded_subtitle_cues'],
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
@@ -711,8 +643,8 @@ def history_pixels_in_mp4(video:Path,evidence:dict,scene_start:float,evidence_di
                                      '-frames:v','1','-f','image2pipe','-vcodec','png','-'])
         (evidence_dir/f'{label}.png').write_bytes(png)
         count=0
-        for y in range(95,180):
-            for x in range(280,320):
+        for y in range(260,345):
+            for x in range(495,535):
                 i=(y*960+x)*3;r,g,b=rgb[i:i+3]
                 if 60<=r<=140 and 60<=g<=130 and 20<=b<=85 and r>b*1.5:
                     count+=1
@@ -809,18 +741,18 @@ def verify():
             raise RuntimeError('B09 browser scene invalid')
         cursor_violations.extend(evidence['choreography']['overlay']['violations'])
         cue_errors.extend(abs(x) for x in row['cue_errors_seconds'])
-        if scene['id'] in ('B09-033','B09-034'):
-            stable=[event for event in evidence['choreography']['events'] if event['type']=='region-view-stable']
+        if scene['id'] in ('B09-032','B09-033','B09-034'):
+            stable=[event for event in evidence['choreography']['events'] if event['type']=='normal-view-stable']
             labels={event['label'] for event in stable}
-            required=({'settled','cut numeric edit','silence numeric edit','cut selected'}
-                      if scene['id']=='B09-033' else
-                      {'settled','cut removed','silence selected','silence removed','undo restored silence','redo removed silence'})
+            required=({'boundary drags complete'} if scene['id']=='B09-032' else
+                      {'cut selected'} if scene['id']=='B09-033' else
+                      {'restore buttons visible','cut removed','silence selected','silence removed',
+                       'undo restored silence','redo removed silence'})
             if not required.issubset(labels):
                 raise RuntimeError(f"B09 {scene['id']} missing settled viewport checkpoints: {required-labels}")
-            expected_y=408 if scene['id']=='B09-033' else 300
             for event in stable:
                 position=event['position']
-                if abs(position['window_y']-expected_y)>1 or abs(position['editor_x']-392)>1:
+                if position['window_y']!=0 or position['editor_x']!=0:
                     raise RuntimeError(f"B09 {scene['id']} viewport shifted during edit: {event}")
                 late_view.append({'scene_id':scene['id'],'seconds':elapsed+event['seconds'],
                                   'label':event['label'],'window_y':position['window_y'],
