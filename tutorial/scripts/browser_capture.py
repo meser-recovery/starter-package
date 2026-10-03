@@ -138,7 +138,9 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
             repaint = """() => {if(window.__s11paint)clearInterval(window.__s11paint);let n=0;window.__s11paint=setInterval(()=>{
               let e=document.getElementById('__s11paint');
               if(!e){e=document.createElement('div');e.id='__s11paint';
-                e.style='position:fixed;bottom:0;right:0;width:1px;height:1px;z-index:2147483647';document.body.append(e)}
+                e.style='position:fixed;bottom:0;right:0;width:1px;height:1px;z-index:2147483647'}
+              const root=document.fullscreenElement||document.body;
+              if(e.parentElement!==root)root.append(e);
               e.style.backgroundColor=n++%2?'#fff':'#000';},33)}"""
             await page.evaluate(repaint)
             try:

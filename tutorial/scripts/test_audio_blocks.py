@@ -119,8 +119,8 @@ class AudioBlockTests(unittest.TestCase):
             modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
         self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
 
-    def test_audio_review_gate_rejects_b08_before_provider_call(self):
-        with patch("sys.argv", ["build.py", "narration", "--module", "B08"]), patch.object(build, "generate") as provider:
+    def test_audio_review_gate_rejects_b09_before_provider_call(self):
+        with patch("sys.argv", ["build.py", "narration", "--module", "B09"]), patch.object(build, "generate") as provider:
             with self.assertRaisesRegex(RuntimeError, "complete block approval"):
                 build.main()
             provider.assert_not_called()
@@ -180,6 +180,15 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(state['approved_alignment_sha256'], '9d29d74893b89eb2fdec0933a0390ca7f52f5afda9d2cf3531ba1df14d373acb')
         self.assertEqual(state['subtitle_srt_sha256'], '1cc04884d0dee793b3f05a777e931a115e3d51473206f8998963c2cd0d7583d8')
         self.assertEqual(state['embedded_subtitle_cues'], 16)
+
+    def test_b07_block_approval_pins_audio_alignment_and_subtitles(self):
+        state = validate_block_approval('B07')
+        self.assertEqual(state['status'], 'BLOCK_APPROVED')
+        self.assertEqual(state['video_sha256'], '7055e5a42dc4616ab8fd1a6d504038ef849d447218f812eaec39e2b75ae7c577')
+        self.assertEqual(state['approved_mp3_sha256'], '9c6277db32d5e9cd3e9b73e542e2e57a104e0b332460dacd484865f0e493e0fd')
+        self.assertEqual(state['approved_alignment_sha256'], '75f4de59bbf98be8d126161d98e43961fe7d5bb6f25ec0979ced9b9003893eb5')
+        self.assertEqual(state['subtitle_srt_sha256'], '6b85456f43db2c6fd4f215ffa03c694f8887547620d20817c2d7bca03481b23b')
+        self.assertEqual(state['embedded_subtitle_cues'], 34)
 
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():
