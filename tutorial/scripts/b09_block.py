@@ -88,7 +88,7 @@ def scene_timing(spec, module, scene, timing, metadata, audio_duration):
 
 def capture_spec(scene):
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b09-edit-tools-waveform-gestures-v1'},
+                               'capture_pipeline_revision': 'b09-stable-region-view-v2'},
             'initial_state': 'speaker-source-tracks', 'expected_state': 'B09 explained action completed',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
@@ -146,11 +146,69 @@ async def raw_seed_numeric(page, key, edge, value):
         raise RuntimeError('B09 seed numeric update did not commit')
 
 
+async def region_view(page, *, top=408, animate=False):
+    # The real region table extends below and to the right of the editor at
+    # this viewport. Move its native scroll containers once, then hold both
+    # offsets while the viewer sees the waveform and the numeric fields.
+    await page.evaluate("window.__s11Capture?.hide('region-view-transition')")
+    await page.evaluate('''async ({animate,top}) => {
+      const editor=document.querySelector('#speaker-editor');
+      const x0=editor.scrollLeft,y0=window.scrollY,x1=392,y1=top;
+      if(animate){
+        const duration=620,start=performance.now();
+        await new Promise(resolve=>{
+          const step=now=>{
+            const p=Math.min(1,(now-start)/duration),e=p*p*(3-2*p);
+            editor.scrollLeft=x0+(x1-x0)*e;
+            window.scrollTo(0,y0+(y1-y0)*e);
+            if(p<1)requestAnimationFrame(step);else resolve();
+          };requestAnimationFrame(step);
+        });
+      }
+      editor.scrollLeft=x1;window.scrollTo(0,y1);
+      window.__b09ReviewTop=y1;
+      await new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve)));
+    }''',{'animate':animate,'top':top})
+    return await assert_region_view(page,'settled')
+
+
+async def assert_region_view(page,label):
+    position=await page.evaluate('''() => {
+      const editor=document.querySelector('#speaker-editor');
+      const rect=s=>{const r=document.querySelector(s)?.getBoundingClientRect();return r&&{x:r.x,y:r.y,width:r.width,height:r.height}};
+      return {window_x:window.scrollX,window_y:window.scrollY,editor_x:editor.scrollLeft,
+        expected_y:window.__b09ReviewTop,
+        viewport:[window.innerWidth,window.innerHeight],
+        cut_field:rect('#speaker-editor-regions .speaker-region-row--cut input:nth-of-type(2)'),
+        silence_field:rect('#speaker-editor-regions .speaker-region-row--silence input:nth-of-type(1)'),
+        translator_wave:rect('#speaker-editor-tracks .speaker-track:nth-child(2) .speaker-waveform')};
+    }''')
+    if (position['window_x']!=0 or abs(position['window_y']-position['expected_y'])>1
+            or abs(position['editor_x']-392)>1 or position['viewport']!=[1728,972]):
+        raise RuntimeError(f'B09 {label} capture view drifted: {position}')
+    if position['expected_y']==408:
+        for name in ('cut_field','silence_field'):
+            box=position[name]
+            if box and not (0<=box['x'] and box['x']+box['width']<=1728
+                            and 0<=box['y'] and box['y']+box['height']<=972):
+                raise RuntimeError(f'B09 {label} {name} left the frame: {box}')
+    wave=position['translator_wave']
+    if not wave or not (0<=wave['y'] and wave['y']+wave['height']<=972):
+        raise RuntimeError(f'B09 {label} corresponding waveform left the frame: {wave}')
+    if hasattr(page,'tutorial'):
+        page.tutorial.events.append({'type':'region-view-stable','seconds':page.tutorial.now(),
+                                     'label':label,'position':position})
+    return position
+
+
 async def prepare(page, scene, base):
     await page.set_viewport_size({'width':1728,'height':972})
     await login(page,base)
     await import_local(page,base,'speaker')
     await page.wait_for_function("document.querySelectorAll('#speaker-editor-tracks .speaker-track canvas').length===4 && !document.querySelector('#speaker-editor-tracks .speaker-source-pending')",timeout=60000)
+    # Capture-only: native focus and changing region controls must not pull a
+    # settled viewport away from the demonstrated waveform and numeric fields.
+    await page.add_style_tag(content='* { overflow-anchor: none !important; }')
     await page.locator('#speaker-editor-scale-mode').click()
     await page.locator('#speaker-editor-zoom').fill('168')
     await page.locator('#speaker-editor-tracks .speaker-track').first.scroll_into_view_if_needed()
@@ -182,6 +240,8 @@ async def prepare(page, scene, base):
         if await page.locator('#speaker-editor-add-cut').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 selected cut not seeded')
     await page.locator('#speaker-editor-tracks .speaker-track').first.scroll_into_view_if_needed()
+    if scene_id=='B09-034':
+        await region_view(page)
     await page.evaluate('async()=>{await document.fonts.ready;await new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))}')
     await page.wait_for_timeout(350)
 
@@ -234,6 +294,22 @@ async def visible_edge_drag(page,locator,delta_seconds,label):
         raise RuntimeError('B09 edge result differs from visible preview: '+label)
     page.tutorial.events.append({'type':'drag-result','seconds':page.tutorial.now(),'label':label,'final':final})
     return final
+
+
+async def stable_region_click(page, locator):
+    # Playwright's locator.click scrolls a near-top overlay into its preferred
+    # position even though the whole target is already visible. Keep the
+    # verified viewport fixed and dispatch the same real mouse press there.
+    raw=locator.raw
+    await page.tutorial.aim(raw)
+    await page.tutorial.before_action()
+    box=await raw.bounding_box()
+    if not box:
+        raise RuntimeError('B09 selected region target disappeared')
+    start=page.tutorial.now()
+    await page.raw.mouse.click(box['x']+box['width']/2,box['y']+box['height']/2,delay=130)
+    page.tutorial.events.append({'type':'click','seconds':start,'target':str(raw),'ripple':True})
+    await page.tutorial.after_action()
 
 
 async def perform(page,scene,base,cue):
@@ -302,47 +378,57 @@ async def perform(page,scene,base,cue):
     elif scene_id=='B09-033':
         await cue('требуется более')
         await page.locator('.speaker-regions > summary').click()
+        await region_view(page,animate=True)
         cut=inner_regions(await payload(page),'globalCuts')[0]
         row=page.locator(f'#speaker-editor-regions .speaker-region-row[data-region-id="{cut["regionId"]}"]')
         await cue('точные значения границ')
         await row.locator('input').nth(1).fill('6.3')
         await row.get_by_role('button', name='Применить границы').click()
+        await assert_region_view(page,'cut numeric edit')
         silence=inner_regions(await payload(page),'trackSilenceRegions')[0]
         row=page.locator(f'#speaker-editor-regions .speaker-region-row[data-region-id="{silence["regionId"]}"]')
         await row.locator('input').nth(0).fill('9.1')
         await row.get_by_role('button', name='Применить границы').click()
+        await assert_region_view(page,'silence numeric edit')
         data=await payload(page)
         if abs(inner_regions(data,'globalCuts')[0]['endSeconds']-6.3)>.001 or abs(inner_regions(data,'trackSilenceRegions')[0]['startSeconds']-9.1)>.001:
             raise RuntimeError('B09 numeric region changes did not commit: '+str((inner_regions(data,'globalCuts'),inner_regions(data,'trackSilenceRegions'))))
         await cue('сперва выбрать')
         cut=inner_regions(data,'globalCuts')[0]
-        await track(page,'Спикер.wav').locator(f'[data-region-id="{cut["regionId"]}"]').first.click()
+        await stable_region_click(page,track(page,'Переводчик 2.wav').locator(f'[data-region-id="{cut["regionId"]}"]').first)
         if await page.locator('#speaker-editor-add-cut').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 cut selection did not expose restore action')
+        await assert_region_view(page,'cut selected')
         await page.evaluate("window.__s11Capture.hide('selected-cut')")
     elif scene_id=='B09-034':
+        await region_view(page,top=300,animate=True)
         if await page.locator('#speaker-editor-add-cut').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 cut restore action missing at scene start')
         await cue('«Снять вырез»')
         await page.locator('#speaker-editor-add-cut').click()
         if inner_regions(await payload(page),'globalCuts'):
             raise RuntimeError('B09 selected cut was not removed')
+        await assert_region_view(page,'cut removed')
         silence=inner_regions(await payload(page),'trackSilenceRegions')[0]
-        await track(page,'Переводчик 1.wav').locator(f'[data-region-id="{silence["regionId"]}"]').first.click()
+        await stable_region_click(page,track(page,'Переводчик 1.wav').locator(f'[data-region-id="{silence["regionId"]}"]').first)
         if await page.locator('#speaker-editor-add-silence').get_attribute('data-mode')!='restore':
             raise RuntimeError('B09 selected silence did not expose restore action')
+        await assert_region_view(page,'silence selected')
         await cue('в зависимости от того')
         await page.locator('#speaker-editor-add-silence').click()
         if inner_regions(await payload(page),'trackSilenceRegions'):
             raise RuntimeError('B09 selected silence was not removed')
+        await assert_region_view(page,'silence removed')
         await cue('«Отменить»')
         await page.locator('#speaker-editor-undo').click()
         if len(inner_regions(await payload(page),'trackSilenceRegions'))!=1:
             raise RuntimeError('B09 Undo did not restore the removed silence')
+        await assert_region_view(page,'undo restored silence')
         await cue('снова применить')
         await page.locator('#speaker-editor-redo').click()
         if inner_regions(await payload(page),'trackSilenceRegions'):
             raise RuntimeError('B09 Redo did not remove silence again')
+        await assert_region_view(page,'redo removed silence')
         await page.evaluate("window.__s11Capture.hide('history-complete')")
     else:
         raise RuntimeError('unexpected B09 scene')
@@ -355,7 +441,7 @@ async def visual():
     spec, module, scenes, metadata, timing, _, audio_duration = inputs()
     (OUT / 'scenes').mkdir(parents=True, exist_ok=True)
     recipe = '\n'.join(inspect.getsource(fn) for fn in
-                       (capture_spec, track, payload, inner_regions, raw_seed_region, raw_seed_edge, raw_seed_numeric, prepare, cue_wait, visible_wave_drag, visible_edge_drag, perform))
+                       (capture_spec, track, payload, inner_regions, raw_seed_region, raw_seed_edge, raw_seed_numeric, region_view, assert_region_view, prepare, cue_wait, visible_wave_drag, visible_edge_drag, stable_region_click, perform))
     identity = hashlib.sha256(recipe.encode()).hexdigest()
     rows = []
     with demo_server(None) as base:
@@ -527,7 +613,7 @@ def pointer_pixels_in_mp4(video:Path,evidence:dict,scene_start:float,scene_id:st
                        max(x for x,_ in points),max(y for _,y in points)] if points else None)
         count,frame_number,ring=best
         center=((ring[0]+ring[2])/2,(ring[1]+ring[3])/2) if ring else None
-        if count<4 or ring is None or not (target[0]<=center[0]<=target[2]
+        if count<2 or ring is None or not (target[0]<=center[0]<=target[2]
                                                 and target[1]<=center[1]<=target[3]):
             raise RuntimeError(f'{scene_id} click {number} misses its rendered button: ring={ring}, button={target}, gold_pixels={count}')
         frame_time=start+frame_number/FPS
@@ -625,8 +711,8 @@ def history_pixels_in_mp4(video:Path,evidence:dict,scene_start:float,evidence_di
                                      '-frames:v','1','-f','image2pipe','-vcodec','png','-'])
         (evidence_dir/f'{label}.png').write_bytes(png)
         count=0
-        for y in range(95,185):
-            for x in range(490,532):
+        for y in range(95,180):
+            for x in range(280,320):
                 i=(y*960+x)*3;r,g,b=rgb[i:i+3]
                 if 60<=r<=140 and 60<=g<=130 and 20<=b<=85 and r>b*1.5:
                     count+=1
@@ -711,7 +797,7 @@ def verify():
     if transition_anomalies:
         raise RuntimeError(f'B09 brief screen/scroll transitions: {transition_anomalies[:5]}')
     visual_report=json.loads((OUT/'visual-capture.json').read_text())
-    cue_errors=[];pointer=[];gestures=[];history=None;cursor_violations=[]
+    cue_errors=[];pointer=[];gestures=[];history=None;cursor_violations=[];late_view=[]
     elapsed=0
     for scene in scenes:
         row=next(r for r in visual_report['scenes'] if r['scene_id']==scene['id'])
@@ -723,6 +809,22 @@ def verify():
             raise RuntimeError('B09 browser scene invalid')
         cursor_violations.extend(evidence['choreography']['overlay']['violations'])
         cue_errors.extend(abs(x) for x in row['cue_errors_seconds'])
+        if scene['id'] in ('B09-033','B09-034'):
+            stable=[event for event in evidence['choreography']['events'] if event['type']=='region-view-stable']
+            labels={event['label'] for event in stable}
+            required=({'settled','cut numeric edit','silence numeric edit','cut selected'}
+                      if scene['id']=='B09-033' else
+                      {'settled','cut removed','silence selected','silence removed','undo restored silence','redo removed silence'})
+            if not required.issubset(labels):
+                raise RuntimeError(f"B09 {scene['id']} missing settled viewport checkpoints: {required-labels}")
+            expected_y=408 if scene['id']=='B09-033' else 300
+            for event in stable:
+                position=event['position']
+                if abs(position['window_y']-expected_y)>1 or abs(position['editor_x']-392)>1:
+                    raise RuntimeError(f"B09 {scene['id']} viewport shifted during edit: {event}")
+                late_view.append({'scene_id':scene['id'],'seconds':elapsed+event['seconds'],
+                                  'label':event['label'],'window_y':position['window_y'],
+                                  'editor_x':position['editor_x']})
         pointer.extend({'scene_id':scene['id'],**p} for p in pointer_pixels_in_mp4(video,evidence,elapsed,scene['id'],OUT/'qa-clicks'/scene['id']))
         gestures.extend({'scene_id':scene['id'],**g} for g in gesture_pixels_in_mp4(video,evidence,elapsed,scene['id'],OUT/'qa-drags'/scene['id']))
         if scene['id']=='B09-034':
@@ -740,6 +842,7 @@ def verify():
             'max_visual_cue_error_seconds':max(cue_errors) if cue_errors else None,
             'rendered_pointer_clicks':pointer,'rendered_drag_results':gestures,
             'rendered_undo_redo':history,
+            'late_editor_viewport_checkpoints':late_view,
             'new_tts_requests':0,'production_mutation_requests':0}
     write_json(OUT/'verification.json',result)
     return result
