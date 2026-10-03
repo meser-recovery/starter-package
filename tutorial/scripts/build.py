@@ -80,8 +80,8 @@ def main() -> None:
         if args.mode == "validate":
             print(json.dumps(result, ensure_ascii=False)); return
         if args.mode in ("visual", "assemble", "verify"):
-            if args.module not in ("B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12") or args.all_modules or args.scene or args.force:
-                raise RuntimeError("review gate: only approved B01–B11 verification and B12 review are supported")
+            if args.module not in ("B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13") or args.all_modules or args.scene or args.force:
+                raise RuntimeError("review gate: only approved B01–B12 verification and B13 review are supported")
             if args.module == "B01":
                 validate_approval(spec, "B01")
                 if args.mode != "verify" and (ROOT / 'approvals/B01-block.json').exists():
@@ -137,11 +137,16 @@ def main() -> None:
                 if args.mode != 'verify' and (ROOT / 'approvals/B11-block.json').exists():
                     raise RuntimeError('B11 complete block is approved and immutable')
                 from b11_block import visual, assemble, verify
-            else:
+            elif args.module == 'B12':
                 validate_block_approval('B11')
                 if args.mode != 'verify' and (ROOT / 'approvals/B12-block.json').exists():
                     raise RuntimeError('B12 complete block is approved and immutable')
                 from b12_block import visual, assemble, verify
+            else:
+                validate_block_approval('B12')
+                if args.mode != 'verify' and (ROOT / 'approvals/B13-block.json').exists():
+                    raise RuntimeError('B13 complete block is approved and immutable')
+                from b13_block import visual, assemble, verify
             if args.mode == "visual":
                 import asyncio
                 print(json.dumps(asyncio.run(visual()), ensure_ascii=False, indent=2))
@@ -151,7 +156,7 @@ def main() -> None:
                 print(json.dumps(verify(), ensure_ascii=False, indent=2))
             return
         if args.mode not in ("dry-run", "narration"):
-            raise RuntimeError("review gate: current B-block pipeline supports only selective audio and B12 visual/assembly")
+            raise RuntimeError("review gate: current B-block pipeline supports only selective audio and B13 visual/assembly")
         try:
             selected = selection(spec, args.module, args.scene, args.chapter)
         except ValueError as error:
@@ -164,9 +169,9 @@ def main() -> None:
                 preview['characters_to_generate'] -= row['characters_to_generate']
                 row.update(cache='DERIVED_PCM_CUT', tts_requests=0, characters_to_generate=0)
             print(json.dumps({"content_validation": result, **preview,
-                              "review_gate": "B01_TO_B11_BLOCK_APPROVED_B12_VISUAL_REVIEW",
-                              "approved_audio": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11"],
-                              "visual_changes": "B12_ONLY_UNTIL_APPROVED"}, ensure_ascii=False, indent=2)); return
+                              "review_gate": "B01_TO_B12_BLOCK_APPROVED_B13_VISUAL_REVIEW",
+                              "approved_audio": ["B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12"],
+                              "visual_changes": "B13_ONLY_UNTIL_APPROVED"}, ensure_ascii=False, indent=2)); return
         if len(selected) != 1 or args.module != selected[0]["id"]:
             raise RuntimeError("review gate: select exactly one B-block for narration")
         module_id = selected[0]["id"]

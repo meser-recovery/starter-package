@@ -1,6 +1,6 @@
 # B12 · Связь Аудиоархива и Аудиоредактора
 
-Status: **READY FOR B12 BLOCK REVIEW**. Scenes 042–045 use the unchanged current Canonical Content Pack. B01–B11 remain approved and unchanged; B13–B14 are gated.
+Status: **AUDIO_APPROVED · BLOCK_APPROVED** on 2026-10-04. Scenes 042–045 use the unchanged current Canonical Content Pack. Exact identities are pinned in `approvals/B12-audio.json` and `approvals/B12-block.json`. B01–B11 remain approved; B13 is the review block and B14 remains gated.
 
 The full B12 narration was synthesized in **one continuous ElevenLabs request** with voice `LHi3adMlU7AICv8Yxpmm`, model `eleven_v3`, language `ru`, stability `0.5`, output `mp3_44100_128`, and `[calm] [conversational] [slowly]` delivery. The provider MP3 SHA-256 is `02d54a1aed360fc8eefe6fa5e7748102efb9b52f0b2918646770fc5ea38e589b`; duration is 83.565714 s. The original response and alignment are retained under `generated/narration-blocks-v2/B12/`.
 
