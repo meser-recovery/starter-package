@@ -88,7 +88,7 @@ def scene_timing(spec, module, scene, timing, metadata, audio_duration):
 
 def capture_spec(scene):
     return {**scene, 'visual': {'type': 'browser', 'goal': scene['goal'],
-                               'capture_pipeline_revision': 'b08-stable-editor-and-semantic-screen-holds-v2'},
+                               'capture_pipeline_revision': 'b08-native-fullscreen-frame-v3'},
             'initial_state': 'speaker-source-tracks', 'expected_state': 'B08 explained action completed',
             'assertions': [], 'fixture_set': 'existing-synthetic-zoom-v1',
             'padding': {'head': 0., 'tail': 0.}}
@@ -158,13 +158,24 @@ async def stable_fullscreen_click(page, expanded):
     await page.wait_for_function('(expanded)=>Boolean(document.fullscreenElement)===expanded',arg=expanded,timeout=10000)
     await page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
     await page.wait_for_timeout(200)
-    await director.resume_capture()
+    geometry=await page.evaluate("""() => {
+      const root=document.fullscreenElement, box=root?.getBoundingClientRect();
+      return {id:root?.id, x:box?.x, y:box?.y, width:box?.width, height:box?.height,
+              viewportWidth:innerWidth, viewportHeight:innerHeight};
+    }""")
+    if (geometry['id']!='speaker-editor' or abs(geometry['x'])>1 or abs(geometry['y'])>1
+            or abs(geometry['width']-geometry['viewportWidth'])>1
+            or abs(geometry['height']-geometry['viewportHeight'])>1):
+        raise RuntimeError(f'B08 native fullscreen did not fill the viewport: {geometry}')
+    await director.capture_native_fullscreen_frame()
+    director.events.append({'type':'fullscreen-visible','seconds':director.now(),'geometry':geometry})
     await director.after_action()
 
 
 async def stable_fullscreen_escape(page):
     director=page.tutorial
-    await director.pause_capture()
+    if director.ready:
+        await director.pause_capture()
     await director.page.keyboard.press('Escape')
     await page.wait_for_function('document.fullscreenElement===null',timeout=10000)
     await page.evaluate('()=>new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))')
@@ -495,6 +506,42 @@ def visual_transition_anomalies(raw:bytes, *, width=48, height=27, fps=FPS):
     return sorted(anomalies,key=lambda row:(row['start_frame'],row['end_frame']))
 
 
+def fullscreen_frames_in_mp4(video:Path,evidence:dict,scene_start:float):
+    """Prove the rendered video contains the native fullscreen state and exits it."""
+    events=evidence['choreography']['events']
+    click=next(e for e in events if e['type']=='click' and '#speaker-editor-expand' in e['target'])
+    visible=next(e for e in events if e['type']=='fullscreen-visible')
+    exited=next(e for e in events if e['type']=='fullscreen-exit-key')
+    geometry=visible['geometry']
+    if (geometry['id']!='speaker-editor' or geometry['x'] or geometry['y']
+            or geometry['width']!=geometry['viewportWidth']
+            or geometry['height']!=geometry['viewportHeight']
+            or not click['seconds']<visible['seconds']<exited['seconds']):
+        raise RuntimeError('B08 captured native fullscreen state or event order invalid')
+    if not any(e['type']=='field-input' and '#speaker-editor-zoom' in e['target']
+               and e['seconds']>exited['seconds'] for e in events):
+        raise RuntimeError('B08 zoom action does not continue after fullscreen exit')
+    samples={'before':scene_start+click['seconds']-.5,
+             'fullscreen_early':scene_start+visible['seconds']+.65,
+             'fullscreen_late':scene_start+exited['seconds']-.5,
+             'after':scene_start+exited['seconds']+.7}
+    measured={}
+    for label,when in samples.items():
+        patch=subprocess.check_output(['ffmpeg','-v','error','-ss',f'{when:.6f}',
+                                       '-i',str(video),'-frames:v','1',
+                                       '-vf','crop=120:100:0:0,format=gray',
+                                       '-f','rawvideo','-'])
+        if len(patch)!=12000:
+            raise RuntimeError(f'B08 {label} fullscreen video sample missing')
+        measured[label]={'seconds':when,'top_left_luma':sum(patch)/len(patch)}
+    if (measured['before']['top_left_luma']>=90
+            or measured['fullscreen_early']['top_left_luma']<=175
+            or measured['fullscreen_late']['top_left_luma']<=175
+            or measured['after']['top_left_luma']>=90):
+        raise RuntimeError(f'B08 final MP4 does not show ordinary → native fullscreen → ordinary: {measured}')
+    return measured
+
+
 def verify():
     spec,module,scenes,metadata,timing,pcm,_=inputs()
     report=json.loads((OUT/'report.json').read_text());video=OUT/'B08.mp4'
@@ -545,7 +592,7 @@ def verify():
     if transition_anomalies:
         raise RuntimeError(f'B08 brief screen/scroll transitions: {transition_anomalies[:5]}')
     visual_report=json.loads((OUT/'visual-capture.json').read_text())
-    cue_errors=[];pointer=[];cursor_violations=[]
+    cue_errors=[];pointer=[];cursor_violations=[];fullscreen=None
     elapsed=0
     for scene in scenes:
         row=next(r for r in visual_report['scenes'] if r['scene_id']==scene['id'])
@@ -557,6 +604,8 @@ def verify():
             raise RuntimeError('B08 browser scene invalid')
         cursor_violations.extend(evidence['choreography']['overlay']['violations'])
         cue_errors.extend(abs(x) for x in row['cue_errors_seconds'])
+        if scene['id']=='B08-024':
+            fullscreen=fullscreen_frames_in_mp4(video,evidence,elapsed)
         pointer.extend({'scene_id':scene['id'],**p} for p in pointer_pixels_in_mp4(video,evidence,elapsed,scene['id'],OUT/'qa-clicks'/scene['id']))
         elapsed+=report['scene_frame_counts'][scene['id']]/FPS
     if cursor_violations or (cue_errors and max(cue_errors)>.3):
@@ -568,6 +617,7 @@ def verify():
             'subtitle_matches_canonical_text':True,'video_frames':frames,
             'blank_frames':0,'isolated_flash_frames':0,'visual_transition_anomalies':[],
             'cursor_violations':0,
+            'fullscreen_final_mp4_frames':fullscreen,
             'max_visual_cue_error_seconds':max(cue_errors) if cue_errors else None,
             'rendered_pointer_clicks':pointer,'new_tts_requests':0,'production_mutation_requests':0}
     write_json(OUT/'verification.json',result)

@@ -8,6 +8,7 @@ import hashlib
 import json
 import subprocess
 import tempfile
+import time
 from collections import Counter
 from pathlib import Path
 from urllib.parse import urlparse
@@ -132,8 +133,20 @@ async def capture(scene: dict, settings: dict, base_url: str, *, timing=None, de
                 # waveform preparation or an old scroll position.
                 director.ready=True
                 await cdp.send('Page.startScreencast',screencast_options)
+            async def capture_native_fullscreen_frame():
+                # Headless Chrome's CDP screencast switches to an 800x600 crop
+                # in native fullscreen, while Playwright captures the actual
+                # viewport. Keep the real fullscreen frame at the same size as
+                # the ordinary frames so the concat decoder retains it.
+                if director.ready or not await page.evaluate('!!document.fullscreenElement'):
+                    raise RuntimeError('native fullscreen frame requires paused screencast and fullscreen DOM')
+                frame = folder / f"{len(frames):06d}.jpg"
+                frame.write_bytes(await page.screenshot(type='jpeg', quality=88))
+                frames.append(frame)
+                frame_times.append(max(time.time(), frame_times[-1] + .001))
             director.pause_capture=pause_screencast
             director.resume_capture=resume_screencast
+            director.capture_native_fullscreen_frame=capture_native_fullscreen_frame
             started = director.started = asyncio.get_running_loop().time()
             repaint = """() => {if(window.__s11paint)clearInterval(window.__s11paint);let n=0;window.__s11paint=setInterval(()=>{
               let e=document.getElementById('__s11paint');
