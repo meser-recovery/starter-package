@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440" role="img" aria-label="Облачное хранилище записи">
+  <defs>
+    <linearGradient id="cloud" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#77d2ea"/>
+      <stop offset="0.55" stop-color="#36a8cd"/>
+      <stop offset="1" stop-color="#08749f"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="320" cy="397" rx="245" ry="16" fill="#cfdee5"/>
+  <path d="M169 356C96 356 58 313 58 251c0-61 46-110 106-114 24-63 83-105 152-105 84 0 153 62 164 142 62 8 104 48 104 102 0 48-39 80-94 80H169z" fill="url(#cloud)" stroke="#075376" stroke-width="10" stroke-linejoin="round"/>
+  <path d="M113 202c18-25 48-39 82-38 24-62 75-97 124-97 48 0 94 29 117 75" fill="none" stroke="#b8edf7" stroke-opacity=".85" stroke-width="13" stroke-linecap="round"/>
+  <path d="M127 323h365" stroke="#075376" stroke-opacity=".22" stroke-width="5" stroke-linecap="round"/>
+</svg>

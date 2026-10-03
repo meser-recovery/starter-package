@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B02",
+  "decision_date": "2026-10-02",
+  "video": "generated/b02-visual-v3-review/B02.mp4",
+  "video_sha256": "8f2f930e096dcb3a9615d047ea5901e7346b65046aee1b27b473387dc0cbd993",
+  "duration_seconds": 138.3,
+  "approved_audio_record": "approvals/B02-audio.json",
+  "approved_audio_record_sha256": "4245b7a5b23c9a6d3b121a4bf7be95a0973fb027bf1de1ca7c9d44a36fa4b1aa",
+  "approved_mp3_sha256": "19d93e92c574e7be09fd603390430e3ce7ce1e803752aec703087214c7ec98c4",
+  "approved_wav_sha256": "c52d269952dcef0c7f766fdfa4ca57b4ee1efd66182b7588703da61bb6506351",
+  "approved_pcm_sha256": "651c1f3a79a3a60087d51a9d7e7f026f4df8b047235d1724ade511ebb958c181",
+  "approved_alignment": "generated/narration-blocks-v2/B02/B02-review-01-timing.json",
+  "approved_alignment_sha256": "bda48ae45818e2781b06fe3384eb69c0270623d8a2cfbf82aa99bbedd73ec817",
+  "canonical_text_sha256": "60b81e95e55dce6675fb1c8986834610ab586822cfa2ead7d70a26f2c644f053",
+  "subtitle_srt": "generated/b02-visual-v3-review/B02.ru.srt",
+  "subtitle_srt_sha256": "46a6f6abd4b962c29fc226f1223fa870ff7c13f639966413bfdd1a1600e1759f",
+  "subtitle_vtt": "generated/b02-visual-v3-review/B02.ru.vtt",
+  "subtitle_vtt_sha256": "a6f0114b2d6955e1674ec8b3c30b35ea0a00a79c5c4041f54e8630cc4ce4276f",
+  "embedded_subtitle_cues": 40,
+  "last_embedded_subtitle_end_seconds": 138.273,
+  "video_audio_timeline": "generated/b02-visual-v3-review/B02-video-timeline.wav",
+  "video_audio_timeline_sha256": "a8b64b8423421f1a7bf4b911ada5c0d432863f212bf7ce977fb278160905b420",
+  "scene_sources": [
+    {
+      "path": "generated/b02-visual-v3-review/scenes/B02-004.mp4",
+      "sha256": "fc552df27237b26c652dd4ac6c9ccbaa4d41aa8d9be9c666d4b31912e19e5c4e"
+    },
+    {
+      "path": "generated/b02-visual-v3-review/scenes/B02-005.mp4",
+      "sha256": "495c9cc4bdb3b0f330d0886a041edb85190d477e26d155d3d10d2bef74e9aad6"
+    },
+    {
+      "path": "generated/b02-visual-v3-review/scenes/B02-006.mp4",
+      "sha256": "44d8c7cb3110d77cbede59069c705486749af64249e8c70edf2f5763b3956e2b"
+    },
+    {
+      "path": "generated/b02-visual-v3-review/scenes/B02-007.mp4",
+      "sha256": "07e1326a40ab6890ab6240635c7ef78e6b2e3a0e193014957b2c2a86519ae2b0"
+    }
+  ],
+  "report": "generated/b02-visual-v3-review/report.json",
+  "report_sha256": "afc68b79dc2b44584452a0b37f1ba285ad2becedf3990f99b156334b4cdb105c",
+  "verification": "generated/b02-visual-v3-review/verification.json",
+  "verification_sha256": "f85431e7f67739050a820d50b70fb8c1283aa55d9fefb0b2a160f6f12a9fb23e"
+}

@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>B06 · синхронная обработка дорожек</title>
+<style>
+  html,body{margin:0;width:100%;height:100%;overflow:hidden;background:#f7fafc;font-family:system-ui,-apple-system,sans-serif}
+  svg{width:100%;height:100%;display:block}
+  .axis{stroke:#a3b9c9;stroke-width:3}.track-name{font-size:25px;font-weight:650;fill:#17374f}
+  .small{font-size:24px;font-weight:630;fill:#31536b}.caption{font-size:31px;font-weight:650;fill:#17374f}
+  .wave{stroke:none}.right,.moving-end,.gap,.voice{transition:transform 2.4s cubic-bezier(.33,.02,.23,1),width 2.4s cubic-bezier(.33,.02,.23,1),opacity 1.2s ease}
+  #shared-mark,#signal-mark,#mix-result{opacity:0;transition:opacity .5s ease}
+  body.mark #shared-mark,body.mark #signal-mark,body.contracted #shared-mark{opacity:1}
+  body.contracted .right,body.contracted .moving-end{transform:translateX(-320px)}
+  body.contracted .gap{width:80px}
+  body.contracted #shared-caption-before{opacity:0}
+  body.contracted #shared-caption-after{opacity:1}
+  #shared-caption-before,#shared-caption-after{transition:opacity .6s ease}
+  #shared-caption-after{opacity:0}
+  body.mixed .voice.one{transform:translateY(170px);opacity:0}
+  body.mixed .voice.two{opacity:0}
+  body.mixed .voice.three{transform:translateY(-170px);opacity:0}
+  body.mixed #signal-mark{opacity:0}
+  body.mixed #mix-result{opacity:1;transition-delay:.9s}
+</style>
+<svg viewBox="0 0 1536 864" preserveAspectRatio="xMidYMid meet" role="img" aria-label="Дорожки синхронно сокращают только интервал общей тишины">
+  <rect width="1536" height="864" fill="#f7fafc"/>
+  <text x="90" y="95" class="caption" id="title"></text>
+  <g id="content"></g>
+</svg>
+<script>
+const ns='http://www.w3.org/2000/svg',content=document.querySelector('#content');
+const mode=new URLSearchParams(location.search).get('mode')==='signal'?'signal':'common';
+const E=(tag,attrs={},parent=content)=>{const el=document.createElementNS(ns,tag);for(const [k,v] of Object.entries(attrs))el.setAttribute(k,v);parent.append(el);return el};
+const label=(x,y,value,cls='small',parent=content)=>{const el=E('text',{x,y,class:cls},parent);el.textContent=value;return el};
+function wave(x1,x2,y,amp,seed,color,parent){let top=[],bottom=[];for(let x=x1,i=0;x<=x2;x+=7,i++){const h=amp*(.28+.72*Math.abs(Math.sin((i+seed)*1.71)*Math.cos((i+seed)*.33)));top.push(`${x},${(y-h).toFixed(1)}`);bottom.push(`${x},${(y+h).toFixed(1)}`)}E('polygon',{points:[...top,...bottom.reverse()].join(' '),fill:color,class:'wave'},parent)}
+function lane(y,name,color,parts,extra=''){
+  const voice=E('g',{class:`voice ${extra}`});label(85,y-31,name,'track-name',voice);
+  E('line',{x1:265,y1:y,x2:800,y2:y,class:'axis'},voice);
+  const right=E('g',{class:'right'},voice);E('line',{x1:1200,y1:y,x2:1380,y2:y,class:'axis'},right);
+  for(const [a,b,seed] of parts){wave(a,b,y,42,seed,color,a>=1200?right:voice)}
+  return voice;
+}
+if(mode==='common'){
+  document.querySelector('#title').textContent='Обработка нескольких дорожек';
+  const mark=E('g',{id:'shared-mark'});E('rect',{x:800,y:219,width:400,height:392,fill:'#f2c879',opacity:'.30',class:'gap'},mark);
+  E('line',{x1:800,y1:215,x2:800,y2:615,stroke:'#b48018','stroke-width':3},mark);
+  E('line',{x1:1200,y1:215,x2:1200,y2:615,stroke:'#b48018','stroke-width':3,class:'moving-end'},mark);
+  label(873,686,'Общая тишина','small',mark).id='shared-caption-before';
+  label(792,686,'Короткая пауза','small',mark).id='shared-caption-after';
+  lane(332,'Переводчик 1','#139579',[[305,449,4],[566,733,9],[1227,1370,13]],'one');
+  lane(505,'Переводчик 2','#c88724',[[370,520,17],[635,758,21],[1219,1320,27]],'two');
+}else{
+  document.querySelector('#title').textContent='Сигнал сохраняет общий интервал';
+  const mark=E('g',{id:'signal-mark'});E('rect',{x:800,y:155,width:400,height:548,fill:'#79b7e5',opacity:'.19'},mark);
+  label(922,751,'Есть речь','small',mark);
+  lane(255,'Переводчик 1','#139579',[[310,476,4],[617,751,9],[1220,1368,13]],'one');
+  lane(425,'Переводчик 2','#c88724',[[361,527,17],[1207,1365,23]],'two');
+  lane(595,'Участник','#8063b7',[[291,430,29],[885,1110,35],[1240,1352,39]],'three');
+  const result=E('g',{id:'mix-result'});E('rect',{x:265,y:378,width:1120,height:116,rx:9,fill:'#e4eef5'},result);
+  E('line',{x1:285,y1:436,x2:1360,y2:436,class:'axis'},result);
+  for(const [a,b,s] of [[303,475,8],[568,762,17],[875,1110,28],[1213,1350,40]])wave(a,b,436,46,s,'#215e8d',result);
+  label(90,443,'Готовый MP3','track-name',result);
+}
+window.b06SetPhase=(phase)=>{
+  document.body.className=phase;
+  if(mode==='signal'&&phase==='mixed')
+    document.querySelector('#title').textContent='Выбранные дорожки объединяются';
+};
+</script>
+</html>

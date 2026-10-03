@@ -1,0 +1,117 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B01",
+  "decision_date": "2026-10-02",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B01/B01-six-pauses.mp3",
+    "mp3_sha256": "93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377",
+    "mp3_duration_seconds": 123.559184,
+    "wav": "generated/narration-blocks-v2/B01/B01-six-pauses.wav",
+    "wav_sha256": "ec6d0601adcdeb64a39d57d4bdc719ede43b6a287b058974395fd15cdaf0b79f",
+    "pcm_sha256": "9186b9a9e801ed06e19767720201d9c88f7781774393dcf8e47fc982cddd61ca",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 5447770,
+    "alignment": "generated/narration-blocks-v2/B01/B01-six-pauses-timing.json",
+    "alignment_sha256": "3e056c0558a74f10187155a37c9a18d26dea648f80ccc80da13f0867cf337c85",
+    "canonical_text_sha256": "500e78a05d85c03da6671e9f8f4df7e75051fbf69cde8b8194ae6fdd7cc1432b"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B01/B01.mp3",
+    "mp3_sha256": "e39add9963b32649b90aceb1a786d0a3a9ec442860fa30a31f66432a9fa0557e",
+    "source_alignment": "generated/narration-blocks-v2/B01/B01-six-pauses-source-timing.json",
+    "source_alignment_sha256": "546cf30e59dbbcdfd82b1e19672bf35ea4461e85a71768bf67afbce90a627c95",
+    "decoded_pcm_sha256": "91ede948b135ac069969ca5985d39f4296385bd2a555589543aa7fb4416bd382",
+    "decoded_pcm_samples": 5295528
+  },
+  "insertions": [
+    {
+      "after_offset": 450,
+      "quiet_start_source_sample": 1238890,
+      "quiet_end_source_sample": 1269500,
+      "cut_source_sample": 1254195,
+      "insert_start_final_sample": 1254195,
+      "added_samples": 22310,
+      "before_seconds": 0.6941043083900227,
+      "added_seconds": 0.5058956916099773,
+      "after_seconds": 1.2,
+      "reason": "Представление новых инструментов завершено; далее объясняется, какие собрания записывает группа."
+    },
+    {
+      "after_offset": 795,
+      "quiet_start_source_sample": 2137915,
+      "quiet_end_source_sample": 2154534,
+      "cut_source_sample": 2146224,
+      "insert_start_final_sample": 2168534,
+      "added_samples": 18661,
+      "before_seconds": 0.37684807256235825,
+      "added_seconds": 0.42315192743764174,
+      "after_seconds": 0.8,
+      "reason": "Закончено описание подготовки записи; далее объясняется, почему эта работа трудна для обычного пользователя."
+    },
+    {
+      "after_offset": 999,
+      "quiet_start_source_sample": 2662093,
+      "quiet_end_source_sample": 2680058,
+      "cut_source_sample": 2671075,
+      "insert_start_final_sample": 2712046,
+      "added_samples": 34955,
+      "before_seconds": 0.40736961451247167,
+      "added_seconds": 0.7926303854875284,
+      "after_seconds": 1.2,
+      "reason": "Проблема редактирования изложена; далее начинается отдельная задача анонс-мейкера."
+    },
+    {
+      "after_offset": 1409,
+      "quiet_start_source_sample": 3734338,
+      "quiet_end_source_sample": 3752294,
+      "cut_source_sample": 3743297,
+      "insert_start_final_sample": 3819223,
+      "added_samples": 34964,
+      "before_seconds": 0.4071655328798186,
+      "added_seconds": 0.7928344671201814,
+      "after_seconds": 1.2,
+      "reason": "Описаны затраты времени и потеря внимания; далее представлены две новые функции как решение."
+    },
+    {
+      "after_offset": 1699,
+      "quiet_start_source_sample": 4510576,
+      "quiet_end_source_sample": 4528008,
+      "cut_source_sample": 4519292,
+      "insert_start_final_sample": 4630182,
+      "added_samples": 17848,
+      "before_seconds": 0.39528344671201815,
+      "added_seconds": 0.40471655328798184,
+      "after_seconds": 0.8,
+      "reason": "Описана функция для анонс-мейкера; далее — функция подготовки финальной спикерской."
+    },
+    {
+      "after_offset": 1902,
+      "quiet_start_source_sample": 4997868,
+      "quiet_end_source_sample": 5018464,
+      "cut_source_sample": 5008166,
+      "insert_start_final_sample": 5136904,
+      "added_samples": 23504,
+      "before_seconds": 0.4670294784580499,
+      "added_seconds": 0.5329705215419501,
+      "after_seconds": 1.0,
+      "reason": "Обе функции объяснены; далее указано, где их найти на портале."
+    }
+  ],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved audio. Build B01 video and subtitles from this WAV and shifted alignment.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B01/B01-six-pauses-metadata.json",
+    "sha256": "3ef55818cb1139dcdcc9fc5a018def9b247aec78b336c6baa498f8d59a172d91"
+  },
+  "pause_review_qa": {
+    "path": "generated/narration-blocks-v2/B01/B01-six-pauses-qa.json",
+    "sha256": "9ef34ad26ed6f56037c8fca3b052de464ce9576d6e3e9f4fe7004e455e2cf721"
+  }
+}

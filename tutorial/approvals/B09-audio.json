@@ -1,0 +1,49 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B09",
+  "decision_date": "2026-10-03",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B09/B09-short-01.mp3",
+    "mp3_sha256": "4ab57ad66510b260e565d8ec5187631e8e2977d82e22824f148af5af27313750",
+    "mp3_duration_seconds": 127.712653,
+    "wav": "generated/narration-blocks-v2/B09/B09-short-01.wav",
+    "wav_sha256": "cc9cb666092473f0d0bd6a38e3c90fa2317db41055a4addd5da34b567b548bc9",
+    "pcm_sha256": "9beeaa0a8a035fbeec4eb94802e36b167a7bb14335d346c1120f4f1d459beea2",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 5630247,
+    "alignment": "generated/narration-blocks-v2/B09/B09-short-01-timing.json",
+    "alignment_sha256": "c7991291bae2f4f7b54141f9c43af8fc1e39443179f356bbdc4184cff34ee247",
+    "canonical_text_sha256": "29a4e7665883f44c0bdb426fc4e81aa3a4f2a4f015f00a8afcda09493d6c7334"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B09/narration.mp3",
+    "mp3_sha256": "bdc285269e7936229c65d32190e96d72b17ccbaa3e249ffc64d88512eafb16c8",
+    "wav": "generated/narration-blocks-v2/B09/B09-review-01.wav",
+    "wav_sha256": "5c0e0eac2f713e4fcb2b5fbb7f04aa3c00187dc03d87a46c84e94bfae23d2037",
+    "source_alignment": "generated/narration-blocks-v2/B09/timing.json",
+    "source_alignment_sha256": "17c2eae032c2045757ddded2eda544dc916f364166a7706c7ce0845e1d6a5168",
+    "decoded_pcm_sha256": "ce4102a199daa52f0810f0b2bef5685d6e399191cd6795d561df21cb6ce6e172",
+    "decoded_pcm_samples": 5997600
+  },
+  "deleted_source_sample_range": [
+    4397652,
+    4765005
+  ],
+  "verification": {
+    "reinserting_deleted_samples_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "retained_speech_samples_modified": false
+  },
+  "derivation_metadata": {
+    "path": "generated/narration-blocks-v2/B09/B09-short-01-metadata.json",
+    "sha256": "cd6588a4507c6e9a6570eb415ddaf819c86099fac93f049f7960482aa363ac35"
+  },
+  "review_qa": {
+    "path": "generated/b09-block-review/verification.json",
+    "sha256": "86de88fe6f5838d8b023ee05f2d34c33fb59bc9dd544cbb280d534aeba2a1a13"
+  },
+  "review_rule": "Do not regenerate or edit this approved B09 take."
+}
