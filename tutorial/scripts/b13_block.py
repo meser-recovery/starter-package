@@ -215,20 +215,69 @@ def assemble():
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
             'tts_requests_for_source':1,'production_mutation_requests':0}
     write_json(OUT/'report.json',report)
+    write_player(report)
+    return report
+
+
+def write_player(report):
+    total=report['duration_seconds']
     version=report['video_sha256'][:8]
     (OUT/'index.html').write_text(f'''<!doctype html>
 <html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>B13 · просмотр блока</title>
 <style>body{{margin:0;background:#101724;color:#eef3f6;font:16px/1.5 system-ui,sans-serif}}
 main{{max-width:1100px;margin:auto;padding:24px}}video{{display:block;width:100%;background:#000;margin:24px 0}}
-a{{color:#8cd0e9}}code{{overflow-wrap:anywhere}}</style>
+a{{color:#8cd0e9}}code{{overflow-wrap:anywhere}}button{{font:inherit;color:#8cd0e9;background:none;border:0;
+padding:0;text-decoration:underline;cursor:pointer}}</style>
 <main><h1>B13 · версии, проекты и история</h1>
 <p>Сцены 046–051 · {total:.3f} с · READY FOR B13 BLOCK REVIEW</p>
-<video controls playsinline preload="metadata"><source src="B13.mp4?v={version}" type="video/mp4">
-<track kind="subtitles" srclang="ru" label="Русские субтитры" src="B13.ru.vtt" default></video>
-<p><a href="B13.mp4?v={version}" download>Скачать MP4</a> · <a href="B13.ru.srt" download>Скачать SRT</a></p>
-<p>SHA-256 MP4: <code>{report['video_sha256']}</code></p></main></html>''')
-    return report
+<div id="video-slot"><video controls playsinline preload="metadata"><source src="B13.mp4?v={version}" type="video/mp4">
+<track kind="subtitles" srclang="ru" label="Русские субтитры" src="B13.ru.vtt" default></video></div>
+<p><a href="B13.mp4?v={version}" download>Скачать MP4</a> · <a href="B13.ru.srt" download>Скачать SRT</a>
+· <button id="restore-video" type="button">Восстановить изображение</button></p>
+<p>SHA-256 MP4: <code>{report['video_sha256']}</code></p></main>
+<script>
+(() => {{
+  const slot = document.getElementById('video-slot');
+  let awayAt = 0;
+  let lastRestore = 0;
+  function restoreVideo() {{
+    // A resumed embedded video can retain audio, time and captions while its
+    // picture surface is black. Recreate the media element, not the MP4.
+    const old = slot.querySelector('video');
+    const time = old.currentTime;
+    const playing = !old.paused && !old.ended;
+    const volume = old.volume, muted = old.muted, rate = old.playbackRate;
+    const modes = Array.from(old.textTracks, track => track.mode);
+    const next = old.cloneNode(true);
+    next.addEventListener('loadedmetadata', () => {{
+      next.volume = volume;
+      next.muted = muted;
+      next.playbackRate = rate;
+      modes.forEach((mode, index) => {{ if (next.textTracks[index]) next.textTracks[index].mode = mode; }});
+      const resume = () => {{ if (playing) next.play().catch(() => {{}}); }};
+      if (Number.isFinite(time) && time > 0) {{
+        next.addEventListener('seeked', resume, {{once: true}});
+        next.currentTime = Math.min(time, Math.max(0, next.duration - 1 / 30));
+      }} else resume();
+    }}, {{once: true}});
+    old.replaceWith(next);
+    next.load();
+    lastRestore = performance.now();
+  }}
+  document.getElementById('restore-video').addEventListener('click', restoreVideo);
+  function returned() {{
+    if (awayAt && performance.now() - awayAt > 1000 && performance.now() - lastRestore > 1000) restoreVideo();
+    awayAt = 0;
+  }}
+  document.addEventListener('visibilitychange', () => {{
+    if (document.hidden) awayAt = performance.now(); else returned();
+  }});
+  window.addEventListener('blur', () => {{ awayAt = performance.now(); }});
+  window.addEventListener('focus', returned);
+  window.addEventListener('pageshow', event => {{ if (event.persisted) restoreVideo(); }});
+}})();
+</script></html>''')
 
 
 def verify():
