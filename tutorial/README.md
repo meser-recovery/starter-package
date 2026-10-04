@@ -1,6 +1,6 @@
 # Meser Audio Tutorial production pipeline
 
-## Current S11 review: B14 complete block
+## Current S11 review: B14 corrected summary visual
 
 The [Canonical Content Pack](content/meser-audio-tutorial-canonical-content-pack.md) is the exact narration source. `tutorial.yaml` and its fail-closed `CONTENT_DRIFT` validator map all 14 approved B-blocks and 54 technical scene units without changing PART A. The [current block map](content/S11-Narration-Module-Map.md) names each block; N01–N08 and their generated artifacts are historical.
 
@@ -11,8 +11,10 @@ python3 tutorial/scripts/build.py dry-run --module B14
 venv/bin/python tutorial/scripts/build.py visual --module B14
 venv/bin/python tutorial/scripts/build.py assemble --module B14
 venv/bin/python tutorial/scripts/build.py verify --module B14
-venv/bin/python tutorial/scripts/b14_player_smoke.py --base-url http://127.0.0.1:4216
+venv/bin/python tutorial/scripts/b14_player_smoke.py --base-url http://127.0.0.1:4217
 ```
+
+The current candidate and browser player are in `generated/b14-outro-review/`. The visual-only correction begins at 67.800 s; the preceding candidate remains in `generated/b14-block-review/`. The first 2,034 picture frames are preserved visually, while the existing AAC packets, alignment and subtitle files are unchanged. The review report and browser QA are in [B14-REVIEW.md](B14-REVIEW.md). Run only the listed `visual`, `assemble` and `verify` commands for this revision; they make no new TTS request.
 
 `approvals/B01-audio.json` records `AUDIO_APPROVED` for `B01-six-pauses.mp3` (SHA-256 `93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377`). It pins the approved WAV and PCM, shifted alignment, original provider MP3 and alignment, canonical text, and all six insertion ranges. `audio_approval.py` checks every hash and verifies that removing the inserted zero samples restores the source decoded PCM byte for byte. B01 narration requests, including `--force`, are rejected before ElevenLabs access. The original provider MP3, previous processed takes and metadata remain under the ignored `generated/narration-blocks-v2/B01/` directory.
 

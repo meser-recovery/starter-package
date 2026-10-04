@@ -151,7 +151,7 @@ def main() -> None:
                 validate_block_approval('B13')
                 if args.mode != 'verify' and (ROOT / 'approvals/B14-block.json').exists():
                     raise RuntimeError('B14 complete block is approved and immutable')
-                from b14_block import visual, assemble, verify
+                from b14_outro import visual, assemble, verify
             if args.mode == "visual":
                 import asyncio
                 print(json.dumps(asyncio.run(visual()), ensure_ascii=False, indent=2))

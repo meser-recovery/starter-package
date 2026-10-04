@@ -11,7 +11,7 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-from b14_block import OUT
+from b14_outro import OUT
 
 
 def gray(png: bytes) -> bytes:
@@ -86,11 +86,16 @@ def run(base: str, evidence: Path) -> dict:
         source = page.locator('video source').get_attribute('src')
         assert source.startswith('B14.mp4?v='), source
         samples = {name: seek(page, second, name, evidence) for name, second in
-                   [('beginning', 4), ('middle', 60), ('ending', 112), ('after-seek', 22)]}
-        if sum(abs(a-b) for a,b in zip(samples['beginning'],samples['middle'])) / len(samples['beginning']) < 3:
-            raise AssertionError('beginning and middle browser frames did not update')
-        if sum(abs(a-b) for a,b in zip(samples['middle'],samples['ending'])) / len(samples['middle']) < 3:
-            raise AssertionError('middle and ending browser frames did not update')
+                   [('beginning', 4), ('archive-before-summary', 60),
+                    ('separate-tracks', 80), ('announcement', 89),
+                    ('speaker', 97), ('archive-summary', 107),
+                    ('ending', 118), ('after-seek', 22)]}
+        progression = ['beginning', 'archive-before-summary', 'separate-tracks',
+                       'announcement', 'speaker', 'archive-summary', 'ending']
+        for left, right in zip(progression, progression[1:]):
+            change = sum(abs(a-b) for a,b in zip(samples[left], samples[right])) / len(samples[left])
+            if change < 3:
+                raise AssertionError(f'{left} and {right} browser frames did not update')
         before = page.locator('video').evaluate('(video) => video.currentTime')
         page.locator('video').evaluate('(video) => video.play()')
         page.wait_for_function('(before) => document.querySelector("video").currentTime > before + .4', arg=before)
