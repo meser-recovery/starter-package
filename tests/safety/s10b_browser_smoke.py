@@ -93,19 +93,44 @@ def run(browser_type, base_url):
     outbound = []
     pagehide_revokes = []
     blob_events = []
+    file_events = []
     failed_requests = []
     phase = ['initial page']
     page.on('pageerror', lambda error: page_errors.append({
         'phase': phase[0], 'page': page.url, 'message': str(error),
         'stack': getattr(error, 'stack', None),
-        'recent_blob_events': blob_events[-16:], 'recent_failed_requests': failed_requests[-8:]
+        'recent_blob_events': blob_events[-16:], 'recent_failed_requests': failed_requests[-8:],
+        'recent_file_events': file_events[-32:]
     }))
     page.on('console', lambda message: (
         pagehide_revokes.append(message.text) if message.type == 'error' and message.text.startswith('S10B_REVOKE_DURING_PAGEHIDE ') else None,
-        blob_events.append(message.text) if message.text.startswith('S10B_BLOB_') else None
+        blob_events.append(message.text) if message.text.startswith('S10B_BLOB_') else None,
+        file_events.append({'phase': phase[0], 'event': message.text}) if message.text.startswith('S10B_FILE_') else None
     ))
     page.on('requestfailed', lambda request: failed_requests.append((request.url, request.failure)))
     page.add_init_script("""(() => {
+      let readId = 0;
+      const trace = (event, data = {}) => console.debug('S10B_FILE_' + JSON.stringify({
+        event, time: performance.now(), wall: Date.now(), url: location.href, ...data
+      }));
+      for (const type of ['beforeunload', 'pagehide', 'pageshow']) {
+        addEventListener(type, event => trace(type, { persisted: event.persisted }), { capture: true });
+      }
+      const read = FileReader.prototype.readAsArrayBuffer;
+      const abort = FileReader.prototype.abort;
+      FileReader.prototype.readAsArrayBuffer = function(file) {
+        const id = ++readId;
+        this.__s10bReadId = id;
+        trace('read-start', { id, name: file.name, size: file.size });
+        for (const type of ['load', 'error', 'abort', 'loadend']) {
+          this.addEventListener(type, () => trace(type, { id, state: this.readyState, error: this.error?.name }));
+        }
+        return read.call(this, file);
+      };
+      FileReader.prototype.abort = function() {
+        trace('read-cancel', { id: this.__s10bReadId, state: this.readyState });
+        return abort.call(this);
+      };
       let pageHiding = false;
       addEventListener('pagehide', () => {
         pageHiding = true;
