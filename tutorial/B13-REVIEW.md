@@ -1,6 +1,6 @@
 # B13 · Версии анонса, проекты и история «Спикерской»
 
-Status: **READY FOR B13 BLOCK REVIEW**. Scenes 046–051 use the unchanged Canonical Content Pack. B01–B12 remain approved and unchanged; B14 is gated.
+Status: **AUDIO_APPROVED** and **BLOCK_APPROVED** on 2026-10-04. Scenes 046–051 use the unchanged Canonical Content Pack. Exact MP4, audio, PCM, alignment, and subtitle hashes are pinned in `approvals/B13-audio.json` and `approvals/B13-block.json`. B01–B12 remain approved and unchanged; B14 is the current review block.
 
 The full narration was synthesized in **one continuous ElevenLabs request**: voice `LHi3adMlU7AICv8Yxpmm`, model `eleven_v3`, language `ru`, stability `0.5`, output `mp3_44100_128`, with `[calm] [conversational] [slowly]` delivery. Provider MP3 SHA-256: `50be1afac187afe77f2bf01a6ce7d98f0046936c4d7bced8c49c1bc1a658bff7`; duration: 184.032653 s. The source response and alignment are retained in `generated/narration-blocks-v2/B13/`.
 

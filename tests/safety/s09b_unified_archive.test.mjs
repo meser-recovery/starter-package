@@ -6,6 +6,7 @@ import {
   processingAvailabilityMessage, pageItems, latestOutput, speakerRecoveryBinding
 } from '../../scripts/audio-archive-core.mjs';
 import { projectProjection } from '../../scripts/audio-project.mjs';
+import { selectSessions as selectFrontendSessions } from '../../service/frontend/scripts/audio-archive-core.mjs';
 import { validateAnnouncementOutput, validateSpeakerOutput } from '../../scripts/audio-archive-client.mjs';
 
 test('S09B recording collection defaults to all records and secondary filters keep one UUID once', async () => {
@@ -22,6 +23,21 @@ test('S09B recording collection defaults to all records and secondary filters ke
   assert.ok(selectSessions(all, { speakerProject: true }).every(item => item.workflows.speaker.currentDraft));
   assert.ok(selectSessions(all, { announcementResult: true }).every(item => item.workflows.announcement.outputs.length));
   assert.ok(selectSessions(all, { speakerResult: true }).every(item => item.workflows.speaker.outputs.length));
+});
+
+test('Archive result checkboxes retain records with saved outputs', async () => {
+  const h = await managementFixture();
+  const first = structuredClone(await h.gateway.getSession(h.primary.id));
+  const second = structuredClone(await h.gateway.getSession(h.archived.id));
+  first.workflows.speaker.outputs = [];
+  second.workflows.announcement.outputs = [];
+  first.workflows.announcement.outputs = [{ outputId: 'announcement' }];
+  second.workflows.speaker.outputs = [{ outputId: 'speaker' }];
+  assert.deepEqual(selectSessions([first, second], { announcementResult: true }).map(x => x.id), [first.id]);
+  assert.deepEqual(selectSessions([first, second], { speakerResult: true }).map(x => x.id), [second.id]);
+  assert.deepEqual(selectSessions([first, second], { announcementResult: 'no' }).map(x => x.id), [second.id]);
+  assert.deepEqual(selectFrontendSessions([first, second], { announcementResult: true }).map(x => x.id), [first.id]);
+  assert.deepEqual(selectFrontendSessions([first, second], { speakerResult: true }).map(x => x.id), [second.id]);
 });
 
 test('S09B recording vocabulary separates work-list, source availability and processing eligibility', async () => {

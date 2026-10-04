@@ -84,12 +84,12 @@ export function selectSessions(sessions, filters = {}, transactions = null) {
     if (filters.sources && (session.sourceState === 'available' ? 'available' : 'unavailable') !== filters.sources) return false;
     if (filters.attention && !attention.has(session.id)) return false;
     if (filters.speakerProject && !session.workflows.speaker.currentDraft) return false;
-    if (filters.announcementResult && !session.workflows.announcement.outputs.length) return false;
-    if (filters.speakerResult && !session.workflows.speaker.outputs.length) return false;
+    if (filters.announcementResult === true && !session.workflows.announcement.outputs.length) return false;
+    if (filters.speakerResult === true && !session.workflows.speaker.outputs.length) return false;
     for (const workflow of Object.keys(workflows)) {
       const state = filters[workflow + 'State'], result = filters[workflow + 'Result'];
       if (state && session.workflows[workflow].status !== state) return false;
-      if (result && Boolean(session.workflows[workflow].outputs.length) !== (result === 'yes')) return false;
+      if ((result === 'yes' || result === 'no') && Boolean(session.workflows[workflow].outputs.length) !== (result === 'yes')) return false;
     }
     const day = Number.isFinite(timestamp(session.recordedAt)) ? new Date(session.recordedAt).toISOString().slice(0, 10) : '';
     return !((filters.from || filters.to) && (!day || (filters.from && day < filters.from) || (filters.to && day > filters.to)));
