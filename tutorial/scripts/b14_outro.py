@@ -137,8 +137,10 @@ def assemble():
             'approved_audio_mp3_sha256':metadata['mp3_sha256'],
             'approved_audio_wav_sha256':metadata['wav_sha256'],
             'approved_alignment_sha256':metadata['timing_sha256'],
+            'final_alignment_sha256':metadata['timing_sha256'],
             'subtitle_srt_sha256':SRT_SHA,'subtitle_vtt_sha256':VTT_SHA,
             'embedded_subtitle_cues':checked['embedded_subtitle_cues'],
+            'subtitle_cues':checked['embedded_subtitle_cues'],
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
             'tts_requests_for_visual_revision':0,'production_mutation_requests':0}
     write_json(OUT/'report.json',report)
@@ -203,6 +205,7 @@ def verify():
             'alignment_sha256':metadata['timing_sha256'],
             'subtitle_srt_unchanged':True,'subtitle_vtt_unchanged':True,
             'embedded_subtitle_cues':checked['embedded_subtitle_cues'],
+            'subtitle_cues':checked['embedded_subtitle_cues'],
             'last_embedded_subtitle_end_seconds':checked['last_embedded_subtitle_end_seconds'],
             'video_frames':TOTAL_FRAMES,'blank_frames':0,'isolated_flash_frames':0,
             'visual_transition_anomalies':[],'production_mutation_requests':0,'new_tts_requests':0}

@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import copy
+import hashlib
 import json
 import tempfile
 import unittest
@@ -48,6 +49,15 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual([s["id"] for s in self.spec["scenes"][:3]], ["B01-001", "B01-002", "B01-003"])
         self.assertEqual(len(canonical), result["canonical_characters"])
 
+    def test_b02_revised_text_excludes_removed_passages(self):
+        block = next(x for x in self.spec['narration_modules'] if x['id']=='B02')
+        self.assertEqual(hashlib.sha256(block['narration'].encode()).hexdigest(),
+                         'b77bd4900497fad5cd94bb8c17902542bb7fff2025661554b20d84b494c4bcea')
+        self.assertTrue(block['narration'].startswith('Для того, чтобы понять'))
+        self.assertTrue(block['narration'].endswith('двух новых инструментов редактирования.'))
+        self.assertNotIn('Анонс-мейкер, владеющий ивритом', block['narration'])
+        self.assertNotIn('которая будет сохранена на сайте «Нам по пути»', block['narration'])
+
     def test_content_drift_rejects_phrase_gap_duplicate_order_title_scene_caption_hash(self):
         self.changed(lambda s: s["scenes"][0].__setitem__("narration", "Привет."))
         self.changed(lambda s: s["scenes"][1].__setitem__("start_offset", s["scenes"][1]["start_offset"] + 1))
@@ -62,13 +72,13 @@ class AudioBlockTests(unittest.TestCase):
     def test_one_continuous_request_and_scene_alignment(self):
         block = self.spec["narration_modules"][0]
         body = modules.request_body(self.spec, block)
-        self.assertTrue(body["text"].startswith("[calm] [conversational] [slowly]\n"))
+        self.assertTrue(body["text"].startswith("[calm] [conversational]\n"))
         self.assertEqual(body["voice_settings"], {"stability": 0.5})
         text, indices = modules.request_text_and_indices(self.spec, block)
         self.assertEqual(text, body["text"])
         self.assertEqual("".join(text[i] for i in indices), block["narration"])
         self.assertEqual(text.count("[pause]"), 6)
-        self.assertEqual(text.count("[slowly]"), 1)
+        self.assertEqual(text.count("[slowly]"), 0)
         self.assertIn("Привет. Позвольте", text)
         self.assertNotIn(block["title"], body["text"])
         text = body["text"]
@@ -111,14 +121,18 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual([i for i, b in enumerate(changed["narration_modules"])
                           if modules.narration_hash(changed, b) != before[i]], [1])
 
-    def test_approved_b01_never_spends_even_with_force(self):
-        with tempfile.TemporaryDirectory() as folder:
-            rows = modules.plan(self.spec, [self.spec["narration_modules"][0]], force=True, root=Path(folder))
-        self.assertEqual(rows["tts_requests"], 0)
-        self.assertEqual(rows["modules"][0]["cache"], "APPROVED")
-        with self.assertRaisesRegex(RuntimeError, "approved and immutable"):
-            modules.generate(self.spec, self.spec["narration_modules"][0], force=True)
-        self.assertEqual(len([r for r in rows["modules"] if not r["selected"]]), 13)
+    def test_reopened_b01_b02_have_one_take_and_no_additional_narration_route(self):
+        source = ROOT / 'generated/narration-blocks-v3'
+        if not (source / 'B01/metadata.json').is_file():
+            self.skipTest('new one-request takes are ignored local review artifacts')
+        for block_id in ('B01', 'B02'):
+            module = next(x for x in self.spec['narration_modules'] if x['id'] == block_id)
+            self.assertEqual(modules.cached(self.spec, module, root=source)['metadata']['tts_requests_for_this_take'], 1)
+            with patch('sys.argv', ['build.py', 'narration', '--module', block_id]):
+                with self.assertRaisesRegex(RuntimeError, 'one authorized new TTS request'):
+                    build.main()
+            with self.assertRaisesRegex(RuntimeError, 'one authorized new TTS request'):
+                modules.generate(self.spec, module, force=True, root=source)
 
     def test_b13_approval_pins_exact_video_audio_alignment_and_subtitles(self):
         audio = validate_approval(self.spec, 'B13')['record']
@@ -134,6 +148,20 @@ class AudioBlockTests(unittest.TestCase):
                          '9e8409a8ccc2e15f881e096e8e0ee7577ad8206c86e67846c1bd2e85e91e66a6')
         with self.assertRaisesRegex(RuntimeError, 'approved and immutable'):
             modules.generate(self.spec, next(x for x in self.spec['narration_modules'] if x['id']=='B13'), force=True)
+
+    def test_b14_approval_pins_accepted_summary_video_and_audio(self):
+        if not (ROOT/'generated/b14-outro-review/B14.mp4').is_file():
+            self.skipTest('approved B14 media is an ignored local review artifact')
+        audio = validate_approval(self.spec, 'B14')['record']
+        block = validate_block_approval('B14')
+        self.assertEqual((audio['status'], block['status']), ('AUDIO_APPROVED', 'BLOCK_APPROVED'))
+        self.assertEqual(block['video_sha256'],
+                         'e64b61ebf5933796c918682babadfd049a32294bd481b25116f19982956a04a1')
+        self.assertEqual(block['approved_mp3_sha256'],
+                         'ca5934f16b880b73fca530ddafcd08d53d12484063f6fd7dfe706f1490e28d38')
+        self.assertEqual(block['approved_alignment_sha256'],
+                         'fd469bf39eb30e52cb24c35294497dab1a940da1c0b69ddce7d4c35dbc3fd1a9')
+        self.assertEqual(block['embedded_subtitle_cues'], 33)
 
     def test_b12_approval_pins_exact_video_audio_alignment_and_subtitles(self):
         audio = validate_approval(self.spec, 'B12')['record']
@@ -213,20 +241,19 @@ class AudioBlockTests(unittest.TestCase):
         old = json.loads(history.read_text())
         self.assertEqual(old['video_sha256'], '90b1d7b28c67b623455b6d25da54184c9cf6cfa762a9935d2c091432994e3c51')
         self.assertEqual(old['embedded_subtitle_cues'], 34)
-        state = validate_block_approval('B01')
-        self.assertEqual(state['status'], 'BLOCK_APPROVED')
-        self.assertEqual(state['video_sha256'], '8cf72d8e2b081eff6f6c4714410fa0cc901dfb09d8efa2148cb3236efa32e032')
-        self.assertEqual(state['approved_mp3_sha256'], '93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377')
-        self.assertEqual(state['subtitle_srt_sha256'], 'c0ad60bd5a1f23dea186674e6bbee913b0e3663dc75fc0fd8a4fe71df9f0b3d9')
-        self.assertEqual(state['embedded_subtitle_cues'], 34)
+        current_history = json.loads((ROOT/'approvals/historical/B01-block-approved-before-2026-10-04-reopen.json').read_text())
+        self.assertEqual(current_history['status'], 'BLOCK_APPROVED')
+        self.assertEqual(current_history['video_sha256'], '8cf72d8e2b081eff6f6c4714410fa0cc901dfb09d8efa2148cb3236efa32e032')
+        self.assertFalse((ROOT/'approvals/B01-block.json').exists())
 
     def test_b02_block_approval_pins_audio_alignment_and_subtitles(self):
-        state = validate_block_approval('B02')
+        state = json.loads((ROOT/'approvals/historical/B02-block-approved-before-2026-10-04-reopen.json').read_text())
         self.assertEqual(state['status'], 'BLOCK_APPROVED')
         self.assertEqual(state['video_sha256'], '8f2f930e096dcb3a9615d047ea5901e7346b65046aee1b27b473387dc0cbd993')
         self.assertEqual(state['approved_mp3_sha256'], '19d93e92c574e7be09fd603390430e3ce7ce1e803752aec703087214c7ec98c4')
         self.assertEqual(state['approved_alignment_sha256'], 'bda48ae45818e2781b06fe3384eb69c0270623d8a2cfbf82aa99bbedd73ec817')
         self.assertEqual(state['embedded_subtitle_cues'], 40)
+        self.assertFalse((ROOT/'approvals/B02-block.json').exists())
 
     def test_b03_block_approval_pins_audio_alignment_and_subtitles(self):
         state = validate_block_approval('B03')
@@ -276,11 +303,15 @@ class AudioBlockTests(unittest.TestCase):
     def test_b01_approval_preserves_pcm_and_shifted_scene_alignment(self):
         if not (ROOT / "generated/narration-blocks-v2/B01/B01-six-pauses.mp3").is_file():
             self.skipTest("approved large audio is an ignored local review artifact")
-        approval = validate_approval(self.spec, "B01")
+        old_spec = copy.deepcopy(self.spec)
+        old_spec['narration_modules'][0]['tts']['opening_tag'] = '[slowly]'
+        historical = ROOT/'approvals/historical/B01-audio-approved-before-2026-10-04-reopen.json'
+        with patch('audio_approval.approved_path', return_value=historical):
+            approval = validate_approval(old_spec, "B01")
         self.assertEqual(approval["record"]["status"], "AUDIO_APPROVED")
         self.assertEqual(len(approval["record"]["insertions"]), 6)
-        for scene in self.spec["scenes"][:3]:
-            timing = approved_scene_timing(self.spec, scene, approval)
+        for scene in old_spec["scenes"][:3]:
+            timing = approved_scene_timing(old_spec, scene, approval)
             self.assertEqual("".join(timing["alignment"]["characters"]), scene["narration"])
             self.assertGreater(timing["duration_seconds"], 0)
 

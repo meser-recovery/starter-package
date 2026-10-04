@@ -9,7 +9,7 @@ from pathlib import Path
 from content_model import approved_structure
 
 ROOT = Path(__file__).resolve().parents[1]
-APPROVED_PACK_SHA256 = "4cfe5755e714671af42c1301b516be251b4fe66384b710d78fd7c33a098c5dfe"
+APPROVED_PACK_SHA256 = "f3421d20469e2dabe9deaad9ca6f2b7cdfebd0ecd45567792c4f2fefdcbab8b2"
 
 
 class ContentDrift(ValueError):
@@ -101,7 +101,7 @@ def validate(spec_path: Path = ROOT / "tutorial.yaml") -> dict:
                 fail(f"{bid} {key} differs from approved source")
         if bid == "B01":
             tts = block.get("tts")
-            if not tts or tts["opening_tag"] != "[slowly]":
+            if not tts or tts["opening_tag"] != "":
                 fail("B01 delivery settings invalid")
             pauses = tts["pauses"]
             if [p["after_offset"] for p in pauses] != [450, 795, 999, 1409, 1699, 1902] or any(

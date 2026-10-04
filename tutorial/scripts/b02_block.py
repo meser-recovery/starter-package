@@ -305,7 +305,7 @@ def assemble() -> dict:
               'final_pcm_sha256': audio['metadata']['final_pcm_sha256'],
               'final_alignment_sha256': audio['metadata']['timing_sha256'],
               'video_audio_timeline': str(timeline), 'video_audio_lead_seconds': LEAD_SECONDS,
-              'internal_audio_silence_added_seconds': audio['metadata']['events'][0]['added_seconds'],
+              'internal_audio_silence_added_seconds': sum(event['added_seconds'] for event in audio['metadata']['events']),
               'visual_tail_seconds': visual_duration-audio_duration,
               'video': str(final), 'video_sha256': sha(final),
               'duration_seconds': float(info['format']['duration']),

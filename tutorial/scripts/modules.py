@@ -145,6 +145,12 @@ def cached(spec, module, root=CACHE):
 def generate(spec,module,force=False,root=CACHE):
     if spec['schema_version']==2 and (ROOT/'approvals'/f"{module['id']}-audio.json").exists():
         raise RuntimeError(f"{module['id']} audio is approved and immutable; TTS is forbidden")
+    reopened_root=ROOT/'generated/narration-blocks-v3'
+    if spec['schema_version']==2 and module['id'] in ('B01','B02') and (reopened_root/module['id']/'metadata.json').exists():
+        if Path(root)==reopened_root and not force:
+            reviewed=cached(spec,module,root=reopened_root)
+            if reviewed:return reviewed,'HIT'
+        raise RuntimeError(f"{module['id']} already used its one authorized new TTS request")
     hit=cached(spec,module,root)
     if hit and not force:
         return hit,'HIT'
