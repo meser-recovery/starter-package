@@ -1623,6 +1623,9 @@ run.addEventListener("click", async () => {
 });
 
 cancel.addEventListener("click", stop);
+// WebKit stops document loads before pagehide. Pending metadata can settle in
+// that interval and otherwise start a new FileReader in the departing document.
+window.addEventListener("beforeunload", stop, { capture: true });
 window.addEventListener("pagehide", () => {
   stop();
   engine?.terminate();

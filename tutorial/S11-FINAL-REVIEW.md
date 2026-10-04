@@ -39,6 +39,8 @@ Direct listening was unavailable. PCM identity and AAC checks establish preserva
 
 ## Repository / CI
 
+The subsequent S10B WebKit navigation failure and its controlled Linux reproduction / correction are documented in [S11-CI-REVIEW.md](S11-CI-REVIEW.md). Final-HEAD CI evidence and the concrete green run are recorded in PR #60 and `generated/s11-ci-webkit-review/FINAL-RESULT.md`. This correction preserves the complete movie and every approved media source.
+
 Local checks: tutorial unit suite, repository contract, gateway syntax/tests and frontend Node tests. Exact commands, counts and final HEAD are saved in `repository-validation.json`. CI results for the final pushed HEAD are saved separately in `ci-results.json` and linked from PR #60.
 
 The preceding HEAD's CI failed because approval integration tests required large ignored local media files in a clean checkout. Tracked approval relationships and canonical hashes now run everywhere; actual binary validation remains mandatory before assembly and in local integration tests. Offline synthetic tests exercise approval/binary tampering and complete subtitle extraction, so no product test or safety control is weakened. Large historical media fixtures are explicitly skipped when absent from CI.

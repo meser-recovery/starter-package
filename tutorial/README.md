@@ -25,6 +25,8 @@ Final assembly validates approval records and every actual input digest before u
 
 CI validates tracked approval relationships without requiring ignored local media. Local assembly and integration tests still validate actual binaries strictly. Synthetic tests reject changed approval records, canonical drift, binary digest mismatch, incomplete embedded subtitles, short screen/scroll returns and duplicate pause accounting. Large historical media regression tests run when their local fixtures exist; they explicitly skip in a clean checkout. No security control or product test has been relaxed.
 
+The S10B WebKit navigation correction, controlled Linux reproduction and unchanged-media evidence are described in [S11-CI-REVIEW.md](S11-CI-REVIEW.md); final-HEAD CI results are linked from PR #60.
+
 ## Historical block candidates and production rules
 
 Historical `approvals/historical/B01-audio-approved-before-2026-10-04-reopen.json` records `AUDIO_APPROVED` for `B01-six-pauses.mp3` (SHA-256 `93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377`). It pins the approved WAV and PCM, shifted alignment, original provider MP3 and alignment, canonical text, and all six insertion ranges. `audio_approval.py` checks every hash and verifies that removing the inserted zero samples restores the source decoded PCM byte for byte. B01 narration requests, including `--force`, are rejected before ElevenLabs access. The original provider MP3, previous processed takes and metadata remain under the ignored `generated/narration-blocks-v2/B01/` directory.

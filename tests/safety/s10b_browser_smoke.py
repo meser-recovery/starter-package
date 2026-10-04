@@ -32,6 +32,59 @@ def assert_fits(page, widths):
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'horizontal overflow at {width}px'
 
 
+def waveform_navigation_transition(page, base_url, writes):
+    """Release pending metadata at navigation, before the old document's pagehide.
+
+    This retains a main-world File and does not revoke any application URL or
+    depend on Playwright's input-file payload implementation.
+    """
+    events = []
+    page.on('console', lambda message: events.append(message.text) if message.text.startswith('S10B_NAV_') else None)
+    page.add_init_script("""(() => {
+      const add = HTMLMediaElement.prototype.addEventListener;
+      let pendingMetadata;
+      HTMLMediaElement.prototype.addEventListener = function(type, listener, options) {
+        if (type === 'loadedmetadata' && this.preload === 'metadata' && !this.isConnected) {
+          return add.call(this, type, event => {
+            pendingMetadata = () => listener.call(this, event);
+            window.__s10bMetadataReady = true;
+          }, options);
+        }
+        return add.call(this, type, listener, options);
+      };
+      addEventListener('beforeunload', () => {
+        if (pendingMetadata) {
+          console.debug('S10B_NAV_METADATA_RELEASED');
+          pendingMetadata();
+        }
+      });
+      const read = FileReader.prototype.readAsArrayBuffer;
+      FileReader.prototype.readAsArrayBuffer = function(file) {
+        if (window.__s10bMetadataReady) console.debug('S10B_NAV_LATE_READ ' + file.name + ' ' + new Error().stack);
+        return read.call(this, file);
+      };
+    })();""")
+    page.goto(f'{base_url}/Audio-Editor.html')
+    page.evaluate("document.getElementById('source-session-mode-device').click()")
+    fixture = source('navigation.wav')
+    page.evaluate("""async bytes => {
+      await import('./scripts/audio-processor.mjs');
+      const file = new File([new Uint8Array(bytes)], 'navigation.wav', { type: 'audio/wav' });
+      window.__s10bRetainedNavigationFile = file;
+      if ((await file.arrayBuffer()).byteLength !== bytes.length) throw new Error('Invalid navigation fixture');
+      const transfer = new DataTransfer(); transfer.items.add(file);
+      const input = document.getElementById('processor-file');
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }""", list(fixture['buffer']))
+    page.wait_for_function('window.__s10bMetadataReady === true', timeout=30_000)
+    before = len(writes)
+    page.goto(f'{base_url}/Audio-Archive.html')
+    assert 'S10B_NAV_METADATA_RELEASED' in events, events
+    assert not any(event.startswith('S10B_NAV_LATE_READ ') for event in events), events
+    assert len(writes) == before, 'leaving waveform preparation made an Archive write'
+
+
 def speaker_source_transition(page, base_url, writes, same_name):
     a = source('same.wav' if same_name else 'A.wav', 0)
     b = source('same.wav' if same_name else 'B.wav', 200)
@@ -240,6 +293,8 @@ def run(browser_type, base_url):
     speaker_source_transition(page, base_url, writes, False)
     phase[0] = 'Speaker source A to B, same name'
     speaker_source_transition(page, base_url, writes, True)
+    phase[0] = 'Editor pending metadata during navigation'
+    waveform_navigation_transition(page, base_url, writes)
     assert not page_errors, page_errors
     assert not pagehide_revokes, pagehide_revokes
     assert not outbound, outbound
@@ -255,4 +310,4 @@ if __name__ == '__main__':
         names = ('chromium', 'firefox', 'webkit') if args.browser == 'all' else (args.browser,)
         for name in names:
             run(getattr(playwright, name), args.base_url)
-            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, 320/390/768/1280px')
+            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, pending metadata navigation, 320/390/768/1280px')

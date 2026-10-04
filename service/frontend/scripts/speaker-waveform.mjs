@@ -91,7 +91,11 @@ export function createWaveformReader(signal, sharedEngine = null, options = {}) 
   // File.arrayBuffer() cannot be cancelled while a page is navigating away.
   // WebKit can then try to read the page's expired backing blob URL. FileReader
   // lets pagehide abort the underlying read before that document is torn down.
-  const fileBytes = file => {
+  const fileBytes = async file => {
+    // Metadata may settle inside an earlier beforeunload listener. Let all
+    // navigation cancellation handlers run before starting the blob loader.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (disposed || signal?.aborted) throw new DOMException('cancelled', 'AbortError');
     if (!signal || typeof FileReader !== 'function') return file.arrayBuffer();
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
