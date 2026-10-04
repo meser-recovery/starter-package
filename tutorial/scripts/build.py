@@ -163,17 +163,22 @@ def main() -> None:
             parser.error(str(error))
         if args.mode == "dry-run":
             if args.module in ('B01', 'B02'):
+                if approved_path(args.module).exists():
+                    approved = validate_block_approval(args.module)
+                    print(json.dumps({'content_validation': result, 'module_id': args.module,
+                                      'cache': 'APPROVED', 'tts_requests': 0,
+                                      'video_sha256': approved['video_sha256']}, ensure_ascii=False, indent=2)); return
                 from reopen_b01_b02 import inputs as reopened_inputs
                 _, _, _, _, _, take, _ = reopened_inputs(args.module)
                 print(json.dumps({'content_validation': result, 'module_id': args.module,
-                                  'review_gate': 'NEW_B01_B02_BLOCK_REVIEW',
+                                  'review_gate': 'B01_APPROVED_B02_VISUAL_REVIEW',
                                   'one_new_tts_request_used': True,
                                   'provider_mp3_sha256': take['provider_mp3_sha256'],
-                                  'visual_changes': 'B01_B02_ONLY'}, ensure_ascii=False, indent=2)); return
+                                  'visual_changes': 'B02_ONLY'}, ensure_ascii=False, indent=2)); return
             preview = plan(spec, selected, args.force)
             from reopen_b01_b02 import SOURCE as reopened_source
             for row in preview['modules']:
-                if row['module_id'] in ('B01','B02') and (reopened_source/row['module_id']/'metadata.json').exists():
+                if row['module_id'] in ('B01','B02') and not approved_path(row['module_id']).exists() and (reopened_source/row['module_id']/'metadata.json').exists():
                     preview['tts_requests'] -= row['tts_requests']
                     preview['characters_to_generate'] -= row['characters_to_generate']
                     row.update(cache='ONE_TAKE_PENDING_REVIEW', tts_requests=0, characters_to_generate=0)
@@ -183,9 +188,9 @@ def main() -> None:
                 preview['characters_to_generate'] -= row['characters_to_generate']
                 row.update(cache='DERIVED_PCM_CUT', tts_requests=0, characters_to_generate=0)
             print(json.dumps({"content_validation": result, **preview,
-                              "review_gate": "B01_B02_REOPENED_B03_TO_B14_APPROVED",
-                              "approved_audio": ["B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14"],
-                              "visual_changes": "B01_B02_ONLY_UNTIL_REAPPROVED"}, ensure_ascii=False, indent=2)); return
+                              "review_gate": "B01_APPROVED_B02_VISUAL_REVIEW",
+                              "approved_audio": ["B01", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14"],
+                              "visual_changes": "B02_ONLY_UNTIL_REAPPROVED"}, ensure_ascii=False, indent=2)); return
         if len(selected) != 1 or args.module != selected[0]["id"]:
             raise RuntimeError("review gate: select exactly one B-block for narration")
         module_id = selected[0]["id"]

@@ -50,7 +50,7 @@ def seek(page, second: float, label: str, evidence: Path) -> bytes:
 def run(block: str, base: str) -> dict:
     folder = OUT[block]
     evidence = folder/'browser-player-check'; evidence.mkdir(exist_ok=True)
-    route = f'{block.lower()}-reopen-review'
+    route = folder.name
     media = f'{base.rstrip("/")}/{route}/{block}.mp4'
     expected = hashlib.sha256((folder/f'{block}.mp4').read_bytes()).hexdigest()
     with urllib.request.urlopen(urllib.request.Request(media, headers={'Range':'bytes=0-1023'})) as response:
@@ -76,6 +76,18 @@ def run(block: str, base: str) -> dict:
         page.locator('video').evaluate('(video)=>video.play()')
         page.wait_for_function('(before)=>document.querySelector("video").currentTime>before+.4',arg=before)
         page.locator('video').evaluate('(video)=>video.pause()')
+        episodes=[]
+        if block == 'B02':
+            for name,start,targets in [('storage',9.4,[10.0,11.95,13.56]),
+                                       ('track-problems',59.6,[60.1,64.0,68.8]),
+                                       ('track-processing',83.0,[84.5,87.5])]:
+                seek(page,start,f'{name}-play-start',evidence)
+                page.locator('video').evaluate('(video)=>video.play()')
+                for second in targets:
+                    page.wait_for_function('(second)=>document.querySelector("video").currentTime>=second',arg=second)
+                    visible(page.locator('video').screenshot(path=str(evidence/f'{name}-playing-{second}.png')),name)
+                page.locator('video').evaluate('(video)=>video.pause()')
+                episodes.append({'name':name,'played_from_seconds':start,'visible_at_seconds':targets})
         other=browser.new_page();other.goto('about:blank');other.bring_to_front()
         page.bring_to_front();page.wait_for_timeout(300)
         visible(page.locator('video').screenshot(path=str(evidence/'after-tab-return.png')),'after tab return')
@@ -84,6 +96,7 @@ def run(block: str, base: str) -> dict:
     result={'status':'PASS','served_mp4_sha256':served,'range_status':206,'mime':'video/mp4',
             'browser_visible_frames':list(samples),'time_advanced':True,
             'visible_after_seek':True,'visible_after_tab_return':True,'javascript_errors':[]}
+    result['played_episodes']=episodes
     (evidence/'report.json').write_text(json.dumps(result,ensure_ascii=False,indent=2)+'\n')
     return result
 

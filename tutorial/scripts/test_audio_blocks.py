@@ -13,6 +13,7 @@ import modules
 import build
 from audio_approval import scene_timing as approved_scene_timing, validate_approval, validate_block_approval
 from b01_block import check_embedded_subtitles
+from b02_local_visual_qa import cloud_hold, single_track_axis
 from b10_block import opening_scroll_pixels_in_mp4
 from b03_block import pointer_pixels_in_mp4
 from b04_block import pointer_check as b04_pointer_check
@@ -131,7 +132,8 @@ class AudioBlockTests(unittest.TestCase):
             with patch('sys.argv', ['build.py', 'narration', '--module', block_id]):
                 with self.assertRaisesRegex(RuntimeError, 'one authorized new TTS request'):
                     build.main()
-            with self.assertRaisesRegex(RuntimeError, 'one authorized new TTS request'):
+            expected = 'audio is approved and immutable' if block_id == 'B01' else 'one authorized new TTS request'
+            with self.assertRaisesRegex(RuntimeError, expected):
                 modules.generate(self.spec, module, force=True, root=source)
 
     def test_b13_approval_pins_exact_video_audio_alignment_and_subtitles(self):
@@ -244,7 +246,12 @@ class AudioBlockTests(unittest.TestCase):
         current_history = json.loads((ROOT/'approvals/historical/B01-block-approved-before-2026-10-04-reopen.json').read_text())
         self.assertEqual(current_history['status'], 'BLOCK_APPROVED')
         self.assertEqual(current_history['video_sha256'], '8cf72d8e2b081eff6f6c4714410fa0cc901dfb09d8efa2148cb3236efa32e032')
-        self.assertFalse((ROOT/'approvals/B01-block.json').exists())
+        current = validate_block_approval('B01')
+        self.assertEqual(current['video_sha256'], 'a8d799b77b7e09e65a010b6ccb4f3a1989eb0b45cf56635a8238fc89498819b4')
+        audio = validate_approval(self.spec, 'B01')['record']
+        self.assertEqual(audio['approved_take']['mp3_sha256'], '6a02c9de2ee17c1806c597ab94a56e056a45d627394fa945dc09a1286ca5e860')
+        self.assertEqual(current['approved_alignment_sha256'], 'c6116c501a6337e862ad822d015a1b81b309fe3b856baa503af85a9cfdf72d6f')
+        self.assertEqual(current['subtitle_srt_sha256'], '29928f8c40107254bddf3fd8af8c9ca4ed629aade8889281e3282de4d08967bd')
 
     def test_b02_block_approval_pins_audio_alignment_and_subtitles(self):
         state = json.loads((ROOT/'approvals/historical/B02-block-approved-before-2026-10-04-reopen.json').read_text())
@@ -254,6 +261,25 @@ class AudioBlockTests(unittest.TestCase):
         self.assertEqual(state['approved_alignment_sha256'], 'bda48ae45818e2781b06fe3384eb69c0270623d8a2cfbf82aa99bbedd73ec817')
         self.assertEqual(state['embedded_subtitle_cues'], 40)
         self.assertFalse((ROOT/'approvals/B02-block.json').exists())
+
+    def test_b02_cloud_hold_rejects_previous_candidate(self):
+        old = ROOT/'generated/b02-reopen-review/B02.mp4'
+        current = ROOT/'generated/b02-local-review/B02.mp4'
+        if not current.is_file() or not old.is_file():
+            self.skipTest('B02 large local review files are ignored')
+        with self.assertRaisesRegex(RuntimeError, 'B02 cloud'):
+            cloud_hold(old, 13.48)
+        self.assertEqual(cloud_hold(current, 13.48)['fully_visible_hold_verified_seconds'], 1.45)
+
+    def test_b02_single_axis_rejects_previous_candidate(self):
+        old = ROOT/'generated/b02-reopen-review/B02.mp4'
+        current = ROOT/'generated/b02-local-review/B02.mp4'
+        if not current.is_file() or not old.is_file():
+            self.skipTest('B02 large local review files are ignored')
+        ranges = [(59.53, 72.847), (80.41, 107.72)]
+        with self.assertRaisesRegex(RuntimeError, '2 horizontal bands'):
+            single_track_axis(old, ranges)
+        self.assertEqual(single_track_axis(current, ranges)['horizontal_axis_groups_per_frame'], 1)
 
     def test_b03_block_approval_pins_audio_alignment_and_subtitles(self):
         state = validate_block_approval('B03')

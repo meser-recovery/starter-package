@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""Visual-only review of the one newly synthesized B01 and B02 takes.
+"""Review the accepted B01 and the local B02 visual corrections.
 
-The older approved audio, MP4s, and approval records remain in their original
-directories. This module reads the new one-request provider responses from v3.
+Historical MP4s and audio remain in their original directories; older approval
+records are retained in approvals/historical. Read the one-request v3 takes.
 """
 from __future__ import annotations
 
@@ -21,7 +21,7 @@ from validate import ROOT, validate
 
 SOURCE = ROOT / 'generated/narration-blocks-v3'
 OUT = {'B01': ROOT / 'generated/b01-reopen-review',
-       'B02': ROOT / 'generated/b02-reopen-review'}
+       'B02': ROOT / 'generated/b02-local-review'}
 
 
 def inputs(block: str):
@@ -115,6 +115,12 @@ async def prepare_b02(page, scene: dict, base: str) -> None:
     await page.screenshot()
 
 
+async def perform_b02(page, scene: dict, base: str, cue) -> None:
+    if scene['id'] == 'B02-004':
+        await asyncio.sleep(b02_block.LEAD_SECONDS)
+    await page.evaluate('window.startAnimation()')
+
+
 def configure(block: str):
     inputs(block)
     if block == 'B01':
@@ -123,11 +129,20 @@ def configure(block: str):
         b01_block.inputs = b01_inputs
         return b01_block
     b02_block.OUT = OUT[block]
-    b02_block.DIAGRAM = ROOT / 'animations/b02-tracks-v4.html'
-    b02_block.PRESERVED_SCENES = {}
-    b02_block.PRESERVED_SUBTITLES = {}
+    b02_block.DIAGRAM = ROOT / 'animations/b02-tracks-v5.html'
+    b02_block.PRIOR_OUT = ROOT / 'generated/b02-reopen-review'
+    b02_block.PRIOR_VIDEO_SHA256 = '2809923795d7563af38bc1fe4ad7abb468accb5037e1e78a5a1b75234d0a9528'
+    b02_block.PRESERVED_SCENES = {
+        'B02-005': '8f40cf08f8d5ad4f3d433a4b2314556b4f159b8515ef2527469fac5db103504f',
+        'B02-007': 'dc68e74e5637a6f00b0d4b05d909a164f6cb2d75d64bd49aebe2998e69bad380',
+    }
+    b02_block.PRESERVED_SUBTITLES = {
+        'srt': '0ff89aaface495005160bde0b069bcd9009d452e6ac6458a15af0b1261bc59a5',
+        'vtt': 'f4c42db9d07ece263fe1374344292ef80687f105218ed5d618a41e35d83935a6',
+    }
     b02_block.inputs = b02_inputs
     b02_block.prepare = prepare_b02
+    b02_block.perform = perform_b02
     return b02_block
 
 
@@ -180,14 +195,15 @@ def run(block: str, mode: str):
         return asyncio.run(module.visual())
     if mode == 'assemble':
         result = module.assemble()
-        result['new_tts_requests_for_version'] = 1
+        result['new_tts_requests_for_version'] = 1 if block == 'B01' else 0
         result['prior_approved_candidate_preserved'] = True
         write_json(OUT[block] / 'report.json', result)
         html = (OUT[block] / 'index.html').read_text()
         html = html.replace('озвучка AUDIO_APPROVED · 0 новых TTS-запросов',
                             'новый дубль озвучки · на повторное утверждение')
-        html = html.replace('B01 BLOCK_APPROVED · 0 новых TTS-запросов',
-                            'новый дубль озвучки · на повторное утверждение')
+        if block == 'B01':
+            html = html.replace('B01 BLOCK_APPROVED · 0 новых TTS-запросов',
+                                'новый дубль озвучки · на повторное утверждение')
         if block == 'B01':
             scenes = result['scene_frame_counts']
             second = scenes['B01-001']/30
@@ -201,6 +217,23 @@ def run(block: str, mode: str):
         if block == 'B01':
             result['figure_motion'] = figure_motion()['status']
             write_json(OUT[block] / 'verification.json', result)
+        else:
+            from b02_local_visual_qa import verify as verify_pixels
+            spec, audio, scenes = b02_inputs()
+            timings = {scene['id']: b02_block.scene_timing(spec, scene, audio) for scene in scenes}
+            def phrase_time(scene_id, phrase):
+                scene = next(scene for scene in scenes if scene['id'] == scene_id)
+                timing = timings[scene_id]
+                offset = scene['narration'].index(phrase)
+                return .6 + timing['range_start_seconds'] + timing['alignment']['character_start_times_seconds'][offset]
+            local = verify_pixels(OUT[block]/'B02.mp4', phrase_time('B02-004', 'В первом'),
+                                  [(.6+timings['B02-006']['range_start_seconds'],
+                                    phrase_time('B02-006', 'Когда все')),
+                                   (.6+timings['B02-007']['range_start_seconds'],
+                                    .6+timings['B02-007']['range_end_seconds'])])
+            write_json(OUT[block]/'local-visual-checks.json', local)
+            result['local_visual_checks'] = local['status']
+            write_json(OUT[block]/'verification.json', result)
         return result
     raise ValueError(mode)
 

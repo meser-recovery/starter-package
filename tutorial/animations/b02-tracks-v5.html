@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="ru">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B02 · Separate audio tracks</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#f3f7fa;font-family:Arial,sans-serif}
+canvas{display:block;width:100vw;height:auto;max-height:100vh;object-fit:contain}
+nav{display:flex;gap:12px;align-items:center;padding:12px 24px}nav input{width:420px}
+body.capture nav{display:none}
+</style>
+<canvas width="1920" height="1080" aria-label="Объяснение записи и обработки отдельных аудиодорожек"></canvas>
+<nav><select id="scene"><option>B02-004</option><option>B02-005</option><option>B02-006</option><option>B02-007</option></select><button id="play">Воспроизвести</button><input id="seek" type="range" min="0" max="1" step="0.001" value="0"></nav>
+<script>
+'use strict';
+// The colored signals and split geometry are adapted from the preserved v3
+// pilot's multitrack(p). A fragment's signal, color and x position do not change
+// while it moves vertically from the shared axis to its participant's track.
+const canvas=document.querySelector('canvas'),c=canvas.getContext('2d',{alpha:false});
+const K={bg:'#f3f7fa',ink:'#163348',muted:'#5e7586',grid:'#dae6ec',blue:'#1479dd',teal:'#008e8a',gold:'#bb781d',red:'#d05a5a',white:'#ffffff'};
+const colors=[K.blue,K.teal,K.gold],names=['Спикер','Переводчик','Участник'];
+const clamp=x=>Math.max(0,Math.min(1,x)),smooth=x=>{x=clamp(x);return x*x*(3-2*x)},mix=(a,b,t)=>a+(b-a)*t;
+const ramp=(t,a,b)=>smooth((t-a)/(b-a));
+const intervals=[[[.025,.17],[.31,.47],[.62,.78]],[[.18,.29],[.48,.61],[.8,.965]],[[.09,.14],[.39,.42],[.67,.7],[.88,.9]]];
+const signal=(t,n)=>{let e=0;for(const [a,b] of intervals[n])if(t>a&&t<b){const u=(t-a)/(b-a);e=Math.max(e,Math.min(1,u*14,(1-u)*14))}return e*(.28+.42*Math.abs(Math.sin(t*173+n*6))+.3*Math.abs(Math.sin(t*491+n)))};
+function opacity(a,fn){c.save();c.globalAlpha*=clamp(a);fn();c.restore()}
+function txt(s,x,y,size=30,color=K.ink,weight=400,align='left'){c.fillStyle=color;c.font=`${weight} ${size}px Arial`;c.textAlign=align;c.fillText(s,x,y);c.textAlign='left'}
+function line(x,y,X,Y,color=K.grid,width=2){c.beginPath();c.moveTo(x,y);c.lineTo(X,Y);c.strokeStyle=color;c.lineWidth=width;c.stroke()}
+function rect(x,y,w,h,fill,r=0){c.beginPath();c.roundRect(x,y,w,h,r);c.fillStyle=fill;c.fill()}
+function base(){c.fillStyle=K.bg;c.fillRect(0,0,1920,1080)}
+function axis(x,y,w){line(x,y,x+w,y,'#a8beca',2);for(let i=0;i<=8;i++)line(x+w*i/8,y-10,x+w*i/8,y+10,'#a8beca',2)}
+function wave(x,y,w,h,n,{gain=1,map=t=>t,hum=0,burst=0,burstClean=0,cutAmount=0,alpha=1}={}){
+ opacity(alpha,()=>{line(x,y,x+w*map(1),y,K.grid,2);c.beginPath();for(let i=0;i<400;i++){let t=i/399;if(cutAmount>=.98&&t>=.42&&t<.56)continue;let amp=signal(t,n)*gain; if(hum)amp+=hum*(.13+.055*Math.abs(Math.sin(t*260)));if(burst&&t>.705&&t<.752)amp+=burst*(1-burstClean)*.8*Math.sin((t-.705)/.047*Math.PI);if(t>=.42&&t<.56)amp*=1-cutAmount;const a=Math.max(.7,amp*h/2),xx=x+map(t)*w;c.moveTo(xx,y-a);c.lineTo(xx,y+a)}c.strokeStyle=colors[n];c.lineWidth=3;c.stroke()})
+}
+function lanes(x,w,ys,opts={}){for(let n=0;n<3;n++){const y=ys[n];opacity(opts.opacity?.[n]??1,()=>{txt(names[n],x-44,y+9,27,colors[n],700,'right');wave(x,y,w,opts.h??124,n,{gain:opts.gain?.[n]??1,hum:opts.hum?.[n]??0,burst:opts.burst?.[n]??0,burstClean:opts.burstClean?.[n]??0,map:opts.map??(t=>t)})})}}
+function marker(x,y,label,color){line(x,y-88,x,y+88,color,3);txt(label,x,y-104,22,color,700,'center')}
+function trimmedMap(t,q){const gaps=[[0,.18],[.29,.48],[.61,.8],[.965,1]];let removed=0;for(const [a,b] of gaps)removed+=Math.max(0,Math.min(t,b)-a);return t-removed*q*.94}
+function commonAndSplit(t,start,end){const x=363,w=1330,split=ramp(t,start,end),ys=[405,594,783];
+ txt(t<start?'Одна общая запись':'Три синхронные дорожки',x,284,31,K.ink,700);
+ axis(x,594,w);
+ for(let n=0;n<3;n++){const y=mix(594,ys[n],split);wave(x,y,w,mix(170,126,split),n);opacity(split,()=>txt(names[n],x-42,y+9,27,colors[n],700,'right'))}
+ // One playhead crosses all three tracks; it does not represent an extra signal.
+ opacity(split,()=>{const px=x+w*.53;line(px,337,px,851,'#819ba9',2);txt('Общее время',px,901,23,K.muted,400,'center')})
+}
+function scene004(t,real){base('004 / 007');const x=363,w=1330;
+ if(t<16.14){
+   txt(real<A.storage?'Два способа записи Zoom':'Где сохраняется запись Zoom',x,284,35,K.ink,700);
+   if(t<5.57){txt('Запись голосов участников',x,409,27,K.muted);for(let n=0;n<3;n++)wave(x,575,w,190,n);return}
+   // Introduce the destinations during the complete storage sentence. Finish
+   // the cloud entrance 1.55 s before the next sentence, then hold both objects.
+   opacity(1-ramp(real,A.storage,A.storage+.35),()=>{for(let n=0;n<3;n++)wave(x,575,w,190,n)});
+   opacity(ramp(real,A.storage,A.storage+.55),()=>{c.drawImage(computer,360,365,520,358);txt('Компьютер',620,800,31,K.ink,700,'center')});
+   opacity(ramp(real,A.common-2.05,A.common-1.55),()=>{c.drawImage(cloud,1040,365,520,358);txt('Облако',1300,800,31,K.ink,700,'center')});
+ } else commonAndSplit(t,22.2,26.4);
+}
+function scene005(t){base('005 / 007');const x=335,w=1410;
+ if(t<10.5){txt('Голоса записаны отдельно',x,278,34,K.ink,700);lanes(x,w,[450,706,900],{opacity:[1,1,0]});return}
+ const selection=ramp(t,13.75,15.45),shift=ramp(t,15.3,17),shorten=ramp(t,21.3,26.8);
+ txt(t<21.3?'Русский перевод без голоса спикера':'Сокращение пустых промежутков',x,279,33,K.ink,700);
+ opacity(1-selection,()=>{txt('Спикер',x-42,420,27,K.blue,700,'right');wave(x,412,w,135,0)});
+ const y=mix(695,554,shift);txt('Переводчик',x-42,y+9,27,K.teal,700,'right');
+ if(t>=16.35&&shorten<1){opacity(1-shorten,()=>{for(const [a,b] of [[0,.18],[.29,.48],[.61,.8],[.965,1]])rect(x+w*trimmedMap(a,shorten),y-85,w*(trimmedMap(b,shorten)-trimmedMap(a,shorten)),170,'#f9e5e4',4)})}
+ wave(x,y,w,143,1,{map:u=>trimmedMap(u,shorten)});
+ if(t>=21.3){const q=trimmedMap(1,shorten);line(x,807,x+w,807,K.grid,9);line(x,807,x+w*q,807,K.teal,9);txt('Длительность',x,851,24,K.muted)}
+}
+const computer=new Image(),cloud=new Image(),site=new Image();
+computer.src='../assets/s11/recording-computer.svg';
+cloud.src='../assets/s11/recording-cloud.svg';
+site.src='../assets/s11/nam-poputi-catalog-2026-10-02.png';
+window.assetsLoaded=false;
+Promise.all([computer.decode(),cloud.decode(),site.decode()]).then(()=>{window.assetsLoaded=true});
+function scene006(t){base('006 / 007');const x=355,w=1320,ys=[415,604,793];
+ const volume=ramp(t,A.volume,A.volume+2.1),noise=ramp(t,A.noise,A.noise+1.5),merge=ramp(t,A.shared,A.shared+3.0);
+ txt(t<A.shared?'Проблемы на отдельных дорожках':'В общем файле голоса смешаны',x,282,33,K.ink,700);
+ for(let n=0;n<3;n++){
+   const y=mix(ys[n],591,merge);
+   wave(x,y,w,125,n,{gain:n===0?mix(1,.25,volume):n===1?mix(1,1.7,volume):1,
+                      hum:n===2?noise:0,burst:n===2?noise:0});
+   opacity(1-merge,()=>txt(names[n],x-42,y+9,26,colors[n],700,'right'));
+ }
+ opacity(volume*(1-merge),()=>{txt('Тихо',1730,424,23,K.blue,700);txt('Громко',1730,613,23,K.teal,700)});
+ opacity(noise*(1-merge),()=>txt('Гул и помеха',1730,802,23,K.gold,700));
+}
+function scene007(t){base('007 / 007');const x=355,w=1320,ys=[400,594,788];
+ const gain=ramp(t,2.7,5.0),clean=ramp(t,6.0,8.4),exclude=ramp(t,10.18,12.3),cut=ramp(t,19.0,23.0);
+ let title='Каждый голос обрабатывается отдельно';
+ if(t>=10.18&&t<15.9)title='Исключение ненужной дорожки';
+ if(t>=15.9&&t<28.82)title='Один вырез — на всех дорожках';
+ if(t>=28.82)title='Две версии из раздельной записи';
+ txt(title,x,275,33,K.ink,700);
+ const cutMap=u=>u<.42?u:u<.56?mix(u,.42,cut):u-.14*cut;
+ const show=[1,1,1-exclude];
+ for(let n=0;n<3;n++)opacity(show[n],()=>{txt(names[n],x-42,ys[n]+9,26,colors[n],700,'right');wave(x,ys[n],w,130,n,{gain:n===0?mix(.25,1,gain):1,hum:n===1?1-clean:0,burst:n===1?1:0,burstClean:n===1?clean:0,map:cutMap,cutAmount:cut})});
+ if(t<10.18){if(t<5.1)txt('Громкость',1710,408,24,K.blue,700);else txt('Помеха',1710,602,24,K.teal,700)}
+ if(t>=15.9&&t<23.0){const a=x+w*.42,b=x+w*(.56-.14*cut);opacity(1-cut,()=>rect(a,322,b-a,520,'#f5dfdf',3));line(a,322,a,842,K.red,3);line(b,322,b,842,K.red,3)}
+ if(t>=28.82){opacity(ramp(t,29.0,30.2),()=>{line(x,924,x+w*.85,924,K.grid,2);txt('Анонс-мейкер',x,968,24,K.teal,700);txt('Спикерская',x+w*.85,968,24,K.blue,700,'right')})}
+}
+const renderers={'B02-004':scene004,'B02-005':scene005,'B02-006':scene006,'B02-007':scene007};
+const defaults={storage:8.91,computer:11.25,cloud:12.28,common:12.88,separate:18.53,
+ translator:5.36,gaps:9.99,shorten:16.83,volume:3.99,noise:8.8,shared:13.32,
+ improve:3.44,level:5.63,exclude:9.9,global:15.15,summary:21.79};
+let current='B02-004',duration=35.25,clock=null,manual=0,A={...defaults};
+function warp(t,marks){if(!marks)return t;for(let i=1;i<marks.length;i++)if(t<=marks[i][0]){
+ const [a,x]=marks[i-1],[b,y]=marks[i];return mix(x,y,clamp((t-a)/(b-a)))}return marks.at(-1)[1]}
+function mapped(t){if(current==='B02-004')return warp(t,[[0,0],[A.storage,5.57],[A.computer,11.748],[A.cloud,13.495],[A.common,16.14],[A.separate,22.2],[A.separate+3.6,26.4],[duration,35.25]]);
+ if(current==='B02-005')return warp(t,[[0,0],[A.translator,10.5],[A.translator+.5,13.75],[A.gaps,17],[A.shorten,21.3],[A.shorten+3,26.8],[duration,31.645]]);
+ if(current==='B02-007')return warp(t,[[0,0],[A.improve,2.7],[A.level,5],[A.noise,6],[A.exclude,10.18],[A.global,15.9],[A.global+3.5,23],[A.summary,28.82],[duration,37.107]]);
+ return t}
+function render(){const real=clock===null?manual:Math.min(duration,(performance.now()-clock)/1000);renderers[current](mapped(real),real);requestAnimationFrame(render)}
+window.configure=(scene,seconds,anchors={})=>{if(!renderers[scene])throw Error('Invalid scene');current=scene;duration=seconds;A={...defaults,...anchors};manual=0;clock=null;document.querySelector('#scene').value=scene};
+window.startAnimation=()=>{clock=performance.now()};
+window.setPreviewTime=t=>{clock=null;manual=clamp(t/duration)*duration};
+document.querySelector('#scene').onchange=e=>window.configure(e.target.value,{'B02-004':35.25,'B02-005':31.645,'B02-006':33.65,'B02-007':37.107}[e.target.value]);
+document.querySelector('#seek').oninput=e=>window.setPreviewTime(Number(e.target.value)*duration);
+document.querySelector('#play').onclick=()=>window.startAnimation();
+const params=new URLSearchParams(location.search);if(params.has('capture'))document.body.classList.add('capture');
+if(params.has('scene'))window.configure(params.get('scene'),Number(params.get('duration'))||35.25);
+requestAnimationFrame(render);
+</script>
+</html>
