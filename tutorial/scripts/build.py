@@ -79,6 +79,19 @@ def main() -> None:
             parser.error("select an approved B-block; old chapters are historical")
         if args.mode == "validate":
             print(json.dumps(result, ensure_ascii=False)); return
+        if args.all_modules and args.mode in ('assemble', 'verify', 'dry-run'):
+            from final_assemble import audit, assemble
+            if args.mode == 'assemble':
+                final_result = assemble()
+            elif args.mode == 'verify':
+                from final_verify import verify
+                final_result = verify()
+            else:
+                _, inputs = audit(write_manifest=False)
+                final_result = {'status': 'ALL_INPUTS_APPROVED', 'blocks': 14,
+                                'tts_requests': 0, 'block_rebuilds': 0,
+                                'input_manifest': 'generated/s11-final-review/input-manifest.json'}
+            print(json.dumps(final_result, ensure_ascii=False, indent=2)); return
         if args.mode in ("visual", "assemble", "verify"):
             if args.module not in ("B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14") or args.all_modules or args.scene or args.force:
                 raise RuntimeError("review gate: select one B-block")

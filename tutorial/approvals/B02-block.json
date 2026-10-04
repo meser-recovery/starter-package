@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B02",
+  "decision_date": "2026-10-04",
+  "video": "generated/b02-local-review/B02.mp4",
+  "video_sha256": "8b122abd98ca9552d568c7179e0627a31547eb78f843cb34b070bdfb8b15ca6d",
+  "duration_seconds": 107.733333,
+  "approved_audio_record": "approvals/B02-audio.json",
+  "approved_audio_record_sha256": "110b93c5d2a8e53315ff3e8e6493137281e3ed36c7a7a74e728d0d34d9b07e72",
+  "approved_mp3_sha256": "fdfa1305df1245d43a52d758a2ae2ea46fe77d567b62f92069e6b36278f4933e",
+  "approved_wav_sha256": "167e2fd655a1c8a208eb0e6baf01bd88f59463c4fb02fe086bf86c362ff13b49",
+  "approved_pcm_sha256": "5a8835cbf4a359830768011296583675be55b87e5d2a6d6718f841ced8c59790",
+  "approved_alignment": "generated/narration-blocks-v3/B02/timing.json",
+  "approved_alignment_sha256": "50a87440e026fb2725111dc63668fa85880401410b904392376f178ff0eea47a",
+  "canonical_text_sha256": "b77bd4900497fad5cd94bb8c17902542bb7fff2025661554b20d84b494c4bcea",
+  "subtitle_srt": "generated/b02-local-review/B02.ru.srt",
+  "subtitle_srt_sha256": "0ff89aaface495005160bde0b069bcd9009d452e6ac6458a15af0b1261bc59a5",
+  "subtitle_vtt": "generated/b02-local-review/B02.ru.vtt",
+  "subtitle_vtt_sha256": "f4c42db9d07ece263fe1374344292ef80687f105218ed5d618a41e35d83935a6",
+  "embedded_subtitle_cues": 34,
+  "last_embedded_subtitle_end_seconds": 107.72,
+  "video_audio_timeline": "generated/b02-local-review/B02-video-timeline.wav",
+  "video_audio_timeline_sha256": "733f7b0bd6f5b6363aa67f8ce880d140d52eaa137b1ab5646ac2923db48b5676",
+  "scene_sources": [
+    {
+      "path": "generated/b02-local-review/scenes/B02-004.mp4",
+      "sha256": "1e4173b179ba839afb2c01591752ff096223ff43baf967a8b28ff3a5ea29e363"
+    },
+    {
+      "path": "generated/b02-local-review/scenes/B02-005.mp4",
+      "sha256": "8f40cf08f8d5ad4f3d433a4b2314556b4f159b8515ef2527469fac5db103504f"
+    },
+    {
+      "path": "generated/b02-local-review/scenes/B02-006.mp4",
+      "sha256": "88a6a63a4a147eb331d1aef5ba05c97933ee870cdf18d8838b96c2bda9e73389"
+    },
+    {
+      "path": "generated/b02-local-review/scenes/B02-007.mp4",
+      "sha256": "dc68e74e5637a6f00b0d4b05d909a164f6cb2d75d64bd49aebe2998e69bad380"
+    }
+  ],
+  "report": "generated/b02-local-review/report.json",
+  "report_sha256": "53bc7c5e97ef01f7dd587caf014fdc31155f9815392e0e93037add054f1d8f91",
+  "verification": "generated/b02-local-review/verification.json",
+  "verification_sha256": "2835ab447b0cf32f5183be8a3a0b1247f4d380e6c81714432685ad306ad807be"
+}

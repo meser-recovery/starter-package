@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 import subprocess
 import wave
 from pathlib import Path
@@ -19,6 +20,46 @@ def digest(data: bytes) -> str:
 
 def approved_path(name: str) -> Path:
     return APPROVALS / f'{name}-audio.json'
+
+
+def approval_records(spec: dict, block_id: str, directory: Path | None = None) -> dict:
+    """Validate tracked approval relationships without requiring ignored media.
+
+    Binary validation remains mandatory through validate_approval and
+    validate_block_approval before any assembly.
+    """
+    directory = directory or APPROVALS
+    audio_path = directory / f'{block_id}-audio.json'
+    audio = json.loads(audio_path.read_text())
+    block = json.loads((directory / f'{block_id}-block.json').read_text())
+    module = next(m for m in spec['narration_modules'] if m['id'] == block_id)
+    if (audio['status'], block['status'], audio['block_id'], block['block_id']) != (
+            'AUDIO_APPROVED', 'BLOCK_APPROVED', block_id, block_id):
+        raise RuntimeError('invalid approval record status')
+    if (block['approved_audio_record'] != f'approvals/{block_id}-audio.json'
+            or block['approved_audio_record_sha256'] != digest(audio_path.read_bytes())):
+        raise RuntimeError('approved audio record changed')
+    take = audio['approved_take']
+    for left, right in [('approved_mp3_sha256','mp3_sha256'),('approved_wav_sha256','wav_sha256'),
+                        ('approved_pcm_sha256','pcm_sha256'),('approved_alignment_sha256','alignment_sha256'),
+                        ('canonical_text_sha256','canonical_text_sha256')]:
+        if block[left] != take[right] or not re.fullmatch('[0-9a-f]{64}', take[right]):
+            raise RuntimeError('approval identities differ')
+    if (block['approved_alignment'] != take['alignment']
+            or take['canonical_text_sha256'] != digest(module['narration'].encode())):
+        raise RuntimeError('approval differs from canonical narration')
+    for field in ('video','approved_alignment','subtitle_srt','subtitle_vtt','video_audio_timeline','report','verification'):
+        if not (ROOT/block[field]).resolve().is_relative_to(ROOT/'generated') or 'historical' in block[field]:
+            raise RuntimeError('invalid current approved source path')
+    for field in ('video_sha256','subtitle_srt_sha256','subtitle_vtt_sha256',
+                  'video_audio_timeline_sha256','report_sha256','verification_sha256'):
+        if not re.fullmatch('[0-9a-f]{64}', block[field]):
+            raise RuntimeError('invalid approval artifact digest')
+    for source in block['scene_sources']:
+        if (not re.fullmatch('[0-9a-f]{64}', source['sha256'])
+                or not (ROOT/source['path']).resolve().is_relative_to(ROOT/'generated')):
+            raise RuntimeError('invalid approved visual source')
+    return {'audio':audio,'block':block}
 
 
 def validate_block_approval(block_id: str) -> dict:
