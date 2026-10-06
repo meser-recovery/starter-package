@@ -10,7 +10,7 @@
     const cityFilter = document.getElementById("cityFilter");
 
     try {
-      const response = await fetch(MEETINGS_URL);
+      const response = await fetch(MEETINGS_URL, { cache: "no-cache" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
 
       const source = await response.text();

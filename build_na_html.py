@@ -1,9 +1,14 @@
+import argparse
 import json
 import re
+import time
 from pathlib import Path
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
+from email.utils import parsedate_to_datetime
 
 import requests
+
+HTTP = requests.Session()
 
 API_BASE = "https://na-russia.org/api"
 SITE_BASE = "https://na-russia.org"
@@ -25,6 +30,43 @@ MOSCOW_OFFSET = timedelta(hours=3)
 
 # Печатать ли список первых городов (для проверки)
 PRINT_CITIES = True
+
+
+def get_json(url, params=None):
+    """Повторяем только временные сетевые ошибки, не скрывая итоговый сбой."""
+    for attempt in range(3):
+        # Не перегружаем API серией быстрых запросов через одно соединение.
+        time.sleep(1)
+        delay = 2 ** (attempt + 1)
+        try:
+            resp = HTTP.get(url, params=params, timeout=(10, 20))
+            resp.raise_for_status()
+            return resp.json()
+        except requests.HTTPError as error:
+            if error.response.status_code not in (429, 500, 502, 503, 504):
+                raise
+            failure = error
+            if error.response.status_code == 429:
+                delay = 30 * (attempt + 1)
+            retry_after = error.response.headers.get("Retry-After")
+            if retry_after:
+                try:
+                    seconds = int(retry_after)
+                except ValueError:
+                    try:
+                        seconds = (parsedate_to_datetime(retry_after) - datetime.now(timezone.utc)).total_seconds()
+                    except (ValueError, TypeError, OverflowError):
+                        seconds = 0
+                delay = max(delay, seconds)
+                if delay > 120:
+                    # Длительная блокировка: следующая попытка — резервный workflow.
+                    raise failure
+        except (requests.Timeout, requests.ConnectionError, ValueError) as error:
+            failure = error
+        if attempt == 2:
+            raise failure
+        print(f"[RETRY] {url}: {failure}; повтор через {delay} с", flush=True)
+        time.sleep(delay)
 
 
 def _parse_cities_payload(payload):
@@ -68,9 +110,9 @@ def load_cities():
     # 1. Пробуем API
     for url in CITIES_URLS:
         try:
-            resp = requests.get(url, timeout=20)
-            if resp.status_code == 200:
-                payload = resp.json()
+            candidate = get_json(url)
+            if _parse_cities_payload(candidate)[0]:
+                payload = candidate
                 print(f"[API] Города загружены с {url}")
                 # Обновляем локальный кэш "как есть"
                 try:
@@ -83,7 +125,7 @@ def load_cities():
                     print(f"[WARN] Не удалось обновить кэш {CITIES_CACHE_FILE}: {e}")
                 break
             else:
-                print(f"[WARN] {url} вернул статус {resp.status_code}")
+                print(f"[WARN] {url} не содержит городов")
         except Exception as e:
             last_error = e
             print(f"[WARN] Ошибка при запросе {url}: {e}")
@@ -129,6 +171,8 @@ def load_cities():
         towns = towns_ru
 
     print(f"[INFO] Всего городов РФ найдено: {len(towns)}")
+    if not towns:
+        raise RuntimeError("Не найдено городов РФ; список собраний не обновлён.")
     return towns
 
 
@@ -144,11 +188,15 @@ def get_meetings_for_town(town_id, on_date):
     }
 
     all_results = []
+    visited = set()
 
     while url:
-        resp = requests.get(url, params=params, timeout=20)
-        resp.raise_for_status()
-        data = resp.json()
+        if url in visited:
+            raise RuntimeError(f"API повторяет страницу: {url}")
+        visited.add(url)
+        data = get_json(url, params=params)
+        if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+            raise RuntimeError(f"Некорректный ответ собраний: {url}")
 
         all_results.extend(data.get("results", []))
 
@@ -196,6 +244,7 @@ def build_data(on_date):
     print(f"[INFO] Городов с внешними сайтами: {len(external_sites)}")
 
     meetings_by_town = {}
+    failed_towns = []
 
     for c in cities:
         town_id = c.get("id")
@@ -213,6 +262,7 @@ def build_data(on_date):
             meetings = get_meetings_for_town(town_id, on_date)
         except Exception as e:
             print(f"  Ошибка для {town_name}: {e}")
+            failed_towns.append(town_name)
             continue
 
         # Оставляем только живые (online == False)
@@ -229,6 +279,13 @@ def build_data(on_date):
             real_town_id = loc.get("town_id", town_id)
             meetings_by_town.setdefault(real_town_id, []).append(m)
 
+    if failed_towns:
+        raise RuntimeError(
+            "Список не обновлён: не удалось загрузить города: "
+            + ", ".join(failed_towns)
+        )
+    if not meetings_by_town:
+        raise RuntimeError("API не вернул живых собраний; прежний список сохранён.")
     return meetings_by_town, cities_by_id, external_sites
 
 
@@ -391,18 +448,35 @@ def build_html(on_date, meetings_by_town, cities_by_id, external_sites):
     return "\n".join(lines)
 
 
-if __name__ == "__main__":
+def main(skip_if_current=False):
     if CUSTOM_DATE:
         on_date = CUSTOM_DATE
     else:
         # Берём "сейчас" в UTC и прибавляем +3 часа → текущий день по Москве
-        on_date = (datetime.utcnow() + MOSCOW_OFFSET).date().isoformat()
+        on_date = (datetime.now(timezone.utc) + MOSCOW_OFFSET).date().isoformat()
+
+    output_file = Path("na_meetings_live.html")
+    marker = f"<!-- na-meetings-complete: {on_date} -->"
+    if skip_if_current and output_file.exists():
+        if marker in output_file.read_text(encoding="utf-8"):
+            print(f"[SKIP] Полный список на {on_date} уже опубликован.")
+            return
 
     print(f"Дата: {on_date}")
     meetings_by_town, cities_by_id, external_sites = build_data(on_date)
     html = build_html(on_date, meetings_by_town, cities_by_id, external_sites)
 
-    output_file = Path("na_meetings_live.html")
-    output_file.write_text(html, encoding="utf-8")
+    temporary_file = output_file.with_suffix(".html.tmp")
+    try:
+        temporary_file.write_text(html + "\n" + marker + "\n", encoding="utf-8")
+        temporary_file.replace(output_file)
+    finally:
+        temporary_file.unlink(missing_ok=True)
 
     print(f"\nГотово. Файл {output_file} создан.")
+
+
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--skip-if-current", action="store_true")
+    main(skip_if_current=parser.parse_args().skip_if_current)
