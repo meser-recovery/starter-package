@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440" role="img" aria-label="Настольный компьютер с локальной аудиозаписью">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#264d63"/>
+      <stop offset="1" stop-color="#102f43"/>
+    </linearGradient>
+    <linearGradient id="display" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#eaf8ff"/>
+      <stop offset="1" stop-color="#c9e8f2"/>
+    </linearGradient>
+    <linearGradient id="metal" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#9cb7c4"/>
+      <stop offset="1" stop-color="#527589"/>
+    </linearGradient>
+  </defs>
+  <ellipse cx="319" cy="420" rx="259" ry="15" fill="#cfdee5"/>
+  <rect x="60" y="25" width="520" height="322" rx="24" fill="url(#frame)" stroke="#082b3d" stroke-width="8"/>
+  <rect x="79" y="44" width="482" height="249" rx="9" fill="url(#display)"/>
+  <rect x="79" y="44" width="482" height="37" rx="9" fill="#c0dce8"/>
+  <path d="M79 74h482" stroke="#9dbfce" stroke-width="2"/>
+  <circle cx="101" cy="62" r="5" fill="#699bad"/>
+  <circle cx="120" cy="62" r="5" fill="#699bad"/>
+  <circle cx="139" cy="62" r="5" fill="#699bad"/>
+  <rect x="111" y="113" width="418" height="137" rx="12" fill="#f8fdff" stroke="#9ec3d2" stroke-width="3"/>
+  <path d="M132 181h376" stroke="#bfd4df" stroke-width="3"/>
+  <path d="M142 181v-20m13 37v-34m13 41v-50m13 46v-41m13 53v-65m13 59v-53m13 46v-40m13 56v-70m13 59v-51m13 48v-46m13 38v-28m13 49v-48m13 59v-59m13 50v-42m13 40v-36m13 47v-49m13 64v-67m13 55v-48m13 41v-35m13 51v-53m13 57v-55m13 45v-40m13 35v-31m13 40v-43m13 29v-26m13 23v-20" fill="none" stroke="#1479dd" stroke-width="6" stroke-linecap="round"/>
+  <path d="M248 347h144l12 48H236z" fill="url(#metal)" stroke="#31596c" stroke-width="4"/>
+  <path d="M209 396h222c11 0 17 7 17 16H192c0-9 6-16 17-16z" fill="#6e91a2" stroke="#31596c" stroke-width="4"/>
+</svg>

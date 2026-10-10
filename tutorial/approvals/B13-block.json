@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B13",
+  "decision_date": "2026-10-04",
+  "video": "generated/b13-block-review/B13.mp4",
+  "video_sha256": "a28c96a5d7b5b96db7ab24e69ec55459b8a4e165ba31d9f04e565822ce35e81d",
+  "duration_seconds": 184.66666666666666,
+  "approved_audio_record": "approvals/B13-audio.json",
+  "approved_audio_record_sha256": "2186049fcdc8dd872adfb00e01c70d75af551f4a5c37044041b6172d2b9a892c",
+  "approved_mp3_sha256": "50be1afac187afe77f2bf01a6ce7d98f0046936c4d7bced8c49c1bc1a658bff7",
+  "approved_wav_sha256": "eee43f6d6428cd7d2b1c18c95b2f9b380c769761369c6b75a2b3999aa2fd3825",
+  "approved_pcm_sha256": "fc209e84494aa52fa405d20a93927b4c25f4019cb8a0a490fcc3b9ffeaf73798",
+  "approved_alignment": "generated/narration-blocks-v2/B13/B13-review-01-timing.json",
+  "approved_alignment_sha256": "fea34766ec3930984773944afe28ac941006af981b422ea56a5124101f229400",
+  "canonical_text_sha256": "da029cbccce046ad06f593c7ddeabadefc74ac5a8f63c1f73e913b043c77c8c2",
+  "subtitle_srt": "generated/b13-block-review/B13.ru.srt",
+  "subtitle_srt_sha256": "9e8409a8ccc2e15f881e096e8e0ee7577ad8206c86e67846c1bd2e85e91e66a6",
+  "subtitle_vtt": "generated/b13-block-review/B13.ru.vtt",
+  "subtitle_vtt_sha256": "1a29ecf4501fc5c9edbc7963a9c0a24cc7110e2bd9367e754d2eac39bcd037ae",
+  "embedded_subtitle_cues": 50,
+  "last_embedded_subtitle_end_seconds": 184.625,
+  "video_audio_timeline": "generated/b13-block-review/B13-video-timeline.wav",
+  "video_audio_timeline_sha256": "5819ce15c6c83a93f8d1b1551f4aea24fa362920311adb45276f80913d0e7e3b",
+  "scene_sources": [
+    {
+      "path": "generated/b13-block-review/scenes/B13-046.mp4",
+      "sha256": "006916e40f423e7b318dd46cf63dff7569005aa72036e54b95418cfdcfd27940"
+    },
+    {
+      "path": "generated/b13-block-review/scenes/B13-047.mp4",
+      "sha256": "37837d665c03e200ea9c97da6f97749b803623f2cdf593c54c77e5d5da291140"
+    },
+    {
+      "path": "generated/b13-block-review/scenes/B13-048.mp4",
+      "sha256": "ee44601001e7b81abbac9670e78542dafa57900d3c7ad8214445de0f2b0bb8fc"
+    },
+    {
+      "path": "generated/b13-block-review/scenes/B13-049.mp4",
+      "sha256": "26eee636f58b6b8303e2a45caf49b72814702d791dfaa198e7615bab31521d7a"
+    },
+    {
+      "path": "generated/b13-block-review/scenes/B13-050.mp4",
+      "sha256": "dbdb313b2149b4d8f4a5e0e99f061bf1c4ad6845a4f361c8df7e8bb278d27ea8"
+    },
+    {
+      "path": "generated/b13-block-review/scenes/B13-051.mp4",
+      "sha256": "63dba42d7e72c046449d12a4fbca05831efdd2193f3437fd1f14106093414a7e"
+    }
+  ],
+  "report": "generated/b13-block-review/report.json",
+  "report_sha256": "8318848c0d0e54c859b278dfaca022391cba32c6ea785037e94718b18c1fdcc2",
+  "verification": "generated/b13-block-review/verification.json",
+  "verification_sha256": "029555b9066f9fe9e6a11cf55337d888c076043998a13d0d58ee972304b684f6"
+}

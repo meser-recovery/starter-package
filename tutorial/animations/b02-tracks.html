@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B02 · отдельные аудиодорожки</title>
+<style>
+  :root { font-family: Arial, sans-serif; color: #12304d; background: #e9f2fa; }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; }
+  main { position: relative; width: 100%; height: 100%; padding: 76px 112px 69px;
+    background: radial-gradient(circle at 92% 4%, #d6ebfc, transparent 36%),
+      linear-gradient(160deg,#f6f9fc,#e6f0f8); }
+  .eyebrow { margin: 0; color: #387baa; font-size: 24px; font-weight: 800; letter-spacing: .1em; }
+  h1 { margin: 15px 0 13px; font-size: 62px; line-height: 1.1; letter-spacing: -.035em; }
+  .lead { margin: 0; color: #476883; font-size: 29px; }
+  .deck { position: relative; height: 730px; margin-top: 54px; }
+  .stage { position: absolute; inset: 0; opacity: 0; transform: translateY(18px);
+    transition: opacity .55s ease, transform .55s ease; pointer-events: none; }
+  .stage.active { opacity: 1; transform: none; }
+  .stage-card { height: 100%; border: 2px solid #c4d9e9; border-radius: 32px;
+    background: #fff; box-shadow: 0 21px 60px #244b7222; padding: 38px 46px 31px; }
+  .stage-title { font-size: 39px; font-weight: 800; line-height: 1.18; margin: 0 0 11px; }
+  .stage-sub { color: #526f87; font-size: 25px; margin: 0 0 30px; }
+  .tracks { position: relative; display: grid; gap: 19px; }
+  .lane { display: grid; grid-template-columns: 260px 1fr; align-items: center; gap: 22px;
+    border: 2px solid #e1ebf3; border-radius: 20px; padding: 13px 22px; min-height: 121px; background: #f8fbfe; }
+  .lane.emphasis { border-color: #3d9cca; background: #ecf8fc; }
+  .lane.dim { opacity: .35; }
+  .lane-title { font-size: 27px; font-weight: 800; line-height: 1.18; }
+  .lane-note { display: block; margin-top: 8px; color: #5b7892; font-size: 21px; font-weight: 500; }
+  .wave-wrap { position: relative; height: 78px; background: #edf4f9; border-radius: 12px; overflow: hidden; }
+  .wave-wrap svg { width: 100%; height: 100%; display: block; }
+  .region { position: absolute; top: 0; bottom: 0; border-left: 3px solid #d25e54;
+    border-right: 3px solid #d25e54; background: #ed716150; }
+  .region.gap { border-color: #879bad; background: #718da02e; }
+  .region.fix { border-color: #218f9e; background: #32b4bc2f; }
+  .axis { display: flex; justify-content: space-between; padding-left: 307px; margin-top: 14px;
+    font-size: 20px; color: #72899d; font-weight: 700; }
+  .note { display: flex; align-items: center; margin-top: 27px; min-height: 81px;
+    border-radius: 17px; background: #e9f5fc; color: #1d5c83; font-size: 26px;
+    font-weight: 700; line-height: 1.3; padding: 16px 25px; }
+  .note.alert { background: #fff1eb; color: #a94d3b; }
+  .note.success { background: #e7f8f3; color: #147765; }
+  .footer { position: absolute; right: 112px; bottom: 31px; color: #708ea6; font-size: 20px; font-weight: 700; }
+  .title-overlay { position: absolute; z-index: 5; top: 312px; left: 150px; max-width: 1500px;
+    border-radius: 22px; background: #103b5ae9; color: white; padding: 25px 32px;
+    box-shadow: 0 17px 50px #173e5c4f; font-size: 45px; font-weight: 800;
+    transition: opacity .55s; }
+  .title-overlay.hidden { opacity: 0; }
+  .summary { display: grid; grid-template-columns: 1fr 150px 1fr; align-items: center;
+    gap: 35px; height: 470px; }
+  .summary .branch { border-radius: 25px; padding: 50px 43px; height: 290px;
+    border: 2px solid #a9d3eb; background: #eaf7ff; }
+  .summary .branch strong { display: block; font-size: 40px; margin-bottom: 24px; }
+  .summary .branch span { font-size: 27px; line-height: 1.35; }
+  .summary .plus { color: #4489b7; font-size: 80px; font-weight: 200; text-align: center; }
+</style>
+</head>
+<body>
+<main>
+  <p class="eyebrow">ЗАПИСЬ ZOOM · СХЕМА ДОРОЖЕК</p>
+  <h1>Одна запись — разные способы работы</h1>
+  <p class="lead">Общий файл и отдельные синхронные дорожки</p>
+  <div class="deck" id="deck"></div>
+  <div id="block-title" class="title-overlay">Запись в виде отдельных аудиодорожек</div>
+  <span class="footer">Схема объясняет принцип обработки звука</span>
+</main>
+<script>
+const S=[[.04,.16],[.34,.47],[.65,.78]], T=[[.18,.32],[.49,.63],[.80,.95]], O=[[.27,.30],[.71,.74]];
+const stages={
+  intro:{title:'Два варианта записи Zoom',sub:'На компьютер и в облако можно записывать разными способами',
+    lanes:[['Общая запись','Все голоса в одном файле','mixed'],['Отдельные дорожки','Каждый участник отдельно','speaker']],
+    note:'Дальше сравним, что именно сохраняется в каждом варианте.'},
+  common:{title:'Первый режим · общий аудиофайл',sub:'Спикер, переводчик и другие участники звучат вместе',
+    lanes:[['Общий файл','Все участники','mixed','emphasis']],note:'В одном файле голоса уже объединены.'},
+  separate:{title:'Второй режим · отдельные дорожки',sub:'Каждый голос сохраняется отдельно, но на общей шкале времени',
+    lanes:[['Спикер','Отдельная дорожка','speaker'],['Переводчик','Отдельная дорожка','translator'],['Участник','Отдельная дорожка','other']],
+    note:'Начало и конец всех дорожек синхронизированы.'},
+  sync:{title:'Дорожки остаются синхронными',sub:'Один и тот же момент времени расположен на каждой дорожке одинаково',
+    lanes:[['Спикер','Общее время','speaker'],['Переводчик','Общее время','translator'],['Участник','Общее время','other']],
+    region:{left:49,width:1,kind:'fix'},note:'Можно обрабатывать отдельный голос, не теряя совпадение по времени.'},
+  benefits:{title:'Зачем нужны отдельные дорожки',sub:'Для анонса и для финальной версии можно выбирать разные голоса',
+    lanes:[['Спикер','Исходный язык','speaker'],['Переводчик','Русский перевод','translator','emphasis']],
+    note:'Одна запись даёт несколько вариантов дальнейшей обработки.'},
+  alternating:{title:'Спикер и переводчик говорят по очереди',sub:'Голоса чередуются во времени',
+    lanes:[['Спикер','Речь · пауза · речь','speaker'],['Переводчик','Пауза · речь · пауза','translator']],
+    note:'Когда слышен спикер, на дорожке переводчика остаётся тишина.'},
+  translator:{title:'Для анонса · только переводчик',sub:'Фразы спикера превратились в длинные тихие промежутки',
+    lanes:[['Переводчик','Речь и длинные паузы','translator','emphasis']],
+    region:{left:34,width:14,kind:'gap'},note:'Сохраняется голос переводчика; речь спикера не смешана с ним.'},
+  shorten:{title:'Сократить длинные паузы',sub:'Итоговую запись удобнее слушать',
+    lanes:[['До','Только переводчик, длинные промежутки','translator'],['После','Паузы короче','short','emphasis']],
+    note:'Речь переводчика остаётся той же; сокращаются пустые участки.',kind:'success'},
+  speakerOnly:{title:'Обратный вариант · только спикер',sub:'Для анонс-мейкера, владеющего ивритом',
+    lanes:[['Спикер','Исходный язык','speaker','emphasis'],['Переводчик','Не входит в итоговую версию','translator','dim']],
+    note:'Выбор нужной дорожки определяет язык конечной записи.'},
+  finalRecord:{title:'Подготовка финальной спикерской',sub:'Раздельные дорожки помогают подготовить запись для «Нам по пути»',
+    lanes:[['Спикер','Отдельно','speaker'],['Переводчик','Отдельно','translator'],['Участник','Отдельно','other']],
+    note:'Проблему одного голоса можно исправлять на его дорожке.'},
+  issues:{title:'Проблемы бывают у разных участников',sub:'Тихий голос, громкий голос, гул или посторонний шум',
+    lanes:[['Спикер','Тише других','quiet'],['Переводчик','Слишком громко','loud'],['Участник','Помеха на участке','noise']],
+    region:{left:68,width:8,kind:'bad',row:'Участник'},note:'Повреждение одной дорожки не обязательно затрагивает остальные.',kind:'alert'},
+  commonProblem:{title:'В общем файле голоса уже смешаны',sub:'Исправить одного участника отдельно значительно сложнее',
+    lanes:[['Общий файл','Несколько голосов одновременно','mixed','emphasis']],
+    region:{left:68,width:8,kind:'bad'},note:'Коррекция одного голоса может затронуть другие.',kind:'alert'},
+  trackFix:{title:'Исправление отдельной дорожки',sub:'Громкость и помеху можно менять только там, где нужно',
+    lanes:[['Спикер','Остался без изменений','speaker'],['Переводчик','Громкость выровнена','translator','emphasis'],['Участник','Помеха убрана локально','other']],
+    region:{left:68,width:8,kind:'fix',row:'Участник'},note:'Остальные дорожки сохраняются без этой правки.',kind:'success'},
+  exclude:{title:'Ненужную дорожку можно исключить',sub:'Участник не войдёт в готовую версию',
+    lanes:[['Спикер','Остаётся','speaker'],['Переводчик','Остаётся','translator'],['Участник','Исключён','other','dim']],
+    note:'Исходная синхронизация других дорожек сохраняется.'},
+  globalCut:{title:'Общая проблема · общий вырез',sub:'Один временной участок убирается сразу на всех дорожках',
+    lanes:[['Спикер','Участок удаляется','speaker'],['Переводчик','Тот же участок удаляется','translator'],['Участник','Тот же участок удаляется','other']],
+    region:{left:46,width:12,kind:'bad'},note:'Все дорожки сокращаются синхронно — без сдвига относительно друг друга.',kind:'alert'},
+  summary:{title:'Основа двух новых инструментов',sub:'Отдельные синхронные дорожки дают два понятных результата',
+    summary:true,note:'Одна запись Zoom — разные задачи, без смешивания голосов.'}
+};
+function active(mode,x){
+  const has=segments=>segments.some(([a,b])=>x>=a&&x<=b);
+  if(mode==='short')return has([[.06,.30],[.35,.57],[.62,.88]]);
+  if(mode==='speaker'||mode==='quiet')return has(S);
+  if(mode==='translator'||mode==='loud')return has(T);
+  if(mode==='other'||mode==='noise')return has(O);
+  return has([...S,...T,...O]);
+}
+function wave(mode){
+  const color={speaker:'#326eb1',translator:'#1b9aa3',other:'#d39138',mixed:'#427eaa',
+    quiet:'#326eb1',loud:'#1b9aa3',noise:'#d39138',short:'#1b9aa3'}[mode];
+  let bars='';
+  for(let i=0;i<140;i++){
+    const x=i/139, voiced=active(mode,x);
+    let amp=voiced?(18+22*Math.abs(Math.sin(i*1.83))+14*Math.abs(Math.sin(i*.39))):2;
+    if(mode==='quiet')amp*=.5;
+    if(mode==='loud')amp=Math.min(35,amp*1.35);
+    if(mode==='noise'&&x>.68&&x<.76)amp=31;
+    const height=Math.max(3,amp), y=39-height;
+    bars+=`<rect x="${i*8.55}" y="${y.toFixed(1)}" width="5.2" height="${(2*height).toFixed(1)}" rx="2"/>`;
+  }
+  return `<svg viewBox="0 0 1200 78" preserveAspectRatio="none" aria-hidden="true"><line x1="0" y1="39" x2="1200" y2="39" stroke="#9bb7ca" stroke-width="1.5"/><g fill="${color}">${bars}</g></svg>`;
+}
+function card(name,data){
+  const article=document.createElement('section');article.className='stage';article.dataset.stage=name;
+  const rows=data.summary?`<div class="summary"><div class="branch"><strong>Анонс-мейкер</strong><span>Выбрать язык и сократить длинные паузы</span></div><div class="plus">+</div><div class="branch"><strong>Спикерская</strong><span>Исправлять дорожки и общие участки записи</span></div></div>`:
+    `<div class="tracks">${data.lanes.map(([label,note,mode,kind])=>`<div class="lane ${kind||''}"><div class="lane-title">${label}<span class="lane-note">${note}</span></div><div class="wave-wrap">${wave(mode)}${data.region&&(!data.region.row||data.region.row===label)?`<div class="region ${data.region.kind==='bad'?'':data.region.kind}" style="left:${data.region.left}%;width:${data.region.width}%"></div>`:''}</div></div>`).join('')}</div><div class="axis"><span>Начало записи</span><span>Общее время →</span><span>Конец записи</span></div>`;
+  article.innerHTML=`<div class="stage-card"><h2 class="stage-title">${data.title}</h2><p class="stage-sub">${data.sub}</p>${rows}<div class="note ${data.kind||''}">${data.note}</div></div>`;
+  return article;
+}
+for(const [name,data] of Object.entries(stages))document.getElementById('deck').append(card(name,data));
+window.setStage=name=>{
+  if(!stages[name])throw Error('Unknown B02 stage: '+name);
+  document.querySelectorAll('.stage').forEach(node=>node.classList.toggle('active',node.dataset.stage===name));
+};
+window.hideBlockTitle=()=>document.getElementById('block-title').classList.add('hidden');
+window.setStage('intro');
+</script>
+</body>
+</html>

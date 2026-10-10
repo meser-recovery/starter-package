@@ -12,6 +12,10 @@ permissions:
   contents: read
   pages: read
 
+concurrency:
+  group: safety-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   local-safety:
     if: github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch'
@@ -21,6 +25,11 @@ jobs:
         with:
           fetch-depth: 0
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Check diff whitespace
+        run: |
+          base_sha="${{ github.event.pull_request.base.sha }}"
+          if [ -z "$base_sha" ]; then base_sha=$(git merge-base origin/main HEAD); fi
+          git diff --check "$base_sha...HEAD"
       - uses: actions/setup-python@v5
         with:
           python-version: '3.x'
@@ -29,6 +38,12 @@ jobs:
           node-version: '24.7.0'
       - name: Check repository contract
         run: python3 tests/safety/check_site.py
+      - name: Install FFmpeg for offline S11 PCM integration tests
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+      - name: Check S11 tutorial content, pilot boundaries and deterministic fixtures
+        run: python3 -m unittest discover -s tutorial/scripts -p 'test*.py'
       - name: Check gateway syntax
         run: npm --prefix gateway/audio-archive run check
       - name: Run gateway test suite
@@ -82,9 +97,6 @@ jobs:
         run: |
           node service/tools/verify-frontend.mjs
           bash -n service/tools/*.sh gateway/audio-archive/deploy/s10a/*.sh gateway/audio-archive/deploy/recovery/*.sh
-          base_sha="${{ github.event.pull_request.base.sha }}"
-          if [ -z "$base_sha" ]; then base_sha=$(git merge-base origin/main HEAD); fi
-          git diff --check "$base_sha...HEAD"
       - name: Prove deterministic source packaging twice
         run: |
           first=$(mktemp -d)

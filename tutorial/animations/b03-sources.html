@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ru"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B03 · Источники записи</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#f3f7fa;font-family:Arial,sans-serif}canvas{display:block;width:100vw;height:auto;max-height:100vh;object-fit:contain}nav{padding:10px 20px}body.capture nav{display:none}</style>
+<canvas width="1920" height="1080" aria-label="Отдельные синхронные дорожки и два места хранения записи Zoom"></canvas>
+<nav><button id="play">Воспроизвести</button><input id="seek" type="range" min="0" max="1" step=".001" value="0"></nav>
+<script>
+'use strict';
+const canvas=document.querySelector('canvas'),c=canvas.getContext('2d',{alpha:false});
+const bg='#f3f7fa',ink='#163348',muted='#5e7586',grid='#afc4d0',blue='#1479dd',teal='#008e8a',gold='#bb781d';
+const colors=[blue,teal,gold],names=['Спикер','Переводчик','Участник'];
+const computer=new Image(),cloud=new Image();computer.src='../assets/s11/recording-computer.svg';cloud.src='../assets/s11/recording-cloud.svg';
+window.assetsLoaded=false;Promise.all([computer.decode(),cloud.decode()]).then(()=>window.assetsLoaded=true);
+const clamp=x=>Math.max(0,Math.min(1,x)),smooth=x=>{x=clamp(x);return x*x*(3-2*x)},ramp=(t,a,b)=>smooth((t-a)/(b-a)),mix=(a,b,p)=>a+(b-a)*p;
+function text(s,x,y,size=30,color=ink,weight=400,align='left'){c.fillStyle=color;c.font=`${weight} ${size}px Arial`;c.textAlign=align;c.fillText(s,x,y);c.textAlign='left'}
+function line(x,y,X,Y,color=grid,w=2){c.beginPath();c.moveTo(x,y);c.lineTo(X,Y);c.strokeStyle=color;c.lineWidth=w;c.stroke()}
+const intervals=[[[.025,.18],[.34,.51],[.65,.81]],[[.19,.32],[.52,.64],[.82,.97]],[[.08,.15],[.39,.43],[.7,.74]]];
+function signal(t,n){let e=0;for(const [a,b] of intervals[n])if(t>a&&t<b){const u=(t-a)/(b-a);e=Math.max(e,Math.min(1,u*15,(1-u)*15))}return e*(.27+.42*Math.abs(Math.sin(t*173+n*6))+.31*Math.abs(Math.sin(t*491+n)))}
+function wave(x,y,w,h,n){line(x,y,x+w,y,'#cbdae2',2);c.beginPath();for(let i=0;i<360;i++){const u=i/359,a=Math.max(.8,signal(u,n)*h/2),X=x+u*w;c.moveTo(X,y-a);c.lineTo(X,y+a)}c.strokeStyle=colors[n];c.lineWidth=3;c.stroke()}
+let start=null,manual=0,duration=16.42;
+function frame(){const t=start===null?manual:Math.min(duration,(performance.now()-start)/1000);c.fillStyle=bg;c.fillRect(0,0,1920,1080);
+ text('Запись собрания Zoom',278,188,43,ink,700);
+ const shift=ramp(t,4.55,5.75),ys=[335,494,653],x=mix(350,315,shift),w=mix(1310,1290,shift);
+ for(let n=0;n<3;n++){const y=ys[n]-shift*92;text(names[n],x-32,y+8,27,colors[n],700,'right');wave(x,y,w,102,n)}
+ // Both destinations are independent places to find the existing tracks.
+ const first=ramp(t,6.22,7.05),second=ramp(t,12.23,13.05);
+ if(first){c.save();c.globalAlpha=first;c.drawImage(computer,420,618,450,310);text('На компьютере',645,969,29,ink,700,'center');c.restore()}
+ if(second){c.save();c.globalAlpha=second;c.drawImage(cloud,1060,618,450,310);text('В облаке Zoom',1285,969,29,ink,700,'center');c.restore()}
+ requestAnimationFrame(frame)}
+window.configure=seconds=>{duration=seconds;start=null;manual=0};window.startAnimation=()=>{start=performance.now()};window.setPreviewTime=t=>{start=null;manual=clamp(t/duration)*duration};
+document.querySelector('#play').onclick=()=>window.startAnimation();document.querySelector('#seek').oninput=e=>window.setPreviewTime(Number(e.target.value)*duration);
+if(new URLSearchParams(location.search).has('capture'))document.body.classList.add('capture');requestAnimationFrame(frame);
+</script></html>

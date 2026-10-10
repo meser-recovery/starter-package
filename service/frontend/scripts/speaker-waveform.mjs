@@ -88,6 +88,43 @@ export function createWaveformReader(signal, sharedEngine = null, options = {}) 
     if (disposed || signal?.aborted) throw abortError(context);
   };
 
+  // File.arrayBuffer() cannot be cancelled while a page is navigating away.
+  // WebKit can then try to read the page's expired backing blob URL. FileReader
+  // lets pagehide abort the underlying read before that document is torn down.
+  const fileBytes = async file => {
+    // Metadata may settle inside an earlier beforeunload listener. Let all
+    // navigation cancellation handlers run before starting the blob loader.
+    await new Promise(resolve => setTimeout(resolve, 0));
+    if (disposed || signal?.aborted) throw new DOMException('cancelled', 'AbortError');
+    if (!signal || typeof FileReader !== 'function') return file.arrayBuffer();
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      const cancelled = () => new DOMException('cancelled', 'AbortError');
+      const cleanup = () => {
+        signal.removeEventListener('abort', abort);
+        reader.removeEventListener('load', loaded);
+        reader.removeEventListener('error', failed);
+        reader.removeEventListener('abort', aborted);
+      };
+      const finish = (error, bytes) => { cleanup(); error ? reject(error) : resolve(bytes); };
+      const loaded = () => finish(null, reader.result);
+      const failed = () => finish(reader.error || new Error('File read failed'));
+      const aborted = () => finish(cancelled());
+      const abort = () => {
+        if (reader.readyState === FileReader.LOADING) reader.abort();
+        else finish(cancelled());
+      };
+      reader.addEventListener('load', loaded);
+      reader.addEventListener('error', failed);
+      reader.addEventListener('abort', aborted);
+      signal.addEventListener('abort', abort, { once: true });
+      if (signal.aborted) abort();
+      else {
+        try { reader.readAsArrayBuffer(file); } catch (error) { finish(error); }
+      }
+    });
+  };
+
   async function stage(stageName, context, task, { respectAbort = true } = {}) {
     const started = now();
     try {
@@ -164,7 +201,7 @@ export function createWaveformReader(signal, sharedEngine = null, options = {}) 
       if (!engine) engine = await loadEngine(base);
       else activeEngines.add(engine);
       if (file) {
-        const bytes = await stage('input-read', base, async () => new Uint8Array(await file.arrayBuffer()));
+        const bytes = await stage('input-read', base, async () => new Uint8Array(await fileBytes(file)));
         inputMayExist = true;
         await stage('wasm-write', base, () => engine.writeFile(input, bytes));
       }
@@ -247,7 +284,7 @@ export function createWaveformReader(signal, sharedEngine = null, options = {}) 
     if (!AudioContextClass) throw new Error('Web Audio unavailable');
     const audioContext = new AudioContextClass();
     try {
-      const buffer = await audioContext.decodeAudioData(await file.arrayBuffer()); check(context);
+      const buffer = await audioContext.decodeAudioData(await fileBytes(file)); check(context);
       const samples = new Float32Array(WAVEFORM_SAMPLE_COUNT);
       for (let channel = 0; channel < buffer.numberOfChannels; channel++) {
         const data = buffer.getChannelData(channel);

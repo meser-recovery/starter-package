@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 440" role="img" aria-label="Планшет с открытым проектом аудиомонтажа">
+  <defs>
+    <linearGradient id="frame" x1="0" y1="0" x2="0" y2="1">
+      <stop stop-color="#2e5369"/><stop offset="1" stop-color="#0d2c3e"/>
+    </linearGradient>
+    <linearGradient id="glass" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#f9fdff"/><stop offset="1" stop-color="#d9eef5"/>
+    </linearGradient>
+    <filter id="shadow" x="-20%" y="-30%" width="140%" height="170%">
+      <feGaussianBlur stdDeviation="10"/>
+    </filter>
+  </defs>
+  <ellipse cx="320" cy="416" rx="264" ry="15" fill="#a7c3d0" opacity=".34" filter="url(#shadow)"/>
+  <rect x="26" y="18" width="588" height="382" rx="38" fill="url(#frame)" stroke="#082a3b" stroke-width="5"/>
+  <rect x="56" y="48" width="528" height="322" rx="11" fill="url(#glass)"/>
+  <rect x="56" y="48" width="528" height="32" rx="11" fill="#c8e1ec"/>
+  <path d="M56 80h528" stroke="#a7c8d7" stroke-width="2"/>
+  <circle cx="320" cy="33" r="5" fill="#5e8192"/>
+  <path d="M46 110v200" stroke="#7194a5" stroke-opacity=".5" stroke-width="2"/>
+  <rect x="24" y="143" width="3" height="48" rx="1.5" fill="#527688"/>
+  <rect x="24" y="205" width="3" height="48" rx="1.5" fill="#527688"/>
+  <path d="M144 402h352" stroke="#4b6d7e" stroke-width="4" stroke-linecap="round"/>
+</svg>

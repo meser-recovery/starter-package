@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B03",
+  "decision_date": "2026-10-02",
+  "video": "generated/b03-block-review/B03.mp4",
+  "video_sha256": "6535356a17c3b2cb885a423a41418ac3ca6616d97b32568f1512e485966d6206",
+  "duration_seconds": 28.633333333333333,
+  "approved_audio_record": "approvals/B03-audio.json",
+  "approved_audio_record_sha256": "d65f2a2569574ec904482c2c206f78b8e09f673bd59289733cdd1bab1112bce6",
+  "approved_mp3_sha256": "5bf198675f2f3f9c0e24e759418034d0558020318ccde5182554da5523faec9a",
+  "approved_wav_sha256": "1d5f565d482674ffe3f9619bc7b726d3d854d5ea8de27d4614221b4a99896ead",
+  "approved_pcm_sha256": "5a0bf2c5e71da2937112faa8543bed4c04fc7b54cf5bcaa65635e41c4fb56f78",
+  "approved_alignment": "generated/narration-blocks-v2/B03/B03-review-01-timing.json",
+  "approved_alignment_sha256": "7f01cd1d688f828803314b3a21812594c8cdad6b12a0988a4f15c2df1d9584d1",
+  "canonical_text_sha256": "5bbac3151861ce079907d1aaa16ea78acfa41b7f20fc7930f3299ddaca3f8c6d",
+  "subtitle_srt": "generated/b03-block-review/B03.ru.srt",
+  "subtitle_srt_sha256": "c8d10fdb6016abcf70559d02f21d17d22531171ad301db335f11989cd7b3d543",
+  "subtitle_vtt": "generated/b03-block-review/B03.ru.vtt",
+  "subtitle_vtt_sha256": "40a79968e9989c67af64ca34b3ae27b023ff42d559d129b1223c5a6a2b2cf4e5",
+  "embedded_subtitle_cues": 8,
+  "last_embedded_subtitle_end_seconds": 28.621,
+  "video_audio_timeline": "generated/b03-block-review/B03-video-timeline.wav",
+  "video_audio_timeline_sha256": "d43acb42c70b9341de07d858130c69e33ac3e537684f24d21ac4309389c35ece",
+  "scene_sources": [
+    {
+      "path": "generated/b03-block-review/scenes/B03-008.mp4",
+      "sha256": "407dbe00a6b4136f99c65ed4205eddfb18a4c8756bff491e8bbcc3d4c3d9fb09"
+    },
+    {
+      "path": "generated/b03-block-review/scenes/B03-009.mp4",
+      "sha256": "02babd35b622d347cf5dfe7c67784c4ead5d170e2b03556ec45cb828b8add4ba"
+    }
+  ],
+  "report": "generated/b03-block-review/report.json",
+  "report_sha256": "32bcd2ae4647cece7e7818ee7b2007ee0f2e10147d5c4230e89a0d6e67769890",
+  "verification": "generated/b03-block-review/verification.json",
+  "verification_sha256": "6264964437f499d563277568205449aa6b9bb7a27ad0a7ea76a4116478db4ac4"
+}

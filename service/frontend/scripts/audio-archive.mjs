@@ -155,11 +155,16 @@ function attentionFor(session) {
   return (state.maintenance?.transactions || []).filter(operation => operation.sessionId === session.id);
 }
 
-function clearPlayback() {
+function revokeObjectUrlLater(url) {
+  if (!url) return;
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function clearPlayback(revokeUrl = true) {
   generations.play.next();
   $('audio').pause(); $('audio').removeAttribute('src'); $('audio').load();
   $('download').removeAttribute('href'); $('download').removeAttribute('download');
-  if (state.url) URL.revokeObjectURL(state.url);
+  if (state.url && revokeUrl) revokeObjectUrlLater(state.url);
   state.url = null; $('player').hidden = true; $('playback-status').textContent = '';
 }
 function closeDetail({ updateUrl = true } = {}) {
@@ -708,7 +713,7 @@ $('login-form').addEventListener('submit', async event => {
   catch (error) { if (generations.auth.current(sequence) && error?.code !== 'invalid_password') $('login-status').textContent = message(error); }
   finally { $('password').value = ''; submit.disabled = false; }
 });
-window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
+window.addEventListener('pagehide', () => clearPlayback(false)); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
   try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }

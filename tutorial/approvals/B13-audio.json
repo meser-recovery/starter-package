@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B13",
+  "decision_date": "2026-10-04",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B13/B13-review-01.mp3",
+    "mp3_sha256": "50be1afac187afe77f2bf01a6ce7d98f0046936c4d7bced8c49c1bc1a658bff7",
+    "mp3_duration_seconds": 184.032653,
+    "wav": "generated/narration-blocks-v2/B13/B13-review-01.wav",
+    "wav_sha256": "eee43f6d6428cd7d2b1c18c95b2f9b380c769761369c6b75a2b3999aa2fd3825",
+    "pcm_sha256": "fc209e84494aa52fa405d20a93927b4c25f4019cb8a0a490fcc3b9ffeaf73798",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 8114400,
+    "alignment": "generated/narration-blocks-v2/B13/B13-review-01-timing.json",
+    "alignment_sha256": "fea34766ec3930984773944afe28ac941006af981b422ea56a5124101f229400",
+    "canonical_text_sha256": "da029cbccce046ad06f593c7ddeabadefc74ac5a8f63c1f73e913b043c77c8c2"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B13/narration.mp3",
+    "mp3_sha256": "50be1afac187afe77f2bf01a6ce7d98f0046936c4d7bced8c49c1bc1a658bff7",
+    "source_alignment": "generated/narration-blocks-v2/B13/B13-review-01-source-timing.json",
+    "source_alignment_sha256": "fea34766ec3930984773944afe28ac941006af981b422ea56a5124101f229400",
+    "decoded_pcm_sha256": "fc209e84494aa52fa405d20a93927b4c25f4019cb8a0a490fcc3b9ffeaf73798",
+    "decoded_pcm_samples": 8114400
+  },
+  "insertions": [],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved audio. Build from this WAV and alignment.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B13/B13-review-01-metadata.json",
+    "sha256": "9f4d666f7e261c69db03ea3d6d76728b87609d6d3c72b6dd8d1c86bee10a0ace"
+  },
+  "pause_review_qa": {
+    "path": "generated/b13-block-review/verification.json",
+    "sha256": "029555b9066f9fe9e6a11cf55337d888c076043998a13d0d58ee972304b684f6"
+  }
+}

@@ -32,6 +32,59 @@ def assert_fits(page, widths):
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'horizontal overflow at {width}px'
 
 
+def waveform_navigation_transition(page, base_url, writes):
+    """Release pending metadata at navigation, before the old document's pagehide.
+
+    This retains a main-world File and does not revoke any application URL or
+    depend on Playwright's input-file payload implementation.
+    """
+    events = []
+    page.on('console', lambda message: events.append(message.text) if message.text.startswith('S10B_NAV_') else None)
+    page.add_init_script("""(() => {
+      const add = HTMLMediaElement.prototype.addEventListener;
+      let pendingMetadata;
+      HTMLMediaElement.prototype.addEventListener = function(type, listener, options) {
+        if (type === 'loadedmetadata' && this.preload === 'metadata' && !this.isConnected) {
+          return add.call(this, type, event => {
+            pendingMetadata = () => listener.call(this, event);
+            window.__s10bMetadataReady = true;
+          }, options);
+        }
+        return add.call(this, type, listener, options);
+      };
+      addEventListener('beforeunload', () => {
+        if (pendingMetadata) {
+          console.debug('S10B_NAV_METADATA_RELEASED');
+          pendingMetadata();
+        }
+      });
+      const read = FileReader.prototype.readAsArrayBuffer;
+      FileReader.prototype.readAsArrayBuffer = function(file) {
+        if (window.__s10bMetadataReady) console.debug('S10B_NAV_LATE_READ ' + file.name + ' ' + new Error().stack);
+        return read.call(this, file);
+      };
+    })();""")
+    page.goto(f'{base_url}/Audio-Editor.html')
+    page.evaluate("document.getElementById('source-session-mode-device').click()")
+    fixture = source('navigation.wav')
+    page.evaluate("""async bytes => {
+      await import('./scripts/audio-processor.mjs');
+      const file = new File([new Uint8Array(bytes)], 'navigation.wav', { type: 'audio/wav' });
+      window.__s10bRetainedNavigationFile = file;
+      if ((await file.arrayBuffer()).byteLength !== bytes.length) throw new Error('Invalid navigation fixture');
+      const transfer = new DataTransfer(); transfer.items.add(file);
+      const input = document.getElementById('processor-file');
+      input.files = transfer.files;
+      input.dispatchEvent(new Event('change', { bubbles: true }));
+    }""", list(fixture['buffer']))
+    page.wait_for_function('window.__s10bMetadataReady === true', timeout=30_000)
+    before = len(writes)
+    page.goto(f'{base_url}/Audio-Archive.html')
+    assert 'S10B_NAV_METADATA_RELEASED' in events, events
+    assert not any(event.startswith('S10B_NAV_LATE_READ ') for event in events), events
+    assert len(writes) == before, 'leaving waveform preparation made an Archive write'
+
+
 def speaker_source_transition(page, base_url, writes, same_name):
     a = source('same.wav' if same_name else 'A.wav', 0)
     b = source('same.wav' if same_name else 'B.wav', 200)
@@ -91,11 +144,69 @@ def run(browser_type, base_url):
     page_errors = []
     writes = []
     outbound = []
-    page.on('pageerror', lambda error: page_errors.append(str(error)))
+    pagehide_revokes = []
+    blob_events = []
+    file_events = []
+    failed_requests = []
+    phase = ['initial page']
+    page.on('pageerror', lambda error: page_errors.append({
+        'phase': phase[0], 'page': page.url, 'message': str(error),
+        'stack': getattr(error, 'stack', None),
+        'recent_blob_events': blob_events[-16:], 'recent_failed_requests': failed_requests[-8:],
+        'recent_file_events': file_events[-32:]
+    }))
+    page.on('console', lambda message: (
+        pagehide_revokes.append(message.text) if message.type == 'error' and message.text.startswith('S10B_REVOKE_DURING_PAGEHIDE ') else None,
+        blob_events.append(message.text) if message.text.startswith('S10B_BLOB_') else None,
+        file_events.append({'phase': phase[0], 'event': message.text}) if message.text.startswith('S10B_FILE_') else None
+    ))
+    page.on('requestfailed', lambda request: failed_requests.append((request.url, request.failure)))
+    page.add_init_script("""(() => {
+      let readId = 0;
+      const trace = (event, data = {}) => console.debug('S10B_FILE_' + JSON.stringify({
+        event, time: performance.now(), wall: Date.now(), url: location.href, ...data
+      }));
+      for (const type of ['beforeunload', 'pagehide', 'pageshow']) {
+        addEventListener(type, event => trace(type, { persisted: event.persisted }), { capture: true });
+      }
+      const read = FileReader.prototype.readAsArrayBuffer;
+      const abort = FileReader.prototype.abort;
+      FileReader.prototype.readAsArrayBuffer = function(file) {
+        const id = ++readId;
+        this.__s10bReadId = id;
+        trace('read-start', { id, name: file.name, size: file.size });
+        for (const type of ['load', 'error', 'abort', 'loadend']) {
+          this.addEventListener(type, () => trace(type, { id, state: this.readyState, error: this.error?.name }));
+        }
+        return read.call(this, file);
+      };
+      FileReader.prototype.abort = function() {
+        trace('read-cancel', { id: this.__s10bReadId, state: this.readyState });
+        return abort.call(this);
+      };
+      let pageHiding = false;
+      addEventListener('pagehide', () => {
+        pageHiding = true;
+        queueMicrotask(() => { pageHiding = false; });
+      }, { capture: true });
+      const create = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = blob => {
+        const url = create(blob);
+        console.debug('S10B_BLOB_CREATE ' + url + ' ' + new Error().stack);
+        return url;
+      };
+      const revoke = URL.revokeObjectURL.bind(URL);
+      URL.revokeObjectURL = url => {
+        if (pageHiding) console.error('S10B_REVOKE_DURING_PAGEHIDE ' + url);
+        console.debug('S10B_BLOB_REVOKE ' + url + ' ' + new Error().stack);
+        return revoke(url);
+      };
+    })();""")
     page.on('request', lambda request: (
         writes.append((request.method, request.url)) if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and '/v1/source-sessions' in request.url else None,
         outbound.append(request.url) if not (request.url.startswith(base_url) or request.url.startswith(f'blob:{base_url}/')) else None
     ))
+    phase[0] = 'Archive create/save'
     login(page, base_url)
     assert page.locator('#archive-create-open').is_visible()
     assert page.locator('#archive-create-files').get_attribute('multiple') is not None
@@ -142,6 +253,7 @@ def run(browser_type, base_url):
     assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 1
     assert_fits(page, (320, 390, 768, 1280))
 
+    phase[0] = 'Editor device source replacement'
     page.goto(f'{base_url}/Audio-Editor.html')
     page.locator('#source-session-mode-device').click()
     assert_fits(page, (320, 390, 768, 1280))
@@ -158,6 +270,7 @@ def run(browser_type, base_url):
     assert page.locator('#import-files li').count() == 1
     assert not page.locator('#processor-file').is_visible()
 
+    phase[0] = 'Archive session expiry and reconnect'
     page.goto(f'{base_url}/Audio-Archive.html')
     page.locator('#archive-create-open').click()
     page.locator('#archive-create-name').fill('S10B после входа')
@@ -176,9 +289,14 @@ def run(browser_type, base_url):
     assert page.locator('#detail-title').inner_text() == 'S10B после входа'
     assert 'retry.wav' in page.locator('#detail-body').inner_text()
     assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 3
+    phase[0] = 'Speaker source A to B, different names'
     speaker_source_transition(page, base_url, writes, False)
+    phase[0] = 'Speaker source A to B, same name'
     speaker_source_transition(page, base_url, writes, True)
+    phase[0] = 'Editor pending metadata during navigation'
+    waveform_navigation_transition(page, base_url, writes)
     assert not page_errors, page_errors
+    assert not pagehide_revokes, pagehide_revokes
     assert not outbound, outbound
     browser.close()
 
@@ -192,4 +310,4 @@ if __name__ == '__main__':
         names = ('chromium', 'firefox', 'webkit') if args.browser == 'all' else (args.browser,)
         for name in names:
             run(getattr(playwright, name), args.base_url)
-            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, 320/390/768/1280px')
+            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, pending metadata navigation, 320/390/768/1280px')

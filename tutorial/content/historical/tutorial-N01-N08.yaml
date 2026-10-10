@@ -1,0 +1,3381 @@
+{
+  "schema_version": 1,
+  "tutorial": {
+    "language": "ru-RU",
+    "resolution": [
+      1920,
+      1080
+    ],
+    "fps": 30,
+    "canonical_content": {
+      "source": "content/meser-audio-tutorial-canonical-content-pack.md",
+      "sha256": "6e024611d7165172f7c996f027be8281d5c6de02410822799a65a6257933841f",
+      "policy": "fail_on_content_drift"
+    },
+    "chapters": [
+      "introduction",
+      "archive",
+      "import",
+      "announcement",
+      "speaker",
+      "saving",
+      "history",
+      "management",
+      "summary"
+    ]
+  },
+  "narration": {
+    "provider": "elevenlabs",
+    "voice_id": "LHi3adMlU7AICv8Yxpmm",
+    "model_id": "eleven_v3",
+    "output_format": "mp3_44100_128",
+    "voice_settings": {
+      "stability": 0.5
+    },
+    "pronunciation": {},
+    "language_code": "ru",
+    "delivery_prefix": "[calm] [conversational]"
+  },
+  "scenes": [
+    {
+      "id": "001-purpose",
+      "chapter": "introduction",
+      "canonical_refs": {
+        "narration": [
+          "n001"
+        ],
+        "storyboard": [
+          "b001"
+        ],
+        "captions": []
+      },
+      "narration": "Привет. Позвольте представить вам несколько новых возможностей, доступных на сайте Мэсэр в разделе для служащих. Как вам известно, мы записываем спикерские собрания. Готовые записи затем добавляются на сайт «Нам по пути», а также используются анонс-мейкером, который прослушивает спикерскую и готовит по ней краткое текстовое резюме для анонса.",
+      "visual": {
+        "type": "animation",
+        "goal": "Название ролика → карточка спикерской → сайт → текстовый анонс",
+        "animation": "intro-purpose",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Что мы вообще делаем",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "002-zoom-multitrack",
+      "chapter": "introduction",
+      "canonical_refs": {
+        "narration": [
+          "n002",
+          "n003"
+        ],
+        "storyboard": [
+          "b002"
+        ],
+        "captions": []
+      },
+      "narration": "Обычно запись Zoom воспринимается как один готовый аудиофайл, в котором слышны все участники. Но Zoom позволяет сохранять звук и по-другому — отдельно записывать каждого участника.\n\nВместо одного общего файла можно получить несколько отдельных аудиодорожек: например, спикера, переводчика и других участников. Такая возможность есть как при записи Zoom на компьютер, так и при облачной записи, которая сохраняется в учётной записи Zoom.",
+      "visual": {
+        "type": "animation",
+        "goal": "Одна общая waveform → отдельные `Спикер`, `Переводчик`, `Участник`",
+        "animation": "zoom-multitrack",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Один файл против поканальной записи",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "003-announcement-benefit",
+      "chapter": "introduction",
+      "canonical_refs": {
+        "narration": [
+          "n004",
+          "n005"
+        ],
+        "storyboard": [
+          "b003"
+        ],
+        "captions": []
+      },
+      "narration": "Это даёт несколько очень практических преимуществ.\n\nНапример, анонс-мейкеру не обязательно прослушивать всю двуязычную запись. Можно оставить только русский перевод, автоматически сократить длинные паузы и получить гораздо более короткий материал, который проще прослушивать и анализировать.",
+      "visual": {
+        "type": "animation",
+        "goal": "Общий двуязычный файл → дорожка перевода → становится короче",
+        "animation": "announcement-benefit",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Зачем это анонс-мейкеру",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15–20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "004-speaker-benefit",
+      "chapter": "introduction",
+      "canonical_refs": {
+        "narration": [
+          "n006",
+          "n007",
+          "n008",
+          "n009",
+          "n010",
+          "n011"
+        ],
+        "storyboard": [
+          "b004"
+        ],
+        "captions": []
+      },
+      "narration": "Раздельные дорожки полезны и при подготовке финальной спикерской.\n\nУ разных участников часто сильно отличается качество звука: один записан слишком тихо, у другого присутствует гул, у третьего звук слишком резкий. В общем аудиофайле исправление одного голоса неизбежно затрагивает остальные.\n\nПри поканальной записи каждую дорожку можно обрабатывать отдельно: улучшать звук, выравнивать громкость и уменьшать разницу между тихими и громкими фрагментами.\n\nТак же отдельно можно убирать локальные помехи. Если переводчик кашлянул или на одной дорожке появился посторонний шум, этот участок можно заглушить, не затрагивая остальных.\n\nЕсли в собрание попал тролль или другой ненужный участник, его дорожку можно полностью исключить из готовой записи.\n\nЕсли возникли проблемы со связью и появился ненужный общий фрагмент, его можно вырезать на всех дорожках. А если запись была включена слишком рано или остановлена слишком поздно, можно точно установить её начало и конец.",
+      "visual": {
+        "type": "animation",
+        "goal": "Разная громкость, гул, шум, кашель, тролль, connection, начало/конец",
+        "animation": "speaker-benefit",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Зачем это финальной спикерской",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30–40 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "005-two-tools",
+      "chapter": "introduction",
+      "canonical_refs": {
+        "narration": [
+          "n012",
+          "n013",
+          "n014"
+        ],
+        "storyboard": [
+          "b005"
+        ],
+        "captions": []
+      },
+      "narration": "Для работы с такими записями используются два основных инструмента: Аудиоархив и Аудиоредактор.\n\nАудиоархив позволяет сохранить запись так, чтобы один человек мог её загрузить, а другой — позже открыть и обработать. Здесь же вместе хранятся исходники, проекты обработки и готовые версии.\n\nАудиоредактор позволяет открыть запись из Архива или непосредственно с устройства и выбрать один из двух вариантов работы: быстро подготовить материал для анонс-мейкера или выполнить полноценный монтаж спикерской.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Zoom → Архив ↔ Редактор → готовые версии`",
+        "animation": null,
+        "action": "two-tools"
+      },
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
+      "expected_state": "Два инструмента",
+      "assertions": [
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15–20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "006-archive-open",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n015",
+          "n016",
+          "n017",
+          "n018"
+        ],
+        "storyboard": [
+          "b006"
+        ],
+        "captions": []
+      },
+      "narration": "Начнём с Аудиоархива.\n\nЕго основная задача — разделить получение записи и её обработку.\n\nНапример, один служащий может получить поканальную запись Zoom, сохранить её в Архив и на этом закончить свою работу. Позже другой человек сможет открыть эту же запись со своего устройства и заняться обработкой.\n\nКроме того, Архив поддерживает общий порядок: всё, что относится к одному собранию, остаётся связано с одной записью.",
+      "visual": {
+        "type": "browser",
+        "goal": "Реальная страница Аудиоархива",
+        "animation": null,
+        "action": "archive-open"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Переход к Архиву",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "10 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "007-archive-create",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n019",
+          "n020"
+        ],
+        "storyboard": [
+          "b007"
+        ],
+        "captions": []
+      },
+      "narration": "Чтобы добавить новую запись, выбирается действие «Создать запись».\n\nДля записи указывается название. Дата и время необязательны.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Создать запись`, название, дата/время",
+        "animation": null,
+        "action": "archive-create"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Создание записи",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "008-archive-files",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n021"
+        ],
+        "storyboard": [
+          "b008"
+        ],
+        "captions": []
+      },
+      "narration": "Затем выбираются аудиодорожки Zoom с компьютера.",
+      "visual": {
+        "type": "browser",
+        "goal": "Выбрать 2–3 synthetic Zoom-дорожки",
+        "animation": null,
+        "action": "archive-files"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Выбор дорожек",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "009-archive-add-replace",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n022",
+          "n023"
+        ],
+        "storyboard": [
+          "b009"
+        ],
+        "captions": []
+      },
+      "narration": "Если к выбранным файлам нужно добавить ещё одну дорожку, используется кнопка «Добавить дорожки». Если выбран неправильный набор, его можно полностью заменить с помощью «Выбрать заново».\n\nПеред сохранением виден весь список выбранных файлов.",
+      "visual": {
+        "type": "browser",
+        "goal": "Обе операции",
+        "animation": null,
+        "action": "archive-add-replace"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Добавить / выбрать заново",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "010-archive-save",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n024"
+        ],
+        "storyboard": [
+          "b010"
+        ],
+        "captions": []
+      },
+      "narration": "После сохранения запись становится доступна в общем Аудиоархиве и больше не зависит от компьютера, с которого была загружена.",
+      "visual": {
+        "type": "browser",
+        "goal": "Сохранить → открыть запись",
+        "animation": null,
+        "action": "archive-save"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Сохранение",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "011-archive-hierarchy",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n026"
+        ],
+        "storyboard": [
+          "b011"
+        ],
+        "captions": []
+      },
+      "narration": "Внутри конкретной записи собраны исходные дорожки, проект обработки и его история, версии для анонс-мейкера и финальные версии спикерской.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Исходники / Проект / Для анонс-мейкера / Финальные версии`",
+        "animation": null,
+        "action": "archive-hierarchy"
+      },
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
+      "expected_state": "Иерархия записи",
+      "assertions": [
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "012-archive-search",
+      "chapter": "archive",
+      "canonical_refs": {
+        "narration": [
+          "n025"
+        ],
+        "storyboard": [
+          "b012"
+        ],
+        "captions": []
+      },
+      "narration": "Когда записей становится много, их можно искать по названию или имени исходной дорожки, сортировать и фильтровать — например, показывать только записи с доступными исходниками, с проектом спикерской или с готовыми версиями.",
+      "visual": {
+        "type": "browser",
+        "goal": "Поиск → уточнить поиск → фильтры → последние записи",
+        "animation": null,
+        "action": "archive-search"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Поиск и фильтры",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "013-editor-open",
+      "chapter": "import",
+      "canonical_refs": {
+        "narration": [
+          "n027",
+          "n028"
+        ],
+        "storyboard": [
+          "b013"
+        ],
+        "captions": []
+      },
+      "narration": "Для начала работы Аудиоредактору нужны исходные дорожки.\n\nПолучить их можно двумя способами.",
+      "visual": {
+        "type": "browser",
+        "goal": "Открывается Audio Editor",
+        "animation": null,
+        "action": "editor-open"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Переход в Редактор",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "10 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "014-editor-from-archive",
+      "chapter": "import",
+      "canonical_refs": {
+        "narration": [
+          "n029",
+          "n030"
+        ],
+        "storyboard": [
+          "b014"
+        ],
+        "captions": []
+      },
+      "narration": "Первый — открыть уже сохранённую запись из Аудиоархива.\n\nВыбирается вариант «Из аудиоархива», затем нужная запись. Редактор загружает её исходные дорожки и подготавливает их для работы.",
+      "visual": {
+        "type": "browser",
+        "goal": "Выбрать запись → загрузка дорожек",
+        "animation": null,
+        "action": "editor-from-archive"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Из Аудиоархива",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–35 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "015-editor-device-import",
+      "chapter": "import",
+      "canonical_refs": {
+        "narration": [
+          "n031",
+          "n032"
+        ],
+        "storyboard": [
+          "b015"
+        ],
+        "captions": []
+      },
+      "narration": "Второй вариант — выбрать файлы непосредственно с текущего устройства.\n\nДля этого используется пункт «С этого устройства».",
+      "visual": {
+        "type": "browser",
+        "goal": "Выбрать локальные дорожки",
+        "animation": null,
+        "action": "editor-device-import"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "С этого устройства",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "016-local-not-saved",
+      "chapter": "import",
+      "canonical_refs": {
+        "narration": [
+          "n033",
+          "n034",
+          "n035"
+        ],
+        "storyboard": [
+          "b016"
+        ],
+        "captions": [
+          "Локальный импорт"
+        ]
+      },
+      "narration": "Важно понимать: выбор файлов ещё не означает, что они сохранены в Аудиоархиве.\n\nПока не выполнено отдельное сохранение, файлы остаются только на текущем устройстве. С ними можно работать локально, а при необходимости позже сохранить исходную Zoom-запись в Архив.\n\nТо есть выбор файлов, их обработка и сохранение в Архив — это разные действия.",
+      "visual": {
+        "type": "browser",
+        "goal": "Подсказка о локальных файлах",
+        "animation": null,
+        "action": "local-not-saved"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Выбор ≠ сохранение",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15 сек",
+      "transforms": [],
+      "captions": [
+        "Файлы пока остаются только на этом устройстве"
+      ]
+    },
+    {
+      "id": "017-editor-save-sources",
+      "chapter": "import",
+      "canonical_refs": {
+        "narration": [
+          "n036"
+        ],
+        "storyboard": [
+          "b017"
+        ],
+        "captions": []
+      },
+      "narration": "Если локальные файлы уже открыты в Редакторе, сохранить запись в Архив можно прямо отсюда.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Сохранить запись Zoom в аудиоархив`",
+        "animation": null,
+        "action": "editor-save-sources"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Сохранить из Редактора",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15–20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "018-two-modes",
+      "chapter": "import",
+      "canonical_refs": {
+        "narration": [
+          "n037"
+        ],
+        "storyboard": [
+          "b018"
+        ],
+        "captions": []
+      },
+      "narration": "После подготовки исходников предлагаются два режима: «Анонс-мейкер» для быстрой автоматической обработки и «Спикерская» для ручного монтажа и подготовки финальной записи.",
+      "visual": {
+        "type": "browser",
+        "goal": "Карточки `Анонс-мейкер` / `Спикерская`",
+        "animation": null,
+        "action": "two-modes"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Два режима",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "10–15 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "019-bilingual-problem",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n038",
+          "n039",
+          "n040",
+          "n041"
+        ],
+        "storyboard": [
+          "b019"
+        ],
+        "captions": []
+      },
+      "narration": "Как упоминалось ранее, анонс-мейкеру нужно внимательно прослушать спикерскую, выделить основные мысли и подготовить текстовое резюме.\n\nОбычная запись нашего собрания двуязычная: звучит спикер на иврите, затем русский перевод.\n\nДля обычного слушателя это нормально. Но русскоязычному анонс-мейкеру оригинальная речь на иврите не помогает анализу и значительно увеличивает время прослушивания.\n\nПоканальная запись позволяет использовать только дорожку русского переводчика.",
+      "visual": {
+        "type": "animation",
+        "goal": "Timeline: иврит → перевод → иврит → перевод",
+        "animation": "bilingual-problem",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Проблема перевода",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "020-one-translator",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n042",
+          "n043",
+          "n044",
+          "n045",
+          "n046"
+        ],
+        "storyboard": [
+          "b020"
+        ],
+        "captions": [
+          "Алгоритм пауз"
+        ]
+      },
+      "narration": "Но пока говорит спикер, переводчик молчит. Поэтому на отдельной дорожке перевода появляются длинные участки тишины.\n\nДля их обработки используется специальный алгоритм.\n\nОн находит длинные паузы и сокращает их, оставляя небольшой естественный промежуток между фразами.\n\nСейчас обрабатываются паузы продолжительностью от двух секунд, а после обработки от длинной паузы остаётся примерно треть секунды.\n\nВ результате получается значительно более короткая запись, состоящая практически только из русского перевода. На некоторых спикерских продолжительность материала удаётся сократить почти втрое.",
+      "visual": {
+        "type": "animation",
+        "goal": "Длинные пустоты → паузы сжимаются",
+        "animation": "one-translator",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Один переводчик",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": [
+        "Тишина: ≤ −45 dB\nОбрабатываются паузы: от 2 сек.\nПосле сокращения: ≈ 0,35 сек."
+      ]
+    },
+    {
+      "id": "021-two-translators",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n047",
+          "n048",
+          "n049",
+          "n050"
+        ],
+        "storyboard": [
+          "b021"
+        ],
+        "captions": []
+      },
+      "narration": "Но переводчик может быть не один.\n\nНапример, один человек переводит самого спикера, а другой — вопросы участников и ответы на них.\n\nПросто обработать эти дорожки отдельно и затем поставить одну вслед за другой нельзя. Иногда переводчики помогают друг другу, уточняют перевод или говорят одновременно. При последовательной склейке настоящий порядок разговора был бы нарушен.\n\nПоэтому несколько дорожек обрабатываются синхронно.",
+      "visual": {
+        "type": "animation",
+        "goal": "Две синхронные дорожки; пересечение речи",
+        "animation": "multiple-translators",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Два переводчика",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30–40 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "022-common-silence",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n051",
+          "n052",
+          "n053",
+          "n054"
+        ],
+        "storyboard": [
+          "b022"
+        ],
+        "captions": []
+      },
+      "narration": "Каждая из них анализируется отдельно, но пауза сокращается только там, где одновременно молчат все выбранные переводчики.\n\nЕсли хотя бы на одной дорожке кто-то говорит, этот участок остаётся на месте.\n\nПосле этого дорожки сводятся в один готовый файл. Так сохраняются и правильная последовательность разговора, и моменты, когда переводчики говорят одновременно.\n\nЕсли переводчик один, алгоритм просто анализирует одну дорожку.",
+      "visual": {
+        "type": "animation",
+        "goal": "Сжать только intersection тишины",
+        "animation": "multiple-translators",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Общая тишина",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "023-announcement-open",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n055",
+          "n056"
+        ],
+        "storyboard": [
+          "b023"
+        ],
+        "captions": []
+      },
+      "narration": "В Аудиоредакторе для этого выбирается режим «Анонс-мейкер».\n\nПеред обработкой исходники можно прослушать.",
+      "visual": {
+        "type": "browser",
+        "goal": "Открыть «Анонс-мейкер»",
+        "animation": null,
+        "action": "announcement-open"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Открыть режим",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "10 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "024-announcement-solo-mute",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n057"
+        ],
+        "storyboard": [
+          "b024"
+        ],
+        "captions": [
+          "Solo / Mute"
+        ]
+      },
+      "narration": "Solo позволяет временно слушать одну дорожку отдельно, а Mute — временно отключить её при прослушивании. На конечный результат эти кнопки не влияют.",
+      "visual": {
+        "type": "browser",
+        "goal": "Solo одной → Mute другой",
+        "animation": null,
+        "action": "announcement-solo-mute"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Solo / Mute",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": [
+        "Только прослушивание"
+      ]
+    },
+    {
+      "id": "025-announcement-navigation",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n058",
+          "n059"
+        ],
+        "storyboard": [
+          "b025"
+        ],
+        "captions": []
+      },
+      "narration": "Для длинных записей предусмотрены масштабирование, изменение высоты дорожек, функция «Вписать» для полного обзора записи и Follow, при котором экран автоматически следует за воспроизведением.\n\nНебольшой участок можно выделить и прослушивать повторно с помощью Loop.",
+      "visual": {
+        "type": "browser",
+        "goal": "Zoom → Fit → Follow → Loop",
+        "animation": null,
+        "action": "announcement-navigation"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Навигация",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "35–45 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "026-announcement-workspace",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n060"
+        ],
+        "storyboard": [
+          "b026"
+        ],
+        "captions": []
+      },
+      "narration": "Редактор также можно развернуть, изменить цвета и порядок дорожек или убрать ошибочно выбранную дорожку из текущего набора.",
+      "visual": {
+        "type": "browser",
+        "goal": "Expand, цвет, порядок, удалить ошибочную дорожку",
+        "animation": null,
+        "action": "announcement-workspace"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Workspace",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30–40 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "027-announcement-process",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n061",
+          "n062"
+        ],
+        "storyboard": [
+          "b027"
+        ],
+        "captions": []
+      },
+      "narration": "После проверки исходников запускается обработка.\n\nАлгоритм находит длинные общие паузы, сокращает их и создаёт единый результат.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Обработать запись`; ожидание сократить",
+        "animation": null,
+        "action": "announcement-process"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Обработка",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "028-announcement-result",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n063"
+        ],
+        "storyboard": [
+          "b028"
+        ],
+        "captions": []
+      },
+      "narration": "После обработки отображается исходная и новая длительность записи, количество сокращённых пауз и общее количество удалённого времени.",
+      "visual": {
+        "type": "browser",
+        "goal": "Статистика + waveform результата",
+        "animation": null,
+        "action": "announcement-result"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Результат",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "029-announcement-save",
+      "chapter": "announcement",
+      "canonical_refs": {
+        "narration": [
+          "n064",
+          "n065",
+          "n066"
+        ],
+        "storyboard": [
+          "b029"
+        ],
+        "captions": []
+      },
+      "narration": "Результат можно прослушать и скачать как MP3.\n\nЕсли исходная запись сохранена в Аудиоархиве, готовый материал можно также сохранить вместе с этой записью как версию для анонс-мейкера.\n\nПри повторной обработке можно сохранить новую версию, не удаляя предыдущую.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Скачать MP3` → `Сохранить в архив для анонс-мейкера`",
+        "animation": null,
+        "action": "announcement-save"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Скачать / сохранить",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "030-speaker-open",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n067",
+          "n068"
+        ],
+        "storyboard": [
+          "b030"
+        ],
+        "captions": []
+      },
+      "narration": "Режим «Спикерская» предназначен для более точной обработки и монтажа.\n\nЗдесь каждая дорожка остаётся отдельной до создания готовой финальной версии.",
+      "visual": {
+        "type": "browser",
+        "goal": "Открыть режим",
+        "animation": null,
+        "action": "speaker-open"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Переход к Спикерской",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "10 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "031-speaker-processing",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n069",
+          "n070",
+          "n071",
+          "n072"
+        ],
+        "storyboard": [
+          "b031"
+        ],
+        "captions": []
+      },
+      "narration": "Для каждой дорожки можно независимо включить улучшение звука. Оно слегка убирает очень низкий гул и лишние высокие частоты.\n\nОтдельно доступно выравнивание громкости. Оно особенно полезно, когда один участник записан заметно тише или громче остальных.\n\nКомпрессия уменьшает разницу между тихими и громкими фрагментами речи. Можно выбрать лёгкую, среднюю или сильную степень обработки.\n\nВсе эти настройки применяются к дорожкам независимо.",
+      "visual": {
+        "type": "browser",
+        "goal": "Improvement / Leveling / Compression",
+        "animation": null,
+        "action": "speaker-processing"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Независимая обработка",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "45–60 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "032-speaker-levels",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n073"
+        ],
+        "storyboard": [
+          "b032"
+        ],
+        "captions": []
+      },
+      "narration": "Для контроля звука отображаются индикаторы уровня. Если появляется CLIP, это предупреждает о слишком высоком уровне сигнала.",
+      "visual": {
+        "type": "browser",
+        "goal": "RMS / Peak / CLIP",
+        "animation": null,
+        "action": "speaker-levels"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Уровни",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "033-speaker-monitor-exclude",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n074",
+          "n075",
+          "n076"
+        ],
+        "storyboard": [
+          "b033"
+        ],
+        "captions": [
+          "Solo / Mute",
+          "Исключить из микса"
+        ]
+      },
+      "narration": "Solo позволяет прослушать отдельную дорожку, Mute — временно отключить её. Эти функции относятся только к прослушиванию.\n\nЕсли дорожка вообще не должна попасть в готовую спикерскую, используется «Исключить из микса». Например, таким образом можно убрать тролля или другого ненужного участника.\n\nИсходная дорожка при этом не удаляется и остаётся в проекте.",
+      "visual": {
+        "type": "browser",
+        "goal": "Solo → Mute → `Исключить из микса` → вернуть",
+        "animation": null,
+        "action": "speaker-monitor-exclude"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Solo / Mute / исключение",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30–40 сек",
+      "transforms": [],
+      "captions": [
+        "Только прослушивание",
+        "Влияет на финальный результат"
+      ]
+    },
+    {
+      "id": "034-speaker-workspace",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n077",
+          "n078",
+          "n079"
+        ],
+        "storyboard": [
+          "b034"
+        ],
+        "captions": []
+      },
+      "narration": "Для удобства дорожкам можно назначить разные цвета и изменить их порядок.\n\nВсе формы волн отображаются на общей временной шкале.\n\nРабочую область можно развернуть на весь экран.",
+      "visual": {
+        "type": "browser",
+        "goal": "Цвет → порядок → `На весь экран`",
+        "animation": null,
+        "action": "speaker-workspace"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Workspace",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "035-speaker-navigation",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n080",
+          "n081",
+          "n082"
+        ],
+        "storyboard": [
+          "b035"
+        ],
+        "captions": []
+      },
+      "narration": "Масштаб можно увеличить для точной работы с небольшим участком или уменьшить для более общего обзора. Кнопка «Вписать» одним действием возвращает всю запись в доступную ширину.\n\nТем же регулятором можно переключиться на изменение высоты дорожек.\n\nПри включённой функции Follow экран следует за воспроизведением.",
+      "visual": {
+        "type": "browser",
+        "goal": "Сильно приблизить → Follow → Fit → высота",
+        "animation": null,
+        "action": "speaker-navigation"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Навигация",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "35–40 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "036-speaker-loop",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n083"
+        ],
+        "storyboard": [
+          "b036"
+        ],
+        "captions": []
+      },
+      "narration": "А небольшой фрагмент можно окружить границами Loop и прослушивать повторно.",
+      "visual": {
+        "type": "browser",
+        "goal": "Выделить участок, Loop, подвигать границы",
+        "animation": null,
+        "action": "speaker-loop"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Loop",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "037-speaker-trim",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n084"
+        ],
+        "storyboard": [
+          "b037"
+        ],
+        "captions": []
+      },
+      "narration": "Если запись Zoom была включена слишком рано, выбирается нужная точка и устанавливается новое начало. Таким же образом можно задать правильный конец.",
+      "visual": {
+        "type": "browser",
+        "goal": "Установить начало и конец",
+        "animation": null,
+        "action": "speaker-trim"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Начало / конец",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "038-speaker-global-cut",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n085",
+          "n086"
+        ],
+        "storyboard": [
+          "b038"
+        ],
+        "captions": []
+      },
+      "narration": "Если требуется полностью убрать общий ненужный участок — например, паузу из-за переподключения спикера, — используется «Вырезать».\n\nТакой вырез применяется одновременно ко всем дорожкам, поэтому их синхронизация сохраняется.",
+      "visual": {
+        "type": "browser",
+        "goal": "Выделить → `Вырезать`; регион на всех дорожках",
+        "animation": null,
+        "action": "speaker-global-cut"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Глобальный вырез",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "039-speaker-remove-cut",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n090"
+        ],
+        "storyboard": [
+          "b039"
+        ],
+        "captions": []
+      },
+      "narration": "Выбранный глобальный вырез можно убрать с помощью «Снять вырез», а участок тишины — с помощью «Снять тишину».",
+      "visual": {
+        "type": "browser",
+        "goal": "Выбрать регион → `Снять вырез` → при необходимости снова применить",
+        "animation": null,
+        "action": "speaker-remove-cut"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Снять вырез",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "040-speaker-silence",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n087",
+          "n088"
+        ],
+        "storyboard": [
+          "b040"
+        ],
+        "captions": []
+      },
+      "narration": "Если проблема находится только на одной дорожке, используется «Тишина».\n\nНапример, кашель или посторонний шум можно заглушить только у одного участника. Длительность записи при этом не меняется, а остальные дорожки продолжают звучать как раньше.",
+      "visual": {
+        "type": "browser",
+        "goal": "Конкретная дорожка → участок → `Тишина`",
+        "animation": null,
+        "action": "speaker-silence"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Тишина",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "041-speaker-remove-silence",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n089"
+        ],
+        "storyboard": [
+          "b041"
+        ],
+        "captions": []
+      },
+      "narration": "Любую такую правку можно отменить непосредственно.",
+      "visual": {
+        "type": "browser",
+        "goal": "Выбрать регион → `Снять тишину`",
+        "animation": null,
+        "action": "speaker-remove-silence"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Снять тишину",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "042-speaker-region-edit",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n092"
+        ],
+        "storyboard": [
+          "b042"
+        ],
+        "captions": []
+      },
+      "narration": "Границы вырезов и участков тишины можно передвигать непосредственно на временной шкале. При необходимости начало и конец можно задать точными числовыми значениями.",
+      "visual": {
+        "type": "browser",
+        "goal": "Потянуть край → точные числовые поля",
+        "animation": null,
+        "action": "speaker-region-edit"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Изменение правок",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "043-speaker-undo-redo",
+      "chapter": "speaker",
+      "canonical_refs": {
+        "narration": [
+          "n091",
+          "n093",
+          "n094"
+        ],
+        "storyboard": [
+          "b043"
+        ],
+        "captions": []
+      },
+      "narration": "Дополнительно доступны обычные функции «Отменить» и «Повторить».\n\nВоспроизведение и пауза также доступны клавишей пробела.\n\nТаким образом можно отдельно исправить звук каждого участника, убрать локальные помехи, исключить ненужные дорожки и выполнить общий монтаж, не теряя преимуществ поканальной записи.",
+      "visual": {
+        "type": "browser",
+        "goal": "Несколько действий → Undo → Redo",
+        "animation": null,
+        "action": "speaker-undo-redo"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Undo / Redo",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15–20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "044-project-meaning",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n095",
+          "n096",
+          "n097",
+          "n101"
+        ],
+        "storyboard": [
+          "b044"
+        ],
+        "captions": [
+          "Проект"
+        ]
+      },
+      "narration": "После завершения монтажа важно различать две вещи: проект обработки и готовую аудиозапись.\n\n«Сохранить проект» сохраняет текущее состояние монтажа: начало и конец записи, вырезы, участки тишины, исключённые дорожки и настройки их обработки.\n\nТакой проект можно позже снова открыть и продолжить редактирование.\n\nНо сохранённый проект — это ещё не готовый MP3.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Исходники + правки = Проект`",
+        "animation": null,
+        "action": "project-meaning"
+      },
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
+      "expected_state": "Что такое проект",
+      "assertions": [
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15 сек",
+      "transforms": [],
+      "captions": [
+        "Сохранить проект ≠ создать MP3"
+      ]
+    },
+    {
+      "id": "045-project-save",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n098"
+        ],
+        "storyboard": [
+          "b045"
+        ],
+        "captions": []
+      },
+      "narration": "Если исходная запись уже находится в Аудиоархиве, проект сохраняется вместе с ней.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Сохранить проект`",
+        "animation": null,
+        "action": "project-save"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Сохранить проект",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "046-local-project-save",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n099",
+          "n100"
+        ],
+        "storyboard": [
+          "b046"
+        ],
+        "captions": []
+      },
+      "narration": "Если работа началась с локальных файлов, при сохранении проекта будет предложено сначала сохранить исходную Zoom-запись, а затем сам проект.\n\nПосле этого продолжить работу можно будет и с другого устройства.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Сохранить запись Zoom и проект`",
+        "animation": null,
+        "action": "local-project-save"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Локальный проект",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "047-final-create",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n102",
+          "n103",
+          "n104"
+        ],
+        "storyboard": [
+          "b047"
+        ],
+        "captions": []
+      },
+      "narration": "Для получения готового файла используется «Создать финальную версию».\n\nРедактор применяет монтаж и настройки обработки, сводит включённые дорожки и создаёт готовый аудиофайл.\n\nЭтот процесс выполняется локально в браузере.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Создать финальную версию`",
+        "animation": null,
+        "action": "final-create"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Финальная версия",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–35 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "048-final-check",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n105"
+        ],
+        "storyboard": [
+          "b048"
+        ],
+        "captions": []
+      },
+      "narration": "Финальную версию можно прослушать и скачать как MP3.",
+      "visual": {
+        "type": "browser",
+        "goal": "Waveform, duration, removed, format",
+        "animation": null,
+        "action": "final-check"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Проверка результата",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "049-final-download-save",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n106",
+          "n107"
+        ],
+        "storyboard": [
+          "b049"
+        ],
+        "captions": [
+          "Финальная версия"
+        ]
+      },
+      "narration": "Но скачивание файла на компьютер ещё не означает сохранение его в Аудиоархиве.\n\nЧтобы готовая спикерская осталась связана с исходной записью и проектом, используется «Сохранить в архив финальных версий спикерских».",
+      "visual": {
+        "type": "browser",
+        "goal": "Две кнопки + подписи",
+        "animation": null,
+        "action": "final-download-save"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Скачать vs сохранить",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": [
+        "Скачать → только на это устройство\nСохранить в Архив → доступно позже и другим служащим"
+      ]
+    },
+    {
+      "id": "050-project-final-link",
+      "chapter": "saving",
+      "canonical_refs": {
+        "narration": [
+          "n108",
+          "n109"
+        ],
+        "storyboard": [
+          "b050"
+        ],
+        "captions": []
+      },
+      "narration": "Каждая такая версия сохраняется отдельно и остаётся связана именно с тем состоянием проекта, из которого была создана.\n\nЕсли после этого монтаж изменить, уже существующая финальная версия не меняется. Для нового монтажа сохраняется проект и создаётся новая финальная версия.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Состояние проекта 3 → Финальная версия 2`",
+        "animation": null,
+        "action": "project-final-link"
+      },
+      "initial_state": "real-loopback-Meser-UI-with-synthetic-record",
+      "expected_state": "Связь final с проектом",
+      "assertions": [
+        "real-control-visible",
+        "capture-cursor-visible",
+        "expected-state-verified"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15–20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "051-history-reopen",
+      "chapter": "history",
+      "canonical_refs": {
+        "narration": [
+          "n110",
+          "n111"
+        ],
+        "storyboard": [
+          "b051"
+        ],
+        "captions": []
+      },
+      "narration": "Сохранённый проект можно открыть позже и продолжить работу.\n\nВ Аудиоархиве открывается нужная запись и её проект спикерской. Редактор загружает исходники и сохранённое состояние монтажа.",
+      "visual": {
+        "type": "browser",
+        "goal": "Archive → запись → продолжить проект",
+        "animation": null,
+        "action": "history-reopen"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Возвращение позже",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "25–30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "052-history-states",
+      "chapter": "history",
+      "canonical_refs": {
+        "narration": [
+          "n112",
+          "n113"
+        ],
+        "storyboard": [
+          "b052"
+        ],
+        "captions": []
+      },
+      "narration": "Каждое явное сохранение проекта создаёт новое состояние. Предыдущие состояния не перезаписываются и доступны в «Истории проекта».\n\nТам видно, когда было сохранено состояние, какое из них является текущим и какие финальные версии были созданы на его основе.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Состояние 1 / 2 / 3 · текущее`",
+        "animation": null,
+        "action": "history-states"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "История проекта",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "053-history-old-state",
+      "chapter": "history",
+      "canonical_refs": {
+        "narration": [
+          "n114",
+          "n115",
+          "n116"
+        ],
+        "storyboard": [
+          "b053"
+        ],
+        "captions": []
+      },
+      "narration": "При необходимости более раннее состояние можно открыть с помощью «Продолжить с этого состояния».\n\nОно не уничтожает более новые сохранения. Если внести изменения и снова сохранить проект, будет создано ещё одно новое состояние.\n\nЭто позволяет вернуться к более раннему монтажу, не теряя последующую историю работы.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Продолжить с этого состояния`",
+        "animation": null,
+        "action": "history-old-state"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Старое состояние",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "054-history-finals",
+      "chapter": "history",
+      "canonical_refs": {
+        "narration": [
+          "n117"
+        ],
+        "storyboard": [
+          "b054"
+        ],
+        "captions": []
+      },
+      "narration": "Сохранённые финальные версии также остаются доступны в Архиве. Их можно прослушивать и скачивать.",
+      "visual": {
+        "type": "browser",
+        "goal": "`Прослушать` / `Скачать`",
+        "animation": null,
+        "action": "history-finals"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Финальные версии",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "055-history-final-state",
+      "chapter": "history",
+      "canonical_refs": {
+        "narration": [
+          "n118"
+        ],
+        "storyboard": [
+          "b055"
+        ],
+        "captions": []
+      },
+      "narration": "Поскольку каждая финальная версия связана с конкретным состоянием проекта, при необходимости можно вернуться именно к тому монтажу, из которого она была создана, и продолжить работу с него.",
+      "visual": {
+        "type": "browser",
+        "goal": "Продолжение редактирования от состояния final",
+        "animation": null,
+        "action": "history-final-state"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Связь с прошлым монтажом",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "056-archive-edit-details",
+      "chapter": "management",
+      "canonical_refs": {
+        "narration": [
+          "n119",
+          "n120"
+        ],
+        "storyboard": [
+          "b056"
+        ],
+        "captions": []
+      },
+      "narration": "В Аудиоархиве можно также управлять уже сохранёнными материалами.\n\nДля записи можно изменить название, дату и время.",
+      "visual": {
+        "type": "browser",
+        "goal": "Название / дата",
+        "animation": null,
+        "action": "archive-edit-details"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Управление записью",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "057-archive-worklist",
+      "chapter": "management",
+      "canonical_refs": {
+        "narration": [
+          "n121"
+        ],
+        "storyboard": [
+          "b057"
+        ],
+        "captions": []
+      },
+      "narration": "Запись можно убрать из рабочего списка, не удаляя её, а позже при необходимости вернуть обратно.",
+      "visual": {
+        "type": "browser",
+        "goal": "Убрать → запись остаётся → вернуть",
+        "animation": null,
+        "action": "archive-worklist"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Рабочий список",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "058-archive-delete-results",
+      "chapter": "management",
+      "canonical_refs": {
+        "narration": [
+          "n122",
+          "n123"
+        ],
+        "storyboard": [
+          "b058"
+        ],
+        "captions": []
+      },
+      "narration": "Сохранённые результаты можно просматривать, прослушивать и скачивать.\n\nОтдельную готовую версию или все версии определённого типа можно удалить.",
+      "visual": {
+        "type": "browser",
+        "goal": "Показать controls, без destructive action",
+        "animation": null,
+        "action": "archive-delete-results"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Удаление результатов",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "15–20 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "059-archive-danger",
+      "chapter": "management",
+      "canonical_refs": {
+        "narration": [
+          "n124",
+          "n125",
+          "n126"
+        ],
+        "storyboard": [
+          "b059"
+        ],
+        "captions": []
+      },
+      "narration": "Предусмотрено и удаление исходных дорожек. При этом сохранённые проекты и результаты могут остаться, но для обычного дальнейшего редактирования необходимы исходные аудиофайлы.\n\nНаконец, запись можно удалить полностью.\n\nПеред необратимыми действиями Архив показывает, что именно будет удалено и что останется сохранено, после чего требуется отдельное подтверждение.",
+      "visual": {
+        "type": "browser",
+        "goal": "Preview последствий",
+        "animation": null,
+        "action": "archive-danger"
+      },
+      "initial_state": "fresh-demo",
+      "expected_state": "Опасная зона",
+      "assertions": [
+        "no-error-banner"
+      ],
+      "fixture_set": "synthetic-zoom-v1",
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "20–25 сек",
+      "transforms": [],
+      "captions": []
+    },
+    {
+      "id": "060-summary",
+      "chapter": "summary",
+      "canonical_refs": {
+        "narration": [
+          "n127",
+          "n128",
+          "n129",
+          "n130",
+          "n131",
+          "n132",
+          "n133"
+        ],
+        "storyboard": [
+          "b060"
+        ],
+        "captions": []
+      },
+      "narration": "Таким образом, весь процесс начинается с поканальной записи Zoom.\n\nИсходные дорожки можно сохранить в Аудиоархив или сразу открыть локально в Аудиоредакторе.\n\nДля анонс-мейкера алгоритм позволяет получить короткую и удобную для анализа запись русского перевода.\n\nДля подготовки финальной спикерской отдельные дорожки позволяют независимо исправлять звук участников, убирать помехи и выполнять точный монтаж.\n\nПроект можно сохранить и продолжить позже, а готовые версии — скачать или оставить в Аудиоархиве вместе с исходниками и историей работы.\n\nВ результате все материалы одного собрания — от исходных дорожек до готовой спикерской — остаются связаны между собой и доступны для дальнейшей работы.\n\nСпасибо за внимание, всего доброго.",
+      "visual": {
+        "type": "animation",
+        "goal": "`Zoom → исходники → Archive → Editor → Анонс / Спикерская → проект → finals`",
+        "animation": "summary",
+        "action": null
+      },
+      "initial_state": "blank-canvas",
+      "expected_state": "Итог",
+      "assertions": [
+        "animation-visible"
+      ],
+      "fixture_set": null,
+      "dependencies": [],
+      "regenerate": "on-hash-change",
+      "padding": {
+        "head": 0.5,
+        "tail": 0.8
+      },
+      "target_seconds": "30–40 сек",
+      "transforms": [],
+      "captions": []
+    }
+  ],
+  "pilot": {
+    "scene_ids": [
+      "001-purpose",
+      "002-zoom-multitrack",
+      "003-announcement-benefit",
+      "004-speaker-benefit",
+      "005-two-tools",
+      "006-archive-open"
+    ],
+    "visual_source": "animations/pilot.html",
+    "variants": {
+      "a-current": {
+        "label": "A — CURRENT",
+        "context": "none",
+        "voice_settings": null
+      },
+      "b-context": {
+        "label": "B — CONTEXT",
+        "context": "neighbors",
+        "voice_settings": null
+      },
+      "c-tuned": {
+        "label": "C — TUNED",
+        "context": "neighbors",
+        "voice_settings": {
+          "stability": 0.45,
+          "similarity_boost": 0.75,
+          "style": 0.0,
+          "use_speaker_boost": true,
+          "speed": 0.96
+        }
+      }
+    },
+    "visual_cues": {
+      "001-purpose": [
+        {
+          "text": "Привет.",
+          "phase": 0
+        },
+        {
+          "text": "Как вам известно",
+          "phase": 0.3
+        },
+        {
+          "text": "Готовые записи",
+          "phase": 0.55
+        },
+        {
+          "text": "а также используются",
+          "phase": 0.75
+        }
+      ],
+      "002-zoom-multitrack": [
+        {
+          "text": "Обычно запись",
+          "phase": 0
+        },
+        {
+          "text": "Но Zoom",
+          "phase": 0.25
+        },
+        {
+          "text": "Вместо одного",
+          "phase": 0.48
+        },
+        {
+          "text": "Такая возможность",
+          "phase": 0.82
+        }
+      ],
+      "003-announcement-benefit": [
+        {
+          "text": "Это даёт",
+          "phase": 0
+        },
+        {
+          "text": "Например",
+          "phase": 0.12
+        },
+        {
+          "text": "Можно оставить",
+          "phase": 0.32
+        },
+        {
+          "text": "автоматически сократить",
+          "phase": 0.6
+        },
+        {
+          "text": "гораздо более короткий",
+          "phase": 0.86
+        }
+      ],
+      "004-speaker-benefit": [
+        {
+          "text": "Раздельные дорожки",
+          "phase": 0
+        },
+        {
+          "text": "У разных участников",
+          "phase": 0.1
+        },
+        {
+          "text": "При поканальной",
+          "phase": 0.25
+        },
+        {
+          "text": "Так же отдельно",
+          "phase": 0.46
+        },
+        {
+          "text": "Если в собрание",
+          "phase": 0.65
+        },
+        {
+          "text": "Если возникли",
+          "phase": 0.79
+        },
+        {
+          "text": "А если запись",
+          "phase": 0.91
+        }
+      ],
+      "005-two-tools": [
+        {
+          "text": "Для работы",
+          "phase": 0
+        },
+        {
+          "text": "Аудиоархив позволяет",
+          "phase": 0.23
+        },
+        {
+          "text": "Здесь же",
+          "phase": 0.43
+        },
+        {
+          "text": "Аудиоредактор позволяет",
+          "phase": 0.55
+        },
+        {
+          "text": "и выбрать",
+          "phase": 0.72
+        }
+      ]
+    },
+    "narration_profile": {
+      "provider": "elevenlabs",
+      "voice_id": "LHi3adMlU7AICv8Yxpmm",
+      "model_id": "eleven_multilingual_v2",
+      "output_format": "mp3_44100_128",
+      "voice_settings": {},
+      "pronunciation": {}
+    }
+  },
+  "narration_modules": [
+    {
+      "id": "N01",
+      "scene_ids": [
+        "001-purpose",
+        "002-zoom-multitrack",
+        "003-announcement-benefit",
+        "004-speaker-benefit",
+        "005-two-tools"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N02",
+      "scene_ids": [
+        "006-archive-open",
+        "007-archive-create",
+        "008-archive-files",
+        "009-archive-add-replace",
+        "010-archive-save",
+        "011-archive-hierarchy",
+        "012-archive-search",
+        "013-editor-open",
+        "014-editor-from-archive",
+        "015-editor-device-import",
+        "016-local-not-saved",
+        "017-editor-save-sources",
+        "018-two-modes"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N03",
+      "scene_ids": [
+        "019-bilingual-problem",
+        "020-one-translator",
+        "021-two-translators",
+        "022-common-silence"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N04",
+      "scene_ids": [
+        "023-announcement-open",
+        "024-announcement-solo-mute",
+        "025-announcement-navigation",
+        "026-announcement-workspace",
+        "027-announcement-process",
+        "028-announcement-result",
+        "029-announcement-save"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N05",
+      "scene_ids": [
+        "030-speaker-open",
+        "031-speaker-processing",
+        "032-speaker-levels",
+        "033-speaker-monitor-exclude",
+        "034-speaker-workspace",
+        "035-speaker-navigation",
+        "036-speaker-loop"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N06",
+      "scene_ids": [
+        "037-speaker-trim",
+        "038-speaker-global-cut",
+        "039-speaker-remove-cut",
+        "040-speaker-silence",
+        "041-speaker-remove-silence",
+        "042-speaker-region-edit",
+        "043-speaker-undo-redo"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N07",
+      "scene_ids": [
+        "044-project-meaning",
+        "045-project-save",
+        "046-local-project-save",
+        "047-final-create",
+        "048-final-check",
+        "049-final-download-save",
+        "050-project-final-link",
+        "051-history-reopen",
+        "052-history-states",
+        "053-history-old-state",
+        "054-history-finals",
+        "055-history-final-state"
+      ],
+      "pronunciation_dictionary_locators": []
+    },
+    {
+      "id": "N08",
+      "scene_ids": [
+        "056-archive-edit-details",
+        "057-archive-worklist",
+        "058-archive-delete-results",
+        "059-archive-danger",
+        "060-summary"
+      ],
+      "pronunciation_dictionary_locators": []
+    }
+  ],
+  "module_assembly": {
+    "sample_rate": 48000,
+    "channels": 1,
+    "boundary_pause_seconds": 0.35,
+    "output_directory": "generated/visual-corrective",
+    "animation_source": "animations/modules.html"
+  },
+  "visual_cues": {
+    "001-purpose": [
+      {
+        "text": "Привет.",
+        "phase": 0
+      },
+      {
+        "text": "Как вам известно",
+        "phase": 0.3
+      },
+      {
+        "text": "Готовые записи",
+        "phase": 0.55
+      },
+      {
+        "text": "а также используются",
+        "phase": 0.75
+      }
+    ],
+    "002-zoom-multitrack": [
+      {
+        "text": "Обычно запись",
+        "phase": 0
+      },
+      {
+        "text": "Но Zoom",
+        "phase": 0.25
+      },
+      {
+        "text": "Вместо одного",
+        "phase": 0.48
+      },
+      {
+        "text": "Такая возможность",
+        "phase": 0.82
+      }
+    ],
+    "003-announcement-benefit": [
+      {
+        "text": "Это даёт",
+        "phase": 0
+      },
+      {
+        "text": "Например",
+        "phase": 0.12
+      },
+      {
+        "text": "Можно оставить",
+        "phase": 0.32
+      },
+      {
+        "text": "автоматически сократить",
+        "phase": 0.6
+      },
+      {
+        "text": "гораздо более короткий",
+        "phase": 0.86
+      }
+    ],
+    "004-speaker-benefit": [
+      {
+        "text": "Раздельные дорожки",
+        "phase": 0
+      },
+      {
+        "text": "У разных участников",
+        "phase": 0.1
+      },
+      {
+        "text": "При поканальной",
+        "phase": 0.25
+      },
+      {
+        "text": "Так же отдельно",
+        "phase": 0.46
+      },
+      {
+        "text": "Если в собрание",
+        "phase": 0.65
+      },
+      {
+        "text": "Если возникли",
+        "phase": 0.79
+      },
+      {
+        "text": "А если запись",
+        "phase": 0.91
+      }
+    ],
+    "005-two-tools": [
+      {
+        "text": "Для работы",
+        "phase": 0
+      },
+      {
+        "text": "Аудиоархив позволяет",
+        "phase": 0.23
+      },
+      {
+        "text": "Здесь же",
+        "phase": 0.43
+      },
+      {
+        "text": "Аудиоредактор позволяет",
+        "phase": 0.55
+      },
+      {
+        "text": "и выбрать",
+        "phase": 0.72
+      }
+    ],
+    "006-archive-open": [
+      {
+        "text": "Начнём с Аудиоархива.",
+        "phase": 0.0
+      },
+      {
+        "text": "Его основная задача — разделить получение записи и её обработку.",
+        "phase": 0.2
+      },
+      {
+        "text": "Например, один служащий может получить поканальную запись Zoom, сохранить её в Архив и на этом закончить свою работу.",
+        "phase": 0.4
+      },
+      {
+        "text": "Позже другой человек сможет открыть эту же запись со своего устройства и заняться обработкой.",
+        "phase": 0.6
+      },
+      {
+        "text": "Кроме того, Архив поддерживает общий порядок: всё, что относится к одному собранию, остаётся связано с одной записью.",
+        "phase": 0.8
+      }
+    ],
+    "007-archive-create": [
+      {
+        "text": "Чтобы добавить новую запись, выбирается действие «Создать запись».",
+        "phase": 0.0
+      },
+      {
+        "text": "Для записи указывается название.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Дата и время необязательны.",
+        "phase": 0.666667
+      }
+    ],
+    "008-archive-files": [
+      {
+        "text": "Затем выбираются аудиодорожки Zoom с компьютера.",
+        "phase": 0.0
+      }
+    ],
+    "009-archive-add-replace": [
+      {
+        "text": "Если к выбранным файлам нужно добавить ещё одну дорожку, используется кнопка «Добавить дорожки».",
+        "phase": 0.0
+      },
+      {
+        "text": "Если выбран неправильный набор, его можно полностью заменить с помощью «Выбрать заново».",
+        "phase": 0.333333
+      },
+      {
+        "text": "Перед сохранением виден весь список выбранных файлов.",
+        "phase": 0.666667
+      }
+    ],
+    "010-archive-save": [
+      {
+        "text": "После сохранения запись становится доступна в общем Аудиоархиве и больше не зависит от компьютера, с которого была загружена.",
+        "phase": 0.0
+      }
+    ],
+    "011-archive-hierarchy": [
+      {
+        "text": "Внутри конкретной записи",
+        "phase": 0
+      },
+      {
+        "text": "исходные дорожки",
+        "phase": 0.12
+      },
+      {
+        "text": "проект обработки и его история",
+        "phase": 0.48
+      },
+      {
+        "text": "версии для анонс-мейкера",
+        "phase": 0.72
+      },
+      {
+        "text": "финальные версии спикерской",
+        "phase": 0.88
+      }
+    ],
+    "012-archive-search": [
+      {
+        "text": "Когда записей становится много, их можно искать по названию или имени исходной дорожки, сортировать и фильтровать — например, показывать только записи с доступными исходниками, с проектом спикерской или с готовыми версиями.",
+        "phase": 0.0
+      }
+    ],
+    "013-editor-open": [
+      {
+        "text": "Для начала работы Аудиоредактору нужны исходные дорожки.",
+        "phase": 0.0
+      },
+      {
+        "text": "Получить их можно двумя способами.",
+        "phase": 0.5
+      }
+    ],
+    "014-editor-from-archive": [
+      {
+        "text": "Первый — открыть уже сохранённую запись из Аудиоархива.",
+        "phase": 0.0
+      },
+      {
+        "text": "Выбирается вариант «Из аудиоархива», затем нужная запись.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Редактор загружает её исходные дорожки и подготавливает их для работы.",
+        "phase": 0.666667
+      }
+    ],
+    "015-editor-device-import": [
+      {
+        "text": "Второй вариант — выбрать файлы непосредственно с текущего устройства.",
+        "phase": 0.0
+      },
+      {
+        "text": "Для этого используется пункт «С этого устройства».",
+        "phase": 0.5
+      }
+    ],
+    "016-local-not-saved": [
+      {
+        "text": "Важно понимать: выбор файлов ещё не означает, что они сохранены в Аудиоархиве.",
+        "phase": 0.0
+      },
+      {
+        "text": "Пока не выполнено отдельное сохранение, файлы остаются только на текущем устройстве.",
+        "phase": 0.25
+      },
+      {
+        "text": "С ними можно работать локально, а при необходимости позже сохранить исходную Zoom-запись в Архив.",
+        "phase": 0.5
+      },
+      {
+        "text": "То есть выбор файлов, их обработка и сохранение в Архив — это разные действия.",
+        "phase": 0.75
+      }
+    ],
+    "017-editor-save-sources": [
+      {
+        "text": "Если локальные файлы уже открыты в Редакторе, сохранить запись в Архив можно прямо отсюда.",
+        "phase": 0.0
+      }
+    ],
+    "018-two-modes": [
+      {
+        "text": "После подготовки исходников предлагаются два режима: «Анонс-мейкер» для быстрой автоматической обработки и «Спикерская» для ручного монтажа и подготовки финальной записи.",
+        "phase": 0.0
+      }
+    ],
+    "019-bilingual-problem": [
+      {
+        "text": "Как упоминалось ранее",
+        "phase": 0
+      },
+      {
+        "text": "Обычная запись",
+        "phase": 0.18
+      },
+      {
+        "text": "звучит спикер на иврите",
+        "phase": 0.32
+      },
+      {
+        "text": "затем русский перевод",
+        "phase": 0.45
+      },
+      {
+        "text": "Для обычного слушателя",
+        "phase": 0.58
+      },
+      {
+        "text": "Но русскоязычному",
+        "phase": 0.63
+      },
+      {
+        "text": "Поканальная запись",
+        "phase": 0.85
+      }
+    ],
+    "020-one-translator": [
+      {
+        "text": "Но пока говорит спикер",
+        "phase": 0
+      },
+      {
+        "text": "появляются длинные участки тишины",
+        "phase": 0.19
+      },
+      {
+        "text": "Для их обработки",
+        "phase": 0.31
+      },
+      {
+        "text": "Он находит длинные паузы",
+        "phase": 0.4
+      },
+      {
+        "text": "оставляя небольшой естественный промежуток",
+        "phase": 0.64
+      },
+      {
+        "text": "Сейчас обрабатываются паузы",
+        "phase": 0.72
+      },
+      {
+        "text": "примерно треть секунды",
+        "phase": 0.83
+      },
+      {
+        "text": "В результате",
+        "phase": 0.9
+      }
+    ],
+    "021-two-translators": [
+      {
+        "text": "Но переводчик",
+        "phase": 0
+      },
+      {
+        "text": "один человек переводит",
+        "phase": 0.15
+      },
+      {
+        "text": "а другой",
+        "phase": 0.27
+      },
+      {
+        "text": "Просто обработать",
+        "phase": 0.34
+      },
+      {
+        "text": "Иногда переводчики",
+        "phase": 0.55
+      },
+      {
+        "text": "При последовательной склейке",
+        "phase": 0.62
+      },
+      {
+        "text": "Поэтому несколько дорожек",
+        "phase": 0.77
+      }
+    ],
+    "022-common-silence": [
+      {
+        "text": "Каждая из них",
+        "phase": 0
+      },
+      {
+        "text": "одновременно молчат все",
+        "phase": 0.13
+      },
+      {
+        "text": "Если хотя бы",
+        "phase": 0.3
+      },
+      {
+        "text": "этот участок остаётся",
+        "phase": 0.41
+      },
+      {
+        "text": "После этого дорожки",
+        "phase": 0.68
+      },
+      {
+        "text": "Так сохраняются",
+        "phase": 0.8
+      },
+      {
+        "text": "Если переводчик один",
+        "phase": 0.92
+      }
+    ],
+    "023-announcement-open": [
+      {
+        "text": "В Аудиоредакторе для этого выбирается режим «Анонс-мейкер».",
+        "phase": 0.0
+      },
+      {
+        "text": "Перед обработкой исходники можно прослушать.",
+        "phase": 0.5
+      }
+    ],
+    "024-announcement-solo-mute": [
+      {
+        "text": "Solo позволяет временно слушать одну дорожку отдельно, а Mute — временно отключить её при прослушивании.",
+        "phase": 0.0
+      },
+      {
+        "text": "На конечный результат эти кнопки не влияют.",
+        "phase": 0.5
+      }
+    ],
+    "025-announcement-navigation": [
+      {
+        "text": "Для длинных записей предусмотрены масштабирование, изменение высоты дорожек, функция «Вписать» для полного обзора записи и Follow, при котором экран автоматически следует за воспроизведением.",
+        "phase": 0.0
+      },
+      {
+        "text": "Небольшой участок можно выделить и прослушивать повторно с помощью Loop.",
+        "phase": 0.5
+      }
+    ],
+    "026-announcement-workspace": [
+      {
+        "text": "Редактор также можно развернуть, изменить цвета и порядок дорожек или убрать ошибочно выбранную дорожку из текущего набора.",
+        "phase": 0.0
+      }
+    ],
+    "027-announcement-process": [
+      {
+        "text": "После проверки исходников запускается обработка.",
+        "phase": 0.0
+      },
+      {
+        "text": "Алгоритм находит длинные общие паузы, сокращает их и создаёт единый результат.",
+        "phase": 0.5
+      }
+    ],
+    "028-announcement-result": [
+      {
+        "text": "После обработки отображается исходная и новая длительность записи, количество сокращённых пауз и общее количество удалённого времени.",
+        "phase": 0.0
+      }
+    ],
+    "029-announcement-save": [
+      {
+        "text": "Результат можно прослушать и скачать как MP3.",
+        "phase": 0.0
+      },
+      {
+        "text": "Если исходная запись сохранена в Аудиоархиве, готовый материал можно также сохранить вместе с этой записью как версию для анонс-мейкера.",
+        "phase": 0.333333
+      },
+      {
+        "text": "При повторной обработке можно сохранить новую версию, не удаляя предыдущую.",
+        "phase": 0.666667
+      }
+    ],
+    "030-speaker-open": [
+      {
+        "text": "Режим «Спикерская» предназначен для более точной обработки и монтажа.",
+        "phase": 0.0
+      },
+      {
+        "text": "Здесь каждая дорожка остаётся отдельной до создания готовой финальной версии.",
+        "phase": 0.5
+      }
+    ],
+    "031-speaker-processing": [
+      {
+        "text": "Для каждой дорожки можно независимо включить улучшение звука.",
+        "phase": 0.0
+      },
+      {
+        "text": "Оно слегка убирает очень низкий гул и лишние высокие частоты.",
+        "phase": 0.142857
+      },
+      {
+        "text": "Отдельно доступно выравнивание громкости.",
+        "phase": 0.285714
+      },
+      {
+        "text": "Оно особенно полезно, когда один участник записан заметно тише или громче остальных.",
+        "phase": 0.428571
+      },
+      {
+        "text": "Компрессия уменьшает разницу между тихими и громкими фрагментами речи.",
+        "phase": 0.571429
+      },
+      {
+        "text": "Можно выбрать лёгкую, среднюю или сильную степень обработки.",
+        "phase": 0.714286
+      },
+      {
+        "text": "Все эти настройки применяются к дорожкам независимо.",
+        "phase": 0.857143
+      }
+    ],
+    "032-speaker-levels": [
+      {
+        "text": "Для контроля звука отображаются индикаторы уровня.",
+        "phase": 0.0
+      },
+      {
+        "text": "Если появляется CLIP, это предупреждает о слишком высоком уровне сигнала.",
+        "phase": 0.5
+      }
+    ],
+    "033-speaker-monitor-exclude": [
+      {
+        "text": "Solo позволяет прослушать отдельную дорожку, Mute — временно отключить её.",
+        "phase": 0.0
+      },
+      {
+        "text": "Эти функции относятся только к прослушиванию.",
+        "phase": 0.2
+      },
+      {
+        "text": "Если дорожка вообще не должна попасть в готовую спикерскую, используется «Исключить из микса».",
+        "phase": 0.4
+      },
+      {
+        "text": "Например, таким образом можно убрать тролля или другого ненужного участника.",
+        "phase": 0.6
+      },
+      {
+        "text": "Исходная дорожка при этом не удаляется и остаётся в проекте.",
+        "phase": 0.8
+      }
+    ],
+    "034-speaker-workspace": [
+      {
+        "text": "Для удобства дорожкам можно назначить разные цвета и изменить их порядок.",
+        "phase": 0.0
+      },
+      {
+        "text": "Все формы волн отображаются на общей временной шкале.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Рабочую область можно развернуть на весь экран.",
+        "phase": 0.666667
+      }
+    ],
+    "035-speaker-navigation": [
+      {
+        "text": "Масштаб можно увеличить для точной работы с небольшим участком или уменьшить для более общего обзора.",
+        "phase": 0.0
+      },
+      {
+        "text": "Кнопка «Вписать» одним действием возвращает всю запись в доступную ширину.",
+        "phase": 0.25
+      },
+      {
+        "text": "Тем же регулятором можно переключиться на изменение высоты дорожек.",
+        "phase": 0.5
+      },
+      {
+        "text": "При включённой функции Follow экран следует за воспроизведением.",
+        "phase": 0.75
+      }
+    ],
+    "036-speaker-loop": [
+      {
+        "text": "А небольшой фрагмент можно окружить границами Loop и прослушивать повторно.",
+        "phase": 0.0
+      }
+    ],
+    "037-speaker-trim": [
+      {
+        "text": "Если запись Zoom была включена слишком рано, выбирается нужная точка и устанавливается новое начало.",
+        "phase": 0.0
+      },
+      {
+        "text": "Таким же образом можно задать правильный конец.",
+        "phase": 0.5
+      }
+    ],
+    "038-speaker-global-cut": [
+      {
+        "text": "Если требуется полностью убрать общий ненужный участок — например, паузу из-за переподключения спикера, — используется «Вырезать».",
+        "phase": 0.0
+      },
+      {
+        "text": "Такой вырез применяется одновременно ко всем дорожкам, поэтому их синхронизация сохраняется.",
+        "phase": 0.5
+      }
+    ],
+    "039-speaker-remove-cut": [
+      {
+        "text": "Выбранный глобальный вырез можно убрать с помощью «Снять вырез», а участок тишины — с помощью «Снять тишину».",
+        "phase": 0.0
+      }
+    ],
+    "040-speaker-silence": [
+      {
+        "text": "Если проблема находится только на одной дорожке, используется «Тишина».",
+        "phase": 0.0
+      },
+      {
+        "text": "Например, кашель или посторонний шум можно заглушить только у одного участника.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Длительность записи при этом не меняется, а остальные дорожки продолжают звучать как раньше.",
+        "phase": 0.666667
+      }
+    ],
+    "041-speaker-remove-silence": [
+      {
+        "text": "Любую такую правку можно отменить непосредственно.",
+        "phase": 0.0
+      }
+    ],
+    "042-speaker-region-edit": [
+      {
+        "text": "Границы вырезов и участков тишины можно передвигать непосредственно на временной шкале.",
+        "phase": 0.0
+      },
+      {
+        "text": "При необходимости начало и конец можно задать точными числовыми значениями.",
+        "phase": 0.5
+      }
+    ],
+    "043-speaker-undo-redo": [
+      {
+        "text": "Дополнительно доступны обычные функции «Отменить» и «Повторить».",
+        "phase": 0.0
+      },
+      {
+        "text": "Воспроизведение и пауза также доступны клавишей пробела.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Таким образом можно отдельно исправить звук каждого участника, убрать локальные помехи, исключить ненужные дорожки и выполнить общий монтаж, не теряя преимуществ поканальной записи.",
+        "phase": 0.666667
+      }
+    ],
+    "044-project-meaning": [
+      {
+        "text": "После завершения",
+        "phase": 0
+      },
+      {
+        "text": "«Сохранить проект»",
+        "phase": 0.14
+      },
+      {
+        "text": "начало и конец записи",
+        "phase": 0.23
+      },
+      {
+        "text": "Такой проект",
+        "phase": 0.43
+      },
+      {
+        "text": "Но сохранённый проект",
+        "phase": 0.66
+      }
+    ],
+    "045-project-save": [
+      {
+        "text": "Если исходная запись уже находится в Аудиоархиве, проект сохраняется вместе с ней.",
+        "phase": 0.0
+      }
+    ],
+    "046-local-project-save": [
+      {
+        "text": "Если работа началась с локальных файлов, при сохранении проекта будет предложено сначала сохранить исходную Zoom-запись, а затем сам проект.",
+        "phase": 0.0
+      },
+      {
+        "text": "После этого продолжить работу можно будет и с другого устройства.",
+        "phase": 0.5
+      }
+    ],
+    "047-final-create": [
+      {
+        "text": "Для получения готового файла используется «Создать финальную версию».",
+        "phase": 0.0
+      },
+      {
+        "text": "Редактор применяет монтаж и настройки обработки, сводит включённые дорожки и создаёт готовый аудиофайл.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Этот процесс выполняется локально в браузере.",
+        "phase": 0.666667
+      }
+    ],
+    "048-final-check": [
+      {
+        "text": "Финальную версию можно прослушать и скачать как MP3.",
+        "phase": 0.0
+      }
+    ],
+    "049-final-download-save": [
+      {
+        "text": "Но скачивание файла на компьютер ещё не означает сохранение его в Аудиоархиве.",
+        "phase": 0.0
+      },
+      {
+        "text": "Чтобы готовая спикерская осталась связана с исходной записью и проектом, используется «Сохранить в архив финальных версий спикерских».",
+        "phase": 0.5
+      }
+    ],
+    "050-project-final-link": [
+      {
+        "text": "Каждая такая версия",
+        "phase": 0
+      },
+      {
+        "text": "с тем состоянием проекта",
+        "phase": 0.53
+      },
+      {
+        "text": "Если после этого монтаж изменить",
+        "phase": 0.8
+      },
+      {
+        "text": "уже существующая финальная версия не меняется",
+        "phase": 0.87
+      },
+      {
+        "text": "Для нового монтажа",
+        "phase": 0.94
+      }
+    ],
+    "051-history-reopen": [
+      {
+        "text": "Сохранённый проект можно открыть позже и продолжить работу.",
+        "phase": 0.0
+      },
+      {
+        "text": "В Аудиоархиве открывается нужная запись и её проект спикерской.",
+        "phase": 0.333333
+      },
+      {
+        "text": "Редактор загружает исходники и сохранённое состояние монтажа.",
+        "phase": 0.666667
+      }
+    ],
+    "052-history-states": [
+      {
+        "text": "Каждое явное сохранение проекта создаёт новое состояние.",
+        "phase": 0.0
+      },
+      {
+        "text": "Предыдущие состояния не перезаписываются и доступны в «Истории проекта».",
+        "phase": 0.333333
+      },
+      {
+        "text": "Там видно, когда было сохранено состояние, какое из них является текущим и какие финальные версии были созданы на его основе.",
+        "phase": 0.666667
+      }
+    ],
+    "053-history-old-state": [
+      {
+        "text": "При необходимости более раннее состояние можно открыть с помощью «Продолжить с этого состояния».",
+        "phase": 0.0
+      },
+      {
+        "text": "Оно не уничтожает более новые сохранения.",
+        "phase": 0.25
+      },
+      {
+        "text": "Если внести изменения и снова сохранить проект, будет создано ещё одно новое состояние.",
+        "phase": 0.5
+      },
+      {
+        "text": "Это позволяет вернуться к более раннему монтажу, не теряя последующую историю работы.",
+        "phase": 0.75
+      }
+    ],
+    "054-history-finals": [
+      {
+        "text": "Сохранённые финальные версии также остаются доступны в Архиве.",
+        "phase": 0.0
+      },
+      {
+        "text": "Их можно прослушивать и скачивать.",
+        "phase": 0.5
+      }
+    ],
+    "055-history-final-state": [
+      {
+        "text": "Поскольку каждая финальная версия связана с конкретным состоянием проекта, при необходимости можно вернуться именно к тому монтажу, из которого она была создана, и продолжить работу с него.",
+        "phase": 0.0
+      }
+    ],
+    "056-archive-edit-details": [
+      {
+        "text": "В Аудиоархиве можно также управлять уже сохранёнными материалами.",
+        "phase": 0.0
+      },
+      {
+        "text": "Для записи можно изменить название, дату и время.",
+        "phase": 0.5
+      }
+    ],
+    "057-archive-worklist": [
+      {
+        "text": "Запись можно убрать из рабочего списка, не удаляя её, а позже при необходимости вернуть обратно.",
+        "phase": 0.0
+      }
+    ],
+    "058-archive-delete-results": [
+      {
+        "text": "Сохранённые результаты можно просматривать, прослушивать и скачивать.",
+        "phase": 0.0
+      },
+      {
+        "text": "Отдельную готовую версию или все версии определённого типа можно удалить.",
+        "phase": 0.5
+      }
+    ],
+    "059-archive-danger": [
+      {
+        "text": "Предусмотрено и удаление исходных дорожек.",
+        "phase": 0.0
+      },
+      {
+        "text": "При этом сохранённые проекты и результаты могут остаться, но для обычного дальнейшего редактирования необходимы исходные аудиофайлы.",
+        "phase": 0.25
+      },
+      {
+        "text": "Наконец, запись можно удалить полностью.",
+        "phase": 0.5
+      },
+      {
+        "text": "Перед необратимыми действиями Архив показывает, что именно будет удалено и что останется сохранено, после чего требуется отдельное подтверждение.",
+        "phase": 0.75
+      }
+    ],
+    "060-summary": [
+      {
+        "text": "Таким образом",
+        "phase": 0
+      },
+      {
+        "text": "Исходные дорожки",
+        "phase": 0.14
+      },
+      {
+        "text": "Для анонс-мейкера",
+        "phase": 0.36
+      },
+      {
+        "text": "Для подготовки финальной спикерской",
+        "phase": 0.52
+      },
+      {
+        "text": "Проект можно сохранить",
+        "phase": 0.66
+      },
+      {
+        "text": "В результате",
+        "phase": 0.82
+      },
+      {
+        "text": "Спасибо за внимание",
+        "phase": 0.92
+      }
+    ]
+  }
+}
