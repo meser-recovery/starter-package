@@ -38,4 +38,8 @@ export class SyntheticArchiveRepository extends MemoryRepository {
     const release = { id: this.nextRelease++, tag_name: tag, draft: true, assets: [] }; this.releases.set(release.id, release); return structuredClone(release);
   }
   async uploadReleaseAsset(id, name, bytes) { if (this.releases.get(id).assets.some(a => a.name === name)) throw Object.assign(new Error('Name occupied'), { status: 422 }); return super.uploadReleaseAsset(id, name, bytes); }
+  async deleteRelease(id) {
+    for (const asset of this.releases.get(id)?.assets || []) this.assetBytes.delete(asset.id);
+    return super.deleteRelease(id);
+  }
 }

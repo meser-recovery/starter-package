@@ -1343,14 +1343,14 @@ export class AudioArchiveDomain {
             transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0) :
             transaction.kind === "publication" ? transaction.plan.parts.length : null;
           const uploadedParts = ["ingestion", "publication"].includes(transaction.kind) ? transaction.uploadedParts.length : null;
-          const publicationMayFinalize = transaction.kind !== "publication" || transaction.state !== "discarding";
+          const mayFinalize = transaction.state !== "discarding";
           transactions.push({
             transactionId: transaction.transactionId, kind: transaction.kind, state: transaction.state,
             sessionId: transaction.sessionId, updatedAt: transaction.updatedAt,
             uploadedParts, totalParts,
-            canFinalize: ["ingestion", "publication"].includes(transaction.kind) ? publicationMayFinalize && uploadedParts === totalParts : null,
-            requiresOriginalFiles: transaction.kind === "ingestion" ? uploadedParts !== totalParts : false,
-            requiresLocalResult: transaction.kind === "publication" ? publicationMayFinalize && uploadedParts !== totalParts : false,
+            canFinalize: ["ingestion", "publication"].includes(transaction.kind) ? mayFinalize && uploadedParts === totalParts : null,
+            requiresOriginalFiles: transaction.kind === "ingestion" ? mayFinalize && uploadedParts !== totalParts : false,
+            requiresLocalResult: transaction.kind === "publication" ? mayFinalize && uploadedParts !== totalParts : false,
             reservedVersion: transaction.kind === "publication" ? transaction.reservedVersion : null,
             workflow: transaction.kind === "publication" ? transaction.workflow : null,
             candidateFingerprint: transaction.kind === "publication" && transaction.workflow === "speaker" ? transaction.plan.recipe.candidateFingerprint : null,
@@ -1407,6 +1407,7 @@ export class AudioArchiveDomain {
         await this.repository.commitJson(head, { [path]: discarded, ...extras }, `Discard ingestion ${transactionId}`);
         return { discarded: true, transactionId };
       }
+      if (transaction.state === 'discarding') throw conflict('Ingestion discard must be completed before any save recovery');
       const requiredCount = transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);
       if (transaction.uploadedParts.length !== requiredCount) {
         throw conflict("Original files are required to continue this incomplete ingestion safely");

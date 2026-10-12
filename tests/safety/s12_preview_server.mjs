@@ -9,6 +9,7 @@ import { SessionRegistry, createPasswordVerifier, readSession } from "../../gate
 import { nodeResponseHeaders } from "../../gateway/audio-archive/src/http-adapter.mjs";
 import { AudioArchiveDomain } from '../../gateway/audio-archive/src/domain.mjs';
 import { createHash } from 'node:crypto';
+import { createIngestionPlan, serializeIngestionPlan } from '../../service/frontend/scripts/audio-archive-client.mjs';
 import { WAVEFORM_ALGORITHM, WAVEFORM_PEAK_COUNT, WAVEFORM_BODY_BYTES } from '../../gateway/audio-archive/src/waveform.mjs';
 
 import { ZoomArchive } from '../../gateway/audio-archive/src/zoom-archive.mjs';
@@ -123,6 +124,30 @@ const server = http.createServer(async (request, response) => {
     }
     if (url.pathname === '/__test/s12-state'  && request.method === 'GET') {
       response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ files: [...repository.files], assets: [...repository.assetBytes].map(([id, bytes]) => [id, createHash('sha256').update(bytes).digest('hex')]), downloads: zoom.downloads })); return;
+    }
+    if (url.pathname === '/__test/s12-discard-fixture' && request.method === 'POST') {
+      const kind = url.searchParams.get('origin');
+      if (!['manual', 'zoom_cloud'].includes(kind)) throw new Error('Invalid synthetic origin');
+      const files = [A, B].map(bytes => new File([bytes], 'participant.m4a', { type: 'audio/mp4' }));
+      let transactionId, plan;
+      if (kind === 'zoom_cloud') {
+        const calendar = await zoomArchive.calendar('2026-10', true);
+        const op = await zoomArchive.reserve({ id: calendar.recordings[0].id, month: '2026-10', settingsRevision: calendar.settingsRevision });
+        plan = await createIngestionPlan(files, 1024, { idempotencyKey: op.idempotencyKey });
+        await zoomArchive.bind(op.id, { plan: serializeIngestionPlan(plan) }); transactionId = op.transactionId;
+      } else {
+        const idempotencyKey = crypto.randomUUID();
+        plan = await createIngestionPlan(files, 1024, { idempotencyKey });
+        const started = await domain.beginIngestion({ schemaVersion: 1, idempotencyKey, title: 'Synthetic manual discard', recordedAt: null, origin: kind, supersedesSessionId: null, plan: serializeIngestionPlan(plan) });
+        transactionId = started.transactionId;
+      }
+      for (const track of plan.tracks) for (const part of track.parts) await domain.uploadPart(transactionId, track.blobId, part.partNumber, Buffer.from(await part.blob.arrayBuffer()), part.sha256, crypto.randomUUID());
+      const remove = repository.deleteRelease.bind(repository);
+      repository.deleteRelease = async id => { await remove(id); throw new Error('Synthetic lost successful DELETE reply'); };
+      try { await domain.recoverIncomplete(transactionId, 'discard'); }
+      catch (error) { if (error.message !== 'Synthetic lost successful DELETE reply') throw error; }
+      finally { repository.deleteRelease = remove; }
+      response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ transactionId })); return;
     }
     if (url.pathname.startsWith("/internal/")) { response.writeHead(404); response.end(); return; }
     if (url.pathname === "/__test/expire" && request.method === "POST") {

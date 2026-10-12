@@ -11,6 +11,27 @@ Base: `abb64d92a01c3028aad67ef883661e1c26e98b98`; tree:
 `5d1d0767a506a3d0e46e2db88b3c25758c8313d1`.
 Branch: `codex/s12-zoom-cloud-import-audio-archive-settings`.
 
+## Acceptance regression corrections
+
+The acceptance review reproduced gaps in A03/A15/A18/A21 at `6d65455`;
+the earlier PASS claims for those scenarios were incomplete. The PR records
+the corrected exact HEAD and its new CI result. Added regressions cover:
+
+- A03: search every paginated occurrence until a usable participant set is
+  found; all ineligible/no-recording results allow tracks-unconfirmed activation.
+  Auth, Meeting ID, permissions, recording API and download failures propagate.
+- A15/A21: manual and Zoom ingestion after a successful DELETE with a lost reply
+  remains `discarding`, advertises no finalize, and offers only discard in the
+  canonical main UI. New Gateway instances complete discard after lost DELETE
+  and final-commit replies without creating a Session/Release or requiring files.
+- A18: one authoritative usage response renders both counter and warning;
+  late responses cannot overwrite newer state. Browser tests reproduce 40 GB
+  to 0 MB and back, then cross the actual configured threshold upward via manual
+  ingestion and downward via source deletion without a reload.
+
+All three engines exercise these UI corrections in addition to the existing
+four-width matrix, with strict page errors and PNG/JSON evidence.
+
 ## Evidence references
 
 - [Domain/API and fault injection](../../gateway/audio-archive/test/s12.test.mjs):
@@ -90,10 +111,10 @@ One local concurrent S10A UI run lost its fixture session because the other suit
 explicitly expires all shared sessions; its isolated rerun passed all engines.
 This was a test-run orchestration issue, not an ignored page error.
 
-Local full Gateway result: 149 PASS / 1 SKIP (150 tests). The skip is the existing
+Local full Gateway result: 151 PASS / 1 SKIP (152 tests). The skip is the existing
 pinned native 3747-second fixture because the pinned container toolchain is not
 available locally; the canonical pinned toolchain and realistic three-track load
-run separately in CI. Frontend Node: 109 PASS / 0 SKIP. Inventory: 64 files.
+run separately in CI. Frontend Node: 110 PASS / 0 SKIP. Inventory: 64 files.
 Docker daemon and GNU Linux recovery toolchain are unavailable on this macOS
 host; CI must supply those results. Playwright engines do not establish real
 mobile-device acceptance or real account permissions.

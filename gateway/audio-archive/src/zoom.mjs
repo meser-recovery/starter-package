@@ -137,12 +137,20 @@ export class ZoomClient {
   async check(c) {
     const now = new Intl.DateTimeFormat('sv-SE', { timeZone: 'Europe/Moscow', year: 'numeric', month: '2-digit' }).format(new Date(this.clock()));
     const recordings = await this.list(c, monthRange(now));
-    const sample = recordings[0];
-    if (sample) {
-      const recording = await this.recording(c, sample.uuid), files = participantFiles(recording);
+    for (const sample of recordings) {
+      const recording = await this.recording(c, sample.uuid);
+      let files;
+      try { files = participantFiles(recording); }
+      catch (error) {
+        // Ineligible participant sets are not authorization/download failures.
+        // Inspect every occurrence before claiming there is no usable sample.
+        if (error.status === 409) continue;
+        throw error;
+      }
       for (const file of files) { const response = await this.download(c, recording, file.id, undefined); await response.body.cancel(); }
+      return { checkedAt: new Date(this.clock()).toISOString(), tracks: 'confirmed' };
     }
-    return { checkedAt: new Date(this.clock()).toISOString(), tracks: sample ? 'confirmed' : 'unconfirmed' };
+    return { checkedAt: new Date(this.clock()).toISOString(), tracks: 'unconfirmed' };
   }
   async download(c, recording, fileId, signal) {
     const files = participantFiles(recording), file = files.find(f => f.id === fileId);

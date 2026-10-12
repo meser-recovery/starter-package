@@ -269,3 +269,83 @@ test('S12 A17 moving physical listings and in-flight known mutation never replac
   t.repository.listReleaseAssets = async () => [{ id: 1, size: 50 }];
   assert.equal((await t.service.usage()).usedBytes, 50);
 });
+
+test('S12 A03 Check searches all paginated occurrences and never masks API/download failures', async () => {
+  const sample = await new SyntheticZoom().recording(CONNECTION, 'eligible');
+  const make = ({ rows = ['empty', 'eligible'], fail = null, downloadFailure = false } = {}) => {
+    const inspected = [], downloaded = [];
+    const client = new ZoomClient({ clock: () => Date.parse('2026-10-12T00:00:00Z'),
+      fetchImpl: async url => {
+        const u = new URL(url); let phase, body;
+        if (u.pathname === '/oauth/token') { phase = 'auth'; body = { access_token: 'synthetic-token', expires_in: 3600 }; }
+        else if (u.pathname === `/v2/meetings/${CONNECTION.meetingId}`) { phase = 'meeting'; body = { id: CONNECTION.meetingId, host_id: 'host' }; }
+        else if (u.pathname.startsWith('/v2/users/')) {
+          phase = 'list'; const index = Number(u.searchParams.get('next_page_token') || 0);
+          body = { meetings: rows.slice(index, index + 1).map(uuid => ({ id: CONNECTION.meetingId, uuid, start_time: '2026-10-04T08:17:00Z' })), next_page_token: index + 1 < rows.length ? String(index + 1) : '' };
+        } else {
+          phase = 'recording'; const uuid = u.pathname.split('/')[3]; inspected.push(uuid);
+          body = uuid === 'eligible' ? sample : { ...sample, uuid, participant_audio_files: uuid === 'oversized' ? sample.participant_audio_files.map(file => ({ ...file, file_size: 300 * 1024 * 1024 })) : [] };
+        }
+        if (fail?.phase === phase && (!fail.uuid || inspected.at(-1) === fail.uuid)) return new Response('sensitive upstream body', { status: fail.status });
+        return Response.json(body);
+      }, streamImpl: async url => {
+        downloaded.push(url);
+        if (downloadFailure) throw Object.assign(new Error('Synthetic download denied'), { status: 502 });
+        return new Response(A);
+      }
+    });
+    return { client, inspected, downloaded };
+  };
+  const usable = make(); assert.equal((await usable.client.check(CONNECTION)).tracks, 'confirmed');
+  assert.deepEqual(usable.inspected, ['empty', 'eligible']); assert.equal(usable.downloaded.length, 2);
+  const none = make({ rows: ['empty', 'oversized', 'also-empty'] });
+  assert.equal((await none.client.check(CONNECTION)).tracks, 'unconfirmed');
+  assert.deepEqual(none.inspected, ['empty', 'oversized', 'also-empty']); assert.equal(none.downloaded.length, 0);
+  const t = setup(), unconfirmed = new ZoomArchive(t.domain, { key, zoom: none.client });
+  const checked = await unconfirmed.check({ revision: 0, connection: CONNECTION });
+  await unconfirmed.mutate(mutation(0, 'save', { connection: CONNECTION, receipt: checked.receipt }));
+  assert.equal((await unconfirmed.mutate(mutation(1, 'activate', { connectionId: CONNECTION.connectionId, confirmed: true }))).activeConnectionId, CONNECTION.connectionId);
+  assert.equal((await make({ rows: [] }).client.check(CONNECTION)).tracks, 'unconfirmed');
+  for (const fail of [{ phase: 'auth', status: 401 }, { phase: 'meeting', status: 404 }, { phase: 'list', status: 403 },
+    { phase: 'recording', uuid: 'eligible', status: 403 }, { phase: 'recording', uuid: 'eligible', status: 401 }, { phase: 'list', status: 429 }]) {
+    await assert.rejects(() => make({ fail }).client.check(CONNECTION), e => e.status === (fail.status === 429 ? 429 : 422) && !e.message.includes('sensitive'));
+  }
+  const denied = make({ rows: ['empty', 'eligible', 'later'], downloadFailure: true });
+  await assert.rejects(() => denied.client.check(CONNECTION), /Synthetic download denied/);
+  assert.deepEqual(denied.inspected, ['empty', 'eligible']); assert.equal(denied.downloaded.length, 1);
+});
+
+test('S12 A15 manual and Zoom discard survive lost DELETE/commit replies and new Gateway instances', async () => {
+  for (const origin of ['manual', 'zoom_cloud']) {
+    const t = origin === 'zoom_cloud' ? await configured() : setup(new SyntheticArchiveRepository());
+    const op = origin === 'zoom_cloud' ? await reserve(t) : { idempotencyKey: randomUUID() };
+    const plan = await planFor(op);
+    if (origin === 'zoom_cloud') await upload(t, op, plan);
+    else {
+      const started = await t.domain.beginIngestion({ schemaVersion: 1, idempotencyKey: op.idempotencyKey, title: 'Manual interrupted discard', recordedAt: null, origin, supersedesSessionId: null, plan: serializeIngestionPlan(plan) });
+      op.transactionId = started.transactionId;
+      for (const track of plan.tracks) for (const part of track.parts) await t.domain.uploadPart(op.transactionId, track.blobId, part.partNumber, Buffer.from(await part.blob.arrayBuffer()), part.sha256, randomUUID());
+    }
+    const remove = t.repository.deleteRelease.bind(t.repository); let lostDelete = true, deletes = 0;
+    t.repository.deleteRelease = async id => { deletes++; await remove(id); if (lostDelete) { lostDelete = false; throw new Error('Lost successful DELETE reply'); } };
+    await assert.rejects(() => t.domain.recoverIncomplete(op.transactionId, 'discard'), /Lost successful DELETE/);
+    const restarted = new AudioArchiveDomain(t.repository, { acceptedPartBytes: 1024 });
+    const pending = (await restarted.listIncomplete()).transactions.find(row => row.transactionId === op.transactionId);
+    assert.equal(pending.state, 'discarding'); assert.equal(pending.canFinalize, false); assert.equal(pending.requiresOriginalFiles, false);
+    await assert.rejects(() => restarted.recoverIncomplete(op.transactionId, 'resume'), e => e.status === 409 && /discard/.test(e.message));
+    await assert.rejects(() => restarted.finalizeIngestion(op.transactionId), e => e.status === 409);
+    if (origin === 'zoom_cloud') {
+      const zoom = new ZoomArchive(restarted, { key, zoom: t.zoom });
+      assert.equal((await zoom.operation(op.id)).state, 'discarding'); assert.equal((await zoom.operation(op.id)).canFinalize, false);
+    }
+    const commit = t.repository.commitJson.bind(t.repository); let lostCommit = true;
+    t.repository.commitJson = async (...args) => { const result = await commit(...args); if (lostCommit && args[2].startsWith('Discard ingestion ')) { lostCommit = false; throw new Error('Lost discard commit reply'); } return result; };
+    await assert.rejects(() => restarted.recoverIncomplete(op.transactionId, 'discard'), /Lost discard commit/);
+    const afterRestart = new AudioArchiveDomain(t.repository, { acceptedPartBytes: 1024 });
+    assert.equal((await afterRestart.recoverIncomplete(op.transactionId, 'discard')).discarded, true);
+    assert.equal((await afterRestart.listIncomplete()).transactions.length, 0);
+    assert.equal(t.repository.releases.size, 0); assert.equal(deletes, 2);
+    await assert.rejects(() => afterRestart.getSession(op.transactionId), e => e.status === 404);
+    if (origin === 'zoom_cloud') assert.equal((await new ZoomArchive(afterRestart, { key, zoom: t.zoom }).operation(op.id)).state, 'discarded');
+  }
+});

@@ -106,6 +106,8 @@ async function saveCreation(event) {
   } catch (error) {
     if (error?.status === 401) { clearSession(); creationStatus(`${SERVICE_SESSION_EXPIRED_MESSAGE} После входа продолжите сохранение.`, 'error'); }
     else creationStatus(error?.name === 'AbortError' ? 'Передача остановлена. Файлы и данные сохранены; проверьте и продолжите тем же действием.' : `${message(error)} Файлы и данные сохранены для безопасного повтора.`, 'error');
+    // A failed reply may follow a successful part write.
+    void zoomArchiveUi.updateWarning(true);
   } finally { creation.controller = null; renderCreation(); }
 }
 
@@ -593,6 +595,7 @@ async function refresh() {
   }
   render(); setArchiveStatus(errors.length ? `${errors.join(' ')} Обновите данные.` : 'Данные загружены. Просмотр не изменяет аудиоархив.', errors.length ? 'error' : 'ready');
   await consumeArchiveIntent();
+  await zoomArchiveUi.updateWarning(true);
 }
 
 async function loadOutput(session, output, workflow, downloadOnly = false) {

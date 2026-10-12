@@ -8,7 +8,7 @@ function action(label, callback) { const b = node('button', label); b.type = 'bu
 const labels = { available: 'Доступно', reserved: 'Импорт не завершён', bound: 'Импорт не завершён', completed: 'В Аудиоархиве', deleted: 'Исходники удалены', discarded: 'Импорт отменён', discarding: 'Отмена не завершена', unavailable: 'Файлы недоступны' };
 
 export function mountZoomArchive(gateway, openSession) {
-  let settings = null, receipt = null, calendar = null, generation = 0, month = moscowMonth(), selectedDay = null, controller = null, busy = false;
+  let settings = null, receipt = null, calendar = null, generation = 0, usageGeneration = 0, month = moscowMonth(), selectedDay = null, controller = null, busy = false;
   const dialog = $('archive-settings-dialog'), zoomDialog = $('archive-zoom-dialog');
   const status = text => { $('archive-settings-status').textContent = text; };
   const zoomStatus = text => { $('archive-zoom-status').textContent = text; };
@@ -55,19 +55,23 @@ export function mountZoomArchive(gateway, openSession) {
     $('archive-warning-percent').value = settings.storage.warningPercent;
   }
   async function loadSettings() {
-    await available(); settings = await gateway.request('/v1/archive-settings'); renderSettings(); resetForm(); status('Настройки загружены.');
+    await available(); settings = await gateway.request('/v1/archive-settings'); renderSettings(); resetForm(); status('Настройки загружены.'); await updateWarning();
   }
-  async function usage(refresh = false) {
-    const result = await gateway.request(`/v1/storage-usage${refresh ? '?refresh=1' : ''}`);
-    $('archive-storage-usage').textContent = result.usedBytes === null ? 'Объём пока неизвестен.' : `${sizeLabel(result.usedBytes)} · ${result.assetCount} физических частей · ${result.stale ? 'последний полный подсчёт' : 'подсчитано'} ${new Date(result.countedAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`;
-    return result;
-  }
-  async function updateWarning() {
+  async function updateWarning(refresh = false) {
+    const sequence = ++usageGeneration;
     try {
-      await available(); const result = await usage();
+      await available(); const result = await gateway.request(`/v1/storage-usage${refresh ? '?refresh=1' : ''}`);
+      if (sequence !== usageGeneration) return;
+      // Both views describe the same authoritative response, including stale/unknown.
+      $('archive-storage-usage').textContent = result.usedBytes === null ? 'Объём пока неизвестен.' : `${sizeLabel(result.usedBytes)} · ${result.assetCount} физических частей · ${result.stale ? 'последний полный подсчёт' : 'подсчитано'} ${new Date(result.countedAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`;
       $('archive-storage-warning').hidden = result.warning !== true;
-      $('archive-storage-warning-text').textContent = `${result.stale ? 'Последний полный подсчёт: ' : ''}занято ${sizeLabel(result.usedBytes)}. Рекомендуемый предел — ${sizeLabel(result.softLimitBytes)}. Импорт и сохранение доступны.`;
-    } catch { $('archive-storage-warning').hidden = true; }
+      $('archive-storage-warning-text').textContent = result.usedBytes === null ? '' : `${result.stale ? 'Последний полный подсчёт: ' : ''}занято ${sizeLabel(result.usedBytes)}. Рекомендуемый предел — ${sizeLabel(result.softLimitBytes)}. Импорт и сохранение доступны.`;
+    } catch {
+      if (sequence !== usageGeneration) return;
+      $('archive-storage-usage').textContent = 'Объём пока неизвестен. Повторите подсчёт.';
+      $('archive-storage-warning').hidden = true;
+      $('archive-storage-warning-text').textContent = '';
+    }
   }
   function renderCalendar() {
     const grid = $('zoom-days'); grid.replaceChildren(); $('zoom-occurrences').replaceChildren();
@@ -96,7 +100,11 @@ export function mountZoomArchive(gateway, openSession) {
       if (['available', 'reserved', 'bound'].includes(r.state)) row.append(action(r.state === 'available' ? 'Импортировать запись' : 'Проверить и продолжить', () => runZoom(() => importRecording(r))));
       if (['reserved', 'bound', 'discarding'].includes(r.state)) row.append(action('Отказаться от импорта', () => runZoom(async () => {
         if (controller) return;
-        if (confirm('Отказаться от этого незавершённого импорта?')) { await gateway.request(`/v1/zoom/imports/${r.id}/discard`, { method: 'POST', body: { confirmed: true } }); await loadCalendar(true); }
+        if (confirm('Отказаться от этого незавершённого импорта?')) {
+          try { await gateway.request(`/v1/zoom/imports/${r.id}/discard`, { method: 'POST', body: { confirmed: true } }); }
+          finally { await updateWarning(true); }
+          await loadCalendar(true);
+        }
       })));
       $('zoom-occurrences').append(row);
     }
@@ -145,8 +153,8 @@ export function mountZoomArchive(gateway, openSession) {
       }
       op = await gateway.request(`/v1/zoom/imports/${row.id}`, { signal: abort.signal });
       if (op.state !== 'completed' || result.session?.origin.externalId !== row.id) throw new Error('Сохранение не подтверждено. Проверьте состояние операции.');
-      zoomStatus('Запись сохранена в Аудиоархиве.'); await loadCalendar(true); await updateWarning();
-    } finally { controller = null; $('zoom-stop').hidden = true; }
+      zoomStatus('Запись сохранена в Аудиоархиве.'); await loadCalendar(true);
+    } finally { controller = null; $('zoom-stop').hidden = true; await updateWarning(true); }
   }
   $('archive-settings-open').addEventListener('click', () => { dialog.showModal(); void run(loadSettings); });
   $('archive-warning-settings').addEventListener('click', () => { dialog.showModal(); void run(loadSettings); });
@@ -162,7 +170,7 @@ export function mountZoomArchive(gateway, openSession) {
   }));
   $('zoom-connection-form').addEventListener('submit', e => { e.preventDefault(); void run(() => mutate('save', { connection: form(), receipt })); });
   $('archive-storage-form').addEventListener('submit', e => { e.preventDefault(); void run(() => mutate('storage', { storage: { softLimitBytes: Math.round(Number($('archive-soft-limit').value) * 1_000_000_000), warningPercent: Number($('archive-warning-percent').value) } })); });
-  $('archive-usage-refresh').addEventListener('click', () => void run(() => usage(true)));
+  $('archive-usage-refresh').addEventListener('click', () => void updateWarning(true));
   $('archive-zoom-open').addEventListener('click', () => { zoomDialog.showModal(); void runZoom(() => loadCalendar()); });
   $('archive-zoom-close').addEventListener('click', () => zoomDialog.close());
   zoomDialog.addEventListener('close', () => { generation++; controller?.abort(); $('archive-zoom-open').focus(); });

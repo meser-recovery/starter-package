@@ -6,6 +6,7 @@ import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from playwright.sync_api import sync_playwright, expect
+from s10b_browser_smoke import source
 
 
 def login(page, url):
@@ -13,6 +14,99 @@ def login(page, url):
     page.locator('#admin-password').fill('local-test-password')
     page.locator('#admin-access-form button[type=submit]').click()
     page.wait_for_url('**/Audio-Archive.html')
+
+
+def usage_refresh_regression(page):
+    used = {'bytes': 40_000_000_000}
+    held = {}
+    def response(route):
+        payload = route.fetch().json()
+        payload.update(usedBytes=used['bytes'], assetCount=1 if used['bytes'] else 0,
+                       warning=used['bytes'] >= payload['softLimitBytes'] * payload['warningPercent'] / 100)
+        if used.get('hold'):
+            held.update(route=route, payload=payload)
+            used['hold'] = False
+        else:
+            route.fulfill(json=payload)
+    page.route('**/v1/storage-usage?refresh=1', response)
+    page.locator('#archive-usage-refresh').click()
+    expect(page.locator('#archive-storage-usage')).to_contain_text('40 GB')
+    expect(page.locator('#archive-storage-warning-text')).to_contain_text('40 GB')
+    assert not page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    used['bytes'] = 0
+    page.locator('#archive-usage-refresh').click()
+    expect(page.locator('#archive-storage-usage')).to_contain_text('0 MB')
+    expect(page.locator('#archive-storage-warning-text')).to_contain_text('0 MB')
+    assert page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    used.update(bytes=40_000_000_000, hold=True)
+    page.locator('#archive-usage-refresh').click()
+    for _ in range(100):
+        if 'route' in held:
+            break
+        page.wait_for_timeout(20)
+    assert 'route' in held
+    used['bytes'] = 0
+    page.locator('#archive-usage-refresh').click()
+    expect(page.locator('#archive-storage-usage')).to_contain_text('0 MB')
+    held['route'].fulfill(json=held['payload'])
+    page.wait_for_timeout(100)
+    expect(page.locator('#archive-storage-usage')).to_contain_text('0 MB')
+    assert page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    used['bytes'] = 40_000_000_000
+    page.locator('#archive-usage-refresh').click()
+    expect(page.locator('#archive-storage-usage')).to_contain_text('40 GB')
+    assert not page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    page.unroute('**/v1/storage-usage?refresh=1', response)
+    page.locator('#archive-usage-refresh').click()
+    expect(page.locator('#archive-storage-usage')).to_contain_text('0 MB')
+
+
+def manual_storage_regression(page, context, url, output, engine):
+    context.request.post(f'{url}/__test/s12-reset')
+    page.goto(f'{url}/Audio-Archive.html')
+    page.locator('#archive-settings-open').click()
+    expect(page.locator('#archive-settings-status')).to_have_text('Настройки загружены.')
+    page.locator('#archive-soft-limit').fill('0.000001')
+    page.locator('#archive-storage-form button[type=submit]').click()
+    expect(page.locator('#archive-settings-status')).to_have_text('Сохранение подтверждено архивом.')
+    page.locator('#archive-settings-close').click()
+    expect(page.locator('#archive-storage-warning')).to_be_hidden()
+    page.locator('#archive-create-open').click()
+    page.locator('#archive-create-name').fill('Manual storage threshold regression')
+    page.locator('#archive-create-files').set_input_files(source('manual.wav'))
+    page.locator('#archive-create-submit').click()
+    expect(page.locator('#detail-title')).to_have_text('Manual storage threshold regression')
+    page.locator('#detail-close').click()
+    expect(page.locator('#archive-storage-warning')).to_be_visible()
+    assert not page.locator('#archive-storage-usage').inner_text().startswith('0 MB ·')
+    page.screenshot(path=str(output / f'{engine}-usage-after-upload.png'))
+    page.get_by_role('button', name='Открыть запись', exact=True).click()
+    page.get_by_text('Опасная зона', exact=True).click()
+    page.get_by_role('button', name='Удалить исходные дорожки', exact=True).click()
+    page.locator('#delete-submit').click()
+    expect(page.locator('#delete-dialog')).to_be_hidden()
+    page.locator('#detail-close').click()
+    expect(page.locator('#archive-storage-warning')).to_be_hidden()
+    expect(page.locator('#archive-storage-usage')).to_contain_text('0 MB')
+    page.screenshot(path=str(output / f'{engine}-usage-after-delete.png'))
+
+
+def discard_ui_regression(page, context, url):
+    for origin in ['manual', 'zoom_cloud']:
+        context.request.post(f'{url}/__test/s12-reset')
+        fixture = context.request.post(f'{url}/__test/s12-discard-fixture?origin={origin}')
+        assert fixture.ok, fixture.text()
+        # A newly opened page discovers the durable discarding claim, without the transfer context.
+        page.goto(f'{url}/Audio-Archive.html')
+        page.locator('#maintenance-title').click()
+        expect(page.locator('#operations article')).to_have_count(1)
+        operation = page.locator('#operations article')
+        expect(operation.get_by_role('button')).to_have_count(1)
+        operation.get_by_role('button', name='Завершить удаление незавершённого сохранения', exact=True).click()
+        expect(page.locator('#operations article')).to_have_count(0)
+        state = context.request.get(f'{url}/__test/s12-state').json()
+        transaction = next(value for path, value in state['files'] if path == f"transactions/ingest-{fixture.json()['transactionId']}.json")
+        assert transaction['state'] == 'discarded' and not state['assets']
 
 
 def main():
@@ -54,6 +148,7 @@ def main():
             page.locator('#zoom-connection-form button[type=submit]').click()
             expect(page.locator('#archive-settings-status')).to_have_text('Сохранение подтверждено архивом.')
             expect(page.locator('#zoom-connections article')).to_have_count(2)
+            usage_refresh_regression(page)
             page.keyboard.press('Escape')
             expect(page.locator('#archive-settings-open')).to_be_focused()
             page.locator('#archive-zoom-open').click()
@@ -143,8 +238,10 @@ def main():
             expect(page.locator('#zoom-occurrences h4').last).to_contain_text('В Аудиоархиве', timeout=20000)
             page.locator('#archive-zoom-close').click()
             expect(page.locator('#archive-zoom-open')).to_be_focused()
+            manual_storage_regression(page, context, args.base_url, output, engine)
+            discard_ui_regression(page, context, args.base_url)
             assert not errors, (engine, errors)
-            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS'})
+            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS'})
             context.close()
             browser.close()
     evidence = {'checkedHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'uncommittedTrackedChanges': bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).strip()), 'results': results}
