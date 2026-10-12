@@ -60,11 +60,31 @@ work=$(mktemp -d /tmp/meser-restore.XXXXXX)
 trap 'rm -rf -- "$work"' EXIT
 age -d -i "$identity" -o "$work/secrets.tar" "$bundle/secrets.age"
 tar -tf "$work/secrets.tar" | LC_ALL=C sort >"$work/secret-list"
+settings_key_version=$(awk -F= '$1 == "settings_key_version" { print $2 }' "$bundle/recovery-manifest.txt")
+settings_key_version=${settings_key_version:-0}
+secret_names=(github-app.pem shared-password-verifier session-signing-secret)
 expected=$'github-app.pem\nsecret-metadata.txt\nsession-signing-secret\nshared-password-verifier'
+if [[ "$settings_key_version" == 1 ]]; then
+  secret_names+=(archive-settings-key)
+  expected=$'archive-settings-key\ngithub-app.pem\nsecret-metadata.txt\nsession-signing-secret\nshared-password-verifier'
+  [[ -f "$bundle/compose.s12.yaml" && ! -L "$bundle/compose.s12.yaml" ]] || die 'S12 mount overlay missing'
+  overlay_hash=$(release_manifest_value s12_compose_sha256)
+  [[ "$overlay_hash" =~ ^[0-9a-f]{64}$ && "$(sha256sum "$bundle/compose.s12.yaml" | awk '{print $1}')" == "$overlay_hash" ]] || die 'S12 overlay release checksum mismatch'
+else
+  [[ "$settings_key_version" == 0 ]] || die 'unsupported settings key recovery version'
+fi
+# Only regular files: reject symlink/hardlink/path tricks before extraction.
+tar -tvf "$work/secrets.tar" | awk 'substr($0,1,1) != "-" { bad=1 } END { exit bad }' || die 'unsafe encrypted secret entry'
+tar -tvf "$work/secrets.tar" | awk '$NF != "secret-metadata.txt" && substr($0,1,10) != "-rw-------" { bad=1 } END { exit bad }' || die 'unsafe encrypted secret mode'
 [[ "$(<"$work/secret-list")" == "$expected" ]] || die 'encrypted secret allowlist mismatch'
 mkdir -m 700 "$work/secrets"
 tar -xf "$work/secrets.tar" -C "$work/secrets" --no-same-owner --no-same-permissions
-for name in github-app.pem shared-password-verifier session-signing-secret; do chmod 600 "$work/secrets/$name"; done
+for name in "${secret_names[@]}"; do printf '%s mode=600\n' "$name"; done >"$work/expected-secret-metadata"
+cmp "$work/expected-secret-metadata" "$work/secrets/secret-metadata.txt" >/dev/null || die 'encrypted secret metadata mismatch'
+if [[ "$settings_key_version" == 1 ]]; then
+  [[ "$(<"$work/secrets/archive-settings-key")" =~ ^[[:xdigit:]]{64}$ ]] || die 'invalid recovered archive settings key'
+fi
+for name in "${secret_names[@]}"; do chmod 600 "$work/secrets/$name"; done
 
 install -d -m 750 "$service_root/deploy/self-hosted"
 install -m 640 "$bundle/compose.yaml" "$service_root/deploy/self-hosted/compose.yaml"
@@ -74,7 +94,13 @@ project_name=meser-audio-archive
 if [[ "$synthetic" == true ]]; then config_root="$service_root/config"; project_name="meser-synthetic-restore-${BASHPID}"; fi
 if [[ "$synthetic" == true ]]; then printf '%s\n' "$project_name" >"$service_root/.restore-project-name"; fi
 install -d -m 700 "$config_root"
-for name in github-app.pem shared-password-verifier session-signing-secret; do install -m 600 "$work/secrets/$name" "$config_root/$name"; done
+for name in "${secret_names[@]}"; do install -m 600 "$work/secrets/$name" "$config_root/$name"; done
+compose_extra=()
+if [[ "$settings_key_version" == 1 ]]; then
+  install -m 640 "$work/secrets/archive-settings-key" "$config_root/archive-settings-runtime-key"
+  install -m 640 "$bundle/compose.s12.yaml" "$service_root/deploy/self-hosted/compose.s12.yaml"
+  compose_extra=(-f "$service_root/deploy/self-hosted/compose.s12.yaml")
+fi
 install -m 600 "$bundle/runtime.env" "$config_root/runtime.env"
 
 docker load -i "$bundle/gateway-image.tar" >/dev/null
@@ -83,10 +109,10 @@ runtime_value() { meser_runtime_value "$config_root/runtime.env" "$1"; }
 [[ "$(docker image inspect -f '{{.Id}}' "$gateway_ref")" == "$gateway_id" ]] || die 'loaded gateway image ID does not match release manifest'
 [[ "$(docker image inspect -f '{{.Id}}' "$caddy_ref")" == "$caddy_id" ]] || die 'loaded Caddy/frontend image ID does not match release manifest'
 
-MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" config >/dev/null
-MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" up -d --no-build gateway caddy
-gateway_container=$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" ps -q gateway)
-caddy_container=$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" ps -q caddy)
+MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" "${compose_extra[@]}" config >/dev/null
+MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" "${compose_extra[@]}" up -d --no-build gateway caddy
+gateway_container=$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" "${compose_extra[@]}" ps -q gateway)
+caddy_container=$(MESER_CONFIG_ROOT="$config_root" docker compose --project-name "$project_name" --env-file "$config_root/runtime.env" -f "$service_root/deploy/self-hosted/compose.yaml" "${compose_extra[@]}" ps -q caddy)
 [[ "$(docker inspect -f '{{.Image}}' "$gateway_container")" == "$gateway_id" ]] || die 'restored gateway container does not use exact manifest image ID'
 [[ "$(docker inspect -f '{{.Image}}' "$caddy_container")" == "$caddy_id" ]] || die 'restored Caddy container does not use exact manifest image ID'
 service_origin=$(awk -F= '$1 == "ALLOWED_ORIGIN" { print $2 }' "$config_root/runtime.env")

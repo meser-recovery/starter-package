@@ -613,8 +613,9 @@ export function validateSessionManifest(session) {
       !Number.isSafeInteger(session.revision) || session.revision < 1 || !isUuid(session.id) ||
       typeof session.title !== "string" || !session.title.trim() || session.title.length > 200 ||
       !(session.recordedAt === null || isIsoTimestamp(session.recordedAt)) || !isIsoTimestamp(session.createdAt) || !isIsoTimestamp(session.updatedAt) ||
-      !hasExactKeys(session.origin, ["kind", "externalId"]) || !["manual", "device", "zoom_webhook"].includes(session.origin.kind) ||
+      !hasExactKeys(session.origin, ["kind", "externalId"]) || !["manual", "device", "zoom_webhook", "zoom_cloud"].includes(session.origin.kind) ||
       !(session.origin.externalId === null || typeof session.origin.externalId === "string") ||
+      (session.origin.kind === 'zoom_cloud' && !SHA256_PATTERN.test(session.origin.externalId || '')) ||
       !hasExactKeys(session.storage, ["releaseId", "tag"]) || !Number.isSafeInteger(session.storage.releaseId) || session.storage.releaseId <= 0 ||
       session.storage.tag !== `audio-session-${session.id}` || !hasExactKeys(session.lifecycle, ["state"]) || !["incoming", "archived"].includes(session.lifecycle.state) ||
       !["available", "deleted"].includes(session.sourceState) || !Array.isArray(session.sourceTracks) || !hasExactKeys(session.workflows, ["announcement", "speaker"]) ||
@@ -814,6 +815,7 @@ export class AudioArchiveGateway {
     if (Number.isSafeInteger(result?.acceptedPartSize) && result.acceptedPartSize > 0 && result.acceptedPartSize <= MAX_AUDIO_PART_BYTES) {
       this.acceptedPartSize = Math.min(DEFAULT_AUDIO_PART_BYTES, result.acceptedPartSize);
     }
+    this.zoomCloudVersion = result?.zoomCloudImport === 1 ? 1 : 0;
     this.speakerProjectHistoryVersion = result?.speakerProjectHistory === 1 ? 1 : 0;
     return result;
   }
@@ -1073,21 +1075,23 @@ export class AudioArchiveGateway {
     });
   }
 
-  async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {}, onPlan = () => {}, onStarted = () => {}, onFinalizing = () => {} }) {
+  async ingestFiles({ files, title, recordedAt = null, origin = "device", supersedesSessionId = null, idempotencyKey = crypto.randomUUID(), signal, onProgress = () => {}, onPlan = () => {}, onStarted = () => {}, onFinalizing = () => {}, zoomImportId = null }) {
+    if (zoomImportId && this.zoomCloudVersion !== 1) throw new Error("Шлюз не поддерживает импорт Zoom.");
     const plan = await createIngestionPlan(files, this.acceptedPartSize, { idempotencyKey, signal });
     onPlan(plan);
-    const started = await this.request("/v1/source-sessions/ingestions", {
+    const started = await this.request(zoomImportId ? `/v1/zoom/imports/${encodeURIComponent(zoomImportId)}/plan` : "/v1/source-sessions/ingestions", {
       method: "POST", signal,
-      body: { schemaVersion: AUDIO_ARCHIVE_SCHEMA_VERSION, idempotencyKey, title, recordedAt, origin, supersedesSessionId, plan: serializeIngestionPlan(plan) }
+      body: zoomImportId ? { plan: serializeIngestionPlan(plan) } : { schemaVersion: AUDIO_ARCHIVE_SCHEMA_VERSION, idempotencyKey, title, recordedAt, origin, supersedesSessionId, plan: serializeIngestionPlan(plan) }
     });
     onStarted(started);
     if (started.state === "finalized") return { session: await this.getSession(started.sessionId, signal), idempotent: true };
     const totalParts = plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);
     let uploadedParts = 0;
     let uploadedBytes = 0;
+    const accepted = new Set((started.uploadedParts || []).map(p => `${p.blobId}:${p.partNumber}`));
     for (const track of plan.tracks) {
       for (const part of track.parts) {
-        await this.request(`/v1/source-sessions/ingestions/${encodeURIComponent(started.transactionId)}/blobs/${encodeURIComponent(track.blobId)}/parts/${part.partNumber}`, {
+        if (!accepted.has(`${track.blobId}:${part.partNumber}`)) await this.request(`/v1/source-sessions/ingestions/${encodeURIComponent(started.transactionId)}/blobs/${encodeURIComponent(track.blobId)}/parts/${part.partNumber}`, {
           method: "PUT", signal, body: part.blob,
           headers: {
             "Content-Type": "application/octet-stream",

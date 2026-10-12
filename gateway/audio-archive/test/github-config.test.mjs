@@ -243,3 +243,12 @@ test("release asset upload uses opaque deterministic name and fixed upload host"
   assert.equal(seen.options.headers["Content-Length"], "3");
   await assert.rejects(() => repository.uploadReleaseAsset(9, "recording.mp3", Buffer.from("abc")), /Unsafe/);
 });
+
+test('S12 optional settings secret fails closed without blocking legacy startup', () => {
+  const env = configEnvironment({ ARCHIVE_SETTINGS_KEY_FILE: '/run/secrets/archive-settings-key' });
+  assert.equal(loadConfig(env, secretReader()).settingsKey, null);
+  assert.equal(loadConfig(env, secretReader({ '/run/secrets/archive-settings-key': 'invalid-synthetic-key' })).settingsKey, null);
+  const loaded = loadConfig(env, secretReader({ '/run/secrets/archive-settings-key': 'b2'.repeat(32) + '\n' }));
+  assert.equal(loaded.settingsKey.length, 32);
+  assert.equal(loaded.githubAppPrivateKey, 'line one\nline two');
+});

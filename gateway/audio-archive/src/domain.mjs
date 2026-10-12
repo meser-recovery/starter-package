@@ -1,4 +1,5 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
+import { importPath, validateImport } from "./settings.mjs";
 import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
@@ -585,7 +586,7 @@ export class AudioArchiveDomain {
     return this.publicPublicationJob(transaction);
   }
 
-  async beginIngestion(body) {
+  async beginIngestion(body, zoomImportId = null) {
     assertExactKeys(body, ["schemaVersion", "idempotencyKey", "title", "recordedAt", "origin", "supersedesSessionId", "plan"], "begin ingestion");
     if (body.schemaVersion !== SCHEMA_VERSION) throw new ValidationError("Unsupported ingestion schema");
     const idempotencyHash = hashIdempotencyKey(body.idempotencyKey);
@@ -593,11 +594,19 @@ export class AudioArchiveDomain {
     const path = transactionPath("ingest", transactionId);
     const title = safeTitle(body.title);
     const recordedAt = body.recordedAt === null ? null : assertTimestamp(body.recordedAt, "recordedAt");
-    if (!["manual", "device"].includes(body.origin)) throw new ValidationError("Browser ingestion origin is invalid");
+    if (!["manual", "device"].includes(body.origin) && !(body.origin === "zoom_cloud" && zoomImportId)) throw new ValidationError("Browser ingestion origin is invalid");
     const supersedesSessionId = body.supersedesSessionId === null ? null : assertUuid(body.supersedesSessionId, "supersedesSessionId");
     const plan = validateIngestionPlan(body.plan, this.acceptedPartBytes);
     const immutableRequest = { title, recordedAt, origin: body.origin, supersedesSessionId, plan };
     let head = await this.repository.getHead();
+    const assertZoomReservation = async ref => {
+      if (!zoomImportId) return;
+      const record = await this.repository.readJson(importPath(zoomImportId), ref);
+      const r = record && validateImport(record.data);
+      if (!r || !['bound', 'completed'].includes(r.state) || r.idempotencyKey !== body.idempotencyKey ||
+          r.transactionId !== transactionId || !isDeepStrictEqual(r.plan, plan) || r.title !== title || r.recordedAt !== recordedAt) throw conflict('Zoom reservation does not match ingestion');
+    };
+    await assertZoomReservation(head);
     const existing = await this.repository.readJson(path, head);
     if (existing) {
       const transaction = validateTransaction(existing.data);
@@ -610,6 +619,7 @@ export class AudioArchiveDomain {
     const releaseTag = `audio-session-${sessionId}`;
     const release = await this.repository.createDraftRelease(releaseTag);
     head = await this.repository.getHead();
+    await assertZoomReservation(head);
     const raced = await this.repository.readJson(path, head);
     if (raced) {
       const transaction = validateTransaction(raced.data);
@@ -622,7 +632,8 @@ export class AudioArchiveDomain {
     const transaction = {
       schemaVersion: SCHEMA_VERSION, kind: "ingestion", transactionId, idempotencyHash, revision: 1, state: "uploading",
       sessionId, releaseId: release.id, releaseTag, title, recordedAt, origin: body.origin, supersedesSessionId,
-      plan, uploadedParts: [], stagedManifest: null, createdAt: timestamp, updatedAt: timestamp
+      plan, uploadedParts: [], stagedManifest: null, createdAt: timestamp, updatedAt: timestamp,
+      ...(zoomImportId ? { zoomImportId } : {})
     };
     await this.repository.commitJson(head, { [path]: transaction }, `Begin audio ingestion ${sessionId}`);
     return { transactionId, sessionId, releaseId: release.id, state: transaction.state };
@@ -699,7 +710,7 @@ export class AudioArchiveDomain {
     }));
     return {
       schemaVersion: SCHEMA_VERSION, revision: 1, id: transaction.sessionId, title: transaction.title, recordedAt: transaction.recordedAt,
-      createdAt: transaction.createdAt, updatedAt: timestamp, origin: { kind: transaction.origin, externalId: null },
+      createdAt: transaction.createdAt, updatedAt: timestamp, origin: { kind: transaction.origin, externalId: transaction.zoomImportId || null },
       storage: { releaseId: transaction.releaseId, tag: transaction.releaseTag }, lifecycle: { state: "incoming" },
       sourceState: "available", sourceTracks, deletedSources: null,
       workflows: { announcement: workflowState("announcement"), speaker: workflowState("speaker") },
@@ -712,6 +723,7 @@ export class AudioArchiveDomain {
     let { head, path, transaction } = await this.ingestionSnapshot(transactionId);
     const existing = await this.repository.readJson(sessionPath(transaction.sessionId), head);
     if (existing && existing.data?.kind !== "deletion_tombstone") return { session: publicSession(existing.data), idempotent: true };
+    if (existing?.data?.kind === 'deletion_tombstone' || !['uploading', 'staged'].includes(transaction.state)) throw conflict('Ingestion cannot be finalized');
     const requiredCount = transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);
     if (transaction.uploadedParts.length !== requiredCount) throw conflict("All planned parts must upload before finalization");
     const assets = await this.repository.listReleaseAssets(transaction.releaseId);
@@ -720,6 +732,19 @@ export class AudioArchiveDomain {
       if (!asset || asset.size !== uploaded.sizeBytes ||
           (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), uploaded.sha256))) {
         throw conflict("Release assets failed final integrity verification");
+      }
+    }
+    if (transaction.origin === 'zoom_cloud') {
+      for (const track of transaction.plan.tracks) {
+        const whole = createHash('sha256'); let header = Buffer.alloc(0);
+        for (const part of track.parts) {
+          const uploaded = transaction.uploadedParts.find(p => p.blobId === track.blobId && p.partNumber === part.partNumber);
+          const bytes = await this.repository.downloadReleaseAsset(uploaded.assetId);
+          if (bytes.length !== part.sizeBytes || digestBytes(bytes) !== part.sha256) throw conflict('Stored Zoom M4A part integrity failed');
+          if (header.length < 8) header = Buffer.concat([header, bytes.subarray(0, 8 - header.length)]);
+          whole.update(bytes);
+        }
+        if (header.toString('ascii', 4, 8) !== 'ftyp' || whole.digest('hex') !== track.sha256) throw conflict('Stored Zoom whole-file integrity failed');
       }
     }
     if (transaction.state === "uploading") {
@@ -731,6 +756,7 @@ export class AudioArchiveDomain {
       await this.repository.commitJson(head, { [path]: transaction }, `Stage audio session ${transaction.sessionId}`);
       ({ head, transaction } = await this.ingestionSnapshot(transactionId));
     }
+    if (transaction.state !== 'staged') throw conflict('Ingestion finalization no longer owns this transaction');
     await this.repository.publishRelease(transaction.releaseId);
     const catalogStored = await this.repository.readJson("catalog.json", head);
     const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
@@ -740,7 +766,11 @@ export class AudioArchiveDomain {
     await this.repository.commitJson(head, {
       [sessionPath(session.id)]: session,
       "catalog.json": nextCatalog,
-      [path]: transaction
+      [path]: transaction,
+      ...(transaction.zoomImportId ? { [importPath(transaction.zoomImportId)]: {
+        ...validateImport((await this.repository.readJson(importPath(transaction.zoomImportId), head)).data),
+        state: 'completed', revision: (await this.repository.readJson(importPath(transaction.zoomImportId), head)).data.revision + 1
+      } } : {})
     }, `Finalize audio session ${session.id}`);
     return { session: publicSession(session), idempotent: false };
   }
@@ -1356,11 +1386,25 @@ export class AudioArchiveDomain {
     if (ingest && validateTransaction(ingest.data).state !== "finalized") {
       const transaction = validateTransaction(ingest.data);
       if (action === "discard") {
-        await this.repository.deleteRelease(transaction.releaseId);
-        await this.repository.deleteTag(transaction.releaseTag);
-        const head = await this.repository.getHead();
-        const discarded = { ...transaction, state: "discarded", revision: transaction.revision + 1, updatedAt: nowIso(this.clock) };
-        await this.repository.commitJson(head, { [transactionPath("ingest", transactionId)]: discarded }, `Discard ingestion ${transactionId}`);
+        let { head, path, transaction: current } = await this.ingestionSnapshot(transactionId);
+        if (current.state === 'discarded') return { discarded: true, transactionId };
+        // Staging claims finalization. Discard and finalize cannot both own the Release.
+        if (!['uploading', 'discarding'].includes(current.state)) throw conflict('Finish finalization before attempting discard');
+        if (current.state === 'uploading') {
+          current = { ...current, state: 'discarding', revision: current.revision + 1, updatedAt: nowIso(this.clock) };
+          await this.repository.commitJson(head, { [path]: current }, `Claim ingestion discard ${transactionId}`);
+        }
+        await this.repository.deleteRelease(current.releaseId);
+        await this.repository.deleteTag(current.releaseTag);
+        ({ head, transaction: current } = await this.ingestionSnapshot(transactionId));
+        if (current.state !== 'discarding') throw conflict('Discard does not own ingestion');
+        const discarded = { ...current, state: "discarded", revision: current.revision + 1, updatedAt: nowIso(this.clock) };
+        const extras = {};
+        if (current.zoomImportId) {
+          const record = validateImport((await this.repository.readJson(importPath(current.zoomImportId), head)).data);
+          extras[importPath(record.id)] = { ...record, state: 'discarded', revision: record.revision + 1 };
+        }
+        await this.repository.commitJson(head, { [path]: discarded, ...extras }, `Discard ingestion ${transactionId}`);
         return { discarded: true, transactionId };
       }
       const requiredCount = transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);

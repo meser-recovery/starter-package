@@ -1,0 +1,160 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meser-recovery/audio-archive/schemas/v1/zoom-import.schema.json",
+  "title": "S12 durable Zoom occurrence import v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "id",
+    "revision",
+    "connectionId",
+    "connectionRevision",
+    "occurrenceUuid",
+    "recordedAt",
+    "title",
+    "files",
+    "idempotencyKey",
+    "transactionId",
+    "state",
+    "plan"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-f0-9]{64}$"
+    },
+    "revision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "connectionId": {
+      "$ref": "transaction.schema.json#/$defs/uuid"
+    },
+    "connectionRevision": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "occurrenceUuid": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 512
+    },
+    "recordedAt": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "title": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "files": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "id",
+          "name",
+          "sizeBytes",
+          "startTime",
+          "endTime"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 512
+          },
+          "name": {
+            "type": "string",
+            "minLength": 5,
+            "maxLength": 255,
+            "pattern": "\\.m4a$"
+          },
+          "sizeBytes": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 524288000
+          },
+          "startTime": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "endTime": {
+            "oneOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "maxItems": 32,
+      "minItems": 1
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^zoom:[a-f0-9]{64}$"
+    },
+    "transactionId": {
+      "$ref": "transaction.schema.json#/$defs/uuid"
+    },
+    "state": {
+      "enum": [
+        "reserved",
+        "bound",
+        "completed",
+        "discarded"
+      ]
+    },
+    "plan": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "totalBytes",
+            "tracks"
+          ],
+          "properties": {
+            "totalBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 524288000
+            },
+            "tracks": {
+              "type": "array",
+              "items": {
+                "$ref": "transaction.schema.json#/$defs/trackPlan"
+              },
+              "maxItems": 32,
+              "minItems": 1
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "$comment": "Runtime also enforces ID/key/UUID relationship, total size, unique file IDs, frozen name/size/order, and plan/state invariants."
+}

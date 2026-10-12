@@ -78,6 +78,19 @@ jobs:
           python3 tests/safety/s10a_mobile_waveform_smoke.py --base-url http://127.0.0.1:8000 --browser all
           python3 tests/safety/speaker_trackpad_scroll_smoke.py --base-url http://localhost:4174 --browser all
           python3 tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser all
+      - name: S12 protected settings, calendar, import and storage browser matrix
+        run: |
+          node tests/safety/s12_preview_server.mjs 4185 http://localhost:4185 >/tmp/s12-preview.log 2>&1 &
+          s12_preview_pid=$!
+          trap 'kill "$s12_preview_pid"' EXIT
+          python3 tests/safety/s12_browser_smoke.py --base-url http://localhost:4185 --output "$RUNNER_TEMP/s12-browser-evidence"
+      - name: Upload S12 browser evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: s12-browser-evidence
+          path: ${{ runner.temp }}/s12-browser-evidence
+          if-no-files-found: ignore
       - name: Verify protected frontend inventory and script syntax
         run: |
           node service/tools/verify-frontend.mjs
@@ -120,8 +133,11 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y age
           gateway/audio-archive/deploy/recovery/synthetic-recovery-rehearsal.sh
+          MESER_S12_RECOVERY_SYNTHETIC_TEST=true gateway/audio-archive/deploy/recovery/synthetic-recovery-rehearsal.sh
       - name: Synthetic Docker rollback, clean restore and Caddy runtime rehearsal
-        run: gateway/audio-archive/deploy/recovery/synthetic-docker-restore-rehearsal.sh
+        run: |
+          gateway/audio-archive/deploy/recovery/synthetic-docker-restore-rehearsal.sh
+          MESER_S12_RECOVERY_SYNTHETIC_TEST=true gateway/audio-archive/deploy/recovery/synthetic-docker-restore-rehearsal.sh
 
   production-safety:
     if: github.event_name == 'push' || github.event_name == 'schedule'

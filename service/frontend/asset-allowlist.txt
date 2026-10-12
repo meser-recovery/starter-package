@@ -12,6 +12,7 @@ service/frontend/scripts/audio-actions.mjs
 service/frontend/scripts/audio-archive-client.mjs
 service/frontend/scripts/audio-file-selection.mjs
 service/frontend/scripts/audio-archive-core.mjs
+service/frontend/scripts/audio-archive-zoom.mjs
 service/frontend/scripts/audio-archive.mjs
 service/frontend/scripts/audio-edit-preview.mjs
 service/frontend/scripts/audio-editor.js

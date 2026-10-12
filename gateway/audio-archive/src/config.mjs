@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { DEFAULT_PART_BYTES, MAX_PART_BYTES } from "./validation.mjs";
+import { parseSettingsKey } from './settings.mjs';
 
 function required(env, name) {
   const value = env[name];
@@ -29,6 +30,10 @@ function secretFromFile(env, variable, readTextFile) {
 }
 
 export function loadConfig(env = process.env, readTextFile = readFileSync) {
+  let settingsKey = null;
+  if (env.ARCHIVE_SETTINGS_KEY_FILE) {
+    try { settingsKey = parseSettingsKey(readTextFile(env.ARCHIVE_SETTINGS_KEY_FILE, 'utf8')); } catch { /* S12 fails closed; legacy service stays available. */ }
+  }
   const allowedOrigin = required(env, "ALLOWED_ORIGIN").replace(/\/$/, "");
   const parsedOrigin = new URL(allowedOrigin);
   const syntheticRuntime = env.MESER_SYNTHETIC_RUNTIME === "true";
@@ -43,6 +48,7 @@ export function loadConfig(env = process.env, readTextFile = readFileSync) {
     port: positiveInteger(env.PORT, 8080, 65535, "PORT"),
     allowedOrigin,
     syntheticRuntime,
+    settingsKey,
     storageOwner,
     storageRepository,
     storageBranch: env.STORAGE_BRANCH || "main",

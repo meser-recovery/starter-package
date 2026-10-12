@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { LoginThrottle, SessionRegistry, clearSessionCookies, createSession, readSession, requireCsrf, verifyPassword } from "./auth.mjs";
-import { ValidationError, assertUuid, hashIdempotencyKey } from "./validation.mjs";
+import { ValidationError, assertExactKeys, assertUuid, hashIdempotencyKey } from "./validation.mjs";
 import { waveformResponse } from "./waveform.mjs";
 
 const JSON_LIMIT = 1024 * 1024;
@@ -86,7 +86,7 @@ function routeMatch(pathname, pattern) {
   const match = pathname.match(pattern);
   if (!match) return null;
   try {
-    return match.slice(1).map((value) => decodeURIComponent(value));
+    return match.slice(1).map((value) => value === undefined ? undefined : decodeURIComponent(value));
   } catch {
     throw new ValidationError("Request path is malformed");
   }
@@ -97,7 +97,12 @@ function actionBody(body) {
   return body;
 }
 
-export function createApp({ config, domain, waveformService = null, throttle = new LoginThrottle(), clock = () => Date.now(), sessionRegistry } = {}) {
+function assertExactZoomAction(body) {
+  assertExactKeys(body, ['confirmed'], 'Zoom action');
+  if (body.confirmed !== true) throw new ValidationError('Подтвердите действие.');
+}
+
+export function createApp({ config, domain, zoomArchive = null, waveformService = null, throttle = new LoginThrottle(), clock = () => Date.now(), sessionRegistry } = {}) {
   const sessions = sessionRegistry || new SessionRegistry({ clock, maxEntries: config.activeSessionLimit || 256 });
   return async function handle(request) {
     const requestId = randomUUID();
@@ -154,7 +159,38 @@ export function createApp({ config, domain, waveformService = null, throttle = n
       }
       if (url.pathname === "/v1/config" && request.method === "GET") {
         return apiResponse(json({ schemaVersion: 1, acceptedPartSize: config.acceptedPartBytes, maximumPartSize: 64 * 1024 * 1024,
-          maximumSessionSize: 500 * 1024 * 1024, speakerProjectHistory: 1 }));
+          maximumSessionSize: 500 * 1024 * 1024, speakerProjectHistory: 1, zoomCloudImport: 1 }));
+      }
+      if (url.pathname.startsWith('/v1/zoom/') || url.pathname.startsWith('/v1/archive-settings') || url.pathname === '/v1/storage-usage') {
+        if (!zoomArchive) throw Object.assign(new Error('Настройки Zoom пока недоступны.'), { status: 503 });
+        if (url.pathname === '/v1/archive-settings') {
+          if (request.method === 'GET') return apiResponse(json(await zoomArchive.settings()));
+          if (request.method === 'POST') return apiResponse(json(await zoomArchive.mutate(await jsonBody(request, 64 * 1024))));
+        }
+        if (url.pathname === '/v1/archive-settings/check' && request.method === 'POST') return apiResponse(json(await zoomArchive.check(await jsonBody(request, 64 * 1024))));
+        if (url.pathname === '/v1/storage-usage' && request.method === 'GET') return apiResponse(json(await zoomArchive.usage(url.searchParams.get('refresh') === '1')));
+        if (url.pathname === '/v1/zoom/calendar' && request.method === 'GET') return apiResponse(json(await zoomArchive.calendar(url.searchParams.get('month'), url.searchParams.get('refresh') === '1')));
+        if (url.pathname === '/v1/zoom/imports' && request.method === 'POST') return apiResponse(json(await zoomArchive.reserve(await jsonBody(request))));
+        const zoomMatch = routeMatch(url.pathname, /^\/v1\/zoom\/imports\/([a-f0-9]{64})(?:\/(plan|finalize|discard|files)(?:\/([^/]+))?)?$/);
+        if (zoomMatch) {
+          const [id, action, fileId] = zoomMatch;
+          if (fileId && action !== 'files') throw new ValidationError('Unsupported Zoom action path');
+          if (!action && request.method === 'GET') return apiResponse(json(await zoomArchive.operation(id)));
+          if (action === 'files' && fileId && request.method === 'GET') {
+            if ([...url.searchParams].length) throw new ValidationError('Download does not accept query parameters');
+            return apiResponse(await zoomArchive.download(id, fileId, request.signal));
+          }
+          if (action === 'plan' && request.method === 'POST') {
+            const started = await zoomArchive.bind(id, await jsonBody(request));
+            return apiResponse(json({ ...started, uploadedParts: (await zoomArchive.operation(id)).uploadedParts }));
+          }
+          if (['finalize', 'discard'].includes(action) && request.method === 'POST') {
+            const body = await jsonBody(request); assertExactZoomAction(body);
+            if (action === 'discard') return apiResponse(json(await zoomArchive.discard(id)));
+            const operation = await zoomArchive.operation(id);
+            return apiResponse(json(await domain.finalizeIngestion(operation.transactionId)));
+          }
+        }
       }
       if (url.pathname === "/v1/source-sessions" && request.method === "GET") {
         return apiResponse(json(await domain.listSessions(url.searchParams.get("lifecycle") || "incoming")), config.allowedOrigin);
@@ -309,7 +345,7 @@ export function createApp({ config, domain, waveformService = null, throttle = n
       return apiResponse(json({ error: "Операция не найдена." }, 404), config.allowedOrigin);
     } catch (error) {
       const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 600 ? error.status : 500;
-      const safe = status < 500 ? error.message : "Внутренняя ошибка шлюза.";
+      const safe = status < 500 || error?.name === 'SettingsError' ? error.message : "Внутренняя ошибка шлюза.";
       console.error(JSON.stringify({ level: "error", message: "request_failed", requestId, method: request.method, path: url.pathname, status,
         durationMs: clock() - started, errorType: error?.name || "Error" }));
       const headers = error?.retryAfter ? { "Retry-After": String(error.retryAfter) } : {};

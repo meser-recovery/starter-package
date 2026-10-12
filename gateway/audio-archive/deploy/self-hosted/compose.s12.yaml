@@ -1,0 +1,12 @@
+# Optional, separately authorized S12 key mount. Base legacy runtime needs no new secret.
+services:
+  gateway:
+    environment:
+      ARCHIVE_SETTINGS_KEY_FILE: /run/secrets/archive-settings-key
+    volumes:
+      - type: bind
+        source: ${MESER_CONFIG_ROOT:-/etc/meser-audio-archive}/archive-settings-runtime-key
+        target: /run/secrets/archive-settings-key
+        read_only: true
+        bind:
+          create_host_path: false

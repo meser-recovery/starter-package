@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meser-recovery/audio-archive/schemas/v1/encrypted-settings.schema.json",
+  "title": "S12 authenticated encrypted settings v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "algorithm",
+    "nonce",
+    "tag",
+    "ciphertext"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "algorithm": {
+      "const": "AES-256-GCM"
+    },
+    "nonce": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{16}$"
+    },
+    "tag": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9+/]{22}==$"
+    },
+    "ciphertext": {
+      "type": "string",
+      "minLength": 4,
+      "maxLength": 1048576,
+      "contentEncoding": "base64"
+    }
+  }
+}

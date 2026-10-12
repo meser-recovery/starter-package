@@ -28,6 +28,7 @@ docker save -o "$output/caddy-frontend-image.tar" "$caddy_tag"
 sha256sum "$output/gateway-image.tar" | sed "s#  .*/#  #" >"$output/gateway-image.tar.sha256"
 sha256sum "$output/caddy-frontend-image.tar" | sed "s#  .*/#  #" >"$output/caddy-frontend-image.tar.sha256"
 cp gateway/audio-archive/deploy/self-hosted/compose.yaml "$output/compose.yaml"
+cp gateway/audio-archive/deploy/self-hosted/compose.s12.yaml "$output/compose.s12.yaml"
 cp gateway/audio-archive/deploy/self-hosted/Caddyfile "$output/Caddyfile"
 cp gateway/audio-archive/deploy/self-hosted/haproxy.cfg "$output/haproxy.cfg"
 
@@ -44,6 +45,7 @@ packaging_environment=ubuntu-24.04+node-24.7.0+git-archive-tar+gzip-n-v1
 gateway_base=node:24-alpine@sha256:e67514e5d0f6c46656005e1b693b2ec9d52e80b641307de684d4a015ba7a4eaf
 caddy_base=caddy:2.11.4-alpine@sha256:de23def33b17fb5d1290b0f6c2add1d70780e52341896c00a4c8a2a2fe9d355e
 compose_sha256=$(sha256sum "$output/compose.yaml" | awk '{print $1}')
+s12_compose_sha256=$(sha256sum "$output/compose.s12.yaml" | awk '{print $1}')
 caddy_sha256=$(sha256sum "$output/Caddyfile" | awk '{print $1}')
 haproxy_sha256=$(sha256sum "$output/haproxy.cfg" | awk '{print $1}')
 EOF
