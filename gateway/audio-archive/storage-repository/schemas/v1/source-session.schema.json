@@ -15,7 +15,8 @@
     "updatedAt": { "type": "string", "format": "date-time" },
     "origin": {
       "type": "object", "additionalProperties": false, "required": ["kind", "externalId"],
-      "properties": { "kind": { "enum": ["manual", "device", "zoom_webhook"] }, "externalId": { "type": ["string", "null"] } }
+      "properties": { "kind": { "enum": ["manual", "device", "zoom_webhook", "zoom_cloud"] }, "externalId": { "type": ["string", "null"] } },
+      "allOf": [{ "if": { "properties": { "kind": { "const": "zoom_cloud" } } }, "then": { "properties": { "externalId": { "type": "string", "pattern": "^[a-f0-9]{64}$" } } } }]
     },
     "storage": {
       "type": "object", "additionalProperties": false, "required": ["releaseId", "tag"],

@@ -1,3 +1,4 @@
+import { mountZoomArchive } from './audio-archive-zoom.mjs';
 import { contextActions } from './audio-actions.mjs';
 import { RECONNECT_MESSAGE, projectProjection } from './audio-project.mjs';
 import {
@@ -22,6 +23,7 @@ const state = {
   resultSort: { announcement: 'newest', speaker: 'newest' },
   picker: { open: false, requested: false, page: 0, pageSize: 10 }
 };
+const zoomArchiveUi = mountZoomArchive(gateway, id => { state.picker.requested = true; void refresh().then(() => openDetail(id, { updateUrl: true })); });
 const creation = { selection: new AudioFileSelection(), attempt: null, controller: null, pickerMode: 'replace' };
 
 function creationStatus(value, tone = '') {
@@ -104,6 +106,8 @@ async function saveCreation(event) {
   } catch (error) {
     if (error?.status === 401) { clearSession(); creationStatus(`${SERVICE_SESSION_EXPIRED_MESSAGE} После входа продолжите сохранение.`, 'error'); }
     else creationStatus(error?.name === 'AbortError' ? 'Передача остановлена. Файлы и данные сохранены; проверьте и продолжите тем же действием.' : `${message(error)} Файлы и данные сохранены для безопасного повтора.`, 'error');
+    // A failed reply may follow a successful part write.
+    void zoomArchiveUi.updateWarning(true);
   } finally { creation.controller = null; renderCreation(); }
 }
 
@@ -198,7 +202,7 @@ const authController = new ServiceSessionController({
       state.authenticated = true;
       if ($('login-dialog').open) $('login-dialog').close();
       updateControls();
-      void refresh();
+      void refresh(); void zoomArchiveUi.updateWarning();
     }
   }
 });
@@ -399,7 +403,7 @@ function renderDetail() {
   const identity = element('div', undefined, 'record-identity');
   identity.append(element('p', 'Запись Zoom', 'eyebrow'));
   const heroTitle = element('h2', session.title); heroTitle.id = 'detail-title'; heroTitle.tabIndex = -1; identity.append(heroTitle);
-  const count = trackCount(session), origin = ({ manual: 'Создана вручную', device: 'С устройства', zoom_webhook: 'Zoom' })[session.origin.kind] || 'Источник не указан';
+  const count = trackCount(session), origin = ({ manual: 'Создана вручную', device: 'С устройства', zoom_webhook: 'Zoom', zoom_cloud: 'Zoom Cloud' })[session.origin.kind] || 'Источник не указан';
   identity.append(element('p', `${dateLabel(session.recordedAt)} · ${trackCountLabel(count)} · ${origin}`, 'record-meta'));
   const badges = element('div', undefined, 'status-badges'); badges.append(element('span', lifecycleLabel(session), 'status-badge'), element('span', sourceLabel(session), `status-badge ${session.sourceState === 'available' ? 'is-ready' : 'is-warning'}`)); identity.append(badges); heading.append(identity);
 
@@ -591,6 +595,7 @@ async function refresh() {
   }
   render(); setArchiveStatus(errors.length ? `${errors.join(' ')} Обновите данные.` : 'Данные загружены. Просмотр не изменяет аудиоархив.', errors.length ? 'error' : 'ready');
   await consumeArchiveIntent();
+  await zoomArchiveUi.updateWarning(true);
 }
 
 async function loadOutput(session, output, workflow, downloadOnly = false) {
@@ -711,7 +716,7 @@ $('login-form').addEventListener('submit', async event => {
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
-  try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
+  try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); void zoomArchiveUi.updateWarning(); state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();

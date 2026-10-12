@@ -126,7 +126,7 @@ export function recoveryPolicy(operation) {
   } : readOnly;
   if (!['ingestion', 'publication'].includes(operation.kind)) return readOnly;
   if (operation.kind === 'publication' && !hasOwn(workflows, operation.workflow)) return readOnly;
-  const states = operation.kind === 'ingestion' ? ['uploading', 'staged'] : ['uploading', 'cancelled', 'finalizing', 'discarding'];
+  const states = operation.kind === 'ingestion' ? ['uploading', 'staged', 'discarding'] : ['uploading', 'cancelled', 'finalizing', 'discarding'];
   if (!states.includes(operation.state)) return readOnly;
   if (operation.state === 'discarding') return { actions: [['discard', 'Завершить удаление незавершённого сохранения']], local: 'Возобновление сохранения недоступно: удаление уже начато.' };
   if (!Number.isSafeInteger(operation.totalParts) || operation.totalParts < 1 || !Number.isSafeInteger(operation.uploadedParts) ||

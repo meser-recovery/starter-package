@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -Eeuo pipefail
 
-for command in age age-keygen sha256sum tar; do command -v "$command" >/dev/null || { printf 'SYNTHETIC REHEARSAL SKIPPED: missing %s\n' "$command" >&2; exit 77; }; done
+for command in age age-keygen sha256sum tar node; do command -v "$command" >/dev/null || { printf 'SYNTHETIC REHEARSAL SKIPPED: missing %s\n' "$command" >&2; exit 77; }; done
 runtime_schema="$(dirname "$0")/runtime-env.sh"
 [[ -f "$runtime_schema" && ! -L "$runtime_schema" ]] || { printf 'SYNTHETIC REHEARSAL FAILED: canonical runtime schema is missing or unsafe\n' >&2; exit 1; }
 # shellcheck source=runtime-env.sh
@@ -14,10 +14,17 @@ printf '%s\n' 'synthetic-configured-mount' >"$work/configured-destination/.meser
 printf '%s\n' 'synthetic github app key' >"$work/secrets/github-app.pem"
 printf '%s\n' 'synthetic verifier' >"$work/secrets/shared-password-verifier"
 printf '%s\n' 'synthetic signing secret' >"$work/secrets/session-signing-secret"
+if [[ "${MESER_S12_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
+  node "$(git rev-parse --show-toplevel)/tests/safety/s12_recovery_fixture.mjs" create "$work" "$work/secrets/archive-settings-key"
+  node "$(git rev-parse --show-toplevel)/tests/safety/s12_recovery_fixture.mjs" rotate "$work" "$work/secrets/archive-settings-key"
+fi
 chmod 600 "$work/secrets"/*
 source_sha=1111111111111111111111111111111111111111
 source_tree=2222222222222222222222222222222222222222
 for name in meser-service-source.tar.gz gateway-image.tar caddy-frontend-image.tar compose.yaml Caddyfile haproxy.cfg; do printf 'synthetic %s\n' "$name" >"$work/release/$name"; done
+if [[ "${MESER_S12_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
+  cp "$(dirname "$0")/../self-hosted/compose.s12.yaml" "$work/release/compose.s12.yaml"
+fi
 sha256sum "$work/release/meser-service-source.tar.gz" | sed 's#  .*/#  #' >"$work/release/meser-service-source.tar.gz.sha256"
 sha256sum "$work/release/gateway-image.tar" | sed 's#  .*/#  #' >"$work/release/gateway-image.tar.sha256"
 sha256sum "$work/release/caddy-frontend-image.tar" | sed 's#  .*/#  #' >"$work/release/caddy-frontend-image.tar.sha256"
@@ -34,6 +41,9 @@ compose_sha256=$(sha256sum "$work/release/compose.yaml" | awk '{ print $1 }')
 caddy_sha256=$(sha256sum "$work/release/Caddyfile" | awk '{ print $1 }')
 haproxy_sha256=$(sha256sum "$work/release/haproxy.cfg" | awk '{ print $1 }')
 EOF
+if [[ "${MESER_S12_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
+  printf 's12_compose_sha256=%s\n' "$(sha256sum "$work/release/compose.s12.yaml" | awk '{print $1}')" >>"$work/release/release-manifest.txt"
+fi
 gateway_ref="meser-service-gateway:$source_sha"
 caddy_ref="meser-service-caddy:$source_sha"
 meser_write_runtime_env "$work/runtime.env" "$source_sha" "$gateway_ref" "$caddy_ref" \
@@ -47,7 +57,14 @@ bundle=$(find "$work/destination" -mindepth 1 -maxdepth 1 -type d -name 'meser-s
 (cd "$bundle" && sha256sum -c SHA256SUMS >/dev/null)
 age -d -i "$work/identity.txt" -o "$work/secrets.tar" "$bundle/secrets.age"
 expected=$'github-app.pem\nsecret-metadata.txt\nsession-signing-secret\nshared-password-verifier'
+if [[ "${MESER_S12_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then expected=$'archive-settings-key\n'"$expected"; fi
 [[ "$(tar -tf "$work/secrets.tar" | LC_ALL=C sort)" == "$expected" ]]
+if [[ "${MESER_S12_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
+  # Destroy the runtime key before recovering from the encrypted bundle.
+  rm "$work/secrets/archive-settings-key"
+  tar -xf "$work/secrets.tar" -C "$work/secrets" archive-settings-key
+  node "$(git rev-parse --show-toplevel)/tests/safety/s12_recovery_fixture.mjs" verify "$work" "$work/secrets/archive-settings-key"
+fi
 MESER_RELEASE_DIR="$work/release" \
 MESER_SECRET_DIR="$work/secrets" \
 MESER_RUNTIME_ENV="$work/runtime.env" \
@@ -101,7 +118,25 @@ expect_refusal runtime-duplicate-key "${create[@]}" "$work/release" "$work/secre
 cp "$work/runtime.env" "$work/runtime-unknown.env"
 printf 'UNKNOWN_RUNTIME_VALUE=blocked\n' >>"$work/runtime-unknown.env"
 expect_refusal runtime-unknown-key "${create[@]}" "$work/release" "$work/secrets" "$work/runtime-unknown.env" "$work/destination" "$recipient" synthetic-mount synthetic
+if [[ "${MESER_S12_RECOVERY_SYNTHETIC_TEST:-false}" == true ]]; then
+  chmod 644 "$work/secrets/archive-settings-key"
+  expect_refusal s12-key-permissions "${create[@]}" "$work/release" "$work/secrets" "$work/runtime.env" "$work/destination" "$recipient" synthetic-mount synthetic
+  chmod 600 "$work/secrets/archive-settings-key"
+  cp "$work/secrets/archive-settings-key" "$work/original-settings-key"
+  printf 'invalid-synthetic-key\n' >"$work/secrets/archive-settings-key"
+  expect_refusal s12-key-format "${create[@]}" "$work/release" "$work/secrets" "$work/runtime.env" "$work/destination" "$recipient" synthetic-mount synthetic
+  rm "$work/secrets/archive-settings-key"
+  ln -s "$work/original-settings-key" "$work/secrets/archive-settings-key"
+  expect_refusal s12-key-symlink "${create[@]}" "$work/release" "$work/secrets" "$work/runtime.env" "$work/destination" "$recipient" synthetic-mount synthetic
+  rm "$work/secrets/archive-settings-key"
+  cp "$work/original-settings-key" "$work/secrets/archive-settings-key"
+  chmod 600 "$work/secrets/archive-settings-key"
+  cp "$work/release/compose.s12.yaml" "$work/original-s12-overlay"
+  printf '# corrupt\n' >>"$work/release/compose.s12.yaml"
+  expect_refusal s12-overlay-corrupt "${create[@]}" "$work/release" "$work/secrets" "$work/runtime.env" "$work/destination" "$recipient" synthetic-mount synthetic
+  cp "$work/original-s12-overlay" "$work/release/compose.s12.yaml"
+fi
 grep -v '^gateway_image_id=' "$work/release-manifest.original" >"$work/release/release-manifest.txt"
 expect_refusal incomplete-manifest "${create[@]}" "$work/release" "$work/secrets" "$work/runtime.env" "$work/destination" "$recipient" synthetic-mount synthetic
 
-printf 'Synthetic recovery rehearsal: PASS (canonical activation/configured runtime, create/integrity/decrypt plus thirteen refusal cases; no production material)\n'
+printf 'Synthetic recovery rehearsal: PASS (canonical activation/configured runtime, create/integrity/decrypt plus thirteen legacy refusal cases and optional S12 key/overlay refusals; no production material)\n'

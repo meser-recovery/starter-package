@@ -1,0 +1,645 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/meser-recovery/audio-archive/schemas/v1/s12-api.schema.json",
+  "title": "S12 API response DTOs (binary files and existing finalization/session DTO excluded)",
+  "oneOf": [
+    {
+      "$ref": "#/$defs/settings"
+    },
+    {
+      "$ref": "#/$defs/check"
+    },
+    {
+      "$ref": "#/$defs/calendar"
+    },
+    {
+      "$ref": "#/$defs/operation"
+    },
+    {
+      "$ref": "#/$defs/usage"
+    },
+    {
+      "$ref": "#/$defs/planResponse"
+    }
+  ],
+  "$defs": {
+    "settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "revision",
+        "lastMutationId",
+        "activeConnectionId",
+        "connections",
+        "storage"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "lastMutationId": {
+          "oneOf": [
+            {
+              "$ref": "transaction.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "activeConnectionId": {
+          "oneOf": [
+            {
+              "$ref": "transaction.schema.json#/$defs/uuid"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connections": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "connectionId",
+              "name",
+              "meetingId",
+              "revision",
+              "verification",
+              "hasCredentials"
+            ],
+            "properties": {
+              "connectionId": {
+                "$ref": "transaction.schema.json#/$defs/uuid"
+              },
+              "name": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 100
+              },
+              "meetingId": {
+                "type": "string",
+                "pattern": "^[0-9]{9,11}$"
+              },
+              "revision": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              },
+              "verification": {
+                "oneOf": [
+                  {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "checkedAt",
+                      "tracks"
+                    ],
+                    "properties": {
+                      "checkedAt": {
+                        "type": "string",
+                        "format": "date-time"
+                      },
+                      "tracks": {
+                        "enum": [
+                          "confirmed",
+                          "unconfirmed"
+                        ]
+                      }
+                    }
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "hasCredentials": {
+                "const": true
+              }
+            }
+          },
+          "maxItems": 32
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "softLimitBytes",
+            "warningPercent"
+          ],
+          "properties": {
+            "softLimitBytes": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 9007199254740991
+            },
+            "warningPercent": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          }
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "checkedAt",
+        "tracks",
+        "receipt"
+      ],
+      "properties": {
+        "checkedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "tracks": {
+          "enum": [
+            "confirmed",
+            "unconfirmed"
+          ]
+        },
+        "receipt": {
+          "type": "string"
+        }
+      }
+    },
+    "calendar": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "month",
+        "settingsRevision",
+        "state",
+        "warning",
+        "recordings"
+      ],
+      "properties": {
+        "month": {
+          "type": "string",
+          "pattern": "^[0-9]{4}-(0[1-9]|1[0-2])$"
+        },
+        "settingsRevision": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": [
+            "ready",
+            "unconfigured"
+          ]
+        },
+        "warning": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "recordings": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "startTime",
+              "files",
+              "state",
+              "reason",
+              "trackCount",
+              "sizeBytes",
+              "sessionId"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "pattern": "^[a-f0-9]{64}$"
+              },
+              "startTime": {
+                "type": "string",
+                "format": "date-time"
+              },
+              "files": {
+                "type": "array",
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "name",
+                    "sizeBytes",
+                    "startTime",
+                    "endTime"
+                  ],
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 512
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 5,
+                      "maxLength": 255,
+                      "pattern": "\\.m4a$"
+                    },
+                    "sizeBytes": {
+                      "type": "integer",
+                      "minimum": 1,
+                      "maximum": 524288000
+                    },
+                    "startTime": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    },
+                    "endTime": {
+                      "oneOf": [
+                        {
+                          "type": "string",
+                          "format": "date-time"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "maxItems": 32
+              },
+              "state": {
+                "enum": [
+                  "available",
+                  "unavailable",
+                  "reserved",
+                  "bound",
+                  "completed",
+                  "deleted",
+                  "discarded",
+                  "discarding"
+                ]
+              },
+              "reason": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "trackCount": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 32
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 9007199254740991
+              },
+              "sessionId": {
+                "oneOf": [
+                  {
+                    "$ref": "transaction.schema.json#/$defs/uuid"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "operation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "version",
+        "id",
+        "revision",
+        "connectionId",
+        "connectionRevision",
+        "recordedAt",
+        "title",
+        "files",
+        "idempotencyKey",
+        "transactionId",
+        "state",
+        "plan",
+        "uploadedParts",
+        "canFinalize"
+      ],
+      "properties": {
+        "version": {
+          "const": 1
+        },
+        "id": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{64}$"
+        },
+        "revision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "connectionId": {
+          "$ref": "transaction.schema.json#/$defs/uuid"
+        },
+        "connectionRevision": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "recordedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "name",
+              "sizeBytes",
+              "startTime",
+              "endTime"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 512
+              },
+              "name": {
+                "type": "string",
+                "minLength": 5,
+                "maxLength": 255,
+                "pattern": "\\.m4a$"
+              },
+              "sizeBytes": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 524288000
+              },
+              "startTime": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "endTime": {
+                "oneOf": [
+                  {
+                    "type": "string",
+                    "format": "date-time"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          },
+          "maxItems": 32,
+          "minItems": 1
+        },
+        "idempotencyKey": {
+          "type": "string",
+          "pattern": "^zoom:[a-f0-9]{64}$"
+        },
+        "transactionId": {
+          "$ref": "transaction.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "enum": [
+            "reserved",
+            "bound",
+            "completed",
+            "deleted",
+            "discarded",
+            "discarding"
+          ]
+        },
+        "plan": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "totalBytes",
+                "tracks"
+              ],
+              "properties": {
+                "totalBytes": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 524288000
+                },
+                "tracks": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "transaction.schema.json#/$defs/trackPlan"
+                  },
+                  "maxItems": 32,
+                  "minItems": 1
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "uploadedParts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "blobId",
+              "partNumber"
+            ],
+            "properties": {
+              "blobId": {
+                "$ref": "transaction.schema.json#/$defs/uuid"
+              },
+              "partNumber": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        },
+        "canFinalize": {
+          "type": "boolean"
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usedBytes",
+        "assetCount",
+        "countedAt",
+        "stale",
+        "softLimitBytes",
+        "warningPercent",
+        "warning"
+      ],
+      "properties": {
+        "usedBytes": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "assetCount": {
+          "oneOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "countedAt": {
+          "oneOf": [
+            {
+              "type": "string",
+              "format": "date-time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "stale": {
+          "type": "boolean"
+        },
+        "softLimitBytes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "warningPercent": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 100
+        },
+        "warning": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "planResponse": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transactionId",
+        "sessionId",
+        "releaseId",
+        "state",
+        "uploadedParts"
+      ],
+      "properties": {
+        "transactionId": {
+          "$ref": "transaction.schema.json#/$defs/uuid"
+        },
+        "sessionId": {
+          "$ref": "transaction.schema.json#/$defs/uuid"
+        },
+        "releaseId": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 9007199254740991
+        },
+        "state": {
+          "enum": [
+            "uploading",
+            "staged",
+            "finalized",
+            "discarded",
+            "discarding"
+          ]
+        },
+        "uploadedParts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "blobId",
+              "partNumber"
+            ],
+            "properties": {
+              "blobId": {
+                "$ref": "transaction.schema.json#/$defs/uuid"
+              },
+              "partNumber": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 9007199254740991
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

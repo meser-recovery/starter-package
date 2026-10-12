@@ -3,7 +3,7 @@ import { isDeepStrictEqual } from "node:util";
 import { MAX_PART_BYTES, UUID_PATTERN } from "./validation.mjs";
 
 const API_VERSION = "2026-03-10";
-const STORAGE_PATH = /^(?:catalog\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|project-states\/[0-9a-f-]{36}\/speaker\/[1-9][0-9]*\.json|recipes\/[0-9a-f-]{36}\/(?:announcement|speaker)\/[0-9a-f-]{36}\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
+const STORAGE_PATH = /^(?:catalog\.json|settings\/audio-archive\.encrypted\.json|zoom-imports\/[a-f0-9]{64}\.json|sessions\/[0-9a-f-]{36}\.json|drafts\/[0-9a-f-]{36}\/(?:announcement|speaker)\.json|project-states\/[0-9a-f-]{36}\/speaker\/[1-9][0-9]*\.json|recipes\/[0-9a-f-]{36}\/(?:announcement|speaker)\/[0-9a-f-]{36}\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-(?:[0-9a-f-]{36}|[0-9a-f]{64})\.json)$/;
 const UUID_STORAGE_PATH = /^(?:sessions\/([0-9a-f-]{36})\.json|drafts\/([0-9a-f-]{36})\/(?:announcement|speaker)\.json|project-states\/([0-9a-f-]{36})\/speaker\/[1-9][0-9]*\.json|recipes\/([0-9a-f-]{36})\/(?:announcement|speaker)\/([0-9a-f-]{36})\.json|transactions\/(?:ingest|delete|publish|project-save|project-continuation)-([0-9a-f-]{36})\.json)$/;
 const IMMUTABLE_PROJECT_STATE_PATH = /^project-states\/[0-9a-f-]{36}\/speaker\/[1-9][0-9]*\.json$/;
 
@@ -46,7 +46,15 @@ export class GitHubArchiveRepository {
     this.appId = config.githubAppId;
     this.installationId = config.githubAppInstallationId;
     this.privateKey = config.githubAppPrivateKey;
-    this.fetchImpl = fetchImpl;
+    this.storageMutationVersion = 0;
+    this.activeStorageMutations = 0;
+    this.fetchImpl = async (url, options = {}) => {
+      const mutation = /^(?:POST|PATCH|PUT|DELETE)$/.test(options.method || 'GET') &&
+        [ `https://api.github.com/repos/${this.owner}/${this.repository}/`, `https://uploads.github.com/repos/${this.owner}/${this.repository}/` ].some(prefix => String(url).startsWith(prefix));
+      if (mutation) { this.storageMutationVersion++; this.activeStorageMutations++; }
+      try { return await fetchImpl(url, options); }
+      finally { if (mutation) { this.storageMutationVersion++; this.activeStorageMutations--; } }
+    };
     this.clock = clock;
     this.installationToken = null;
   }
@@ -118,8 +126,9 @@ export class GitHubArchiveRepository {
   }
 
   async listJson(prefix, ref) {
-    if (!/^(sessions|transactions|drafts|project-states|recipes)\/$/.test(prefix)) throw new Error("Unsafe internal list prefix");
+    if (!/^(sessions|transactions|drafts|project-states|recipes|zoom-imports)\/$/.test(prefix)) throw new Error("Unsafe internal list prefix");
     const tree = await this.api(`/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+    if (tree.truncated) throw new GitHubError("Canonical tree listing is incomplete", 502);
     const items = [];
     for (const entry of tree.tree || []) {
       if (entry.type !== "blob" || !entry.path.startsWith(prefix) || !entry.path.endsWith(".json") || !STORAGE_PATH.test(entry.path)) continue;
@@ -200,12 +209,12 @@ export class GitHubArchiveRepository {
 
   async listReleaseAssets(releaseId) {
     const assets = [];
-    for (let page = 1; page <= 10; page++) {
+    for (let page = 1; page <= 10000; page++) {
       const batch = await this.api(`/releases/${releaseId}/assets?per_page=100&page=${page}`);
       assets.push(...batch);
-      if (batch.length < 100) break;
+      if (batch.length < 100) return assets;
     }
-    return assets;
+    throw new GitHubError("Asset pagination budget exceeded", 502);
   }
 
   async uploadReleaseAsset(releaseId, name, bytes) {
@@ -233,7 +242,19 @@ export class GitHubArchiveRepository {
     if (Number.isFinite(declared) && (declared < 1 || declared > MAX_PART_BYTES)) {
       throw new GitHubError("GitHub asset download size is invalid", 502);
     }
-    const bytes = Buffer.from(await response.arrayBuffer());
+    const reader = response.body?.getReader();
+    if (!reader) throw new GitHubError('GitHub asset body is missing', 502);
+    const chunks = []; let size = 0;
+    try {
+      while (true) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        size += value.byteLength;
+        if (size > MAX_PART_BYTES) throw new GitHubError('GitHub asset download size is invalid', 502);
+        chunks.push(Buffer.from(value));
+      }
+    } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+    const bytes = Buffer.concat(chunks, size);
     if (bytes.byteLength < 1 || bytes.byteLength > MAX_PART_BYTES) {
       throw new GitHubError("GitHub asset download size is invalid", 502);
     }
@@ -284,6 +305,12 @@ export class GitHubArchiveRepository {
   }
 
   async listReleases() {
-    return this.api("/releases?per_page=100");
+    const releases = [];
+    for (let page = 1; page <= 10000; page++) {
+      const batch = await this.api(`/releases?per_page=100&page=${page}`);
+      releases.push(...batch);
+      if (batch.length < 100) return releases;
+    }
+    throw new GitHubError('Release pagination budget exceeded', 502);
   }
 }

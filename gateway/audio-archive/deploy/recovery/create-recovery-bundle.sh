@@ -34,9 +34,19 @@ for manifest in meser-service-source.tar.gz.sha256 gateway-image.tar.sha256 cadd
 done
 
 expected_secrets=$'github-app.pem\nsession-signing-secret\nshared-password-verifier'
+settings_key_version=0
+secret_names=(github-app.pem shared-password-verifier session-signing-secret)
+if [[ -e "$secret_dir/archive-settings-key" || -L "$secret_dir/archive-settings-key" ]]; then
+  [[ -f "$secret_dir/archive-settings-key" && ! -L "$secret_dir/archive-settings-key" ]] || die 'unsafe archive settings key'
+  settings_key_version=1
+  secret_names+=(archive-settings-key)
+  expected_secrets=$'archive-settings-key\ngithub-app.pem\nsession-signing-secret\nshared-password-verifier'
+  [[ "$(<"$secret_dir/archive-settings-key")" =~ ^[[:xdigit:]]{64}$ ]] || die 'invalid archive settings key'
+fi
+[[ "$(find "$secret_dir" -mindepth 1 -maxdepth 1 | wc -l)" -eq "${#secret_names[@]}" ]] || die 'secret directory contains unsafe entries'
 actual_secrets=$(find "$secret_dir" -mindepth 1 -maxdepth 1 -type f -printf '%f\n' | LC_ALL=C sort)
 [[ "$actual_secrets" == "$expected_secrets" ]] || die 'secret directory contains missing or unknown files'
-for name in github-app.pem shared-password-verifier session-signing-secret; do
+for name in "${secret_names[@]}"; do
   [[ ! -L "$secret_dir/$name" && "$(stat -c '%a' "$secret_dir/$name")" == 600 ]] || die "secret permission must be 600: $name"
 done
 
@@ -92,8 +102,14 @@ for name in "${required_release[@]}"; do cp -- "$release_dir/$name" "$bundle/$na
 meser_write_runtime_env "$bundle/runtime.env" "$source_sha" "$gateway_image_ref" "$caddy_image_ref" \
   "$github_app_id" "$github_installation_id" "$allowed_origin" "$site_address" "$http_bind" "$tls_bind" "$runtime_uid" "$synthetic_runtime" \
   || die 'failed to write canonical recovery runtime environment'
-printf '%s\n' 'github-app.pem mode=600' 'shared-password-verifier mode=600' 'session-signing-secret mode=600' >"$work/secret-metadata.txt"
-tar -C "$secret_dir" -cf - github-app.pem shared-password-verifier session-signing-secret -C "$work" secret-metadata.txt \
+for name in "${secret_names[@]}"; do printf '%s mode=600\n' "$name"; done >"$work/secret-metadata.txt"
+if [[ "$settings_key_version" == 1 ]]; then
+  [[ -f "$release_dir/compose.s12.yaml" && ! -L "$release_dir/compose.s12.yaml" ]] || die 'reviewed S12 overlay missing'
+  overlay_hash=$(awk -F= '$1 == "s12_compose_sha256" { print $2 }' "$release_dir/release-manifest.txt")
+  [[ "$overlay_hash" =~ ^[0-9a-f]{64}$ && "$(sha256sum "$release_dir/compose.s12.yaml" | awk '{print $1}')" == "$overlay_hash" ]] || die 'S12 overlay release checksum mismatch'
+  cp -- "$release_dir/compose.s12.yaml" "$bundle/compose.s12.yaml"
+fi
+tar -C "$secret_dir" -cf - "${secret_names[@]}" -C "$work" secret-metadata.txt \
   | age -r "$recipient" -o "$bundle/secrets.age"
 
 cat >"$bundle/recovery-manifest.txt" <<EOF
@@ -110,6 +126,7 @@ caddy_frontend_image_ref=$caddy_image_ref
 destination_mount_id=$expected_mount_id
 failure_domain=$failure_domain
 secrets_encryption=age X25519 recipient
+settings_key_version=$settings_key_version
 EOF
 cp -- "$(dirname "$0")/RESTORE-RUNBOOK.md" "$bundle/RESTORE-RUNBOOK.md"
 (cd "$bundle" && find . -mindepth 1 -maxdepth 1 -type f ! -name SHA256SUMS -printf '%P\n' | LC_ALL=C sort | while IFS= read -r name; do sha256sum "$name"; done >SHA256SUMS)

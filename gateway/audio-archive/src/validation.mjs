@@ -645,7 +645,8 @@ export function validateSourceSession(session) {
   assertTimestamp(session.recordedAt, "recordedAt", true);
   assertTimestamp(session.createdAt, "createdAt"); assertTimestamp(session.updatedAt, "updatedAt");
   assertExactKeys(session.origin, ["kind", "externalId"], "origin");
-  if (!["manual", "device", "zoom_webhook"].includes(session.origin.kind) || !(session.origin.externalId === null || typeof session.origin.externalId === "string")) throw new ValidationError("Origin is invalid");
+  if (!["manual", "device", "zoom_webhook", "zoom_cloud"].includes(session.origin.kind) || !(session.origin.externalId === null || typeof session.origin.externalId === "string")) throw new ValidationError("Origin is invalid");
+  if (session.origin.kind === 'zoom_cloud' && !/^[a-f0-9]{64}$/.test(session.origin.externalId || '')) throw new ValidationError('Zoom import link is invalid');
   assertExactKeys(session.storage, ["releaseId", "tag"], "storage");
   assertInteger(session.storage.releaseId, 1, Number.MAX_SAFE_INTEGER, "releaseId");
   if (session.storage.tag !== `audio-session-${id}`) throw new ValidationError("Release tag is invalid");
@@ -706,7 +707,7 @@ export function validateCatalog(catalog) {
     const id = assertUuid(entry.id, "catalog id");
     if (ids.has(id)) throw new ValidationError("Duplicate catalog entry");
     ids.add(id);
-    if (typeof entry.title !== "string" || !entry.title || !["manual", "device", "zoom_webhook"].includes(entry.origin) ||
+    if (typeof entry.title !== "string" || !entry.title || !["manual", "device", "zoom_webhook", "zoom_cloud"].includes(entry.origin) ||
         !["incoming", "archived"].includes(entry.lifecycle) || !["available", "deleted"].includes(entry.sourceState)) throw new ValidationError("Catalog entry is invalid");
     assertTimestamp(entry.recordedAt, "catalog recordedAt", true); assertTimestamp(entry.createdAt, "catalog createdAt"); assertTimestamp(entry.updatedAt, "catalog updatedAt");
     assertExactKeys(entry.workflows, WORKFLOWS, "catalog workflows");
@@ -780,13 +781,14 @@ export function validateTransaction(value) {
     return structuredClone(value);
   }
   if (value.kind === "ingestion") {
-    assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "revision", "state", "sessionId", "releaseId", "releaseTag", "title", "recordedAt", "origin", "supersedesSessionId", "plan", "uploadedParts", "stagedManifest", "createdAt", "updatedAt"], "ingestion transaction");
-    validateTransactionBase(value, "ingestion", ["uploading", "staged", "finalized", "discarded"]);
+    assertExactKeys(value, ["schemaVersion", "kind", "transactionId", "idempotencyHash", "revision", "state", "sessionId", "releaseId", "releaseTag", "title", "recordedAt", "origin", "supersedesSessionId", "plan", "uploadedParts", "stagedManifest", "createdAt", "updatedAt", ...(value.origin === "zoom_cloud" ? ["zoomImportId"] : [])], "ingestion transaction");
+    validateTransactionBase(value, "ingestion", ["uploading", "staged", "finalized", "discarding", "discarded"]);
     if (value.sessionId !== value.transactionId || value.releaseTag !== `audio-session-${value.sessionId}`) throw new ValidationError("Ingestion identity is invalid");
     assertInteger(value.releaseId, 1, Number.MAX_SAFE_INTEGER, "transaction.releaseId");
     if (typeof value.title !== "string" || !value.title.trim() || value.title.length > 200) throw new ValidationError("Transaction title is invalid");
     assertTimestamp(value.recordedAt, "transaction.recordedAt", true);
-    if (!['manual', 'device'].includes(value.origin)) throw new ValidationError("Transaction origin is invalid");
+    if (!['manual', 'device', 'zoom_cloud'].includes(value.origin)) throw new ValidationError("Transaction origin is invalid");
+    if (value.origin === 'zoom_cloud' && (!/^[a-f0-9]{64}$/.test(value.zoomImportId) || value.transactionId !== uuidFromIdempotencyKey(`zoom:${value.zoomImportId}`))) throw new ValidationError('Invalid Zoom transaction identity');
     if (value.supersedesSessionId !== null) assertUuid(value.supersedesSessionId, "transaction.supersedesSessionId");
     const plan = validateIngestionPlan(value.plan, MAX_PART_BYTES);
     if (!Array.isArray(value.uploadedParts)) throw new ValidationError("Uploaded parts must be an array");

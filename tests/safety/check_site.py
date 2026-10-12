@@ -1114,7 +1114,11 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
     executable_paths += list((ROOT / "gateway/audio-archive/src").glob("*.mjs"))
     rejected = re.compile(r"cloudflare|durable\s*object|\boauth\b|firestore|wrangler|assignee|soft.?lock|\blease\b|heartbeat", re.I)
     for path in executable_paths:
-        if path.is_file() and rejected.search(path.read_text(encoding="utf-8")):
+        source = path.read_text(encoding="utf-8") if path.is_file() else ""
+        # S12 explicitly authorizes only the server-side Zoom S2S token endpoint.
+        if path == ROOT / "gateway/audio-archive/src/zoom.mjs":
+            source = source.replace("https://zoom.us/oauth/token", "ZOOM_S2S_TOKEN_ENDPOINT")
+        if rejected.search(source):
             errors.append(f"S08A rejected architecture term remains in executable code: {path.relative_to(ROOT)}")
 
     frontend = "\n".join(path.read_text(encoding="utf-8") for path in executable_paths[:2] if path.is_file())
@@ -1147,7 +1151,8 @@ def check_audio_archive_foundation_contract(errors: list[str]) -> None:
 
     schema_dir = ROOT / "gateway/audio-archive/storage-repository/schemas/v1"
     expected_schemas = {"catalog.schema.json", "deletion-tombstone.schema.json", "draft.schema.json", "source-session.schema.json",
-        "speaker-project-state.schema.json", "speaker-recipe.schema.json", "transaction.schema.json"}
+        "speaker-project-state.schema.json", "speaker-recipe.schema.json", "transaction.schema.json",
+        "archive-settings.schema.json", "encrypted-settings.schema.json", "zoom-import.schema.json", "s12-api.schema.json"}
     if schema_dir.is_dir():
         actual_schemas = {path.name for path in schema_dir.glob("*.json")}
         if actual_schemas != expected_schemas:

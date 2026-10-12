@@ -21,7 +21,7 @@
           "recordedAt": { "type": ["string", "null"], "format": "date-time" },
           "createdAt": { "type": "string", "format": "date-time" },
           "updatedAt": { "type": "string", "format": "date-time" },
-          "origin": { "enum": ["manual", "device", "zoom_webhook"] },
+          "origin": { "enum": ["manual", "device", "zoom_webhook", "zoom_cloud"] },
           "lifecycle": { "enum": ["incoming", "archived"] },
           "sourceState": { "enum": ["available", "deleted"] },
           "workflows": {

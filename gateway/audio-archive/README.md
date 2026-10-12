@@ -90,3 +90,8 @@ Compose sources these mounts from the supplied existing `/etc/meser-audio-archiv
 - The GitHub adapter exposes fixed domain operations, not a general-purpose repository proxy.
 
 See [PROVISIONING.md](PROVISIONING.md), the prepared full-stack operator scripts under `deploy/s10a/`, and the recovery tooling under `deploy/recovery/`. Every host, activation, restore, timer and real-backup command is explicitly unexecuted by this repository-only task.
+
+S12 protected Zoom settings/import, API/schema contract, bounds and operational
+compatibility gates: [S12-ZOOM-IMPORT.md](S12-ZOOM-IMPORT.md). Base legacy runtime
+requires no additional key; real S12 activation and Archive writes remain
+separately authorized.

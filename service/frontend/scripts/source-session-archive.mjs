@@ -62,7 +62,7 @@ const state = {
 };
 
 const statusText = Object.freeze({ new: "Новая", in_progress: "В работе", result_ready: "Результат готов" });
-const originText = Object.freeze({ manual: "Создана вручную", device: "С устройства", zoom_webhook: "Zoom" });
+const originText = Object.freeze({ manual: "Создана вручную", device: "С устройства", zoom_webhook: "Zoom", zoom_cloud: "Zoom Cloud" });
 
 function formatBytes(bytes) {
   const format = (value) => new Intl.NumberFormat("ru-RU", { maximumFractionDigits: 1 }).format(value);

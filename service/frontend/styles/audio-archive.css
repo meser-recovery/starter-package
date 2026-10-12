@@ -120,3 +120,19 @@ dialog::backdrop { background: #102b46a6; }
   .result-row .toolbar > * { flex: 1 1 120px; }
   #player { position: static; }
 }
+
+/* S12: protected settings and Moscow calendar. */
+.s12-actions { flex-wrap: wrap; margin-block: 1rem; }
+.audio-studio .s12-dialog { box-sizing: border-box; width: min(44rem, calc(100vw - 1rem)); max-height: calc(100dvh - 2rem); overflow: auto; overflow-wrap: anywhere; padding: 1rem; }
+.audio-studio .s12-dialog form { padding: 0; }
+.s12-dialog *, .s12-form { min-width: 0; box-sizing: border-box; }
+.s12-dialog .toolbar { display: flex; flex-wrap: wrap; gap: .5rem; align-items: end; }
+.s12-dialog button { max-width: 100%; white-space: normal; margin: .2rem; }
+.s12-form { display: grid; gap: .6rem; margin-block: 1rem; }
+.s12-form label { display: grid; gap: .2rem; }
+.s12-form input { width: 100%; }
+#zoom-days { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: .2rem; text-align: center; margin-block: 1rem; }
+#zoom-days button { padding: .4rem .1rem; margin: 0; min-height: 2.5rem; }
+#zoom-days .has-recordings { font-weight: 700; border-bottom: 4px solid #478ac9; }
+#zoom-days [aria-pressed="true"] { outline: 2px solid #32638f; outline-offset: -2px; }
+#archive-storage-warning { border-inline-start: 4px solid #b56b00; }
