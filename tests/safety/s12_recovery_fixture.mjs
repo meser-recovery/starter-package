@@ -28,7 +28,7 @@ if (mode === 'create') {
   assert.deepEqual(validateSettings(decryptSettings(envelope, key)), await json('settings-expected.json'));
   const repository = new MemoryRepository();
   await repository.commitJson(await repository.getHead(), { [SETTINGS_PATH]: envelope }, 'Synthetic restored ciphertext');
-  const service = new ZoomArchive(new AudioArchiveDomain(repository), { key });
+  const service = new ZoomArchive(new AudioArchiveDomain(repository, {}), { key });
   const dto = await service.settings(); assert.equal(dto.activeConnectionId, CONNECTION.connectionId); assert.equal(dto.storage.softLimitBytes, 60e9);
   assert.doesNotMatch(JSON.stringify(dto), /synthetic-secret|synthetic-client|synthetic-account/);
   assert.throws(() => decryptSettings(envelope, randomBytes(32)));
