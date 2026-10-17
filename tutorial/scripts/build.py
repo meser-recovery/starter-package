@@ -1,0 +1,277 @@
+#!/usr/bin/env python3
+"""Single entrypoint for the S11 tutorial build."""
+from __future__ import annotations
+
+import argparse
+import contextlib
+import json
+import os
+import socket
+import subprocess
+import time
+import urllib.error
+import urllib.request
+from pathlib import Path
+
+from modules import generate, selection, plan, members, scene_timing
+from validate import ROOT, ContentDrift, validate
+
+
+@contextlib.contextmanager
+def demo_server(base_url: str | None):
+    if base_url:
+        yield base_url
+        return
+    with socket.socket() as sock:
+        sock.bind(("127.0.0.1", 0))
+        port = sock.getsockname()[1]
+    origin = f"http://localhost:{port}"
+    server = subprocess.Popen(["node", str(ROOT.parent / "tests/safety/s10b_preview_server.mjs"),
+                               str(port), origin], cwd=ROOT.parent, stdout=subprocess.DEVNULL,
+                              stderr=subprocess.DEVNULL,
+                              env={**os.environ, "S11_PREVIEW_PART_BYTES": "262144"})
+    try:
+        for _ in range(80):
+            if server.poll() is not None:
+                raise RuntimeError("in-memory demo server exited before readiness")
+            try:
+                with urllib.request.urlopen(origin + "/login", timeout=.5):
+                    break
+            except (OSError, urllib.error.URLError):
+                time.sleep(.1)
+        else:
+            raise RuntimeError("in-memory demo server not ready")
+        yield origin
+    finally:
+        server.terminate()
+        try:
+            server.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            server.kill()
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("mode", choices=("validate", "verify", "dry-run", "narration", "visual", "assemble", "all"))
+    group = parser.add_mutually_exclusive_group()
+    group.add_argument("--module")
+    group.add_argument("--all-modules", action="store_true")
+    group.add_argument("--scene", help="expands to its complete narration module")
+    group.add_argument("--chapter")
+    parser.add_argument("--pilot", action="store_true", help="historical isolated A/B/C pilot")
+    parser.add_argument("--animations-only", action="store_true")
+    parser.add_argument("--base-url", help="existing loopback in-memory preview")
+    parser.add_argument("--force", action="store_true", help="regenerate one explicitly selected module")
+    args = parser.parse_args()
+    if args.pilot and any((args.module,args.all_modules,args.scene,args.chapter,args.animations_only,args.force,args.base_url)):
+        parser.error("--pilot cannot be combined with module/capture flags")
+    if args.force and (args.mode not in ("narration","dry-run") or not args.module):
+        parser.error("--force requires narration/dry-run --module ID")
+    if args.animations_only and args.mode not in ("visual","dry-run"):
+        parser.error("--animations-only is a visual selection")
+    result = validate()
+    spec = json.loads((ROOT / "tutorial.yaml").read_text())
+    if spec["schema_version"] == 2:
+        from audio_approval import approved_path, validate_approval, validate_block_approval
+        if args.pilot:
+            parser.error("historical pilot is unavailable for the approved B01–B14 source")
+        if args.chapter:
+            parser.error("select an approved B-block; old chapters are historical")
+        if args.mode == "validate":
+            print(json.dumps(result, ensure_ascii=False)); return
+        if args.all_modules and args.mode in ('assemble', 'verify', 'dry-run'):
+            from final_assemble import audit, assemble
+            if args.mode == 'assemble':
+                final_result = assemble()
+            elif args.mode == 'verify':
+                from final_verify import verify
+                final_result = verify()
+            else:
+                _, inputs = audit(write_manifest=False)
+                final_result = {'status': 'ALL_INPUTS_APPROVED', 'blocks': 14,
+                                'tts_requests': 0, 'block_rebuilds': 0,
+                                'input_manifest': 'generated/s11-final-review/input-manifest.json'}
+            print(json.dumps(final_result, ensure_ascii=False, indent=2)); return
+        if args.mode in ("visual", "assemble", "verify"):
+            if args.module not in ("B01", "B02", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14") or args.all_modules or args.scene or args.force:
+                raise RuntimeError("review gate: select one B-block")
+            if args.module in ('B01', 'B02'):
+                if args.mode != 'verify' and (ROOT / f'approvals/{args.module}-block.json').exists():
+                    raise RuntimeError(f'{args.module} complete block is approved and immutable')
+                from reopen_b01_b02 import run
+                print(json.dumps(run(args.module, args.mode), ensure_ascii=False, indent=2)); return
+            if args.module == "B03":
+                validate_block_approval('B02')
+                if args.mode != 'verify' and (ROOT / 'approvals/B03-block.json').exists():
+                    raise RuntimeError('B03 complete block is approved and immutable')
+                from b03_block import visual, assemble, verify
+            elif args.module == "B04":
+                validate_block_approval('B03')
+                if args.mode != 'verify' and (ROOT / 'approvals/B04-block.json').exists():
+                    raise RuntimeError('B04 complete block is approved and immutable')
+                from b04_block import visual, assemble, verify
+            elif args.module == "B05":
+                validate_block_approval('B04')
+                if args.mode != 'verify' and (ROOT / 'approvals/B05-block.json').exists():
+                    raise RuntimeError('B05 complete block is approved and immutable')
+                from b05_block import visual, assemble, verify
+            elif args.module == "B06":
+                validate_block_approval('B05')
+                if args.mode != 'verify' and (ROOT / 'approvals/B06-block.json').exists():
+                    raise RuntimeError('B06 complete block is approved and immutable')
+                from b06_block import visual, assemble, verify
+            elif args.module == "B07":
+                validate_block_approval('B06')
+                if args.mode != 'verify' and (ROOT / 'approvals/B07-block.json').exists():
+                    raise RuntimeError('B07 complete block is approved and immutable')
+                from b07_block import visual, assemble, verify
+            elif args.module == "B08":
+                validate_block_approval('B07')
+                if args.mode != 'verify' and (ROOT / 'approvals/B08-block.json').exists():
+                    raise RuntimeError('B08 complete block is approved and immutable')
+                from b08_block import visual, assemble, verify
+            elif args.module == "B09":
+                validate_block_approval('B08')
+                if args.mode != 'verify' and (ROOT / 'approvals/B09-block.json').exists():
+                    raise RuntimeError('B09 complete block is approved and immutable')
+                from b09_block import visual, assemble, verify
+            elif args.module == "B10":
+                validate_block_approval('B09')
+                if args.mode != 'verify' and (ROOT / 'approvals/B10-block.json').exists():
+                    raise RuntimeError('B10 complete block is approved and immutable')
+                from b10_block import visual, assemble, verify
+            elif args.module == "B11":
+                validate_block_approval('B10')
+                if args.mode != 'verify' and (ROOT / 'approvals/B11-block.json').exists():
+                    raise RuntimeError('B11 complete block is approved and immutable')
+                from b11_block import visual, assemble, verify
+            elif args.module == 'B12':
+                validate_block_approval('B11')
+                if args.mode != 'verify' and (ROOT / 'approvals/B12-block.json').exists():
+                    raise RuntimeError('B12 complete block is approved and immutable')
+                from b12_block import visual, assemble, verify
+            elif args.module == 'B13':
+                validate_block_approval('B12')
+                if args.mode != 'verify' and (ROOT / 'approvals/B13-block.json').exists():
+                    raise RuntimeError('B13 complete block is approved and immutable')
+                from b13_block import visual, assemble, verify
+            else:
+                validate_block_approval('B13')
+                if args.mode != 'verify' and (ROOT / 'approvals/B14-block.json').exists():
+                    raise RuntimeError('B14 complete block is approved and immutable')
+                from b14_outro import visual, assemble, verify
+            if args.mode == "visual":
+                import asyncio
+                print(json.dumps(asyncio.run(visual()), ensure_ascii=False, indent=2))
+            elif args.mode == "assemble":
+                print(json.dumps(assemble(), ensure_ascii=False, indent=2))
+            else:
+                print(json.dumps(verify(), ensure_ascii=False, indent=2))
+            return
+        if args.mode not in ("dry-run", "narration"):
+            raise RuntimeError("review gate: current B-block pipeline supports only selective audio and B14 visual/assembly")
+        try:
+            selected = selection(spec, args.module, args.scene, args.chapter)
+        except ValueError as error:
+            parser.error(str(error))
+        if args.mode == "dry-run":
+            if args.module in ('B01', 'B02'):
+                if approved_path(args.module).exists():
+                    approved = validate_block_approval(args.module)
+                    print(json.dumps({'content_validation': result, 'module_id': args.module,
+                                      'cache': 'APPROVED', 'tts_requests': 0,
+                                      'video_sha256': approved['video_sha256']}, ensure_ascii=False, indent=2)); return
+                from reopen_b01_b02 import inputs as reopened_inputs
+                _, _, _, _, _, take, _ = reopened_inputs(args.module)
+                print(json.dumps({'content_validation': result, 'module_id': args.module,
+                                  'review_gate': 'B01_APPROVED_B02_VISUAL_REVIEW',
+                                  'one_new_tts_request_used': True,
+                                  'provider_mp3_sha256': take['provider_mp3_sha256'],
+                                  'visual_changes': 'B02_ONLY'}, ensure_ascii=False, indent=2)); return
+            preview = plan(spec, selected, args.force)
+            from reopen_b01_b02 import SOURCE as reopened_source
+            for row in preview['modules']:
+                if row['module_id'] in ('B01','B02') and not approved_path(row['module_id']).exists() and (reopened_source/row['module_id']/'metadata.json').exists():
+                    preview['tts_requests'] -= row['tts_requests']
+                    preview['characters_to_generate'] -= row['characters_to_generate']
+                    row.update(cache='ONE_TAKE_PENDING_REVIEW', tts_requests=0, characters_to_generate=0)
+            if args.module == 'B09' and not approved_path('B09').exists():
+                row = next(item for item in preview['modules'] if item['module_id'] == 'B09')
+                preview['tts_requests'] -= row['tts_requests']
+                preview['characters_to_generate'] -= row['characters_to_generate']
+                row.update(cache='DERIVED_PCM_CUT', tts_requests=0, characters_to_generate=0)
+            print(json.dumps({"content_validation": result, **preview,
+                              "review_gate": "B01_APPROVED_B02_VISUAL_REVIEW",
+                              "approved_audio": ["B01", "B03", "B04", "B05", "B06", "B07", "B08", "B09", "B10", "B11", "B12", "B13", "B14"],
+                              "visual_changes": "B02_ONLY_UNTIL_REAPPROVED"}, ensure_ascii=False, indent=2)); return
+        if len(selected) != 1 or args.module != selected[0]["id"]:
+            raise RuntimeError("review gate: select exactly one B-block for narration")
+        module_id = selected[0]["id"]
+        if module_id in ('B01', 'B02'):
+            raise RuntimeError(f'{module_id} has already used its one authorized new TTS request; no additional take is allowed')
+        if module_id == 'B09':
+            raise RuntimeError('B09 uses the existing TTS with the approved PCM sentence removal; no new TTS is needed')
+        if approved_path(module_id).exists():
+            validate_approval(spec, module_id)
+            raise RuntimeError(f"{module_id} audio is approved and immutable; TTS is forbidden")
+        index = spec['review_policy']['block_order'].index(module_id)
+        if index:
+            previous = spec['review_policy']['block_order'][index-1]
+            from audio_approval import validate_block_approval
+            validate_block_approval(previous)
+            if not selected[0].get('tts', {}).get('semantic_reviewed'):
+                raise RuntimeError(f"{module_id} needs a documented semantic pause review before TTS")
+        info, cache = generate(spec, selected[0], force=args.force)
+        print(json.dumps({"module_id": module_id, "cache": cache,
+                          "duration_seconds": info["timing"]["duration_seconds"],
+                          "audio_sha256": info["metadata"]["audio_sha256"],
+                          "timing_sha256": info["metadata"]["timing_sha256"]}, ensure_ascii=False)); return
+    if args.pilot:
+        from pilot import run
+        run(args.mode, spec)
+        return
+    if args.mode == "validate":
+        print(json.dumps(result, ensure_ascii=False)); return
+    if args.mode == "verify":
+        from module_assemble import verify
+        print(json.dumps(verify(spec), ensure_ascii=False)); return
+    try:
+        selected = selection(spec,args.module,args.scene,args.chapter)
+    except ValueError as error:
+        parser.error(str(error))
+    scenes = [s for m in selected for s in members(spec,m)]
+    if args.animations_only:
+        scenes = [s for s in scenes if s["visual"]["type"] == "animation"]
+    if args.mode == "dry-run":
+        from module_visuals import cached as visual_cached, OUT
+        rows=[]
+        for scene in spec['scenes']:
+            try:
+                timing=scene_timing(spec,scene)
+                hit=bool(visual_cached(spec,scene,timing))
+            except RuntimeError:
+                hit=False
+            rows.append({'scene_id':scene['id'],'selected':scene in scenes,'visual_cache':'HIT' if hit else 'MISS',
+                         'render_required':scene in scenes and not hit})
+        print(json.dumps({'content_validation':result,**plan(spec,selected,args.force),'visuals':rows,
+                          'assembly_output':str(OUT/'meser-audio-tutorial-v3.mp4')},ensure_ascii=False,indent=2)); return
+    if args.mode in ("narration", "all"):
+        for module in selected:
+            info, cache = generate(spec,module,force=args.force)
+            print(json.dumps({'module_id':module['id'],'cache':cache,
+                              'duration_seconds':info['timing']['duration_seconds']},ensure_ascii=False),flush=True)
+    if args.mode in ("visual", "all"):
+        import asyncio
+        from module_visuals import render
+        asyncio.run(render(spec,scenes,args.base_url))
+    if args.mode in ("assemble", "all"):
+        from module_assemble import assemble
+        # Selective builds never generate missing unselected modules to complete the master.
+        print(json.dumps(assemble(spec),ensure_ascii=False))
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except ContentDrift as error:
+        raise SystemExit(str(error)) from None

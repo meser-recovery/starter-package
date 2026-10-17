@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B14",
+  "decision_date": "2026-10-04",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B14/B14-review-01.mp3",
+    "mp3_sha256": "ca5934f16b880b73fca530ddafcd08d53d12484063f6fd7dfe706f1490e28d38",
+    "mp3_duration_seconds": 117.707755,
+    "wav": "generated/narration-blocks-v2/B14/B14-review-01.wav",
+    "wav_sha256": "5c75588c6dd7204c0488ce547f07ef275f3231583c06a2caff22cc1b60fd331f",
+    "pcm_sha256": "41d425f141ea7246770cd9d5ba0cbeed0868bc40c36be55a5dd8f959286fe83d",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 5189688,
+    "alignment": "generated/narration-blocks-v2/B14/B14-review-01-timing.json",
+    "alignment_sha256": "fd469bf39eb30e52cb24c35294497dab1a940da1c0b69ddce7d4c35dbc3fd1a9",
+    "canonical_text_sha256": "8b00f34e1ffb7f76308a42e079fa58b36ff23982ad60d6cc72519a476d16edea"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B14/narration.mp3",
+    "mp3_sha256": "ca5934f16b880b73fca530ddafcd08d53d12484063f6fd7dfe706f1490e28d38",
+    "source_alignment": "generated/narration-blocks-v2/B14/B14-review-01-source-timing.json",
+    "source_alignment_sha256": "fd469bf39eb30e52cb24c35294497dab1a940da1c0b69ddce7d4c35dbc3fd1a9",
+    "decoded_pcm_sha256": "41d425f141ea7246770cd9d5ba0cbeed0868bc40c36be55a5dd8f959286fe83d",
+    "decoded_pcm_samples": 5189688
+  },
+  "insertions": [],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved B14 audio.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B14/B14-review-01-metadata.json",
+    "sha256": "7787335ecff69ff225fe6c259e18b4545941a820376eac3e3cf38848c290aee2"
+  },
+  "pause_review_qa": {
+    "path": "generated/b14-outro-review/verification.json",
+    "sha256": "ef0a386e5520c321c5dd054b288a867eb754118eacbecdf9ac33bddc4cda3a94"
+  }
+}

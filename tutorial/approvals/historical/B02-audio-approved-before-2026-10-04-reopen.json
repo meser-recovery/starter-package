@@ -1,0 +1,57 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B02",
+  "decision_date": "2026-10-02",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B02/B02-review-01.mp3",
+    "mp3_sha256": "19d93e92c574e7be09fd603390430e3ce7ce1e803752aec703087214c7ec98c4",
+    "mp3_duration_seconds": 137.691429,
+    "wav": "generated/narration-blocks-v2/B02/B02-review-01.wav",
+    "wav_sha256": "c52d269952dcef0c7f766fdfa4ca57b4ee1efd66182b7588703da61bb6506351",
+    "pcm_sha256": "651c1f3a79a3a60087d51a9d7e7f026f4df8b047235d1724ade511ebb958c181",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 6070433,
+    "alignment": "generated/narration-blocks-v2/B02/B02-review-01-timing.json",
+    "alignment_sha256": "bda48ae45818e2781b06fe3384eb69c0270623d8a2cfbf82aa99bbedd73ec817",
+    "canonical_text_sha256": "60b81e95e55dce6675fb1c8986834610ab586822cfa2ead7d70a26f2c644f053"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B02/narration.mp3",
+    "mp3_sha256": "3be9848194c0811e283afab741672f4984a6ded322b4f3a7dc7c81c16ebae6d5",
+    "source_alignment": "generated/narration-blocks-v2/B02/B02-review-01-source-timing.json",
+    "source_alignment_sha256": "84cf285a1a30a25b5e990e0edd31f7ed6efcb4a6fc4dbbd5683433e9d6fe22c7",
+    "decoded_pcm_sha256": "de723bf47ebe7f4b73b14bb43331ffae513decf8f11aeffafd29ebb40f149242",
+    "decoded_pcm_samples": 6054048
+  },
+  "insertions": [
+    {
+      "after_offset": 1924,
+      "reason": "Закончены локальные действия с отдельным участником; далее разбирается проблема общего временного участка.",
+      "quiet_start_source_sample": 5099020,
+      "quiet_end_source_sample": 5115710,
+      "cut_source_sample": 5107365,
+      "before_seconds": 0.3784580498866213,
+      "added_samples": 16385,
+      "added_seconds": 0.3715419501133787,
+      "after_seconds": 0.75,
+      "insert_start_final_sample": 5107365
+    }
+  ],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved audio. Build B02 video and subtitles from this WAV and shifted alignment.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B02/B02-review-01-metadata.json",
+    "sha256": "0d517af2027cb4cae9f7e88c48076f516b0784fb12c0611c96614cb44c334dc5"
+  },
+  "pause_review_qa": {
+    "path": "generated/b02-visual-v3-review/verification.json",
+    "sha256": "f85431e7f67739050a820d50b70fb8c1283aa55d9fefb0b2a160f6f12a9fb23e"
+  }
+}

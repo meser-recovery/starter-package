@@ -1,0 +1,43 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B10",
+  "decision_date": "2026-10-03",
+  "video": "generated/b10-block-review/B10.mp4",
+  "video_sha256": "32376f595a1e1e937341e26827698a3a9a416a1edc8c72b0b74a1dcf835bf58c",
+  "duration_seconds": 61.06666666666667,
+  "approved_audio_record": "approvals/B10-audio.json",
+  "approved_audio_record_sha256": "274b77e479650c044e1858a7179d5a2cd3e8cfcbb7d3e8d2aaee5a99410addf6",
+  "approved_mp3_sha256": "e5b4cee8b3cfef3ed7d3c111832a1cac7ed1684221e6cae5fa38715bb8f5ccf2",
+  "approved_wav_sha256": "7210b5ca96f3c609aa2b41a552fef0e0dab70cbf78de98ed67b0a8d4cff7eac8",
+  "approved_pcm_sha256": "927bef4345f5fcece120d9b856739d43775a422e57c06a1e3bd3ed4ca46de78e",
+  "approved_alignment": "generated/narration-blocks-v2/B10/B10-review-01-timing.json",
+  "approved_alignment_sha256": "d54dae235d018dc6950c8e6b3752c3b7046148a6ad7763beb53df267d38cffb6",
+  "canonical_text_sha256": "749b2a631c09c6f9df055bff2a5d378999e850bbd5b3bd7706d641c4a61ca0b0",
+  "subtitle_srt": "generated/b10-block-review/B10.ru.srt",
+  "subtitle_srt_sha256": "09f4dcc78e9cc2cb325751a53fc3f59d4b14140c38201a0a37ed22069a599313",
+  "subtitle_vtt": "generated/b10-block-review/B10.ru.vtt",
+  "subtitle_vtt_sha256": "37bc75179dc001e2975a80ef05da8c9b39bfd251c73e51e147d27b8cd8929e8c",
+  "embedded_subtitle_cues": 15,
+  "last_embedded_subtitle_end_seconds": 61.036,
+  "video_audio_timeline": "generated/b10-block-review/B10-video-timeline.wav",
+  "video_audio_timeline_sha256": "0b7a2fba7930a5505bbc6ab3a0fc2870e98be7bf62b5de916fa42e7d6096d725",
+  "scene_sources": [
+    {
+      "path": "generated/b10-block-review/scenes/B10-035.mp4",
+      "sha256": "ce288f684588aa0b4a217029786f3687ea5d780627364858d1b92cba3ce02bef"
+    },
+    {
+      "path": "generated/b10-block-review/scenes/B10-036.mp4",
+      "sha256": "6c2fb8c263e6848a8b35cf1887f3997998b3fe7a0f573db705acfa336fb886c9"
+    },
+    {
+      "path": "generated/b10-block-review/scenes/B10-037.mp4",
+      "sha256": "8fd834f4490d2cb6f2d9a367ebacaaaa67ab29dc9164c67c90e318230e575f88"
+    }
+  ],
+  "report": "generated/b10-block-review/report.json",
+  "report_sha256": "fc8b5c9f4c7abaa21edbeac1106d49b59822a7740f1f7145904cef6c7b2b9244",
+  "verification": "generated/b10-block-review/verification.json",
+  "verification_sha256": "faa1449530eec5d489ec42cc76a18f0da878268e0ddccf07b818ad52122ad576"
+}

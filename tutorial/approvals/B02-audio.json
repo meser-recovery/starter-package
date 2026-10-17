@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B02",
+  "decision_date": "2026-10-04",
+  "approved_take": {
+    "pcm_sha256": "5a8835cbf4a359830768011296583675be55b87e5d2a6d6718f841ced8c59790",
+    "pcm_samples": 4723992,
+    "canonical_text_sha256": "b77bd4900497fad5cd94bb8c17902542bb7fff2025661554b20d84b494c4bcea",
+    "mp3": "generated/narration-blocks-v3/B02/narration.mp3",
+    "mp3_sha256": "fdfa1305df1245d43a52d758a2ae2ea46fe77d567b62f92069e6b36278f4933e",
+    "mp3_duration_seconds": 107.154286,
+    "wav": "generated/narration-blocks-v3/B02/narration.wav",
+    "wav_sha256": "167e2fd655a1c8a208eb0e6baf01bd88f59463c4fb02fe086bf86c362ff13b49",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "alignment": "generated/narration-blocks-v3/B02/timing.json",
+    "alignment_sha256": "50a87440e026fb2725111dc63668fa85880401410b904392376f178ff0eea47a"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v3/B02/narration.mp3",
+    "mp3_sha256": "fdfa1305df1245d43a52d758a2ae2ea46fe77d567b62f92069e6b36278f4933e",
+    "source_alignment": "generated/narration-blocks-v3/B02/timing.json",
+    "source_alignment_sha256": "50a87440e026fb2725111dc63668fa85880401410b904392376f178ff0eea47a",
+    "decoded_pcm_sha256": "5a8835cbf4a359830768011296583675be55b87e5d2a6d6718f841ced8c59790",
+    "decoded_pcm_samples": 4723992
+  },
+  "insertions": [],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved B02 audio.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v3/B02/approved-original-metadata.json",
+    "sha256": "449175fc105ff41caf21413b99f421eaad2cddb9c260bfd5d454b18093f59041"
+  },
+  "pause_review_qa": {
+    "path": "generated/b02-local-review/verification.json",
+    "sha256": "2835ab447b0cf32f5183be8a3a0b1247f4d380e6c81714432685ad306ad807be"
+  }
+}

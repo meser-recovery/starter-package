@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B01",
+  "decision_date": "2026-10-04",
+  "approved_take": {
+    "pcm_sha256": "b0fb304ebb5ecc65c5c8a85630370ba05fdc0ec1b492151824714aa90bd107ac",
+    "pcm_samples": 5309640,
+    "canonical_text_sha256": "500e78a05d85c03da6671e9f8f4df7e75051fbf69cde8b8194ae6fdd7cc1432b",
+    "mp3": "generated/narration-blocks-v3/B01/narration.mp3",
+    "mp3_sha256": "6a02c9de2ee17c1806c597ab94a56e056a45d627394fa945dc09a1286ca5e860",
+    "mp3_duration_seconds": 120.450612,
+    "wav": "generated/narration-blocks-v3/B01/narration.wav",
+    "wav_sha256": "551c7ad876a87e51c74f6f4e7e1d6f6102f30fbea051a19e7ca00d5d9de06610",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "alignment": "generated/narration-blocks-v3/B01/timing.json",
+    "alignment_sha256": "c6116c501a6337e862ad822d015a1b81b309fe3b856baa503af85a9cfdf72d6f"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v3/B01/narration.mp3",
+    "mp3_sha256": "6a02c9de2ee17c1806c597ab94a56e056a45d627394fa945dc09a1286ca5e860",
+    "source_alignment": "generated/narration-blocks-v3/B01/timing.json",
+    "source_alignment_sha256": "c6116c501a6337e862ad822d015a1b81b309fe3b856baa503af85a9cfdf72d6f",
+    "decoded_pcm_sha256": "b0fb304ebb5ecc65c5c8a85630370ba05fdc0ec1b492151824714aa90bd107ac",
+    "decoded_pcm_samples": 5309640
+  },
+  "insertions": [],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved B01 audio.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v3/B01/approved-original-metadata.json",
+    "sha256": "022ad4a8c2f5245dc27d653429c87773c689ff9bded0b4916a5b5ec3f0bafcd0"
+  },
+  "pause_review_qa": {
+    "path": "generated/b01-reopen-review/verification.json",
+    "sha256": "3857d0431b38abbdd89ba09dcc91006b2466b0122f5dfbb52c41bb706e5675e8"
+  }
+}
