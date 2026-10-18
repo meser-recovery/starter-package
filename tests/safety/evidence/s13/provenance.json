@@ -7,7 +7,7 @@
     "sha": "3278954fd03425d41ba2a69275aa86cb4f23cf44",
     "tree": "df8c90a2294ee117c3d9de217f8667feb8fe7e83"
   },
-  "scope": "Changed performance runtime files at measured 3278954. Later Gateway/client/editor JavaScript diff is empty; final native-month accessibility CSS fallback is separately hashed below. Final closure SHA/tree and exact-head CI are recorded in PR #63. Browser/editor/resource candidate servers restarted before measurement; network JSON embeds revision; native waveform source is unchanged from base.",
+  "scope": "Initial measured runtime 3278954 and its initial month-focus CSS closure are retained below. Auth/attention follow-up 71a0ee2 changes the four scripts listed in followupRuntime; initial JavaScript-equivalence claims do not extend across that correction. Its updated browser and Editor data are in separate followup evidence. Final PR HEAD/CI closure is authoritative.",
   "files": [
     {
       "path": "gateway/audio-archive/src/app.mjs",
@@ -98,5 +98,45 @@
     "sha256": "e3e8fa8297b281a589a56563214395954f1ef642f0406be027065e5a94ec07e2",
     "change": "6-line :focus outline fallback for native month, no layout/data/transfer behavior changes",
     "validation": "all three engines retain actual focus / rendered outline / label / geometry assertions; final Linux CI required"
+  },
+  "followupRuntime": {
+    "sha": "f2d4c91ee938803f168e99562947554649d93d97",
+    "tree": "d5cc89b6212ef9e3f77f89b7a8d5ef1da929ab18",
+    "parent": "7e0407f2836981d3321d636bf8cf164526f56078",
+    "files": [
+      {
+        "path": "scripts/audio-archive-client.mjs",
+        "sha256": "21309c358f11ec33efae1ab7e881ccb27df3555bf99332f4d64422ec920167be"
+      },
+      {
+        "path": "service/frontend/scripts/audio-archive-client.mjs",
+        "sha256": "05e6cd06ed887c4526311ae0b026297c612acbfc3d33273b8b268a41ccf1ec66"
+      },
+      {
+        "path": "service/frontend/scripts/audio-archive.mjs",
+        "sha256": "f00bc2a62f2341b72111810f0d9f8cb708ab8f1638686a3839ea0122520d8520"
+      },
+      {
+        "path": "service/frontend/scripts/source-session-archive.mjs",
+        "sha256": "db66cef0b7feaaef4c7d0ca06e9dce17382e1f6a1fac34ec93f6a8a95fbb4c91"
+      }
+    ],
+    "unchangedGateway": true,
+    "unchangedAlgorithms": [
+      {
+        "path": "scripts/audio-archive-client.mjs",
+        "unchangedReconstructionAndBatchHelpersSha256": "93247bfbbc0599fe057bbb6bfee43bf9166c0874e2b9e129092280fc712c88b9"
+      },
+      {
+        "path": "service/frontend/scripts/audio-archive-client.mjs",
+        "unchangedReconstructionAndBatchHelpersSha256": "93247bfbbc0599fe057bbb6bfee43bf9166c0874e2b9e129092280fc712c88b9"
+      }
+    ],
+    "validation": "new auth-generation tests, S12 all-engine attention/diagnostics regression, repeated 20-sample list and 5-sample selected-Editor matrix; see FOLLOWUP.md",
+    "initialAuthFix": "71a0ee2cca88dc1d6509fed866d2630849f63eec",
+    "measurementBindings": {
+      "browser-candidate-followup.json": "f2d4c91ee938803f168e99562947554649d93d97",
+      "editor-candidate-followup.json": "71a0ee2cca88dc1d6509fed866d2630849f63eec (Editor-loaded runtime unchanged at f2d4c91)"
+    }
   }
 }

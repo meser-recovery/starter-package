@@ -12,6 +12,7 @@ from pathlib import Path
 parser = argparse.ArgumentParser()
 parser.add_argument('--input-dir', required=True, type=Path)
 parser.add_argument('--output-dir', required=True, type=Path)
+parser.add_argument('--followup', action='store_true', help='collect only the auth/attention follow-up browser and Editor measurements')
 args = parser.parse_args()
 args.output_dir.mkdir(parents=True, exist_ok=True)
 inputs = {
@@ -23,6 +24,9 @@ inputs = {
     'browser-resource.json': 'browser-resource-final.json',
     'waveform-base.json': 'waveform-base.json', 'waveform-candidate.json': 'waveform-candidate.json',
 }
+if args.followup:
+    inputs = {name: name for name in ['browser-candidate-followup.json', 'editor-candidate-followup.json']}
+
 
 def endpoint(path):
     path = re.sub(r'[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}', ':id', path)

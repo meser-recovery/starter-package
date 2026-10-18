@@ -1,0 +1,195 @@
+{
+  "kind": "s13-auth-attention-regression-checks",
+  "authRuntime": "71a0ee2cca88dc1d6509fed866d2630849f63eec",
+  "archiveUIRuntime": "f2d4c91ee938803f168e99562947554649d93d97",
+  "scope": "loopback/mocks/synthetic only; current HEAD exact CI closure is in PR #63",
+  "logs": {
+    "auth-followup-final": {
+      "sha256": "e644ee79ee4b6896fb31b85bcb556eade6629bd9653aad5aa93eb3c4263c6242",
+      "counts": {
+        "tests": 42,
+        "pass": 42,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "summary": [
+        "✔ S13 public part error-body cancellation cannot emit an old 401 into a newer session (6.097666ms)",
+        "ℹ tests 42",
+        "ℹ suites 0",
+        "ℹ pass 42",
+        "ℹ fail 0",
+        "ℹ cancelled 0",
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 581.970291"
+      ]
+    },
+    "auth-followup-red": {
+      "sha256": "26cd7206f2462fb948418aeeec22b5cb19b1ead843d546f40f6e58394f6d663f",
+      "counts": {
+        "tests": 25,
+        "pass": 2,
+        "fail": 23,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "summary": [
+        "ℹ tests 25",
+        "ℹ suites 0",
+        "ℹ pass 2",
+        "ℹ fail 23",
+        "ℹ cancelled 0",
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 236.541291",
+        ""
+      ]
+    },
+    "followup-gateway-retry": {
+      "sha256": "ceaacf4211978cd2fcdc9bd2360798737eea51daf153dd08c7bdfa8c519cad06",
+      "counts": {
+        "tests": 196,
+        "pass": 195,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1
+      },
+      "summary": [
+        "﹣ pinned native contract decodes the exact 3747-second AAC-LC/M4A fixture (0.204542ms) # explicit pinned native toolchain is unavailable",
+        "ℹ tests 196",
+        "ℹ suites 0",
+        "ℹ pass 195",
+        "ℹ fail 0",
+        "ℹ cancelled 0",
+        "ℹ skipped 1",
+        "ℹ todo 0",
+        "ℹ duration_ms 21852.778417"
+      ]
+    },
+    "followup-node-final": {
+      "sha256": "5f18bd610640353cbf46648a13b84f08d5b2740f6a3be61fb5c8622101d68341",
+      "counts": {
+        "tests": 110,
+        "pass": 110,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      },
+      "summary": [
+        "✔ retry after fatal failure creates a clean engine and three tracks never overlap workers or outputs (66.36525ms)",
+        "ℹ tests 110",
+        "ℹ suites 0",
+        "ℹ pass 110",
+        "ℹ fail 0",
+        "ℹ cancelled 0",
+        "ℹ skipped 0",
+        "ℹ todo 0",
+        "ℹ duration_ms 2930.704792"
+      ]
+    },
+    "followup-waveform-isolated": {
+      "sha256": "b724329b48d57cd29f6558c602d34639e69e3c6dd08ca01cea59e05612dcca44",
+      "counts": {
+        "tests": 12,
+        "pass": 11,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 1
+      },
+      "summary": [
+        "﹣ pinned native contract decodes the exact 3747-second AAC-LC/M4A fixture (0.238958ms) # explicit pinned native toolchain is unavailable",
+        "ℹ tests 12",
+        "ℹ suites 0",
+        "ℹ pass 11",
+        "ℹ fail 0",
+        "ℹ cancelled 0",
+        "ℹ skipped 1",
+        "ℹ todo 0",
+        "ℹ duration_ms 1867.566792"
+      ]
+    },
+    "followup-public": {
+      "sha256": "0dd47d00f5a1d384d411a87b6469ffc22d3145274c3a54359ffbb62b6e70fd09",
+      "counts": {},
+      "summary": [
+        "Browser smoke suite passed."
+      ]
+    },
+    "followup-auth-only": {
+      "sha256": "527f1c070430051cf58e3adaa4591c2f5d4325da860a38776a58bad8bfe21d48",
+      "counts": {
+        "tests": 25,
+        "pass": 25,
+        "fail": 0,
+        "cancelled": 0,
+        "skipped": 0
+      }
+    }
+  },
+  "initialFullGatewayAttempt": "terminated after stall in unchanged native-timeout test; isolated waveform and clean full retry both passed; no unrelated code edits",
+  "siteSyntaxInventory": "PASS: check_site.py, Gateway run check, Python compile, verify-frontend (64 protected files), diff --check",
+  "browserMatrix": {
+    "checkedHead": "f2d4c91ee938803f168e99562947554649d93d97",
+    "uncommittedTrackedChanges": true,
+    "results": [
+      {
+        "engine": "chromium",
+        "widths": [
+          320,
+          390,
+          768,
+          1280
+        ],
+        "status": "PASS",
+        "pageErrors": [],
+        "timezone": "America/Los_Angeles",
+        "sourceSessions": 2,
+        "lostPartAndNewContextResume": "PASS",
+        "lateMonthResponse": "PASS",
+        "keyboardEscapeFocus": "PASS",
+        "usageRefreshAndManualThresholdBothDirections": "PASS",
+        "manualAndZoomLostDeleteDiscardUI": "PASS",
+        "strictAttentionIndependentDiagnosticsAndFreshRefresh": "PASS"
+      },
+      {
+        "engine": "firefox",
+        "widths": [
+          320,
+          390,
+          768,
+          1280
+        ],
+        "status": "PASS",
+        "pageErrors": [],
+        "timezone": "America/Los_Angeles",
+        "sourceSessions": 2,
+        "lostPartAndNewContextResume": "PASS",
+        "lateMonthResponse": "PASS",
+        "keyboardEscapeFocus": "PASS",
+        "usageRefreshAndManualThresholdBothDirections": "PASS",
+        "manualAndZoomLostDeleteDiscardUI": "PASS",
+        "strictAttentionIndependentDiagnosticsAndFreshRefresh": "PASS"
+      },
+      {
+        "engine": "webkit",
+        "widths": [
+          320,
+          390,
+          768,
+          1280
+        ],
+        "status": "PASS",
+        "pageErrors": [],
+        "timezone": "America/Los_Angeles",
+        "sourceSessions": 2,
+        "lostPartAndNewContextResume": "PASS",
+        "lateMonthResponse": "PASS",
+        "keyboardEscapeFocus": "PASS",
+        "usageRefreshAndManualThresholdBothDirections": "PASS",
+        "manualAndZoomLostDeleteDiscardUI": "PASS",
+        "strictAttentionIndependentDiagnosticsAndFreshRefresh": "PASS"
+      }
+    ]
+  }
+}

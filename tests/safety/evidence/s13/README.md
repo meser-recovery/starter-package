@@ -1,5 +1,7 @@
 # S13 implementation evidence
 
+**Auth/attention follow-up:** see [FOLLOWUP.md](FOLLOWUP.md) and its source-bound browser/regression evidence. The paired measurements below describe the initial S13 candidate; they are retained as historical evidence. The follow-up supersedes auth-isolation and maintenance/strict-attention claims at the affected boundaries. Final exact-head CI closure is recorded in PR #63.
+
 Base: `802fba32c5b473ee72d1f71d420c5758215c142b`, tree `dc99fa7bf1bffea945a9c6ca200d6ad9f0080b78` (fresh `origin/main`, 2026-10-18).
 
 `base.json` was generated before any runtime edits by `node tests/safety/s13_benchmark.mjs --output tests/safety/evidence/s13/base.json`. Metadata: 20 repeats, median/p95; small synthetic audio: 5 repeats, median/range. The JSON records machine, Node version, deterministic seed/hash, delay placement, counts and raw samples. Fetch-boundary API calls are counted separately from repository method calls. These are synthetic Fetch mocks, not production/browser network measurements. Baseline legacy lists return both complete collections; later search/page rows measure this same prerequisite, not a fictitious legacy server search API.
@@ -21,7 +23,7 @@ Production mutations, real Archive writes, backups/imports/rollouts: **0**. Proj
 
 ## Completed candidate and evidence binding
 
-Measured runtime: `3278954fd03425d41ba2a69275aa86cb4f23cf44`, tree `df8c90a2294ee117c3d9de217f8667feb8fe7e83`. Subsequent changes contain tests/evidence and one native-month focus-outline CSS fallback; performance-path JavaScript/Gateway sources are identical. `provenance.json` records SHA256 for every changed runtime file and verifies unchanged-base files in the separate `git archive` checkout. Final PR HEAD/tree and its exact-head CI verdict are recorded in PR #63, not inferred from an earlier green run. This evidence is an implementation handoff, not acceptance or deployment authorization.
+Measured runtime: `3278954fd03425d41ba2a69275aa86cb4f23cf44`, tree `df8c90a2294ee117c3d9de217f8667feb8fe7e83`. Through initial closure `7e0407f`, subsequent changes contained tests/evidence and one native-month focus-outline CSS fallback. The later auth/attention follow-up changes four frontend scripts; Gateway sources and reconstruction algorithms remain unchanged. Its source identity, new regressions and remeasured browser/Editor paths are recorded in FOLLOWUP.md. `provenance.json` records SHA256 for every changed runtime file and verifies unchanged-base files in the separate `git archive` checkout. Final PR HEAD/tree and its exact-head CI verdict are recorded in PR #63, not inferred from an earlier green run. This evidence is an implementation handoff, not acceptance or deployment authorization.
 
 P1 removes hidden lifecycle/draft/history/recipe and maintenance/recount work from ordinary entry/list paths; optional attention and cached usage load independently. Detail reads the selected canonical manifest/current draft; history and output metadata are lazy. Projects in list summaries explicitly remain unverified until selected data is read.
 
@@ -101,17 +103,17 @@ PASS below means implementation plus the named local synthetic/browser evidence,
 | --- | --- | --- |
 | A01 | PASS | `provenance.json`, paired node/network/browser/editor/waveform/resource JSON, unchanged-base baseline commit `07f65cc` |
 | A02 | PASS | UI first/complete refresh counters; portal/editor entry assertions; lazy detail tests |
-| A03 | PASS | stalled attention does not block list, retained page/error state; independent maintenance/usage/history paths |
-| A04 | PASS | session-less transactions, malformed unknown, HEAD invalidation, fresh mutation/recovery guards; S12 matrix |
+| A03 | PASS, follow-up updated | stalled attention does not block list, retained page/error state; independent maintenance/usage/history paths |
+| A04 | PASS, follow-up updated | session-less transactions, malformed unknown, HEAD invalidation, fresh mutation/recovery guards; S12 matrix |
 | A05 | PASS | read-model coalescing/blob-identity tests; warm 1 HEAD / 0 manifest reads |
 | A06 | PASS | 1000-record differential/global filters/results/search, first/last/empty, max 10 summaries |
 | A07 | PASS | stable tie ordering, query/snapshot mismatch reset, changed HEAD, invalid/truncated fail-closed tests |
 | A08 | PASS | browser detail lazy history/recipes, deep links; existing S09D/S10B selected project/history/restoration regressions |
 | A09 | PASS | no ordinary scans; explicit double scan/pagination/dedup; stale/error tests; S12 warning/recount races |
 | A10 | PASS | multipart out-of-order overlap, stable byte identity/order; two slots in unit/realistic/browser resource |
-| A11 | PASS | wrong size/part/hash/whole hash/identities/reordered parts, auth loss incl. failed body cancel, changed/deleted source tests |
-| A12 | PASS | cancel/drain/new intent/pagehide/logout checks, real upstream abort/retry, Zoom terminal late-data/error tests; stale waveform caller regression |
-| A13 | PASS | authorized current-batch reuse 0 bytes; initial/final manifest/access and auth/source invalidation tests |
+| A11 | PASS, follow-up updated | wrong size/part/hash/whole hash/identities/reordered parts, auth loss incl. failed body cancel, changed/deleted source tests |
+| A12 | PASS, follow-up updated | cancel/drain/new intent/pagehide/logout checks, real upstream abort/retry, Zoom terminal late-data/error tests; stale waveform caller regression |
+| A13 | PASS, follow-up updated | authorized current-batch reuse 0 bytes; initial/final manifest/access and auth/source invalidation tests |
 | A14 | PASS | separate transfer/preparation/interactive marks and actual native cold/hit counters; cold re-reads explicitly remain |
 | A15 | PASS locally; final CI required | full Gateway + Node safety, S09D, S10A/B/S12 browser, timeline/provenance/render tests; pinned native gated in CI |
 | A16 | PASS in paired models | warm useful list and realistic latency-bound transfer improve; UI readiness after waveform; unchanged waveform and slower near-limit case disclosed |
