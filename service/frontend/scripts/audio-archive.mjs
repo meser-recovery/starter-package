@@ -615,11 +615,11 @@ async function refreshMaintenance() {
     }
   }
 }
-async function refresh({ preserveSnapshot = false } = {}) {
+async function refresh({ preserveSnapshot = false, freshAttention = false } = {}) {
   if (!state.authenticated) return;
   const sequence = generations.list.next(), auth = generations.auth.value;
   setArchiveStatus('Загрузка записей…', 'busy');
-  if (!preserveSnapshot) { state.picker.page = 0; state.maintenance = null; void refreshAttention(); void zoomArchiveUi.updateWarning(); }
+  if (!preserveSnapshot) { state.picker.page = 0; state.maintenance = null; void refreshAttention({ refresh: freshAttention }); void zoomArchiveUi.updateWarning(); }
   const chosen = currentFilters();
   const query = { ...chosen, announcementResult: chosen.announcementResult ? 'yes' : '', speakerResult: chosen.speakerResult ? 'yes' : '',
     month: $('filters').elements.month.value, page: state.picker.page, pageSize: 10,
@@ -747,7 +747,7 @@ $('filters').addEventListener('submit', event => { event.preventDefault(); state
 $('record-picker-recent').addEventListener('click', () => { $('filters').elements.search.value = ''; $('filters').elements.month.value = ''; $('filters').elements.sort.value = 'newest'; state.picker.requested = true; state.picker.page = 0; void refresh(); });
 $('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; void refresh(); }));
 $('record-prev').addEventListener('click', () => { state.picker.page--; void refresh({ preserveSnapshot: true }); }); $('record-next').addEventListener('click', () => { state.picker.page++; void refresh({ preserveSnapshot: true }); });
-$('refresh').addEventListener('click', refresh); $('detail-close').addEventListener('click', () => closeDetail()); $('player-close').addEventListener('click', clearPlayback); $('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
+$('refresh').addEventListener('click', () => refresh({ freshAttention: true })); $('detail-close').addEventListener('click', () => closeDetail()); $('player-close').addEventListener('click', clearPlayback); $('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
 $('login').addEventListener('click', () => { $('login-status').textContent = ''; $('login-dialog').showModal(); });
 $('login-cancel').addEventListener('click', () => { authController.cancel(); $('login-dialog').close(); });
 $('delete-cancel').addEventListener('click', () => { if (!state.busy) $('delete-dialog').close(); }); $('delete-dialog').addEventListener('cancel', event => { if (state.busy) event.preventDefault(); });
