@@ -1,7 +1,6 @@
 import https from 'node:https';
 import { lookup } from 'node:dns/promises';
 import { isIP } from 'node:net';
-import { Readable } from 'node:stream';
 import { connectionFingerprint, settingsError } from './settings.mjs';
 import { normalizeFilename } from './validation.mjs';
 
@@ -66,15 +65,23 @@ export async function openZoomStream(value, token, sizeBytes, signal, { lookupIm
         (response.headers['content-length'] && Number(response.headers['content-length']) !== sizeBytes)) {
       response.destroy(); throw settingsError('Сервер Zoom не подтвердил M4A-дорожку.', 502);
     }
-    const reader = Readable.toWeb(response, { strategy: { highWaterMark: 64 * 1024, size: chunk => chunk.length } }).getReader(); let received = 0;
+    const reader = response[Symbol.asyncIterator](); let received = 0, cancelled = false;
     const body = new ReadableStream({
       async pull(controller) {
         try {
-          const part = await reader.read();
+          const part = await reader.next();
+          // Cancellation can settle an in-flight next() after the body has closed.
+          if (cancelled) return;
           if (part.done) { if (received !== sizeBytes) throw new Error(); controller.close(); return; }
           received += part.value.byteLength; if (received > sizeBytes) throw new Error(); controller.enqueue(part.value);
-        } catch { await reader.cancel().catch(() => {}); controller.error(settingsError('Неполная дорожка Zoom.', 502)); }
-      }, cancel(reason) { response.destroy(); return reader.cancel(reason); }
+        } catch {
+          await reader.return().catch(() => {});
+          if (!cancelled) controller.error(settingsError('Неполная дорожка Zoom.', 502));
+        }
+      }, cancel() {
+        cancelled = true; response.destroy();
+        return reader.return().then(() => undefined, () => undefined);
+      }
     }, { highWaterMark: 1 });
     return new Response(body, { headers: { 'Content-Type': 'audio/mp4', 'Content-Length': String(sizeBytes) } });
   }
