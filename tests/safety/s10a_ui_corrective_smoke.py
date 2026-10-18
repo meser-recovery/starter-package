@@ -29,14 +29,18 @@ def assert_no_overflow(page: Page, label: str) -> None:
 def assert_field(page: Page, label_selector: str, control_selector: str, name: str) -> None:
     # Exercise keyboard-visible focus explicitly, including native month inputs.
     # Keep all association, :focus-visible, outline and clipping assertions.
+    control = page.locator(control_selector)
+    control.focus()
+    # Move away and back through the native keyboard focus path. A synthetic
+    # focus() alone does not establish :focus-visible for WebKit month segments.
     page.keyboard.press("Tab")
+    page.keyboard.press("Shift+Tab")
     result = page.evaluate(
         """([labelSelector, controlSelector]) => {
           const label = document.querySelector(labelSelector);
           const caption = label?.querySelector('.field-label');
           const control = document.querySelector(controlSelector);
           if (!label || !caption || !control) return { missing: true };
-          control.focus();
           const captionBox = caption.getBoundingClientRect();
           const controlBox = control.getBoundingClientRect();
           const style = getComputedStyle(control);

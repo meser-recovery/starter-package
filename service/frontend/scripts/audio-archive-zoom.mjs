@@ -9,6 +9,7 @@ const labels = { available: 'Доступно', reserved: 'Импорт не з�
 
 export function mountZoomArchive(gateway, openSession) {
   let settings = null, receipt = null, calendar = null, generation = 0, usageGeneration = 0, month = moscowMonth(), selectedDay = null, controller = null, busy = false;
+  let usageRefreshPending = null;
   const dialog = $('archive-settings-dialog'), zoomDialog = $('archive-zoom-dialog');
   const status = text => { $('archive-settings-status').textContent = text; };
   const zoomStatus = text => { $('archive-zoom-status').textContent = text; };
@@ -58,6 +59,14 @@ export function mountZoomArchive(gateway, openSession) {
     await available(); settings = await gateway.request('/v1/archive-settings'); renderSettings(); resetForm(); status('Настройки загружены.'); await updateWarning();
   }
   async function updateWarning(refresh = false) {
+    if (!refresh && usageRefreshPending) { await usageRefreshPending; return updateWarning(false); }
+    const pending = renderWarning(refresh);
+    if (!refresh) return pending;
+    usageRefreshPending = pending;
+    try { return await pending; }
+    finally { if (usageRefreshPending === pending) usageRefreshPending = null; }
+  }
+  async function renderWarning(refresh) {
     const sequence = ++usageGeneration;
     try {
       await available(); const result = await gateway.request(`/v1/storage-usage${refresh ? '?refresh=1' : ''}`);

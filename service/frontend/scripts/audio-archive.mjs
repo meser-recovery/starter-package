@@ -665,7 +665,7 @@ async function mutate(action, success = () => {}, failure = null) {
   try { await action(); if (!generations.auth.current(auth)) return; void zoomArchiveUi.updateWarning(true); await refresh(); if (!generations.auth.current(auth)) return; state.busy = false; await success(); }
   catch (error) {
     if (!generations.auth.current(auth)) return; if ([401, 403].includes(error?.status)) { report(error); return; }
-    await refresh(); if (!generations.auth.current(auth)) return; if (failure) failure(error); else report(error);
+    await refresh(); if (!generations.auth.current(auth)) return; void zoomArchiveUi.updateWarning(true); if (failure) failure(error); else report(error);
   } finally { state.busy = false; updateControls(); }
 }
 async function openDeletion(id, selection) {

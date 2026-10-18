@@ -1053,7 +1053,7 @@ async function metadataFor(url, signal) {
   });
 }
 
-async function prepareSources(epoch, signal) {
+async function prepareSources(epoch, signal, isCurrent = () => true) {
   const controller = new AbortController(); state.preparation = controller;
   const abort = () => controller.abort(signal?.reason);
   signal?.addEventListener('abort', abort, { once: true });
@@ -1064,7 +1064,7 @@ async function prepareSources(epoch, signal) {
   } });
   state.preparationError = ""; state.waveformDiagnostics = []; updateDiagnosticDisclosure(); byId("source-retry").hidden = true;
   const tracks = [...state.tracks]; const session = state.session; const archivedPayload = state.loadedPayload; const loadedCurrentDraft = state.loadedCurrentDraft; const payload = archivedPayload || state.payload;
-  const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
+  const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted && isCurrent();
   let activeTrack, stage = "metadata";
   try {
     const durations = []; const verifiedDurations = []; const preparedSamples = [];
@@ -1774,7 +1774,7 @@ export async function openSpeakerEditor({ session, files, draft = null, projectS
   setSelection(0, "", orderedManifest[0]?.trackId, "all"); clearCandidate();
   state.originalDuration = NaN; render();
   window.dispatchEvent(new Event("speaker-editor-opened"));
-  try { await prepareSources(epoch, signal); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
+  try { await prepareSources(epoch, signal, isCurrent); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
   catch (error) {
     if (state.sourceEpoch !== epoch) return false;
     if (signal?.aborted) { await teardown(); return false; }

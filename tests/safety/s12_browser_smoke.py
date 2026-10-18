@@ -56,6 +56,29 @@ def usage_refresh_regression(page):
     page.locator('#archive-usage-refresh').click()
     expect(page.locator('#archive-storage-usage')).to_contain_text('40 GB')
     assert not page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    # An ordinary list refresh cannot supersede a held explicit recount.
+    held.clear()
+    used.update(bytes=40_000_000_000, hold=True)
+    page.locator('#archive-usage-refresh').click()
+    for _ in range(100):
+        if 'route' in held:
+            break
+        page.wait_for_timeout(20)
+    assert 'route' in held
+    ordinary = []
+    def cached(route):
+        ordinary.append(True)
+        payload = route.fetch().json()
+        payload.update(usedBytes=40_000_000_000, warning=True, stale=False)
+        route.fulfill(json=payload)
+    page.route('**/v1/storage-usage', cached)
+    page.locator('#refresh').click()
+    page.wait_for_timeout(100)
+    assert not ordinary, 'ordinary read superseded an in-flight explicit recount'
+    held['route'].fulfill(json=held['payload'])
+    expect(page.locator('#archive-storage-usage')).to_contain_text('40 GB')
+    assert not page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    page.unroute('**/v1/storage-usage', cached)
     page.unroute('**/v1/storage-usage?refresh=1', response)
     page.locator('#archive-usage-refresh').click()
     expect(page.locator('#archive-storage-usage')).to_contain_text('0 MB')
