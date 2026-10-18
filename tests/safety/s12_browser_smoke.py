@@ -72,7 +72,7 @@ def usage_refresh_regression(page):
         payload.update(usedBytes=40_000_000_000, warning=True, stale=False)
         route.fulfill(json=payload)
     page.route('**/v1/storage-usage', cached)
-    page.locator('#refresh').click()
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
     page.wait_for_timeout(100)
     assert not ordinary, 'ordinary read superseded an in-flight explicit recount'
     held['route'].fulfill(json=held['payload'])
