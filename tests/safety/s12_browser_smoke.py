@@ -138,6 +138,81 @@ def discard_ui_regression(page, context, url):
         assert transaction['state'] == 'discarded' and not state['assets']
 
 
+
+def attention_diagnostics_regression(page, context, url):
+    context.request.post(f'{url}/__test/s12-reset')
+    page.add_init_script("window.__attentionErrors=[];addEventListener('unhandledrejection',e=>window.__attentionErrors.push(String(e.reason)))")
+    page.goto(f'{url}/Audio-Archive.html')
+    expect(page.locator('#attention-status')).to_contain_text('операции: 0.')
+    empty = context.request.get(f'{url}/v1/archive-attention').json()
+    mode = {'attention': 'hold', 'diagnostics': 'ok'}
+    held = []
+    diagnostic = {'transactions': [], 'orphans': [{'kind': 'synthetic_orphan', 'releaseId': 'attention-independent-diagnostic'}]}
+    current = {'payload': empty}
+
+    def attention(route):
+        if mode['attention'] == 'hold':
+            held.append(route)
+        elif mode['attention'] == 'invalid':
+            route.fulfill(json={'snapshot': 'invalid', 'transactions': [{}]})
+        elif mode['attention'] == 'error':
+            route.fulfill(status=503, json={'error': 'Strict canonical attention unavailable'})
+        else:
+            route.fulfill(json=current['payload'])
+
+    def diagnostics(route):
+        route.fulfill(status=503 if mode['diagnostics'] == 'error' else 200,
+                      json={'error': 'diagnostic unavailable'} if mode['diagnostics'] == 'error' else diagnostic)
+
+    def wait_held(count):
+        for _ in range(100):
+            if len(held) == count:
+                break
+            page.wait_for_timeout(10)
+        assert len(held) == count, 'explicit strict attention joined an obsolete in-flight read'
+
+    page.route('**/v1/archive-attention', attention)
+    page.route('**/v1/maintenance/incomplete', diagnostics)
+    page.locator('#maintenance-title').click()
+    wait_held(1)
+    expect(page.locator('#observations')).to_contain_text('attention-independent-diagnostic')
+    expect(page.locator('#operations')).to_contain_text('ещё не подтверждены')
+    # Canonical attention changes while an earlier read is held. The explicit
+    # maintenance action must request a fresh strict projection, never use the
+    # lenient diagnostic transactions (which deliberately remain empty).
+    fixture = context.request.post(f'{url}/__test/s12-discard-fixture?origin=manual')
+    assert fixture.ok, fixture.text()
+    current['payload'] = context.request.get(f'{url}/v1/archive-attention').json()
+    assert len(current['payload']['transactions']) == 1
+    page.locator('#maintenance-refresh').click()
+    wait_held(2)
+    held[1].fulfill(json=current['payload'])
+    expect(page.locator('#attention-status')).to_contain_text('операции: 1.')
+    expect(page.locator('#operations article')).to_have_count(1)
+    held[0].fulfill(json=empty)
+    page.wait_for_load_state('networkidle')
+    expect(page.locator('#attention-status')).to_contain_text('операции: 1.')
+    expect(page.locator('#operations article')).to_have_count(1)
+    for failure in ['error', 'invalid']:
+        mode['attention'] = failure
+        page.locator('#maintenance-refresh').click()
+        expect(page.locator('#attention-status')).to_contain_text('сведения не подтверждены')
+        expect(page.locator('#operations')).to_contain_text('ещё не подтверждены')
+        expect(page.locator('#operations article')).to_have_count(0)
+        expect(page.locator('#observations')).to_contain_text('attention-independent-diagnostic')
+    # An attention completion cannot erase a diagnostic error either.
+    mode.update(attention='hold', diagnostics='error')
+    page.locator('#maintenance-refresh').click()
+    wait_held(3)
+    expect(page.locator('#observations')).to_contain_text('Не удалось загрузить диагностику')
+    held[2].fulfill(json=current['payload'])
+    expect(page.locator('#attention-status')).to_contain_text('операции: 1.')
+    expect(page.locator('#observations')).to_contain_text('Не удалось загрузить диагностику')
+    assert not page.evaluate('window.__attentionErrors'), page.evaluate('window.__attentionErrors')
+    page.unroute('**/v1/archive-attention', attention)
+    page.unroute('**/v1/maintenance/incomplete', diagnostics)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', default='http://localhost:4185')
@@ -269,8 +344,9 @@ def main():
             expect(page.locator('#archive-zoom-open')).to_be_focused()
             manual_storage_regression(page, context, args.base_url, output, engine)
             discard_ui_regression(page, context, args.base_url)
+            attention_diagnostics_regression(page, context, args.base_url)
             assert not errors, (engine, errors)
-            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS'})
+            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS', 'strictAttentionIndependentDiagnosticsAndFreshRefresh': 'PASS'})
             context.close()
             browser.close()
     evidence = {'checkedHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'uncommittedTrackedChanges': bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).strip()), 'results': results}

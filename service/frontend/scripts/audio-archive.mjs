@@ -551,16 +551,20 @@ async function openDetail(id, { updateUrl = false } = {}) {
 
 function renderMaintenance() {
   $('operations').replaceChildren(); $('observations').replaceChildren();
-  if (!state.attention) { $('operations').append(element('p', 'Сведения об операциях ещё не подтверждены.')); return; }
-  const operations = state.attention.transactions;
-  if (!operations.length) $('operations').append(element('p', 'Операций без подтверждённой записи нет.'));
-  const phases = { uploading: 'Передача частей', staged: 'Части подготовлены', cancelled: 'Передача остановлена', finalizing: 'Завершение сохранения', discarding: 'Удаление незавершённого сохранения', pending_delete: 'Незавершённое удаление' };
-  for (const operation of operations) {
-    const policy = recoveryPolicy(operation), card = element('article', undefined, 'archive-card');
-    card.append(element('h3', 'Запись ещё не определена'), element('p', operation.kind === 'ingestion' ? 'Незавершённое сохранение исходников' : operation.kind === 'pending_delete' ? 'Незавершённое удаление' : 'Незавершённое сохранение результата'), element('p', phases[operation.state] || 'Состояние не распознано'), element('p', policy.local));
-    for (const [action, label] of policy.actions) card.append(button(label, () => recover(operation, action), action === 'discard' || operation.kind === 'pending_delete' ? 'danger' : ''));
-    card.append(technical(operation)); $('operations').append(card);
+  if (!state.attention) $('operations').append(element('p', 'Сведения об операциях ещё не подтверждены.'));
+  else {
+    const operations = state.attention.transactions;
+    if (!operations.length) $('operations').append(element('p', 'Операций без подтверждённой записи нет.'));
+    const phases = { uploading: 'Передача частей', staged: 'Части подготовлены', cancelled: 'Передача остановлена', finalizing: 'Завершение сохранения', discarding: 'Удаление незавершённого сохранения', pending_delete: 'Незавершённое удаление' };
+    for (const operation of operations) {
+      const policy = recoveryPolicy(operation), card = element('article', undefined, 'archive-card');
+      card.append(element('h3', 'Запись ещё не определена'), element('p', operation.kind === 'ingestion' ? 'Незавершённое сохранение исходников' : operation.kind === 'pending_delete' ? 'Незавершённое удаление' : 'Незавершённое сохранение результата'), element('p', phases[operation.state] || 'Состояние не распознано'), element('p', policy.local));
+      for (const [action, label] of policy.actions) card.append(button(label, () => recover(operation, action), action === 'discard' || operation.kind === 'pending_delete' ? 'danger' : ''));
+      card.append(technical(operation)); $('operations').append(card);
+    }
   }
+  if (state.maintenance?.loading) { $('observations').textContent = 'Загрузка диагностики…'; return; }
+  if (state.maintenance?.error) { $('observations').textContent = 'Не удалось загрузить диагностику. Обновите этот раздел.'; return; }
   if (!state.maintenance) { $('observations').append(element('p', 'Диагностика не загружена. Раскройте обслуживание или обновите его.')); return; }
   $('observations').append(element('h3', `Наблюдения для ручной проверки: ${state.maintenance.orphans.length}`), element('p', 'Наблюдения доступны только для диагностики. Автоматическая очистка недоступна.'));
   for (const observation of state.maintenance.orphans) $('observations').append(technical(observation));
@@ -579,12 +583,12 @@ async function loadSelectedHistory(session) {
     if ([401, 403].includes(error?.status)) report(error);
   }
 }
-async function refreshAttention() {
+async function refreshAttention({ refresh = false } = {}) {
   const sequence = generations.attention.next(), auth = generations.auth.value;
   $('attention-status').textContent = 'Незавершённые операции: проверяем…';
-  state.attention = null;
+  state.attention = null; renderMaintenance(); renderRecords();
   try {
-    const result = await gateway.listAttention();
+    const result = await gateway.listAttention({ refresh });
     if (!generations.attention.current(sequence) || !generations.auth.current(auth)) return;
     state.attention = result;
     $('attention-status').textContent = `Незавершённые операции: ${result.transactions.length}. Восстановление доступно в техническом обслуживании и в записи.`;
@@ -598,14 +602,15 @@ async function refreshAttention() {
 async function refreshMaintenance() {
   if (!state.authenticated) return;
   const sequence = generations.maintenance.next(), auth = generations.auth.value;
-  $('observations').textContent = 'Загрузка диагностики…';
+  void refreshAttention({ refresh: true });
+  state.maintenance = { loading: true }; renderMaintenance();
   try {
     const result = await gateway.listIncomplete();
     if (!generations.maintenance.current(sequence) || !generations.auth.current(auth)) return;
     state.maintenance = result; renderMaintenance();
   } catch (error) {
     if (generations.maintenance.current(sequence) && generations.auth.current(auth)) {
-      $('observations').textContent = 'Не удалось загрузить диагностику. Обновите этот раздел.';
+      state.maintenance = { error: true }; renderMaintenance();
       if ([401, 403].includes(error?.status)) report(error);
     }
   }

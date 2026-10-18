@@ -1923,9 +1923,9 @@ byId("login-dialog").addEventListener("cancel", () => { ++state.authSequence; st
 // Every archive response, including byte downloads, retains auth status. Login itself never recursively reconnects.
 const archiveFetch = gateway.fetchImpl;
 gateway.fetchImpl = async (url, options) => {
-  const auth = state.authSequence;
+  const auth = state.authSequence, generation = gateway.authGeneration;
   const response = await archiveFetch(url, options);
-  if (auth === state.authSequence && response.status === 401 && !String(url).endsWith("/session/login")) {
+  if (auth === state.authSequence && generation === gateway.authGeneration && response.status === 401 && !String(url).endsWith("/session/login")) {
     state.authenticated = false; state.reconnectNeeded = true; updateSessionStatus(); setArchiveStatus(RECONNECT_MESSAGE);
   }
   return response;

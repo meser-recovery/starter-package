@@ -903,13 +903,19 @@ export class AudioArchiveGateway {
     this.readsInFlight = new Map();
   }
 
-  async request(path, options = {}) {
-    const shared = !options.signal && !options.body && (!options.method || options.method === 'GET') && options.captureCsrf !== false && !path.includes('refresh=1');
+  async request(path, { coalesce = true, ...options } = {}) {
+    const shared = coalesce && !options.signal && !options.body && (!options.method || options.method === 'GET') && options.captureCsrf !== false && !path.includes('refresh=1');
     if (!shared) return this.performRequest(path, options);
     const key = `${this.authGeneration}:${path}`;
     if (this.readsInFlight.has(key)) return structuredClone(await this.readsInFlight.get(key));
     const pending = this.performRequest(path, options); this.readsInFlight.set(key, pending);
     try { return structuredClone(await pending); } finally { this.readsInFlight.delete(key); }
+  }
+
+  assertCurrentAuthentication(generation, response) {
+    if (generation === this.authGeneration) return;
+    try { response?.body?.cancel().catch(() => {}); } catch {}
+    throw Object.assign(new Error('Сеанс запроса уже заменён.'), { name: 'AbortError', code: 'stale_auth_response' });
   }
 
   async performRequest(path, options = {}) {
@@ -923,16 +929,23 @@ export class AudioArchiveGateway {
     }
     if (!/^(GET|HEAD|OPTIONS)$/i.test(fetchOptions.method || "GET") && this.csrfToken) headers.set("X-CSRF-Token", this.csrfToken);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, { credentials: "include", ...fetchOptions, headers });
+    this.assertCurrentAuthentication(generation, response);
     const contentType = response.headers.get("Content-Type") || "";
     if (response.status !== 204 && !contentType.toLowerCase().startsWith("application/json")) {
-      throw Object.assign(new Error("Шлюз вернул ответ в неожиданном формате."), { status: response.status });
+      const error = Object.assign(new Error("Шлюз вернул ответ в неожиданном формате."), { status: response.status });
+      if (response.status === 401) this.invalidateAuthentication(error);
+      const failureGeneration = this.authGeneration;
+      await response.body?.cancel().catch(() => {});
+      this.assertCurrentAuthentication(failureGeneration);
+      throw error;
     }
     const payload = response.status === 204 ? null : await response.json().catch(() => null);
+    this.assertCurrentAuthentication(generation, response);
     if (!response.ok) {
-      if (response.status === 401) this.invalidateAuthentication();
       const error = new Error(payload?.error || "Операция аудиоархива не выполнена.");
       error.status = response.status;
       error.details = payload?.details;
+      if (response.status === 401) this.invalidateAuthentication(error);
       throw error;
     }
     if (captureCsrf && payload?.csrfToken && generation === this.authGeneration) this.csrfToken = payload.csrfToken;
@@ -964,6 +977,7 @@ export class AudioArchiveGateway {
     try {
       await this.request("/v1/session/login", { method: "POST", body: { password }, captureCsrf: false });
     } catch (error) {
+      if (error?.code === 'stale_auth_response') return Object.freeze({ authenticated: false, stale: true });
       if (error?.status === 401) error.code = "invalid_password";
       throw error;
     }
@@ -975,6 +989,7 @@ export class AudioArchiveGateway {
       this.csrfToken = proof.csrfToken;
       return proof;
     } catch (error) {
+      if (error?.code === 'stale_auth_response') return Object.freeze({ authenticated: false, stale: true });
       if (generation === this.authGeneration) this.csrfToken = null;
       if (error?.status === 401) error.code = "session_replay_failed";
       throw error;
@@ -982,9 +997,9 @@ export class AudioArchiveGateway {
   }
   async logout() {
     this.activeSourcePreparation?.controller.abort();
-    this.authGeneration += 1;
+    const generation = ++this.authGeneration;
     try { return await this.request("/v1/session/logout", { method: "POST" }); }
-    finally { this.csrfToken = null; }
+    finally { if (generation === this.authGeneration) this.csrfToken = null; }
   }
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
   async querySessions(query = {}, signal) {
@@ -997,8 +1012,8 @@ export class AudioArchiveGateway {
         (query.snapshot && result.snapshot !== query.snapshot)) throw new Error('Повреждён ответ списка архива.');
     return result;
   }
-  async listAttention() {
-    const result = await this.request('/v1/archive-attention');
+  async listAttention({ refresh = false } = {}) {
+    const result = await this.request('/v1/archive-attention', { coalesce: !refresh });
     if (!validateArchiveAttention(result)) throw new Error('Сведения об операциях не подтверждены.');
     return result;
   }
@@ -1012,11 +1027,17 @@ export class AudioArchiveGateway {
     return async (url, options = {}) => {
       const part = parts.get(String(url));
       if (!part) throw new Error("Запрошенная часть не принадлежит этой архивной записи.");
+      const generation = this.authGeneration;
       const path = `/v1/source-sessions/${encodeURIComponent(session.id)}/blobs/${encodeURIComponent(part.blobId)}/parts/${part.partNumber}/content`;
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
+      this.assertCurrentAuthentication(generation, response);
       if (response.status === 401) {
         const error = Object.assign(new Error('Служебная сессия истекла.'), { status: 401 });
-        this.invalidateAuthentication(error); await response.body?.cancel().catch(() => {}); throw error;
+        this.invalidateAuthentication(error);
+        const failureGeneration = this.authGeneration;
+        await response.body?.cancel().catch(() => {});
+        this.assertCurrentAuthentication(failureGeneration);
+        throw error;
       }
       return response;
     };
