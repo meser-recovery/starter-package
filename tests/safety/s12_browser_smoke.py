@@ -10,7 +10,7 @@ from s10b_browser_smoke import source
 
 
 def login(page, url):
-    page.goto(f'{url}/Audio-Archive.html')
+    page.goto(f'{url}/login?return=%2FAudio-Archive.html', wait_until='domcontentloaded')
     page.locator('#admin-password').fill('local-test-password')
     page.locator('#admin-access-form button[type=submit]').click()
     page.wait_for_url('**/Audio-Archive.html')
@@ -71,6 +71,7 @@ def usage_refresh_regression(page):
         payload = route.fetch().json()
         payload.update(usedBytes=40_000_000_000, warning=True, stale=False)
         route.fulfill(json=payload)
+        ordinary.append('done')
     page.route('**/v1/storage-usage', cached)
     page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted: true}))")
     page.wait_for_timeout(100)
@@ -78,6 +79,11 @@ def usage_refresh_regression(page):
     held['route'].fulfill(json=held['payload'])
     expect(page.locator('#archive-storage-usage')).to_contain_text('40 GB')
     assert not page.locator('#archive-storage-warning').evaluate('(el) => el.hidden')
+    for _ in range(100):
+        if ordinary and ordinary[-1] == 'done':
+            break
+        page.wait_for_timeout(20)
+    assert ordinary and ordinary[-1] == 'done'
     page.unroute('**/v1/storage-usage', cached)
     page.unroute('**/v1/storage-usage?refresh=1', response)
     page.locator('#archive-usage-refresh').click()

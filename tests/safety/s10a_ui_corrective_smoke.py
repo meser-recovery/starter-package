@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, sync_playwright, expect
 
 
 PASSWORD = "local-test-password"
@@ -31,10 +31,9 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
     # Keep all association, :focus-visible, outline and clipping assertions.
     control = page.locator(control_selector)
     control.focus()
-    # Move away and back through the native keyboard focus path. A synthetic
-    # focus() alone does not establish :focus-visible for WebKit month segments.
-    page.keyboard.press("Tab")
-    page.keyboard.press("Shift+Tab")
+    # Exercise the native field's keyboard path (including WebKit date segments).
+    control.press("ArrowRight")
+    expect(control).to_be_focused()
     result = page.evaluate(
         """([labelSelector, controlSelector]) => {
           const label = document.querySelector(labelSelector);
@@ -51,6 +50,8 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
             outlineWidth: parseFloat(style.outlineWidth),
             outlineOffset: parseFloat(style.outlineOffset),
             focusVisible: control.matches(':focus-visible'),
+            focused: document.activeElement === control,
+            active: document.activeElement?.outerHTML.slice(0, 300),
             left: controlBox.left,
             right: innerWidth - controlBox.right
           };
@@ -60,7 +61,7 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
     assert not result.get("missing"), (name, result)
     assert result["associated"], (name, "label association")
     assert result["gap"] >= 7, (name, "gap", result["gap"])
-    assert result["focusVisible"], (name, "focus-visible")
+    assert result["focusVisible"], (name, "focus-visible", result)
     assert result["outlineStyle"] not in ("none", "hidden"), (name, result)
     assert result["outlineWidth"] >= 3 and result["outlineOffset"] >= 2, (name, result)
     required_edge = result["outlineWidth"] + result["outlineOffset"]
