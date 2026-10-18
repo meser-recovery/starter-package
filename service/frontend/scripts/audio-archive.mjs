@@ -15,9 +15,9 @@ import { AudioFileSelection, validateAudioSelection, recordedTimestamp, renderAu
 
 const $ = id => document.getElementById(id);
 const gateway = new AudioArchiveGateway(globalThis.__MESER_AUDIO_ARCHIVE_GATEWAY__ || '');
-const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete'].map(key => [key, new RequestGeneration()]));
+const generations = Object.fromEntries(['auth', 'list', 'detail', 'play', 'delete', 'attention', 'maintenance'].map(key => [key, new RequestGeneration()]));
 const state = {
-  authenticated: false, sessions: null, maintenance: null, detail: null, projects: new Map(), outputMeta: new Map(),
+  authenticated: false, sessions: null, listPage: null, attention: null, maintenance: null, detail: null, projects: new Map(), outputMeta: new Map(),
   projectHistories: new Map(),
   url: null, target: null, returnFocus: null, busy: false, intentConsumed: false, detailInput: null, detailOpen: new Set(),
   resultSort: { announcement: 'newest', speaker: 'newest' },
@@ -79,7 +79,7 @@ async function saveCreation(event) {
         if (!confirmedCreation(existing, attempt, attempt.plan)) throw new Error('Найденная запись не совпадает с исходными файлами.');
         creation.attempt = null; creation.selection.clear(); $('archive-create-form').reset(); creationStatus(''); $('archive-create-progress').hidden = true; renderCreation();
         $('archive-create').hidden = true; $('archive-create-open').setAttribute('aria-expanded', 'false');
-        state.picker.requested = true; await refresh(); await openDetail(existing.id, { updateUrl: true });
+        state.picker.requested = true; await refresh(); await openDetail(existing.id, { updateUrl: true }); void zoomArchiveUi.updateWarning(true);
         setArchiveStatus(state.authenticated ? 'Запись Zoom сохранена в аудиоархиве.' : 'Запись сохранена. Войдите снова, чтобы открыть её.', 'ready');
         return;
       } catch (error) { if (error?.status !== 404) throw error; }
@@ -102,6 +102,7 @@ async function saveCreation(event) {
     $('archive-create').hidden = true; $('archive-create-open').setAttribute('aria-expanded', 'false');
     state.picker.requested = true; await refresh();
     await openDetail(session.id, { updateUrl: true });
+    void zoomArchiveUi.updateWarning(true);
     setArchiveStatus(state.authenticated ? 'Запись Zoom сохранена в аудиоархиве.' : 'Запись сохранена. Войдите снова, чтобы открыть её.', 'ready');
   } catch (error) {
     if (error?.status === 401) { clearSession(); creationStatus(`${SERVICE_SESSION_EXPIRED_MESSAGE} После входа продолжите сохранение.`, 'error'); }
@@ -146,6 +147,7 @@ function mediaTypeLabel(value) {
   return ({ 'audio/mpeg': 'MP3', 'audio/wav': 'WAV', 'audio/mp4': 'M4A' })[value] || value || 'Формат не указан';
 }
 function trackCount(session) {
+  if (session.kind === 'source-session-summary') return session.sourceTrackCount;
   if (session.sourceState === 'available') return session.sourceTracks.length;
   return Array.isArray(session.deletedSources?.tracks) ? session.deletedSources.tracks.length : null;
 }
@@ -156,7 +158,7 @@ function trackCountLabel(count) {
   return `${count} ${noun}`;
 }
 function attentionFor(session) {
-  return (state.maintenance?.transactions || []).filter(operation => operation.sessionId === session.id);
+  return (state.attention?.transactions || []).filter(operation => operation.sessionId === session.id);
 }
 
 function clearPlayback() {
@@ -172,11 +174,13 @@ function closeDetail({ updateUrl = true } = {}) {
   if (updateUrl) {
     const url = new URL(location.href); url.searchParams.delete('session'); history.replaceState(history.state, '', url);
   }
+  state.projects.clear(); state.projectHistories.clear();
   openRecordPicker();
 }
 function clearSession() {
   for (const generation of Object.values(generations)) generation.next();
-  clearPlayback(); state.authenticated = false; state.sessions = null; state.maintenance = null; state.detail = null; state.detailInput = null; state.target = null;
+  clearPlayback(); state.authenticated = false; state.sessions = null; state.listPage = null; state.attention = null; state.maintenance = null; gateway.invalidateAuthentication(); state.detail = null; state.detailInput = null; state.target = null;
+  $('attention-status').textContent = 'Незавершённые операции: требуется подтверждение служебной сессии.';
   state.projects.clear(); state.projectHistories.clear(); state.outputMeta.clear(); $('detail').hidden = true; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(); $('archive-index').hidden = false;
   if ($('delete-dialog').open) $('delete-dialog').close(); updateControls(); render();
 }
@@ -207,6 +211,7 @@ const authController = new ServiceSessionController({
   }
 });
 function openRecordPicker() {
+  if (state.authenticated && !state.sessions) { state.picker.requested = true; void refresh(); }
   state.picker.open = true; $('records').hidden = false; $('record-picker-open').setAttribute('aria-expanded', 'true');
   $('records-title').focus();
 }
@@ -225,11 +230,12 @@ function currentFilters() {
   };
 }
 function projectState(session) {
-  if (!session.workflows.speaker.currentDraft) return { label: 'Проект ещё не сохранён', kind: '' };
+  if (!(session.workflows.speaker.currentDraft || session.workflows.speaker.hasDraft)) return { label: 'Проект ещё не сохранён', kind: '' };
+  if (session.kind === 'source-session-summary') return { label: 'Есть сохранённый проект · проверяется при открытии', kind: 'is-warning' };
   const history = state.projectHistories.get(session.id);
   if (history?.states?.length) return { label: session.sourceState === 'available' ? 'Проект спикерской сохранён' : 'Проект сохранён, исходники недоступны', kind: session.sourceState === 'available' ? 'is-ready' : 'is-warning' };
   const project = state.projects.get(session.id);
-  if (!project) return { label: 'Проект проверяется…', kind: 'is-warning' };
+  if (!project) return { label: 'Есть сохранённый проект · проверяется при открытии', kind: 'is-warning' };
   if (project.projection) return { label: 'Проект спикерской сохранён', kind: 'is-ready' };
   return { label: 'Сохранённый проект недоступен', kind: 'is-warning' };
 }
@@ -257,30 +263,23 @@ function renderRecords() {
   $('record-pagination').hidden = true;
   if (!state.picker.requested) { $('matching').textContent = 'Список появится после поиска.'; return; }
   if (!state.sessions) { $('matching').textContent = 'Список записей не загружен.'; return; }
-  const chosen = currentFilters();
-  if (chosen.attention && !state.maintenance) { $('matching').textContent = 'Сведения о незавершённых операциях не загружены. Фильтр внимания пока недоступен.'; return; }
-  let sessions;
-  try { sessions = selectSessions(state.sessions, chosen, state.maintenance?.transactions); }
-  catch (error) { $('matching').textContent = error.message; return; }
-  const month = $('filters').elements.month.value;
-  if (month) sessions = sessions.filter(session => String(session.recordedAt || '').slice(0, 7) === month);
-  const pageCount = Math.max(1, Math.ceil(sessions.length / state.picker.pageSize));
-  state.picker.page = Math.min(state.picker.page, pageCount - 1);
+  const total = state.listPage?.total || 0;
+  const pageCount = Math.max(1, Math.ceil(total / state.picker.pageSize));
   const start = state.picker.page * state.picker.pageSize;
-  const visible = pageItems(sessions, state.picker.page, state.picker.pageSize);
-  $('matching').textContent = !state.sessions.length ? 'Аудиоархив пока пуст.' : sessions.length ? `Найдено: ${sessions.length} · ${start + 1}–${start + visible.length}` : 'Ничего не найдено. Измените запрос или фильтры.';
+  const visible = state.sessions;
+  $('matching').textContent = total ? `Найдено: ${total} · ${start + 1}–${start + visible.length}` : 'Ничего не найдено. Измените запрос или фильтры.';
   for (const session of visible) {
     const card = element('article', undefined, 'archive-card source-row'); card.dataset.sessionId = session.id;
     const info = element('div', undefined, 'record-info'), badges = element('div', undefined, 'status-badges');
     const count = trackCount(session), project = projectState(session), attention = attentionSummary(session);
     info.append(element('h3', session.title), element('p', `${dateLabel(session.recordedAt)} · ${trackCountLabel(count)}`));
     badges.append(element('span', lifecycleLabel(session), 'status-badge'), element('span', sourceLabel(session), `status-badge ${session.sourceState === 'available' ? 'is-ready' : 'is-warning'}`));
-    info.append(badges, element('p', `Анонс-мейкер: ${session.workflows.announcement.outputs.length} · Финальные версии спикерской: ${session.workflows.speaker.outputs.length}`), element('p', project.label, project.kind ? `record-project ${project.kind}` : 'record-project'));
+    info.append(badges, element('p', `Анонс-мейкер: ${session.workflows.announcement.outputCount} · Финальные версии спикерской: ${session.workflows.speaker.outputCount}`), element('p', project.label, project.kind ? `record-project ${project.kind}` : 'record-project'));
     if (attention) info.append(element('p', attention, 'attention-summary'));
     card.append(info, button('Открыть запись', () => openDetail(session.id, { updateUrl: true }), 'action-primary'));
     $('session-list').append(card);
   }
-  if (sessions.length > state.picker.pageSize) {
+  if (total > state.picker.pageSize) {
     $('record-pagination').hidden = false; $('record-page').textContent = `${state.picker.page + 1} из ${pageCount}`;
     $('record-prev').disabled = state.picker.page === 0; $('record-next').disabled = state.picker.page + 1 >= pageCount;
   }
@@ -288,10 +287,10 @@ function renderRecords() {
 
 function contextualRecovery(session, container) {
   const operations = attentionFor(session);
-  if (state.maintenance && !operations.length) return;
+  if (state.attention && !operations.length) return;
   const section = element('section', undefined, 'detail-section attention-section');
   section.append(element('h3', 'Требует внимания'));
-  if (!state.maintenance) section.append(element('p', 'Сведения о незавершённых операциях не загружены.'));
+  if (!state.attention) section.append(element('p', 'Сведения о незавершённых операциях не загружены.'));
   else if (!operations.length) section.append(element('p', 'Незавершённых операций для этой записи нет.'));
   for (const operation of operations) {
     const policy = recoveryPolicy(operation), row = element('article', undefined, 'attention');
@@ -309,7 +308,7 @@ function contextualRecovery(session, container) {
 
 function validatedMetadata(session, workflow, output) {
   const metadata = state.outputMeta.get(`${workflow}:${output.outputId}`);
-  if (!metadata) return { label: 'Имя файла и формат проверяются…', valid: false };
+  if (!metadata) return { label: 'Имя файла и формат будут проверены при выборе.', valid: false };
   if (metadata.error) return { label: 'Имя файла и формат недоступны: сведения не прошли проверку.', valid: false };
   return { label: `${metadata.recipe.result.presentationFilename} · ${mediaTypeLabel(metadata.recipe.result.mediaType)}`, valid: true };
 }
@@ -321,8 +320,8 @@ function resultCard(session, output, workflow) {
   const actions = element('div', undefined, 'toolbar');
   const play = button('Прослушать', () => loadOutput(session, output, workflow));
   const download = button('Скачать', () => loadOutput(session, output, workflow, true));
-  play.disabled = !meta.valid; download.disabled = !meta.valid;
-  if (workflow === 'speaker' && meta.valid) {
+  play.disabled = Boolean(state.outputMeta.get(`${workflow}:${output.outputId}`)?.error); download.disabled = play.disabled;
+  if (workflow === 'speaker') {
     const resume = element('a', 'Продолжить редактирование с этой финальной версии');
     resume.href = `Audio-Editor.html?session=${encodeURIComponent(session.id)}&workflow=speaker&speakerOutput=${encodeURIComponent(output.outputId)}`;
     actions.append(resume);
@@ -424,7 +423,8 @@ function renderDetail() {
     const history = state.projectHistories.get(session.id);
     project.append(element('h3', 'История проекта'));
     if (history?.error) project.append(element('p', 'История проекта не прошла строгую проверку. Восстановление недоступно.'));
-    else if (!history?.states?.length) project.append(element('p', 'Явных сохранений с неизменяемой историей пока нет.'));
+    else if (!history) project.append(element('p', 'История загружается при раскрытии.'));
+    else if (!history.states?.length) project.append(element('p', 'Явных сохранений с неизменяемой историей пока нет.'));
     else for (const saved of history.states) {
       const valid = Number.isSafeInteger(saved.draftRevision) && saved.draftRevision > 0 && typeof saved.savedAt === 'string' &&
         typeof saved.current === 'boolean' && typeof saved.canonicalSourcesAvailable === 'boolean' && Array.isArray(saved.finalVersions);
@@ -439,6 +439,8 @@ function renderDetail() {
       row.append(resume); project.append(row);
     }
   } else project.append(element('p', 'Версия шлюза несовместима с историей проекта. Просмотр и скачивание совместимых записей доступны; изменения «Спикерская» заблокированы.'));
+  project.addEventListener('toggle', () => { if (project.open && !state.projectHistories.has(session.id)) void loadSelectedHistory(session); });
+  history.addEventListener('toggle', () => { if (history.open && Object.keys(workflows).some(name => session.workflows[name].outputs.some(output => !state.outputMeta.has(`${name}:${output.outputId}`)))) void loadOutputMetadata(session, generations.detail.value, generations.auth.value).then(() => { if (state.detail?.id === session.id) renderDetail(); }).catch(report); });
   container.append(project);
   const sources = element('details', undefined, 'detail-section source-section'); sources.open = true; sources.append(element('summary', `Исходные дорожки${count === null ? '' : ` · ${count}`}`));
   if (session.sourceState === 'available') for (const track of [...session.sourceTracks].sort((a, b) => a.ordinal - b.ordinal)) {
@@ -501,6 +503,7 @@ async function loadOutputMetadata(session, sequence, auth) {
   const work = [];
   for (const workflow of Object.keys(workflows)) for (const output of session.workflows[workflow].outputs) work.push((async () => {
     const key = `${workflow}:${output.outputId}`;
+    if (state.outputMeta.has(key)) return;
     try {
       const metadata = await (workflow === 'speaker' ? gateway.getSpeakerOutput(session.id, output.outputId) : gateway.getAnnouncementOutput(session.id, output.outputId));
       if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
@@ -519,29 +522,23 @@ async function openDetail(id, { updateUrl = false } = {}) {
   if (state.detailInput?.sessionId !== id) state.detailInput = null;
   if (state.detail?.id === id) state.detailOpen = new Set([...$('detail-body').querySelectorAll(':scope > details[open]')]
     .flatMap(details => [...details.classList].filter(name => ['version-history', 'project-disclosure', 'source-section', 'record-management', 'danger-zone'].includes(name))));
-  else state.detailOpen.clear();
+  else { state.detailOpen.clear(); state.projects.clear(); state.projectHistories.clear(); }
   const sequence = generations.detail.next(), auth = generations.auth.value; clearPlayback(); state.detail = null; state.outputMeta.clear();
   $('archive-index').hidden = true; $('detail').hidden = false; $('detail-heading').replaceChildren(); $('detail-body').replaceChildren(element('p', 'Загрузка актуальных сведений…'));
   try {
     const session = await gateway.getSession(id);
     if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
     if (!validateSessionManifest(session) || session.id !== id) throw new Error('Invalid session');
-    let project = null, projectHistory = null;
+    let project = null;
     if (session.workflows.speaker.currentDraft) {
       try { const result = await gateway.loadDraft(id, 'speaker'); project = { draft: result.draft, projection: projectProjection(session, result.draft) }; }
       catch (error) { if ([401, 403].includes(error?.status)) throw error; project = { error: true }; }
     }
-    if (gateway.speakerProjectHistoryVersion === 1) {
-      try { projectHistory = await gateway.speakerProjectHistory(id); }
-      catch (error) { if ([401, 403].includes(error?.status)) throw error; projectHistory = { error: true }; }
-    }
     if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
     if (project) state.projects.set(id, project); else state.projects.delete(id);
-    if (projectHistory) state.projectHistories.set(id, projectHistory); else state.projectHistories.delete(id);
+    state.projectHistories.delete(id);
     state.detail = session; renderDetail(); renderRecords();
-    await loadOutputMetadata(session, sequence, auth);
-    if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
-    renderDetail();
+
     if (updateUrl) { const url = new URL(location.href); url.searchParams.set('session', id); history.replaceState(history.state, '', url); }
     $('detail-title').focus(); $('detail').scrollIntoView({ block: 'start' });
   } catch (error) {
@@ -554,9 +551,8 @@ async function openDetail(id, { updateUrl = false } = {}) {
 
 function renderMaintenance() {
   $('operations').replaceChildren(); $('observations').replaceChildren();
-  if (!state.maintenance) { $('operations').append(element('p', 'Сведения об операциях не загружены.')); return; }
-  const known = new Set((state.sessions || []).map(session => session.id));
-  const operations = state.maintenance.transactions.filter(operation => !known.has(operation.sessionId));
+  if (!state.attention) { $('operations').append(element('p', 'Сведения об операциях ещё не подтверждены.')); return; }
+  const operations = state.attention.transactions;
   if (!operations.length) $('operations').append(element('p', 'Операций без подтверждённой записи нет.'));
   const phases = { uploading: 'Передача частей', staged: 'Части подготовлены', cancelled: 'Передача остановлена', finalizing: 'Завершение сохранения', discarding: 'Удаление незавершённого сохранения', pending_delete: 'Незавершённое удаление' };
   for (const operation of operations) {
@@ -565,37 +561,79 @@ function renderMaintenance() {
     for (const [action, label] of policy.actions) card.append(button(label, () => recover(operation, action), action === 'discard' || operation.kind === 'pending_delete' ? 'danger' : ''));
     card.append(technical(operation)); $('operations').append(card);
   }
+  if (!state.maintenance) { $('observations').append(element('p', 'Диагностика не загружена. Раскройте обслуживание или обновите его.')); return; }
   $('observations').append(element('h3', `Наблюдения для ручной проверки: ${state.maintenance.orphans.length}`), element('p', 'Наблюдения доступны только для диагностики. Автоматическая очистка недоступна.'));
   for (const observation of state.maintenance.orphans) $('observations').append(technical(observation));
 }
 function render() { renderRecords(); renderMaintenance(); }
 
-async function refresh() {
-  if (!state.authenticated) return;
-  const sequence = generations.list.next(), auth = generations.auth.value; clearPlayback(); setArchiveStatus('Загрузка записей и незавершённых операций…', 'busy');
-  state.sessions = null; state.maintenance = null; state.projects.clear(); render();
-  const results = await Promise.allSettled([gateway.listSessions('incoming'), gateway.listSessions('archived'), gateway.listIncomplete()]);
-  if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
-  const authFailure = results.find(result => result.status === 'rejected' && [401, 403].includes(result.reason?.status)); if (authFailure) { report(authFailure.reason); return; }
-  const errors = [];
+async function loadSelectedHistory(session) {
+  const sequence = generations.detail.value, auth = generations.auth.value;
   try {
-    if (results.slice(0, 2).every(result => result.status === 'fulfilled')) state.sessions = mergeSessions(results[0].value.sessions, results[1].value.sessions);
-    else errors.push('Не удалось загрузить оба списка записей.');
-    if (results[2].status === 'fulfilled' && Array.isArray(results[2].value.transactions) && Array.isArray(results[2].value.orphans)) state.maintenance = results[2].value;
-    else errors.push('Не удалось загрузить незавершённые операции.');
-  } catch { errors.push('Данные записей повреждены.'); }
-  if (state.sessions) {
-    const projects = await Promise.allSettled(state.sessions.filter(session => session.workflows.speaker.currentDraft).map(async session => {
-      const result = await gateway.loadDraft(session.id, 'speaker'); return [session.id, { draft: result.draft, projection: projectProjection(session, result.draft) }];
-    }));
-    if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
-    const projectAuthFailure = projects.find(result => result.status === 'rejected' && [401, 403].includes(result.reason?.status)); if (projectAuthFailure) { report(projectAuthFailure.reason); return; }
-    for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
-    for (const session of state.sessions.filter(session => session.workflows.speaker.currentDraft)) if (!state.projects.has(session.id)) state.projects.set(session.id, { error: true });
+    const history = await gateway.speakerProjectHistory(session.id);
+    if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
+    state.projectHistories.set(session.id, history); renderDetail();
+  } catch (error) {
+    if (!generations.detail.current(sequence) || !generations.auth.current(auth)) return;
+    state.projectHistories.set(session.id, { error: true }); renderDetail();
+    if ([401, 403].includes(error?.status)) report(error);
   }
-  render(); setArchiveStatus(errors.length ? `${errors.join(' ')} Обновите данные.` : 'Данные загружены. Просмотр не изменяет аудиоархив.', errors.length ? 'error' : 'ready');
-  await consumeArchiveIntent();
-  await zoomArchiveUi.updateWarning(true);
+}
+async function refreshAttention() {
+  const sequence = generations.attention.next(), auth = generations.auth.value;
+  $('attention-status').textContent = 'Незавершённые операции: проверяем…';
+  state.attention = null;
+  try {
+    const result = await gateway.listAttention();
+    if (!generations.attention.current(sequence) || !generations.auth.current(auth)) return;
+    state.attention = result;
+    $('attention-status').textContent = `Незавершённые операции: ${result.transactions.length}. Восстановление доступно в техническом обслуживании и в записи.`;
+    renderMaintenance(); renderRecords();
+  } catch (error) {
+    if (!generations.attention.current(sequence) || !generations.auth.current(auth)) return;
+    $('attention-status').textContent = 'Незавершённые операции: сведения не подтверждены. Обновите данные.';
+    renderMaintenance(); if ([401, 403].includes(error?.status)) report(error);
+  }
+}
+async function refreshMaintenance() {
+  if (!state.authenticated) return;
+  const sequence = generations.maintenance.next(), auth = generations.auth.value;
+  $('observations').textContent = 'Загрузка диагностики…';
+  try {
+    const result = await gateway.listIncomplete();
+    if (!generations.maintenance.current(sequence) || !generations.auth.current(auth)) return;
+    state.maintenance = result; renderMaintenance();
+  } catch (error) {
+    if (generations.maintenance.current(sequence) && generations.auth.current(auth)) {
+      $('observations').textContent = 'Не удалось загрузить диагностику. Обновите этот раздел.';
+      if ([401, 403].includes(error?.status)) report(error);
+    }
+  }
+}
+async function refresh({ preserveSnapshot = false } = {}) {
+  if (!state.authenticated) return;
+  const sequence = generations.list.next(), auth = generations.auth.value;
+  setArchiveStatus('Загрузка записей…', 'busy');
+  if (!preserveSnapshot) { state.picker.page = 0; state.maintenance = null; void refreshAttention(); void zoomArchiveUi.updateWarning(); }
+  const chosen = currentFilters();
+  const query = { ...chosen, announcementResult: chosen.announcementResult ? 'yes' : '', speakerResult: chosen.speakerResult ? 'yes' : '',
+    month: $('filters').elements.month.value, page: state.picker.page, pageSize: 10,
+    snapshot: preserveSnapshot ? state.listPage?.snapshot || '' : '', queryId: preserveSnapshot ? state.listPage?.queryId || '' : '' };
+  try {
+    let result, restarted = false;
+    try { result = await gateway.querySessions(query); }
+    catch (error) {
+      if (error?.status !== 409 || !preserveSnapshot) throw error;
+      if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
+      state.picker.page = 0; query.page = 0; query.snapshot = ''; query.queryId = ''; restarted = true;
+      result = await gateway.querySessions(query);
+      setArchiveStatus('Архив изменился. Показана первая страница актуального списка.', 'ready');
+    }
+    if (!generations.list.current(sequence) || !generations.auth.current(auth)) return;
+    state.listPage = result; state.sessions = result.items;
+    render(); setArchiveStatus(restarted ? 'Архив или параметры списка изменились. Показана первая страница актуального списка.' : 'Данные загружены. Просмотр не изменяет аудиоархив.', 'ready');
+    await consumeArchiveIntent();
+  } catch (error) { if (generations.list.current(sequence) && generations.auth.current(auth)) report(error); }
 }
 
 async function loadOutput(session, output, workflow, downloadOnly = false) {
@@ -624,7 +662,7 @@ async function writeSession(session, action) {
 }
 async function mutate(action, success = () => {}, failure = null) {
   if (state.busy || !state.authenticated) return; state.busy = true; updateControls(); const auth = generations.auth.value; clearPlayback();
-  try { await action(); if (!generations.auth.current(auth)) return; await refresh(); if (!generations.auth.current(auth)) return; state.busy = false; await success(); }
+  try { await action(); if (!generations.auth.current(auth)) return; void zoomArchiveUi.updateWarning(true); await refresh(); if (!generations.auth.current(auth)) return; state.busy = false; await success(); }
   catch (error) {
     if (!generations.auth.current(auth)) return; if ([401, 403].includes(error?.status)) { report(error); return; }
     await refresh(); if (!generations.auth.current(auth)) return; if (failure) failure(error); else report(error);
@@ -672,9 +710,9 @@ async function consumeArchiveIntent() {
   if (state.intentConsumed) return; let intent;
   try { intent = parseArchiveIntent(location.search); }
   catch (error) { state.intentConsumed = true; setArchiveStatus(error.message, 'error'); return; }
-  if (!intent || !state.authenticated || !state.sessions) return;
+  if (!intent || !state.authenticated) return;
   state.intentConsumed = true;
-  if (!state.sessions.some(session => session.id === intent.sessionId)) { $('archive-index').hidden = true; $('detail').hidden = false; const title = element('h2', 'Запись недоступна'); title.id = 'detail-title'; $('detail-heading').replaceChildren(title); $('detail-body').replaceChildren(element('p', 'Запись по ссылке не найдена или уже удалена.')); return; }
+
   await openDetail(intent.sessionId, { updateUrl: false });
 }
 function applyLegacyAnchor() {
@@ -683,6 +721,8 @@ function applyLegacyAnchor() {
   field.checked = true; state.picker.requested = true; openRecordPicker(); history.replaceState(history.state, '', `${location.pathname}${location.search}#records`);
 }
 
+$('maintenance').addEventListener('toggle', () => { if ($('maintenance').open && !state.maintenance) void refreshMaintenance(); });
+$('maintenance-refresh').addEventListener('click', refreshMaintenance);
 $('record-picker-open').addEventListener('click', openRecordPicker); $('record-picker-close').addEventListener('click', closeRecordPicker);
 $('archive-create-open').addEventListener('click', () => {
   $('archive-create').hidden = false; $('archive-create-open').setAttribute('aria-expanded', 'true');
@@ -698,10 +738,10 @@ $('archive-create-files').addEventListener('change', event => {
   event.target.value = '';
 });
 $('archive-create-form').addEventListener('submit', saveCreation);
-$('filters').addEventListener('submit', event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderRecords(); });
-$('record-picker-recent').addEventListener('click', () => { $('filters').elements.search.value = ''; $('filters').elements.month.value = ''; $('filters').elements.sort.value = 'newest'; state.picker.requested = true; state.picker.page = 0; renderRecords(); });
-$('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; renderRecords(); }));
-$('record-prev').addEventListener('click', () => { state.picker.page--; renderRecords(); }); $('record-next').addEventListener('click', () => { state.picker.page++; renderRecords(); });
+$('filters').addEventListener('submit', event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; void refresh(); });
+$('record-picker-recent').addEventListener('click', () => { $('filters').elements.search.value = ''; $('filters').elements.month.value = ''; $('filters').elements.sort.value = 'newest'; state.picker.requested = true; state.picker.page = 0; void refresh(); });
+$('filters').addEventListener('reset', () => requestAnimationFrame(() => { state.picker.requested = false; state.picker.page = 0; void refresh(); }));
+$('record-prev').addEventListener('click', () => { state.picker.page--; void refresh({ preserveSnapshot: true }); }); $('record-next').addEventListener('click', () => { state.picker.page++; void refresh({ preserveSnapshot: true }); });
 $('refresh').addEventListener('click', refresh); $('detail-close').addEventListener('click', () => closeDetail()); $('player-close').addEventListener('click', clearPlayback); $('rebuild').addEventListener('click', () => mutate(() => gateway.rebuildCatalog()));
 $('login').addEventListener('click', () => { $('login-status').textContent = ''; $('login-dialog').showModal(); });
 $('login-cancel').addEventListener('click', () => { authController.cancel(); $('login-dialog').close(); });
@@ -716,7 +756,10 @@ $('login-form').addEventListener('submit', async event => {
 window.addEventListener('pagehide', clearPlayback); window.addEventListener('pageshow', event => { if (event.persisted) initialize(); });
 async function initialize() {
   applyLegacyAnchor(); render(); const sequence = generations.auth.next();
-  try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); void zoomArchiveUi.updateWarning(); state.authenticated = true; updateControls(); await refresh(); if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
+  try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); void zoomArchiveUi.updateWarning(); state.authenticated = true; state.picker.requested = true; updateControls();
+    if (location.search) await consumeArchiveIntent();
+    if (!state.intentConsumed) await refresh(); else void refreshAttention();
+    if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();

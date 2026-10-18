@@ -26,6 +26,20 @@ const sessions = new SessionRegistry({ maxEntries: 16 });
 // Synthetic, process-local archive. It cannot access production storage or credentials.
 const repository = new SyntheticArchiveRepository();
 const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 1024 });
+// Opt-in S13 instrumentation is confined to this synthetic preview process.
+const s13Enabled = process.env.MESER_S13_PREVIEW === 'true';
+const s13 = { calls: {}, reads: {}, assetBytes: 0, active: 0, maxActive: 0, delayMs: 0 };
+if (s13Enabled) for (const name of ['getHead', 'readJson', 'listJson', 'listReleases', 'listReleaseAssets', 'downloadReleaseAsset']) {
+  const original = repository[name].bind(repository);
+  repository[name] = async (...args) => {
+    s13.calls[name] = (s13.calls[name] || 0) + 1;
+    if (name === 'readJson') { const kind = args[0].split('/')[0]; s13.reads[kind] = (s13.reads[kind] || 0) + 1; }
+    if (name !== 'downloadReleaseAsset') return original(...args);
+    s13.active++; s13.maxActive = Math.max(s13.maxActive, s13.active);
+    try { if (s13.delayMs) await new Promise(resolve => setTimeout(resolve, s13.delayMs)); const bytes = await original(...args); s13.assetBytes += bytes.length; return bytes; }
+    finally { s13.active--; }
+  };
+}
 const emptyPeaks = Buffer.alloc(WAVEFORM_BODY_BYTES);
 const peakDigest = createHash('sha256').update(emptyPeaks).digest('hex');
 const waveformService = { get: async (sessionId, blobId) => {
@@ -112,6 +126,34 @@ async function apiRequest(incoming, outgoing) {
 const server = http.createServer(async (request, response) => {
   try {
     const url = new URL(request.url || "/", origin);
+    if (s13Enabled && url.pathname === '/__test/s13-counts') {
+      if (request.method === 'POST') { s13.calls = {}; s13.reads = {}; s13.assetBytes = 0; s13.maxActive = 0; }
+      response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify(s13)); return;
+    }
+    if (s13Enabled && url.pathname === '/__test/s13-seed' && request.method === 'POST') {
+      const { managementFixture } = await import('../../gateway/audio-archive/test/archive-management-fixture.mjs');
+      const { collection } = await import('../../gateway/audio-archive/test/s13-fixtures.mjs');
+      const { catalogEntry } = await import('../../gateway/audio-archive/src/validation.mjs');
+      const h = await managementFixture(), n = Number(url.searchParams.get('n') || 10);
+      if (![1, 10, 100, 1000].includes(n)) throw new Error('Invalid S13 fixture count');
+      if (url.searchParams.get('audio') === '3') {
+        const { wav } = await import('../../gateway/audio-archive/test/archive-management-fixture.mjs');
+        const created = await h.gateway.ingestFiles({ files: [1, 2, 3].map(i => new File([wav()], `Дорожка-${i}.wav`, { type: 'audio/wav' })),
+          title: 'S13 · три дорожки', recordedAt: null, origin: 'manual', idempotencyKey: 's13-browser-three-track-fixture' });
+        h.primary = created.session;
+      }
+      const settingsFile = repository.files.get(SETTINGS_PATH);
+      repository.files = structuredClone(h.repository.files); repository.files.set(SETTINGS_PATH, settingsFile);
+      repository.releases = structuredClone(h.repository.releases); repository.assetBytes = new Map(h.repository.assetBytes);
+      repository.nextAsset = h.repository.nextAsset; repository.nextRelease = h.repository.nextRelease;
+      for (const path of [...repository.files.keys()]) if (path.startsWith('sessions/')) repository.files.delete(path);
+      collection(repository, h.primary, n - 1); repository.files.set(`sessions/${h.primary.id}.json`, h.primary);
+      const catalog = repository.files.get('catalog.json'); catalog.entries.push(catalogEntry(h.primary)); catalog.revision++;
+      repository.history.set(await repository.getHead(), structuredClone(repository.files));
+      if (domain.readModel) { domain.readModel.current = null; domain.readModel.blobs.clear(); }
+      s13.delayMs = Number(url.searchParams.get('delay') || 0);
+      response.writeHead(200, { 'Content-Type': 'application/json' }); response.end(JSON.stringify({ primary: h.primary.id, count: n })); return;
+    }
     if (url.pathname.startsWith("/v1/") || url.pathname === "/healthz") return void await apiRequest(request, response);
     if (url.pathname === '/__test/s12-fault' && request.method === 'POST') {
       faults.dropNextPartReply = true; response.writeHead(204); response.end(); return;

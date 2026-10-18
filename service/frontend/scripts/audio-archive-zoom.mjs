@@ -69,8 +69,8 @@ export function mountZoomArchive(gateway, openSession) {
     } catch {
       if (sequence !== usageGeneration) return;
       $('archive-storage-usage').textContent = 'Объём пока неизвестен. Повторите подсчёт.';
-      $('archive-storage-warning').hidden = true;
-      $('archive-storage-warning-text').textContent = '';
+      // A network error does not erase the last confirmed soft-limit warning.
+      if (!$('archive-storage-warning').hidden) $('archive-storage-warning-text').textContent = 'Последний подтверждённый подсчёт: ' + $('archive-storage-warning-text').textContent.replace(/^Последний подтверждённый подсчёт: /, '');
     }
   }
   function renderCalendar() {

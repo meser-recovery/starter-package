@@ -142,6 +142,28 @@ export class GitHubArchiveRepository {
     return items;
   }
 
+  async jsonIdentities(prefix, ref) {
+    if (prefix !== 'sessions/') throw new Error('Unsafe read-model prefix');
+    const tree = await this.api(`/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+    if (tree.truncated || !Array.isArray(tree.tree)) throw new GitHubError('Canonical tree listing is incomplete', 502);
+    const identities = new Map();
+    for (const entry of tree.tree) {
+      if (entry.type !== 'blob' || !entry.path.startsWith(prefix) || !entry.path.endsWith('.json')) continue;
+      assertStoragePath(entry.path);
+      if (typeof entry.sha !== 'string' || !entry.sha || identities.has(entry.path)) throw new GitHubError('Invalid canonical blob identity', 502);
+      identities.set(entry.path, entry.sha);
+    }
+    return identities;
+  }
+
+  async readJsonBlob(identity) {
+    if (typeof identity !== 'string' || !/^[a-f0-9]{40,64}$/.test(identity)) throw new Error('Unsafe blob identity');
+    const blob = await this.api(`/git/blobs/${identity}`);
+    if (blob.encoding !== 'base64' || typeof blob.content !== 'string') throw new GitHubError('Invalid canonical JSON blob', 502);
+    try { return { data: JSON.parse(Buffer.from(blob.content, 'base64').toString('utf8')), blobSha: identity }; }
+    catch { throw new GitHubError('Invalid canonical JSON blob', 502); }
+  }
+
   async commitJson(expectedHead, files, message) {
     const currentHead = await this.getHead();
     if (currentHead !== expectedHead) {

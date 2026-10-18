@@ -661,56 +661,108 @@ export function validateSessionManifest(session) {
     session.relations[key] === null || isUuid(session.relations[key]));
 }
 
-export async function reconstructTrack(track, sessionId, fetchImpl = fetch, { signal, onProgress } = {}) {
-  throwIfAborted(signal);
-  if (!validateTrackManifest(track, sessionId)) throw new Error("Манифест дорожки повреждён.");
-  const ordered = [...track.parts].sort((left, right) => left.partNumber - right.partNumber);
-  const chunks = [];
-  const logicalHasher = new Sha256();
-  let totalBytes = 0;
-  for (const [index, part] of ordered.entries()) {
-    throwIfAborted(signal);
-    if (part.partNumber !== index + 1) throw new Error("Нарушен порядок частей аудиофайла.");
-    const response = await fetchImpl(part.downloadUrl, { cache: "no-store", signal });
-    if (!response.ok) throw Object.assign(new Error("Не удалось загрузить часть аудиофайла."), { status: response.status });
-    const bytes = new Uint8Array(await response.arrayBuffer());
-    throwIfAborted(signal);
-    if (bytes.byteLength !== part.sizeBytes || await sha256Hex(bytes, signal) !== part.sha256) {
-      throw new Error("Проверка целостности части аудиофайла не пройдена.");
+// A sliding canonical window reserves two slots BEFORE fetch. Completed later
+// parts retain their slot until earlier bytes have entered the whole-track hash.
+// Thus active + completed/unconsumed parts <= 2, including slow first parts.
+async function reconstructSources(tracks, sessionId, fetchImpl, { signal, onProgress, concurrency = 2, onResources } = {}) {
+  if (![1, 2].includes(concurrency)) throw new Error("Некорректный предел загрузки.");
+  const ordered = [...tracks].sort((a, b) => a.ordinal - b.ordinal);
+  const tasks = ordered.flatMap((track, trackIndex) => track.parts.map(part => ({ track, trackIndex, part })));
+  const totalBytes = ordered.reduce((sum, track) => sum + track.sizeBytes, 0);
+  const acceptedPartBytes = tasks.reduce((maximum, task) => Math.max(maximum, task.part.sizeBytes), 0);
+  if (totalBytes > MAX_AUDIO_SESSION_BYTES) throw new Error("Исходная сессия превышает лимит 500 МБ.");
+  const controller = new AbortController(), pending = new Map(), files = [], chunks = [];
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  let next = 0, reservedBytes = 0, active = 0, receivedBytes = 0, verifiedBytes = 0, verifiedParts = 0;
+  let hash = new Sha256(), trackBytes = 0;
+  const resources = () => onResources?.({ activeTransfers: active, reservedParts: pending.size, reservedPartBytes: reservedBytes,
+    maxPartSlots: concurrency, maxPartBytes: concurrency * acceptedPartBytes });
+  const emit = (task, stage) => onProgress?.({ stage, receivedBytes, verifiedBytes, totalBytes, verifiedParts, totalParts: tasks.length,
+    trackIndex: task.trackIndex + 1, trackCount: ordered.length, partNumber: task.part.partNumber, trackPartCount: task.track.parts.length });
+  const launch = () => {
+    while (next < tasks.length && pending.size < concurrency && !controller.signal.aborted) {
+      const index = next++, task = tasks[index]; reservedBytes += task.part.sizeBytes; active++;
+      // Attach rejection handling immediately. A failed later request must abort
+      // the active earlier request without creating an unhandled rejection.
+      const promise = (async () => {
+        throwIfAborted(controller.signal);
+        const response = await fetchImpl(task.part.downloadUrl, { cache: 'no-store', signal: controller.signal });
+        if (!response.ok) { await response.body?.cancel(); throw Object.assign(new Error("Не удалось загрузить часть аудиофайла."), { status: response.status }); }
+        const bytes = await readBoundedPart(response, task.part.sizeBytes, controller.signal);
+        throwIfAborted(controller.signal); receivedBytes += bytes.byteLength; emit(task, 'transfer');
+        if (bytes.byteLength !== task.part.sizeBytes || await sha256Hex(bytes, controller.signal) !== task.part.sha256) throw new Error("Проверка целостности части аудиофайла не пройдена.");
+        return bytes;
+      })().then(bytes => ({ bytes }), error => { controller.abort(error); return { error }; }).finally(() => { active--; resources(); });
+      pending.set(index, { promise, task }); resources();
     }
-    totalBytes += bytes.byteLength;
-    logicalHasher.update(bytes);
-    chunks.push(bytes);
-    onProgress?.({ verifiedBytes: bytes.byteLength, partNumber: part.partNumber, partCount: ordered.length, track });
+  };
+  try {
+    launch();
+    for (let index = 0; index < tasks.length; index++) {
+      const { promise, task } = pending.get(index);
+      const result = await promise;
+      if (result.error) throw result.error;
+      throwIfAborted(controller.signal);
+      const bytes = result.bytes;
+      hash.update(bytes); trackBytes += bytes.byteLength;
+      // Blob snapshots release the unverified TypedArray slot. The verified File
+      // batch is the current working data, not an additional persistent cache.
+      chunks.push(new Blob([bytes])); verifiedBytes += bytes.byteLength; verifiedParts++;
+      pending.delete(index); reservedBytes -= task.part.sizeBytes; resources(); emit(task, 'verification');
+      if (task.part.partNumber === task.track.parts.length) {
+        if (trackBytes !== task.track.sizeBytes || hash.digestHex() !== task.track.sha256) throw new Error("Проверка целостности аудиодорожки не пройдена.");
+        files.push(new File(chunks, task.track.originalName, { type: task.track.mediaType, lastModified: 0 }));
+        chunks.length = 0; trackBytes = 0; hash = new Sha256();
+      }
+      // Do not carry the consumed typed array in a retained promise result.
+      result.bytes = null;
+      launch();
+    }
+    throwIfAborted(controller.signal); return files;
+  } finally {
+    controller.abort(); signal?.removeEventListener('abort', abort);
+    // Native fetch consumes abort; ignore late completions and release all slots.
+    await Promise.allSettled([...pending.values()].map(item => item.promise));
+    pending.clear(); chunks.length = 0; reservedBytes = 0; resources();
   }
-  throwIfAborted(signal);
-  if (totalBytes !== track.sizeBytes || logicalHasher.digestHex() !== track.sha256) {
-    throw new Error("Проверка целостности аудиодорожки не пройдена.");
-  }
-  return new File(chunks, track.originalName, { type: track.mediaType, lastModified: 0 });
 }
 
-export async function reconstructSessionTracks(session, fetchImpl = fetch, { signal, onProgress } = {}) {
-  throwIfAborted(signal);
+async function readBoundedPart(response, expectedBytes, signal) {
+  const length = response.headers?.get('Content-Length');
+  if (length && Number(length) !== expectedBytes) { await response.body?.cancel(); throw new Error("Проверка целостности части аудиофайла: неверный размер."); }
+  if (!response.body?.getReader) {
+    const bytes = new Uint8Array(await response.arrayBuffer());
+    if (bytes.byteLength !== expectedBytes) throw new Error("Проверка целостности части аудиофайла: неверный размер.");
+    return bytes;
+  }
+  const reader = response.body.getReader(), bytes = new Uint8Array(expectedBytes);
+  const abort = () => { void reader.cancel(signal.reason).catch(() => {}); };
+  signal.addEventListener('abort', abort, { once: true });
+  let offset = 0;
+  try {
+    while (true) {
+      throwIfAborted(signal); const { done, value } = await reader.read(); throwIfAborted(signal);
+      if (done) break;
+      if (offset + value.byteLength > expectedBytes) throw new Error("Проверка целостности части аудиофайла: неверный размер.");
+      bytes.set(value, offset); offset += value.byteLength;
+    }
+    if (offset !== expectedBytes) throw new Error("Проверка целостности части аудиофайла: неверный размер.");
+    return bytes;
+  } finally { signal.removeEventListener('abort', abort); await reader.cancel().catch(() => {}); reader.releaseLock(); }
+}
+
+export async function reconstructTrack(track, sessionId, fetchImpl = fetch, options = {}) {
+  throwIfAborted(options.signal);
+  if (!validateTrackManifest(track, sessionId)) throw new Error("Манифест дорожки повреждён.");
+  return (await reconstructSources([track], sessionId, fetchImpl, options))[0];
+}
+export async function reconstructSessionTracks(session, fetchImpl = fetch, options = {}) {
+  throwIfAborted(options.signal);
   if (!validateSessionManifest(session)) throw new Error("Данные архивной записи повреждены.");
   if (session.sourceState !== "available") throw new Error("Исходники этой записи были удалены.");
-  const ordered = [...(session.sourceTracks || [])].sort((left, right) => left.ordinal - right.ordinal);
-  const files = [];
-  const totalBytes = ordered.reduce((sum, track) => sum + track.sizeBytes, 0);
-  const totalParts = ordered.reduce((sum, track) => sum + track.parts.length, 0);
-  let verifiedBytes = 0; let verifiedParts = 0;
-  for (const [trackIndex, track] of ordered.entries()) {
-    files.push(await reconstructTrack(track, session.id, fetchImpl, { signal, onProgress: (progress) => {
-      verifiedBytes += progress.verifiedBytes; verifiedParts++;
-      onProgress?.({ verifiedBytes, totalBytes, verifiedParts, totalParts, trackIndex: trackIndex + 1,
-        trackCount: ordered.length, partNumber: progress.partNumber, trackPartCount: progress.partCount });
-    } }));
-  }
-  throwIfAborted(signal);
-  if (files.reduce((sum, file) => sum + file.size, 0) > MAX_AUDIO_SESSION_BYTES) {
-    throw new Error("Исходная сессия превышает лимит 500 МБ.");
-  }
-  return files;
+  return reconstructSources(session.sourceTracks, session.id, fetchImpl, options);
 }
 
 function sourceDescriptor(session) {
@@ -727,7 +779,34 @@ export function remoteSourceFingerprint(session) {
   return JSON.stringify(sourceDescriptor(session));
 }
 
-export async function prepareRemoteSourceBatch({ gateway, sessionId, signal, onProgress } = {}) {
+// Ownership metadata holds no strong reference to File bytes. Only the current
+// caller-owned working batch may be offered for reuse; no extra old batch cache.
+const verifiedBatchOwners = new WeakMap();
+
+export async function prepareRemoteSourceBatch(options = {}) {
+  const { gateway, signal } = options;
+  if (!gateway) throw new Error('Некорректная архивная запись.');
+  const controller = new AbortController(), previous = gateway.activeSourcePreparation;
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
+  previous?.controller.abort(new DOMException('Выбрана другая запись.', 'AbortError'));
+  const pending = (async () => {
+    // Drain the cancelled operation before issuing new transfers. Rapid intents
+    // cannot multiply the global two-slot bound.
+    if (previous) await previous.pending.catch(() => {});
+    throwIfAborted(controller.signal);
+    return prepareVerifiedBatch({ ...options, signal: controller.signal });
+  })();
+  const operation = { controller, pending }; gateway.activeSourcePreparation = operation;
+  try { return await pending; }
+  finally {
+    signal?.removeEventListener('abort', abort);
+    if (gateway.activeSourcePreparation === operation) gateway.activeSourcePreparation = null;
+  }
+}
+
+async function prepareVerifiedBatch({ gateway, sessionId, signal, onProgress, reuseBatch, onResources } = {}) {
   if (!gateway || !isUuid(sessionId)) throw new Error("Некорректная архивная запись.");
   throwIfAborted(signal);
   const initial = await gateway.getSession(sessionId, signal);
@@ -736,18 +815,79 @@ export async function prepareRemoteSourceBatch({ gateway, sessionId, signal, onP
     throw new Error("Запись больше не доступна для редактирования.");
   }
   const fingerprint = remoteSourceFingerprint(initial);
-  const files = await reconstructSessionTracks(initial, gateway.sourcePartFetch(initial), { signal, onProgress });
+  const authGeneration = gateway.authGeneration || 0;
+  const owner = reuseBatch?.files && verifiedBatchOwners.get(reuseBatch.files);
+  const canReuse = owner?.gateway === gateway && owner.authGeneration === authGeneration && owner.sessionId === sessionId && owner.fingerprint === fingerprint;
+  const files = canReuse ? reuseBatch.files : await reconstructSessionTracks(initial, gateway.sourcePartFetch(initial), { signal, onProgress, onResources });
   throwIfAborted(signal);
   const fresh = await gateway.getSession(sessionId, signal);
   throwIfAborted(signal);
   if (!validateSessionManifest(fresh) || fresh.id !== sessionId || fresh.lifecycle.state !== "incoming" || fresh.sourceState !== "available" ||
-      remoteSourceFingerprint(fresh) !== fingerprint) {
+      remoteSourceFingerprint(fresh) !== fingerprint || (gateway.authGeneration || 0) !== authGeneration) {
     const error = new Error("Состав или доступность исходников изменились во время загрузки.");
     error.code = "remote_source_changed";
     throw error;
   }
-  return Object.freeze({ session: fresh, files: Object.freeze(files), fingerprint,
+  const frozenFiles = Object.isFrozen(files) ? files : Object.freeze(files);
+  verifiedBatchOwners.set(frozenFiles, { gateway, authGeneration, sessionId, fingerprint });
+  if (canReuse) onProgress?.({ stage: 'reuse', receivedBytes: 0, verifiedBytes: files.reduce((n, file) => n + file.size, 0),
+    totalBytes: files.reduce((n, file) => n + file.size, 0), verifiedParts: initial.sourceTracks.reduce((n, track) => n + track.parts.length, 0),
+    totalParts: initial.sourceTracks.reduce((n, track) => n + track.parts.length, 0), trackIndex: files.length, trackCount: files.length,
+    partNumber: initial.sourceTracks[initial.sourceTracks.length - 1].parts.length, trackPartCount: initial.sourceTracks[initial.sourceTracks.length - 1].parts.length });
+  return Object.freeze({ session: fresh, files: frozenFiles, fingerprint, reused: canReuse,
     readinessIdentity: `${fresh.id}:${fingerprint}` });
+}
+
+export function validateArchiveSummary(s) {
+  if (!hasExactKeys(s, ['kind', 'schemaVersion', 'id', 'revision', 'title', 'recordedAt', 'createdAt', 'updatedAt', 'lifecycle', 'sourceState', 'sourceTrackCount', 'sourceNames', 'workflows']) ||
+      s.kind !== 'source-session-summary' || s.schemaVersion !== 1 || !isUuid(s.id) || !Number.isSafeInteger(s.revision) || s.revision < 1 ||
+      typeof s.title !== 'string' || !s.title.trim() || s.title.length > 200 || !(s.recordedAt === null || isIsoTimestamp(s.recordedAt)) ||
+      !isIsoTimestamp(s.createdAt) || !isIsoTimestamp(s.updatedAt) || !hasExactKeys(s.lifecycle, ['state']) || !['incoming', 'archived'].includes(s.lifecycle.state) ||
+      !['available', 'deleted'].includes(s.sourceState) || !Number.isSafeInteger(s.sourceTrackCount) || s.sourceTrackCount < 1 || s.sourceTrackCount > 32 ||
+      !Array.isArray(s.sourceNames) || s.sourceNames.length !== (s.sourceState === 'available' ? s.sourceTrackCount : 0) ||
+      !s.sourceNames.every(name => typeof name === 'string' && name.length > 0 && name.length <= 240) || !hasExactKeys(s.workflows, ['announcement', 'speaker'])) return false;
+  return ['announcement', 'speaker'].every(name => {
+    const w = s.workflows[name];
+    return hasExactKeys(w, ['status', 'hasDraft', 'outputCount']) && WORKFLOW_STATES.has(w.status) && typeof w.hasDraft === 'boolean' &&
+      Number.isSafeInteger(w.outputCount) && w.outputCount >= 0;
+  });
+}
+export function validateArchivePage(value) {
+  if (!hasExactKeys(value, ['schemaVersion', 'kind', 'snapshot', 'revision', 'queryId', 'page', 'pageSize', 'total', 'view', 'items']) ||
+      value.schemaVersion !== 1 || value.kind !== 'archive-page' || typeof value.snapshot !== 'string' || !value.snapshot || value.snapshot.length > 128 ||
+      !Number.isSafeInteger(value.revision) || value.revision < 0 || !SHA256_PATTERN.test(value.queryId) ||
+      !Number.isSafeInteger(value.page) || value.page < 0 || value.pageSize !== 10 || !Number.isSafeInteger(value.total) || value.total < 0 ||
+      !['sessions', 'announcement', 'speaker'].includes(value.view) || !Array.isArray(value.items) ||
+      value.items.length !== Math.min(10, Math.max(0, value.total - value.page * 10))) return false;
+  const ids = new Set();
+  return value.items.every(item => {
+    if (value.view === 'sessions') {
+      if (!validateArchiveSummary(item) || ids.has(item.id)) return false;
+      ids.add(item.id); return true;
+    }
+    if (!hasExactKeys(item, ['session', 'output', 'workflow']) || item.workflow !== value.view || !validateArchiveSummary(item.session)) return false;
+    const o = item.output, key = `${item.session.id}:${o?.outputId}`;
+    if (!hasExactKeys(o, ['outputId', 'version', 'createdAt', 'sizeBytes']) || !isUuid(o.outputId) || !Number.isSafeInteger(o.version) || o.version < 1 ||
+        !isIsoTimestamp(o.createdAt) || !Number.isSafeInteger(o.sizeBytes) || o.sizeBytes < 1 || o.sizeBytes > MAX_AUDIO_SESSION_BYTES || ids.has(key)) return false;
+    ids.add(key); return true;
+  });
+}
+
+export function validateArchiveAttention(value) {
+  const keys = ['transactionId', 'kind', 'state', 'sessionId', 'updatedAt', 'uploadedParts', 'totalParts', 'canFinalize', 'requiresOriginalFiles',
+    'requiresLocalResult', 'reservedVersion', 'workflow', 'candidateFingerprint', 'sizeBytes', 'sha256', 'uploadedPartNumbers', 'failure'];
+  if (!hasExactKeys(value, ['snapshot', 'transactions']) || typeof value.snapshot !== 'string' || !value.snapshot || value.snapshot.length > 128 || !Array.isArray(value.transactions)) return false;
+  const ids = new Set();
+  return value.transactions.every(t => {
+    if (!hasExactKeys(t, keys) || !isUuid(t.transactionId) || ids.has(t.transactionId) || !isUuid(t.sessionId) || !isIsoTimestamp(t.updatedAt) ||
+        typeof t.requiresOriginalFiles !== 'boolean' || typeof t.requiresLocalResult !== 'boolean') return false;
+    ids.add(t.transactionId);
+    if (t.kind === 'pending_delete') return t.state === 'pending_delete' && t.totalParts === null && t.uploadedParts === null && t.canFinalize === null;
+    if (!['ingestion', 'publication'].includes(t.kind) || !['uploading', 'staged', 'cancelled', 'finalizing', 'discarding'].includes(t.state) ||
+        !Number.isSafeInteger(t.totalParts) || t.totalParts < 1 || !Number.isSafeInteger(t.uploadedParts) || t.uploadedParts < 0 || t.uploadedParts > t.totalParts ||
+        t.canFinalize !== (t.state !== 'discarding' && t.uploadedParts === t.totalParts)) return false;
+    return t.kind === 'ingestion' ? t.workflow === null : WORKFLOWS.has(t.workflow) && Number.isSafeInteger(t.reservedVersion) && t.reservedVersion > 0;
+  });
 }
 
 export class AudioArchiveGateway {
@@ -758,9 +898,21 @@ export class AudioArchiveGateway {
     this.authGeneration = 0;
     this.acceptedPartSize = DEFAULT_AUDIO_PART_BYTES;
     this.speakerProjectHistoryVersion = 0;
+    this.archiveReadModelVersion = 0;
+    this.readsInFlight = new Map();
   }
 
   async request(path, options = {}) {
+    const shared = !options.signal && !options.body && (!options.method || options.method === 'GET') && options.captureCsrf !== false && !path.includes('refresh=1');
+    if (!shared) return this.performRequest(path, options);
+    const key = `${this.authGeneration}:${path}`;
+    if (this.readsInFlight.has(key)) return structuredClone(await this.readsInFlight.get(key));
+    const pending = this.performRequest(path, options); this.readsInFlight.set(key, pending);
+    try { return structuredClone(await pending); } finally { this.readsInFlight.delete(key); }
+  }
+
+  async performRequest(path, options = {}) {
+    const generation = this.authGeneration;
     const { captureCsrf = true, ...fetchOptions } = options;
     throwIfAborted(fetchOptions.signal);
     const headers = new Headers(fetchOptions.headers || {});
@@ -776,12 +928,13 @@ export class AudioArchiveGateway {
     }
     const payload = response.status === 204 ? null : await response.json().catch(() => null);
     if (!response.ok) {
+      if (response.status === 401) this.invalidateAuthentication();
       const error = new Error(payload?.error || "Операция аудиоархива не выполнена.");
       error.status = response.status;
       error.details = payload?.details;
       throw error;
     }
-    if (captureCsrf && payload?.csrfToken) this.csrfToken = payload.csrfToken;
+    if (captureCsrf && payload?.csrfToken && generation === this.authGeneration) this.csrfToken = payload.csrfToken;
     return payload;
   }
 
@@ -791,6 +944,7 @@ export class AudioArchiveGateway {
       this.acceptedPartSize = Math.min(DEFAULT_AUDIO_PART_BYTES, result.acceptedPartSize);
     }
     this.speakerProjectHistoryVersion = result?.speakerProjectHistory === 1 ? 1 : 0;
+    this.archiveReadModelVersion = result?.archiveReadModel === 1 ? 1 : 0;
     return result;
   }
   assertCanonicalSpeakerWrites() {
@@ -801,7 +955,7 @@ export class AudioArchiveGateway {
     throw error;
   }
   sessionStatus({ captureCsrf = true } = {}) { return this.request("/v1/session", { captureCsrf }); }
-  invalidateAuthentication() { this.authGeneration += 1; this.csrfToken = null; }
+  invalidateAuthentication() { this.authGeneration += 1; this.csrfToken = null; this.readsInFlight.clear(); this.activeSourcePreparation?.controller.abort(); }
   async login(password, { onState } = {}) {
     const generation = ++this.authGeneration;
     this.csrfToken = null;
@@ -826,11 +980,27 @@ export class AudioArchiveGateway {
     }
   }
   async logout() {
+    this.activeSourcePreparation?.controller.abort();
     this.authGeneration += 1;
     try { return await this.request("/v1/session/logout", { method: "POST" }); }
     finally { this.csrfToken = null; }
   }
   listSessions(lifecycle = "incoming") { return this.request(`/v1/source-sessions?lifecycle=${encodeURIComponent(lifecycle)}`); }
+  async querySessions(query = {}, signal) {
+    if (this.archiveReadModelVersion !== 1) {
+      const error = new Error('Шлюз не поддерживает постраничный список архива. Обновите шлюз для совместимого просмотра.');
+      throw Object.assign(error, { code: 'unsupported_archive_list', userMessage: error.message });
+    }
+    const result = await this.request(`/v1/archive-list?${new URLSearchParams(query)}`, { signal });
+    if (!validateArchivePage(result) || result.page !== Number(query.page || 0) || result.view !== (query.view || 'sessions') ||
+        (query.snapshot && result.snapshot !== query.snapshot)) throw new Error('Повреждён ответ списка архива.');
+    return result;
+  }
+  async listAttention() {
+    const result = await this.request('/v1/archive-attention');
+    if (!validateArchiveAttention(result)) throw new Error('Сведения об операциях не подтверждены.');
+    return result;
+  }
   getSession(id, signal) { return this.request(`/v1/source-sessions/${encodeURIComponent(id)}`, { signal }); }
   sourcePartFetch(session) {
     if (!validateSessionManifest(session) || session.sourceState !== "available") throw new Error("Данные архивной записи повреждены.");
@@ -842,7 +1012,9 @@ export class AudioArchiveGateway {
       const part = parts.get(String(url));
       if (!part) throw new Error("Запрошенная часть не принадлежит этой архивной записи.");
       const path = `/v1/source-sessions/${encodeURIComponent(session.id)}/blobs/${encodeURIComponent(part.blobId)}/parts/${part.partNumber}/content`;
-      return this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
+      const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
+      if (response.status === 401) this.invalidateAuthentication();
+      return response;
     };
   }
   getAnnouncementOutput(sessionId, outputId) {

@@ -252,13 +252,13 @@ def exercise(browser_type, base_url: str, screenshot_dir: Path | None):
         else:
             route.continue_()
 
-    context.route("**/v1/source-sessions?*", deny_reads)
+    context.route("**/v1/archive-list?*", deny_reads)
     page.locator("#source-session-refresh").click()
     page.wait_for_timeout(250)
     assert not page.locator("#source-session-login-dialog").is_visible(), "403 must not be misclassified as expiry"
     assert "Origin, CSRF" in page.locator("#source-session-status").inner_text()
     csrf_denied["active"] = False
-    context.unroute("**/v1/source-sessions?*", deny_reads)
+    context.unroute("**/v1/archive-list?*", deny_reads)
 
     for width in (320, 390, 768, 1280):
         page.set_viewport_size({"width": width, "height": 900})
