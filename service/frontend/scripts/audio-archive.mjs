@@ -210,10 +210,10 @@ const authController = new ServiceSessionController({
     }
   }
 });
-function openRecordPicker() {
+function openRecordPicker({ focus = true } = {}) {
   if (state.authenticated && !state.sessions) { state.picker.requested = true; void refresh(); }
   state.picker.open = true; $('records').hidden = false; $('record-picker-open').setAttribute('aria-expanded', 'true');
-  $('records-title').focus();
+  if (focus) $('records-title').focus();
 }
 function closeRecordPicker() {
   state.picker.open = false; $('records').hidden = true; $('record-picker-open').setAttribute('aria-expanded', 'false');
@@ -718,7 +718,7 @@ async function consumeArchiveIntent() {
 function applyLegacyAnchor() {
   if (!['#projects', '#results'].includes(location.hash)) return;
   const field = location.hash === '#projects' ? $('filters').elements.speakerProject : $('filters').elements.announcementResult;
-  field.checked = true; state.picker.requested = true; openRecordPicker(); history.replaceState(history.state, '', `${location.pathname}${location.search}#records`);
+  field.checked = true; state.picker.requested = true; openRecordPicker({ focus: false }); history.replaceState(history.state, '', `${location.pathname}${location.search}#records`);
 }
 
 $('maintenance').addEventListener('toggle', () => { if ($('maintenance').open && !state.maintenance) void refreshMaintenance(); });
@@ -759,7 +759,7 @@ async function initialize() {
   try { const restored = await authController.restore(); if (!restored || !generations.auth.current(sequence)) return; await gateway.configuration(); void zoomArchiveUi.updateWarning(); state.authenticated = true; state.picker.requested = true; updateControls();
     if (location.search) await consumeArchiveIntent();
     if (!state.intentConsumed) await refresh(); else void refreshAttention();
-    if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker(); renderRecords(); } }
+    if (!state.intentConsumed) { state.picker.requested = true; openRecordPicker({ focus: false }); renderRecords(); } }
   catch (error) { if (generations.auth.current(sequence)) report(error); }
 }
 await initialize();

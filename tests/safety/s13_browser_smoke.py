@@ -25,6 +25,7 @@ def main():
     parser.add_argument('--mode', choices=['base', 'candidate'], default='candidate')
     parser.add_argument('--repeats', type=int, default=20)
     parser.add_argument('--engine', choices=['all', 'chromium', 'firefox', 'webkit'], default='all')
+    parser.add_argument('--complete-refresh', action='store_true')
     args = parser.parse_args()
     assert urlparse(args.base_url).hostname in ['localhost', '127.0.0.1']
     records = []
@@ -53,12 +54,33 @@ def main():
             page.wait_for_url(args.base_url + '/')
             if args.mode == 'candidate':
                 assert not page.evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/v1/archive-list')||r.name.includes('/v1/source-sessions?'))"), 'portal entry loaded Archive'
+                context.request.post(f'{args.base_url}/__test/s13-seed?n=1')
+                held = {}
+                def hold_first_list(route):
+                    held['route'] = route
+                page.route(args.base_url + '/v1/archive-list?*', hold_first_list)
+                page.goto(args.base_url + '/Audio-Archive.html', wait_until='domcontentloaded')
+                page.locator('#filters input[name=month]').focus()
+                for _ in range(100):
+                    if 'route' in held:
+                        break
+                    page.wait_for_timeout(10)
+                assert 'route' in held
+                held['route'].continue_()
+                expect(page.locator('#status')).to_contain_text('Данные загружены')
+                page.wait_for_load_state('networkidle')
+                assert page.evaluate("document.activeElement === document.querySelector('#filters input[name=month]')"), 'late initial list stole focus'
+                page.unroute(args.base_url + '/v1/archive-list?*', hold_first_list)
             for n in [1, 10, 100, 1000]:
                 for repeat in range(args.repeats):
                     seed = context.request.post(f'{args.base_url}/__test/s13-seed?n={n}').json()
                     context.request.post(args.base_url + '/__test/s13-counts')
                     first = measured(page, lambda: page.goto(args.base_url + '/Audio-Archive.html'),
                                      lambda: expect(page.locator('#status')).to_contain_text('Данные загружены', timeout=60000))
+                    if args.complete_refresh:
+                        page.wait_for_load_state('networkidle')
+                        first['completeRefreshLastApiResponseEndMs'] = page.evaluate("Math.max(0,...performance.getEntriesByType('resource').filter(r=>r.name.includes('/v1/')).map(r=>r.responseEnd))")
+                        first['completeRefreshResources'] = page.evaluate("performance.getEntriesByType('resource').filter(r=>r.name.includes('/v1/')).map(r=>({path:new URL(r.name).pathname,bytes:r.encodedBodySize,transferBytes:r.transferSize,durationMs:r.duration}))")
                     counts = context.request.get(args.base_url + '/__test/s13-counts').json()
                     if args.mode == 'candidate':
                         assert counts['calls'].get('listReleases', 0) == 0, counts
@@ -70,6 +92,9 @@ def main():
                     page.evaluate('performance.clearResourceTimings()')
                     warm = measured(page, lambda: page.locator('#refresh').click(),
                                     lambda: expect(page.locator('#status')).to_contain_text('Данные загружены', timeout=60000))
+                    if args.complete_refresh:
+                        page.wait_for_load_state('networkidle')
+                        warm['completeRefreshResources'] = page.evaluate("performance.getEntriesByType('resource').filter(r=>r.name.includes('/v1/')).map(r=>({path:new URL(r.name).pathname,bytes:r.encodedBodySize,transferBytes:r.transferSize,durationMs:r.duration}))")
                     # Wait for the actual list request, not the prior ready label.
                     page.wait_for_timeout(50)
                     if args.mode == 'candidate':
@@ -124,7 +149,7 @@ def main():
                 page.screenshot(path=str(Path(args.output).with_name(f's13-{engine}-editor.png')))
             assert not errors, errors
             assert not blocked, blocked
-            records.append({'engine': engine, 'pageErrors': errors, 'externalRequests': blocked, 'status': 'PASS'})
+            records.append({'engine': engine, 'pageErrors': errors, 'externalRequests': blocked, 'status': 'PASS', 'lateListFocusPreserved': args.mode == 'candidate'})
             checkpoint = Path(args.output)
             checkpoint.parent.mkdir(parents=True, exist_ok=True)
             checkpoint.write_text(json.dumps({'kind': 'local-synthetic-browser-checkpoint', 'mode': args.mode, 'records': records}, ensure_ascii=False, separators=(',', ':')) + '\n')
