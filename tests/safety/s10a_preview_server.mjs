@@ -15,8 +15,10 @@ const previewCookie = "meser_preview_service_session";
 const canonicalCookie = "__Host-meser_service_session";
 const verifier = await createPasswordVerifier("local-test-password", Buffer.alloc(16, 11), { N: 16384, r: 8, p: 1 });
 const sessions = new SessionRegistry({ maxEntries: 16 });
-const domain = new Proxy({}, { get: (_target, name) => async () => {
+const domain = new Proxy({}, { get: (_target, name) => async (query = {}) => {
   if (name === "listSessions") return { revision: 1, sessions: [] };
+  if (name === 'querySessions') return { schemaVersion: 1, kind: 'archive-page', snapshot: 's10a-synthetic', revision: 1, queryId: 'a'.repeat(64), page: Number(query.page || 0), pageSize: 10, total: 0, view: query.view || 'sessions', items: [] };
+  if (name === 'listAttention') return { snapshot: 's10a-synthetic', transactions: [] };
   if (name === "listIncomplete") return { transactions: [], orphans: [] };
   return {};
 } });

@@ -4,7 +4,7 @@
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import { writeFile, mkdir } from 'node:fs/promises';
+import { writeFile, mkdir, readFile } from 'node:fs/promises';
 import { resolve, dirname } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import os from 'node:os';
@@ -24,10 +24,10 @@ const seed = 's13-fixture-v1';
 const json = data => new Response(JSON.stringify(data), { headers: { 'Content-Type': 'application/json' } });
 const pause = ms => ms ? new Promise(resolve => setTimeout(resolve, ms)) : Promise.resolve();
 
-async function fixture(trackCount = 1, partBytes = 4, bytes = Buffer.from('source-audio')) {
+async function fixture(trackCount = 1, partBytes = 4, bytes = Buffer.from('source-audio'), extension = 'wav') {
   const repository = new MemoryRepository();
   const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: partBytes, clock });
-  const files = Array.from({ length: trackCount }, (_, i) => new File([bytes], `Дорожка-${i + 1}.wav`, { type: 'audio/wav' }));
+  const files = Array.from({ length: trackCount }, (_, i) => new File([bytes], `Дорожка-${i + 1}.${extension}`, { type: extension === 'm4a' ? 'audio/mp4' : 'audio/wav' }));
   const idempotencyKey = seed + trackCount + partBytes;
   const plan = await client.createIngestionPlan(files, partBytes, { idempotencyKey });
   const op = await domain.beginIngestion({ schemaVersion: 1, idempotencyKey, title: 'Запись', recordedAt: null, origin: 'manual', supersedesSessionId: null, plan: client.serializeIngestionPlan(plan) });
@@ -63,6 +63,7 @@ function mockRepository(files, latencyMs = 0) {
     repository[key] = (...args) => {
       counts.repository[key] = (counts.repository[key] || 0) + 1;
       if (key === 'readJson') { const kind = args[0].split('/')[0]; counts.reads[kind] = (counts.reads[kind] || 0) + 1; }
+      if (key === 'readJsonBlob') counts.reads.sessions = (counts.reads.sessions || 0) + 1;
       return method(...args);
     };
   }
@@ -121,11 +122,44 @@ for (const tracks of [1, 3]) for (const multipart of [false, true]) for (const p
   }
   audio.push({ tracks, multipart, profile, cache: 'cold', ...summarize(rows.map(row => row.durationMs)), raw: rows });
 }
+const realistic = [];
+if (args.includes('--realistic')) {
+  const bytes = await readFile(resolve('tests/safety/fixtures/s10a-long-aac-lc-3747s.m4a'));
+  const f = await fixture(3, 256 * 1024, bytes, 'm4a');
+  for (const profile of [{ name: 'ordinary', rttMs: 10, bytesPerSecond: 10_000_000 }, { name: 'high-rtt', rttMs: 80, bytesPerSecond: 1_000_000 }]) {
+    const rows = [];
+    for (let repeat = 0; repeat < 5; repeat++) {
+      let active = 0, max = 0, calls = 0, transferred = 0, rss = 0;
+      const start = performance.now();
+      const files = await client.reconstructSessionTracks(f.session, async url => {
+        const part = f.session.sourceTracks.flatMap(t => t.parts).find(p => p.downloadUrl === url);
+        active++; max = Math.max(max, active); rss = Math.max(rss, process.memoryUsage().rss);
+        await pause(profile.rttMs + part.sizeBytes / profile.bytesPerSecond * 1000);
+        active--; calls++; transferred += part.sizeBytes;
+        return new Response(f.repository.assetBytes.get(part.assetId));
+      });
+      const verifiedMs = performance.now() - start;
+      for (const file of files) assert.equal(sha(Buffer.from(await file.arrayBuffer())), sha(bytes));
+      rows.push({ verifiedMs, calls, assetBytes: transferred, maxActiveTransfers: max, rss });
+    }
+    realistic.push({ fixture: 'existing 3747-second AAC-LC M4A, three ordered logical tracks', fixtureSha256: sha(bytes), sourceBytes: bytes.length * 3,
+      profile, ...summarize(rows.map(row => row.verifiedMs)), raw: rows });
+  }
+}
 const git = (...args) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
 const report = { kind: 'synthetic-fetch-boundaries-not-production', seed, fixtureHash: createHash('sha256').update(JSON.stringify(template.session)).digest('hex'),
-  revision: { sha: git('rev-parse', 'HEAD'), tree: git('rev-parse', 'HEAD^{tree}'), dirty: git('status', '--short') },
+  revision: { sha: arg('--sha', '') || git('rev-parse', 'HEAD'), tree: arg('--tree', '') || git('rev-parse', 'HEAD^{tree}'), dirty: arg('--sha', '') ? 'git archive snapshot; harness outside runtime tree' : git('status', '--short') },
   environment: { node: process.version, os: `${os.platform()} ${os.release()} ${os.arch()}`, cpu: os.cpus()[0]?.model, logicalCpus: os.cpus().length, totalMemory: os.totalmem(), browser: 'NOT_RUN' },
   methodology: { metadataRepeats: 20, metadataNetwork: 'in-process Fetch mock; zero injected delay', audioRepeats: 5, delayAppliedAt: 'part fetch before Response; RTT + bytes/bandwidth; no geography inference', memory: 'Node RSS samples, not browser or Gateway isolated RSS' },
-  metadata, audio, raw, notRun: ['physical Safari/Android', 'remote geography', 'production', 'browser stage timings', 'realistic audio', 'near-limit resources'] };
+  metadata, audio, realistic, raw, notRun: ['physical Safari/Android', 'remote geography', 'production', 'browser stage timings', ...(!realistic.length ? ['realistic audio'] : []), 'near-limit resources'] };
 const output = resolve(arg('--output', '/private/tmp/s13-benchmark.json')); await mkdir(dirname(output), { recursive: true });
-await writeFile(output, JSON.stringify(report, null, 2) + '\n'); console.log(JSON.stringify({ output, revision: report.revision, metadataScenarios: metadata.length, audioScenarios: audio.length }));
+const countSets = [], countIndex = new Map();
+const compactRaw = raw.map(row => {
+  const key = JSON.stringify(row.counts);
+  if (!countIndex.has(key)) { countIndex.set(key, countSets.length); countSets.push(row.counts); }
+  return [row.n, row.scenario, row.repeat, row.durationMs, row.responseBytes, countIndex.get(key)];
+});
+delete report.raw;
+report.rawColumns = ['n', 'scenario', 'repeat', 'durationMs', 'responseBytes', 'countSet']; report.countSets = countSets;
+await writeFile(output, JSON.stringify(report, null, 2).slice(0, -2) + ',\n  "raw": [\n' + compactRaw.map(row => '    ' + JSON.stringify(row)).join(',\n') + '\n  ]\n}\n');
+console.log(JSON.stringify({ output, revision: report.revision, metadataScenarios: metadata.length, audioScenarios: audio.length }));

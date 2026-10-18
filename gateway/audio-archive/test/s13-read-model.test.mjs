@@ -5,6 +5,7 @@ import { ArchiveReadModel } from '../src/read-model.mjs';
 import { selectSessions, selectResults } from '../../../scripts/audio-archive-core.mjs';
 import { validateArchivePage, validateSessionManifest, AudioArchiveGateway } from '../../../service/frontend/scripts/audio-archive-client.mjs';
 import { managementFixture } from './archive-management-fixture.mjs';
+import { ZoomArchive } from '../src/zoom-archive.mjs';
 import { sourceFixture, collection, clock, uuid } from './s13-fixtures.mjs';
 
 test('S13 one cold build, global search and paging parity, two lifecycle consumers, bounded summaries', async () => {
@@ -90,4 +91,46 @@ test('S13 concurrent client reads coalesce; unsupported and malformed projection
   await assert.rejects(() => gateway.querySessions({}), e => e.code === 'unsupported_archive_list');
   gateway.archiveReadModelVersion = 1;
   await assert.rejects(() => gateway.querySessions({}), /Повреждён/);
+});
+
+test('S13 attention scales across 0/29/1000 terminal transactions without hiding actionable writes or scanning Releases', async () => {
+  const h = await sourceFixture({ tracks: 1 });
+  const entry = [...h.repository.files].find(([path]) => path.startsWith('transactions/ingest-'));
+  for (const n of [0, 29, 1000]) {
+    for (const path of [...h.repository.files.keys()]) if (path.startsWith('transactions/')) h.repository.files.delete(path);
+    for (let i = 1; i <= n; i++) {
+      const id = uuid(i), transaction = JSON.parse(JSON.stringify(entry[1]).replaceAll(entry[1].sessionId, id));
+      h.repository.files.set(`transactions/ingest-${id}.json`, transaction);
+    }
+    let releaseScans = 0; h.repository.listReleases = async () => { releaseScans++; return []; };
+    const result = await h.domain.listAttention();
+    assert.equal(result.transactions.length, 0); assert.equal(releaseScans, 0);
+  }
+  const transaction = structuredClone(entry[1]); transaction.state = 'uploading'; transaction.uploadedParts = [];
+  h.repository.files.set(entry[0], transaction);
+  assert.equal((await h.domain.listAttention()).transactions.length, 1);
+  // A stalled independent attention read cannot delay the ordinary first list.
+  let release;
+  h.repository.listJson = async () => new Promise(resolve => { release = resolve; });
+  const pendingAttention = h.domain.listAttention();
+  const page = await h.domain.querySessions({}); assert.equal(page.total, 1);
+  const filtered = h.domain.querySessions({ attention: true });
+  let settled = false; filtered.finally(() => { settled = true; });
+  await new Promise(resolve => setTimeout(resolve, 5)); assert.equal(settled, false);
+  release([]); await pendingAttention; await filtered;
+});
+
+test('S13 ordinary usage never scans, explicit recount coalesces two complete physical passes and stale warnings survive errors', async () => {
+  const h = await sourceFixture({ tracks: 1 }), service = new ZoomArchive(h.domain, { key: Buffer.alloc(32, 1), clock });
+  let scans = 0;
+  h.repository.listReleases = async () => { scans++; await new Promise(resolve => setTimeout(resolve, 2)); return [{ id: 1 }]; };
+  h.repository.listReleaseAssets = async () => [{ id: 7, size: 45e9 }, { id: 7, size: 45e9 }];
+  assert.equal((await service.usage()).usedBytes, null); assert.equal(scans, 0);
+  const [a, b] = await Promise.all([service.usage(true), service.usage(true)]);
+  assert.equal(scans, 2); assert.equal(a.assetCount, 1); assert.equal(a.usedBytes, 45e9); assert.equal(b.usedBytes, a.usedBytes);
+  assert.equal(a.warning, true);
+  h.repository.head++;
+  const stale = await service.usage(); assert.equal(scans, 2); assert.equal(stale.stale, true); assert.equal(stale.warning, true);
+  h.repository.listReleases = async () => { throw new Error('synthetic outage'); };
+  const failed = await service.usage(true); assert.equal(failed.usedBytes, 45e9); assert.equal(failed.warning, true); assert.equal(failed.stale, true);
 });
