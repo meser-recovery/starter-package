@@ -157,6 +157,23 @@ def main():
                     marks = page.evaluate("performance.getEntriesByType('mark').filter(m=>m.name.startsWith('archive-source-')).map(m=>({name:m.name,time:m.startTime}))")
                     assert next(m['time'] for m in marks if m['name'] == 'archive-source-verified') <= next(m['time'] for m in marks if m['name'].endswith('-interactive'))
                     records.append({'engine': engine, 'workflow': workflow, 'marks': marks, 'resources': page.evaluate("performance.getEntriesByType('resource').filter(r=>r.name.includes('/v1/')).map(r=>({path:new URL(r.name).pathname,bytes:r.encodedBodySize,durationMs:r.duration}))")})
+                # A stale caller during waveform completion cannot commit internal ready.
+                page.goto(args.base_url + '/Audio-Editor.html')
+                stale = page.evaluate("""async id => {
+                  const {AudioArchiveGateway, prepareRemoteSourceBatch} = await import('/scripts/audio-archive-client.mjs');
+                  const editor = await import('/scripts/speaker-editor.mjs');
+                  const batch = await prepareRemoteSourceBatch({gateway:new AudioArchiveGateway(''),sessionId:id});
+                  let current = true;
+                  const opened = await editor.openSpeakerEditor({session:batch.session,files:batch.files,
+                    isCurrent:()=>current, waveformProvider:async()=>{
+                      current=false; const samples=new Float32Array(65536); samples.sampleRate=131072;
+                      return {duration:.5,samples};
+                    }});
+                  const ready=editor.getSpeakerSaveState().ready;
+                  await editor.closeSpeakerEditor(true);
+                  return {opened,ready};
+                }""", seed['primary'])
+                assert stale == {'opened': False, 'ready': False}, stale
                 assert not page.evaluate('window.__s13Errors'), page.evaluate('window.__s13Errors')
                 page.screenshot(path=str(Path(args.output).with_name(f's13-{engine}-editor.png')))
             assert not errors, errors

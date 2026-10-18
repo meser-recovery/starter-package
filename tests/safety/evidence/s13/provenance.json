@@ -1,0 +1,96 @@
+{
+  "base": {
+    "sha": "802fba32c5b473ee72d1f71d420c5758215c142b",
+    "tree": "dc99fa7bf1bffea945a9c6ca200d6ad9f0080b78"
+  },
+  "candidateRuntime": {
+    "sha": "3278954fd03425d41ba2a69275aa86cb4f23cf44",
+    "tree": "df8c90a2294ee117c3d9de217f8667feb8fe7e83"
+  },
+  "scope": "All changed runtime files; later commits through evidence publication change only tests/evidence. Final closure SHA and exact-head CI recorded in PR #63. Browser/editor/resource candidate runs used this runtime, test server restarted before runs. Network candidate revision additionally recorded in its JSON. Waveform runtime unchanged from base; native binary hashes in waveform JSON.",
+  "files": [
+    {
+      "path": "gateway/audio-archive/src/app.mjs",
+      "baseSha256": "98b14cbbb120eac1bb5fb1074d67f6a039b39354453c2d544543debcfd332738",
+      "candidateSha256": "df59efbf4d7dcba419e00ba52d720724058a09c6c12d1d801444ce119af75e22",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "gateway/audio-archive/src/domain.mjs",
+      "baseSha256": "addb5c480be5a8bf64194eb0ae10f0f62cc79425ab5a218f15d80395c6402e34",
+      "candidateSha256": "d714d4de62a1297aa326f77821575d5adfe46b340ad5774b4f915575ab98c660",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "gateway/audio-archive/src/github.mjs",
+      "baseSha256": "395d8f5921c19b378bb47cfac3b229eb28c11596e5597bc8eb78ffd985f4b522",
+      "candidateSha256": "4253df5ff6834b633655d6e92ef51171d364c27356bc30b4e56e469e0a0b410e",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "gateway/audio-archive/src/read-model.mjs",
+      "baseSha256": null,
+      "candidateSha256": "9e55de7f241439f21615f25171fc5864aacd744c86a2aa5b4f85a64831ec9056"
+    },
+    {
+      "path": "gateway/audio-archive/src/zoom-archive.mjs",
+      "baseSha256": "f58b18ad2448dd7c96fb060a5186f2be502c8f72123abecd751bf4eac04112b2",
+      "candidateSha256": "896e10c4102694504fa28f08d5a98e9f5b9ccc7e80fce40a6c6287e9dcfc9dac",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "gateway/audio-archive/src/zoom.mjs",
+      "baseSha256": "3e5e6a3dd5dd275deb5d17233db03c16ac1851fcf7fad7ab198d8c06657a541d",
+      "candidateSha256": "cd4d161249833af81386fc4e07bf00aa0df85c83890620d721f50db9e46e4f0f",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "scripts/audio-archive-client.mjs",
+      "baseSha256": "9bd0eb2d4f711a81a3631508bb39fb52b08773a9a268d62bec8b2e2785b0a22e",
+      "candidateSha256": "6444ba7da5017057dc6fc7f06548052342a0b43f9e716b1a19ccb3f789291c58",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/Audio-Archive.html",
+      "baseSha256": "ff699b9a608c2470960877460d476a333ecb88bdba00badc91bd1da7f1360fbf",
+      "candidateSha256": "57c3912bf13379998d93887d3de40301c59b9ba06b7365fb56b01a0f05930095",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/scripts/audio-archive-client.mjs",
+      "baseSha256": "6acfcf4f3399a49987e6bd6aca43a648df5dd8423a95936417d287608322df99",
+      "candidateSha256": "5a76e076d252cee9778c42cf38dd9b30e418b4f7553f092bf85822eadb667b35",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/scripts/audio-archive-zoom.mjs",
+      "baseSha256": "b668ec1b5bd6c01d064276886fbc3ffa5e84c4c353303ba533f5725c4ddb1eb1",
+      "candidateSha256": "d36735ee0b2f4e749b5f6a2c98e1002e7f546b16e43d99a0d5c05a24d2125854",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/scripts/audio-archive.mjs",
+      "baseSha256": "1936bd582d46db912946ad816cc5d4dcf5aba600fc2e109a27ec765c34072844",
+      "candidateSha256": "723ca433d1258cf21415e96d552bc578031f0d413d123cc3164a2127ccfe4e33",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/scripts/audio-processor.mjs",
+      "baseSha256": "0db8899487e23f3d0386f8fca4c11eff2d5aaa001eaff171d1d6271745c35e42",
+      "candidateSha256": "4bd8e0ce98450af03f6e382a9b7862f8c85294a6c8a9ed0e58bcea1b74d5eafa",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/scripts/source-session-archive.mjs",
+      "baseSha256": "3727f830b97802caf447e84b2487f699ac96301b96edb176b6f2469eac9cb777",
+      "candidateSha256": "205f11c1e42fb93f180a7f4042b6303be7e49fca62c214b3a02668016cc1b391",
+      "unchangedBaseArchiveVerified": true
+    },
+    {
+      "path": "service/frontend/scripts/speaker-editor.mjs",
+      "baseSha256": "843b369725e0aa6ef96028873405747faddb14d4846c285861c74d5f8ccd53af",
+      "candidateSha256": "57c7064e2f8cd981d855f00cc8c9249d4c6706fb316b74298301b9c89671861d",
+      "unchangedBaseArchiveVerified": true
+    }
+  ]
+}
