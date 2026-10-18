@@ -106,6 +106,7 @@ export class AudioArchiveDomain {
     this.readModel = new ArchiveReadModel(repository);
     this.listQueries = new Map();
     this.attentionReads = new Map();
+    this.attentionSnapshot = null;
   }
 
   async snapshot() {
@@ -148,15 +149,21 @@ export class AudioArchiveDomain {
     return publicSession((await this.sessionSnapshot(sessionId)).session);
   }
 
-  async downloadSourcePart(sessionId, blobId, partNumber) {
+  async downloadSourcePart(sessionId, blobId, partNumber, signal) {
+    const abort = () => { if (signal?.aborted) throw Object.assign(new Error('Source part transfer cancelled'), { name: 'AbortError', status: 499 }); };
+    abort();
     const id = assertUuid(blobId, "blobId");
     assertInteger(partNumber, 1, 9999, "partNumber");
     const session = (await this.sessionSnapshot(sessionId)).session;
+    abort();
     if (session.sourceState !== "available") throw notFound("Source Session audio is unavailable");
     const track = session.sourceTracks.find((item) => item.blobId === id);
     const part = track?.parts.find((item) => item.partNumber === partNumber);
     if (!part) throw notFound("Source Session part not found");
-    const bytes = await this.repository.downloadReleaseAsset(part.assetId);
+    let bytes;
+    try { bytes = await this.repository.downloadReleaseAsset(part.assetId, signal); }
+    catch (error) { abort(); throw error; }
+    abort();
     if (bytes.byteLength !== part.sizeBytes || !sameDigest(digestBytes(bytes), part.sha256)) {
       throw conflict("Release asset failed integrity verification");
     }
@@ -1345,11 +1352,15 @@ export class AudioArchiveDomain {
 
   async listAttention(expectedHead = null) {
     const head = expectedHead || await this.repository.getHead();
+    if (this.attentionSnapshot?.head === head) return structuredClone(this.attentionSnapshot.result);
     if (this.attentionReads.has(head)) return structuredClone(await this.attentionReads.get(head));
     const pending = (async () => {
       const transactions = await this.transactionAttention(head, true);
       if (await this.repository.getHead() !== head) throw conflict('Attention snapshot changed; reload');
-      return { snapshot: head, transactions };
+      const result = { snapshot: head, transactions };
+      if (Buffer.byteLength(JSON.stringify(result)) > 8 * 1024 * 1024) throw new Error('Attention read budget exceeded');
+      this.attentionSnapshot = { head, result };
+      return result;
     })();
     this.attentionReads.set(head, pending);
     try { return structuredClone(await pending); } finally { this.attentionReads.delete(head); }

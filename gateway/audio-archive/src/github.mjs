@@ -253,29 +253,38 @@ export class GitHubArchiveRepository {
     return data;
   }
 
-  async downloadReleaseAsset(assetId) {
+  async downloadReleaseAsset(assetId, signal) {
+    signal?.throwIfAborted();
     if (!Number.isSafeInteger(assetId) || assetId < 1) throw new Error("Unsafe release asset ID");
     const token = await this.token();
+    signal?.throwIfAborted();
     const response = await this.fetchImpl(`https://api.github.com/repos/${this.owner}/${this.repository}/releases/assets/${assetId}`, {
-      headers: this.headers(token, { Accept: "application/octet-stream" })
+      headers: this.headers(token, { Accept: "application/octet-stream" }), signal
     });
-    if (!response.ok) throw new GitHubError("GitHub asset download failed", response.status);
+    if (!response.ok) { await response.body?.cancel().catch(() => {}); throw new GitHubError("GitHub asset download failed", response.status); }
     const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && (declared < 1 || declared > MAX_PART_BYTES)) {
+      await response.body?.cancel().catch(() => {});
       throw new GitHubError("GitHub asset download size is invalid", 502);
     }
     const reader = response.body?.getReader();
     if (!reader) throw new GitHubError('GitHub asset body is missing', 502);
     const chunks = []; let size = 0;
+    const abort = () => { void reader.cancel(signal.reason).catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     try {
       while (true) {
+        signal?.throwIfAborted();
         const { value, done } = await reader.read();
+        signal?.throwIfAborted();
         if (done) break;
         size += value.byteLength;
         if (size > MAX_PART_BYTES) throw new GitHubError('GitHub asset download size is invalid', 502);
         chunks.push(Buffer.from(value));
       }
     } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+    finally { signal?.removeEventListener('abort', abort); reader.releaseLock(); }
     const bytes = Buffer.concat(chunks, size);
     if (bytes.byteLength < 1 || bytes.byteLength > MAX_PART_BYTES) {
       throw new GitHubError("GitHub asset download size is invalid", 502);

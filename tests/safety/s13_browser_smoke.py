@@ -18,6 +18,13 @@ def measured(page, action, ready):
     return {'durationMs': elapsed, 'resources': resources}
 
 
+def useful_list(page):
+    expect(page.locator('#status')).to_contain_text('Данные загружены', timeout=60000)
+    # A ready status inside a still-hidden picker is not a useful list.
+    expect(page.locator('#records')).to_be_visible(timeout=60000)
+    expect(page.locator('#session-list > article').first).to_be_visible(timeout=60000)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', default='http://localhost:4186')
@@ -55,17 +62,22 @@ def main():
             if args.mode == 'candidate':
                 assert not page.evaluate("performance.getEntriesByType('resource').some(r=>r.name.includes('/v1/archive-list')||r.name.includes('/v1/source-sessions?'))"), 'portal entry loaded Archive'
                 context.request.post(f'{args.base_url}/__test/s13-seed?n=1')
+                page.goto(args.base_url + '/Audio-Archive.html')
+                useful_list(page)
                 held = {}
                 def hold_first_list(route):
                     held['route'] = route
                 page.route(args.base_url + '/v1/archive-list?*', hold_first_list)
-                page.goto(args.base_url + '/Audio-Archive.html', wait_until='domcontentloaded')
                 page.locator('#filters input[name=month]').focus()
+                # Restored pages already contain visible controls and user input.
+                # Reauthentication/list completion must not steal that focus.
+                page.evaluate("dispatchEvent(new PageTransitionEvent('pageshow',{persisted:true}))")
                 for _ in range(100):
                     if 'route' in held:
                         break
                     page.wait_for_timeout(10)
                 assert 'route' in held
+                assert page.evaluate("document.activeElement === document.querySelector('#filters input[name=month]')"), 'focus fixture is not active'
                 held['route'].continue_()
                 expect(page.locator('#status')).to_contain_text('Данные загружены')
                 page.wait_for_load_state('networkidle')
@@ -76,7 +88,7 @@ def main():
                     seed = context.request.post(f'{args.base_url}/__test/s13-seed?n={n}').json()
                     context.request.post(args.base_url + '/__test/s13-counts')
                     first = measured(page, lambda: page.goto(args.base_url + '/Audio-Archive.html'),
-                                     lambda: expect(page.locator('#status')).to_contain_text('Данные загружены', timeout=60000))
+                                     lambda: useful_list(page))
                     if args.complete_refresh:
                         page.wait_for_load_state('networkidle')
                         first['completeRefreshLastApiResponseEndMs'] = page.evaluate("Math.max(0,...performance.getEntriesByType('resource').filter(r=>r.name.includes('/v1/')).map(r=>r.responseEnd))")
@@ -91,7 +103,7 @@ def main():
                         expect(page.locator('#session-list > article')).to_have_count(min(10, n))
                     page.evaluate('performance.clearResourceTimings()')
                     warm = measured(page, lambda: page.locator('#refresh').click(),
-                                    lambda: expect(page.locator('#status')).to_contain_text('Данные загружены', timeout=60000))
+                                    lambda: useful_list(page))
                     if args.complete_refresh:
                         page.wait_for_load_state('networkidle')
                         warm['completeRefreshResources'] = page.evaluate("performance.getEntriesByType('resource').filter(r=>r.name.includes('/v1/')).map(r=>({path:new URL(r.name).pathname,bytes:r.encodedBodySize,transferBytes:r.transferSize,durationMs:r.duration}))")

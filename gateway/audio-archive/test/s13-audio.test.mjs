@@ -91,3 +91,13 @@ test('S13 rapid source intents drain earlier transfers before starting another t
   const second = await prepareRemoteSourceBatch({ gateway, sessionId: h.session.id });
   assert.equal((await settled)[0].status, 'rejected'); assert.equal(second.files.length, 3); assert.equal(max, 2); assert.equal(active, 0);
 });
+
+test('S13 auth loss keeps status 401 even if cancellation of the error body also fails', async () => {
+  const h = await sourceFixture();
+  const gateway = new AudioArchiveGateway('https://synthetic.test', async () => new Response(new ReadableStream({
+    cancel() { throw new DOMException('Body already aborted', 'AbortError'); }
+  }), { status: 401 }));
+  gateway.getSession = async () => h.session;
+  await assert.rejects(() => prepareRemoteSourceBatch({ gateway, sessionId: h.session.id }), e => e.status === 401);
+  assert.ok(gateway.authGeneration > 0); assert.equal(gateway.activeSourcePreparation, null);
+});

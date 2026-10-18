@@ -27,6 +27,9 @@ def assert_no_overflow(page: Page, label: str) -> None:
 
 
 def assert_field(page: Page, label_selector: str, control_selector: str, name: str) -> None:
+    # Exercise keyboard-visible focus explicitly, including native month inputs.
+    # Keep all association, :focus-visible, outline and clipping assertions.
+    page.keyboard.press("Tab")
     result = page.evaluate(
         """([labelSelector, controlSelector]) => {
           const label = document.querySelector(labelSelector);

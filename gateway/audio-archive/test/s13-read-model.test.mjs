@@ -80,7 +80,9 @@ test('S13 lightweight attention discovers session-less pending operations with z
   h.repository.listReleases = async () => { throw new Error('ordinary attention must not scan releases'); };
   const attention = await h.domain.listAttention(); assert.equal(attention.transactions.length, 1); assert.equal(attention.transactions[0].sessionId, pending.sessionId);
   assert.deepEqual(calls, ['transactions/']);
+  await h.domain.listAttention(); assert.deepEqual(calls, ['transactions/'], 'same immutable HEAD reuses attention');
   h.repository.files.set('transactions/broken.json', { kind: 'unknown' });
+  h.repository.head++;
   await assert.rejects(() => h.domain.listAttention(), /cannot be confirmed/);
 });
 
@@ -102,15 +104,18 @@ test('S13 attention scales across 0/29/1000 terminal transactions without hiding
       const id = uuid(i), transaction = JSON.parse(JSON.stringify(entry[1]).replaceAll(entry[1].sessionId, id));
       h.repository.files.set(`transactions/ingest-${id}.json`, transaction);
     }
+    h.repository.head++;
     let releaseScans = 0; h.repository.listReleases = async () => { releaseScans++; return []; };
     const result = await h.domain.listAttention();
     assert.equal(result.transactions.length, 0); assert.equal(releaseScans, 0);
   }
   const transaction = structuredClone(entry[1]); transaction.state = 'uploading'; transaction.uploadedParts = [];
   h.repository.files.set(entry[0], transaction);
+  h.repository.head++;
   assert.equal((await h.domain.listAttention()).transactions.length, 1);
   // A stalled independent attention read cannot delay the ordinary first list.
   let release;
+  h.repository.head++;
   h.repository.listJson = async () => new Promise(resolve => { release = resolve; });
   const pendingAttention = h.domain.listAttention();
   const page = await h.domain.querySessions({}); assert.equal(page.total, 1);

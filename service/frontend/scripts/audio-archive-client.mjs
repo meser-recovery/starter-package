@@ -690,7 +690,7 @@ async function reconstructSources(tracks, sessionId, fetchImpl, { signal, onProg
       const promise = (async () => {
         throwIfAborted(controller.signal);
         const response = await fetchImpl(task.part.downloadUrl, { cache: 'no-store', signal: controller.signal });
-        if (!response.ok) { await response.body?.cancel(); throw Object.assign(new Error("Не удалось загрузить часть аудиофайла."), { status: response.status }); }
+        if (!response.ok) { await response.body?.cancel().catch(() => {}); throw Object.assign(new Error("Не удалось загрузить часть аудиофайла."), { status: response.status }); }
         const bytes = await readBoundedPart(response, task.part.sizeBytes, controller.signal);
         throwIfAborted(controller.signal); receivedBytes += bytes.byteLength; emit(task, 'transfer');
         if (bytes.byteLength !== task.part.sizeBytes || await sha256Hex(bytes, controller.signal) !== task.part.sha256) throw new Error("Проверка целостности части аудиофайла не пройдена.");
@@ -704,13 +704,14 @@ async function reconstructSources(tracks, sessionId, fetchImpl, { signal, onProg
     for (let index = 0; index < tasks.length; index++) {
       const { promise, task } = pending.get(index);
       const result = await promise;
-      if (result.error) throw result.error;
+      if (result.error) throw controller.signal.reason instanceof Error ? controller.signal.reason : result.error;
       throwIfAborted(controller.signal);
       const bytes = result.bytes;
       hash.update(bytes); trackBytes += bytes.byteLength;
-      // Blob snapshots release the unverified TypedArray slot. The verified File
-      // batch is the current working data, not an additional persistent cache.
-      chunks.push(new Blob([bytes])); verifiedBytes += bytes.byteLength; verifiedParts++;
+      // Consumed bytes have entered the canonical hash; they are verified working
+      // data, outside the two unverified/reorder slots. Keep the original byte-
+      // array File construction across the existing browser media fallbacks.
+      chunks.push(bytes); verifiedBytes += bytes.byteLength; verifiedParts++;
       pending.delete(index); reservedBytes -= task.part.sizeBytes; resources(); emit(task, 'verification');
       if (task.part.partNumber === task.track.parts.length) {
         if (trackBytes !== task.track.sizeBytes || hash.digestHex() !== task.track.sha256) throw new Error("Проверка целостности аудиодорожки не пройдена.");
@@ -982,7 +983,7 @@ export class AudioArchiveGateway {
     throw error;
   }
   sessionStatus({ captureCsrf = true } = {}) { return this.request("/v1/session", { captureCsrf }); }
-  invalidateAuthentication() { this.authGeneration += 1; this.csrfToken = null; this.readsInFlight.clear(); this.activeSourcePreparation?.controller.abort(); }
+  invalidateAuthentication(reason) { this.authGeneration += 1; this.csrfToken = null; this.readsInFlight.clear(); this.activeSourcePreparation?.controller.abort(reason); }
   async login(password, { onState } = {}) {
     const generation = ++this.authGeneration;
     this.csrfToken = null;
@@ -1065,7 +1066,10 @@ export class AudioArchiveGateway {
       if (!part) throw new Error("Запрошенная часть не принадлежит этой архивной записи.");
       const path = `/v1/source-sessions/${encodeURIComponent(session.id)}/blobs/${encodeURIComponent(part.blobId)}/parts/${part.partNumber}/content`;
       const response = await this.fetchImpl(`${this.baseUrl}${path}`, { ...options, credentials: "include" });
-      if (response.status === 401) this.invalidateAuthentication();
+      if (response.status === 401) {
+        const error = Object.assign(new Error('Служебная сессия истекла.'), { status: 401 });
+        this.invalidateAuthentication(error); await response.body?.cancel().catch(() => {}); throw error;
+      }
       return response;
     };
   }

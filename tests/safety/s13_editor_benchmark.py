@@ -20,11 +20,14 @@ def main():
     parser.add_argument('--base-url', required=True)
     parser.add_argument('--mode', choices=['base', 'candidate'], required=True)
     parser.add_argument('--output', required=True)
+    parser.add_argument('--engine', choices=['all', 'chromium', 'firefox', 'webkit'], default='all')
     args = parser.parse_args()
     assert urlparse(args.base_url).hostname in ['127.0.0.1', 'localhost']
     rows = []
+    if args.engine != 'all' and Path(args.output).exists():
+        rows = [row for row in json.loads(Path(args.output).read_text())['rows'] if row['engine'] != args.engine]
     with sync_playwright() as p:
-        for engine in ['chromium', 'firefox', 'webkit']:
+        for engine in (['chromium', 'firefox', 'webkit'] if args.engine == 'all' else [args.engine]):
             b = getattr(p, engine).launch()
             c = b.new_context(viewport={'width': 390, 'height': 900})
             def fence(route):
@@ -61,11 +64,19 @@ def main():
                             page.wait_for_function("async()=> (await import('./scripts/audio-processor.mjs')).getProcessorFiles().length===3 && !document.getElementById('processor-run').disabled", timeout=60000)
                         interactive_ms = (time.perf_counter() - start) * 1000
                         counts = c.request.get(args.base_url + '/__test/s13-counts').json()
-                        if workflow == 'speaker':
-                            page.evaluate("async()=>{await (await import('./scripts/speaker-editor.mjs')).closeSpeakerEditor(true)}")
-                        else:
-                            page.locator('#source-session-announcement-close').click()
-                        # Offer the same current verified batch for another explicit selection.
+                        # Separate warm-batch scenario from Editor close/discard
+                        # timing. A disposable fresh page selects once (setup),
+                        # then reselects that same current authorized batch.
+                        page.close()
+                        page = c.new_page()
+                        page.on('pageerror', lambda e: errors.append(str(e)))
+                        page.goto(args.base_url + '/Audio-Editor.html')
+                        page.locator('#source-session-mode-archive').click()
+                        page.locator('#source-session-recent').click()
+                        card = page.locator(f'[data-session-id="{seed["primary"]}"]')
+                        expect(card).to_be_visible()
+                        card.get_by_role('button', name='Выбрать', exact=True).click()
+                        verified(page)
                         page.locator('#source-session-mode-archive').click()
                         page.locator('#source-session-recent').click()
                         expect(card).to_be_visible()
@@ -88,7 +99,8 @@ def main():
             b.close()
     Path(args.output).write_text(json.dumps({'kind': 'local-synthetic-selected-click', 'mode': args.mode, 'rows': rows,
         'network': 'fixed per-asset delay at synthetic Gateway repository download, loopback browser→Gateway; not remote geography',
-        'memory': 'NOT_RUN browser memory', 'fixture': '3×8044 byte deterministic 0.5s WAV; single native/WASM waveform worker; no production traffic'}, ensure_ascii=False, separators=(',', ':')) + '\n')
+        'memory': 'NOT_RUN browser memory', 'warmMethod': 'independent fresh page; first selection excluded as setup; second explicit selection reuses only its current verified batch before any Editor is opened',
+        'fixture': '3×8044 byte deterministic 0.5s WAV; single native/WASM waveform worker; no production traffic'}, ensure_ascii=False, separators=(',', ':')) + '\n')
 
 
 if __name__ == '__main__':

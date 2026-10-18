@@ -42,7 +42,7 @@ function mockRepository(files, latencyMs = 0) {
   const bySha = new Map([...blobs.values()].map(b => [b.sha, b]));
   const http = async (input, options = {}) => {
     assert.equal(options.method || 'GET', 'GET', 'benchmark cannot mutate remote storage');
-    await pause(latencyMs);
+    if (typeof latencyMs === 'number') await pause(latencyMs);
     const url = new URL(input), path = url.pathname.replace('/repos/meser-recovery/audio-archive', '');
     let data;
     if (path === '/git/ref/heads/main') data = { object: { sha: 'immutable-fixture-head' } };
@@ -52,6 +52,7 @@ function mockRepository(files, latencyMs = 0) {
     else if (path === '/releases') data = [];
     else throw new Error(`Unimplemented synthetic HTTP API ${path}`);
     const response = json(data); counts.http.jsonRequests++; counts.http.jsonBytes += Buffer.byteLength(JSON.stringify(data));
+    if (typeof latencyMs === 'object') await pause(latencyMs.rttMs + Buffer.byteLength(JSON.stringify(data)) / latencyMs.bytesPerSecond * 1000);
     if (data === null) return new Response('{}', { status: 404, headers: { 'Content-Type': 'application/json' } });
     return response;
   };
@@ -76,6 +77,50 @@ const summarize = values => {
     ...(values.length >= 20 ? { p95Ms: ordered[Math.ceil(.95 * ordered.length) - 1] } : { minMs: ordered[0], maxMs: ordered.at(-1) }) };
 };
 const template = await fixture();
+if (args.includes('--metadata-network')) {
+  const { selectSessions } = await load('service/frontend/scripts/audio-archive-core.mjs');
+  const scenarios = [];
+  for (const n of [1, 10, 100, 1000]) for (const profile of [{ name: 'ordinary', rttMs: 10, bytesPerSecond: 10_000_000 }, { name: 'high-rtt', rttMs: 80, bytesPerSecond: 1_000_000 }]) {
+    const files = new Map(), sessions = [];
+    for (let i = 1; i <= n; i++) {
+      const id = uuid(i), session = JSON.parse(JSON.stringify(template.session).replaceAll(template.session.id, id));
+      session.id = id; session.title = i === n ? 'Последняя запись' : `Запись ${i}`;
+      session.lifecycle.state = i % 2 ? 'incoming' : 'archived';
+      sessions.push(session); files.set(`sessions/${id}.json`, session);
+    }
+    files.set('catalog.json', { schemaVersion: 1, revision: n, updatedAt: new Date(clock()).toISOString(), entries: sessions.map(catalogEntry) });
+    // Twenty isolated cold-start instances, not twenty queries against one shared
+    // server. This bounds wall time while keeping cache/coalescing semantics clear.
+    const raw = await Promise.all(Array.from({ length: 20 }, async (_, repeat) => {
+      const f = mockRepository(files, profile), d = new AudioArchiveDomain(f.repository, { acceptedPartBytes: 4, clock });
+      const modern = typeof d.querySessions === 'function';
+      const read = async () => modern ? d.querySessions({}) : { sessions: (await Promise.all([d.listSessions('incoming'), d.listSessions('archived')])).flatMap(list => list.sessions) };
+      let start = performance.now(); const cold = await read();
+      const coldMs = performance.now() - start, coldCounts = structuredClone(f.counts);
+      f.reset(); start = performance.now(); const warm = await read();
+      const warmMs = performance.now() - start, warmCounts = structuredClone(f.counts);
+      f.reset(); start = performance.now();
+      const page = modern ? (await d.querySessions({ page: 1 })).items : selectSessions(warm.sessions, {}).slice(10, 20);
+      const pageMs = performance.now() - start, pageCounts = structuredClone(f.counts);
+      f.reset(); start = performance.now();
+      const search = modern ? (await d.querySessions({ search: 'Последняя' })).items : selectSessions(warm.sessions, { search: 'Последняя' });
+      const searchMs = performance.now() - start, searchCounts = structuredClone(f.counts);
+      assert.equal(search.length, 1); assert.equal(search[0].id, uuid(n)); assert.ok(page.length <= 10);
+      return { repeat, coldMs, warmMs, pageMs, searchMs, coldCounts, warmCounts, pageCounts, searchCounts,
+        coldResponseBytes: Buffer.byteLength(JSON.stringify(cold)), warmResponseBytes: Buffer.byteLength(JSON.stringify(warm)) };
+    }));
+    scenarios.push({ n, profile, cold: summarize(raw.map(r => r.coldMs)), warmReopen: summarize(raw.map(r => r.warmMs)),
+      page2: summarize(raw.map(r => r.pageMs)), search: summarize(raw.map(r => r.searchMs)), raw });
+    console.log(`metadata network N=${n} ${profile.name}: 20 isolated repeats complete`);
+  }
+  const revision = { sha: arg('--sha', '') || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf8' }).trim(),
+    tree: arg('--tree', '') || execFileSync('git', ['rev-parse', 'HEAD^{tree}'], { cwd: root, encoding: 'utf8' }).trim() };
+  const output = resolve(arg('--output', '/private/tmp/s13-checks/metadata-network.json'));
+  await writeFile(output, JSON.stringify({ kind: 'isolated-synthetic-GitHub-Fetch-network-model', revision, seed,
+    fixtureHash: createHash('sha256').update(JSON.stringify(template.session)).digest('hex'), scenarios,
+    methodology: '20 concurrent isolated domain/repository instances per case; each cold then same-instance warm reopen. Delay at each mock GitHub JSON Response: RTT + encoded JSON bytes / bandwidth. No shared-link contention or production/geography inference. Legacy page/search operate on already returned client manifests; candidate pages/search incur a fresh HEAD check. Gateway→browser RTT not injected here. Resource/RSS claims excluded from this concurrent model.' }, null, 2) + '\n');
+  process.exit(0);
+}
 const metadata = [], raw = [];
 for (const n of [1, 10, 100, 1000]) {
   const files = new Map(), sessions = [];
