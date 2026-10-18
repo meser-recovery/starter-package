@@ -49,7 +49,10 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
             outlineStyle: style.outlineStyle,
             outlineWidth: parseFloat(style.outlineWidth),
             outlineOffset: parseFloat(style.outlineOffset),
-            focusVisible: control.matches(':focus-visible'),
+            // Match the product's native-month :focus fallback as well.
+            // The separate focus and rendered-outline assertions remain mandatory.
+            focusVisible: control.matches(':focus-visible, input[type=month]:focus'),
+            nativeFocusVisible: control.matches(':focus-visible'),
             focused: document.activeElement === control,
             active: document.activeElement?.outerHTML.slice(0, 300),
             left: controlBox.left,
@@ -61,6 +64,7 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
     assert not result.get("missing"), (name, result)
     assert result["associated"], (name, "label association")
     assert result["gap"] >= 7, (name, "gap", result["gap"])
+    assert result["focused"], (name, "actual focus", result)
     assert result["focusVisible"], (name, "focus-visible", result)
     assert result["outlineStyle"] not in ("none", "hidden"), (name, result)
     assert result["outlineWidth"] >= 3 and result["outlineOffset"] >= 2, (name, result)

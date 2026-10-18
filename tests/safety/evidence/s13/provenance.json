@@ -7,7 +7,7 @@
     "sha": "3278954fd03425d41ba2a69275aa86cb4f23cf44",
     "tree": "df8c90a2294ee117c3d9de217f8667feb8fe7e83"
   },
-  "scope": "All changed runtime files; later commits through evidence publication change only tests/evidence. Final closure SHA and exact-head CI recorded in PR #63. Browser/editor/resource candidate runs used this runtime, test server restarted before runs. Network candidate revision additionally recorded in its JSON. Waveform runtime unchanged from base; native binary hashes in waveform JSON.",
+  "scope": "Changed performance runtime files at measured 3278954. Later Gateway/client/editor JavaScript diff is empty; final native-month accessibility CSS fallback is separately hashed below. Final closure SHA/tree and exact-head CI are recorded in PR #63. Browser/editor/resource candidate servers restarted before measurement; network JSON embeds revision; native waveform source is unchanged from base.",
   "files": [
     {
       "path": "gateway/audio-archive/src/app.mjs",
@@ -92,5 +92,11 @@
       "candidateSha256": "57c7064e2f8cd981d855f00cc8c9249d4c6706fb316b74298301b9c89671861d",
       "unchangedBaseArchiveVerified": true
     }
-  ]
+  ],
+  "postMeasurementAccessibilityCSS": {
+    "path": "service/frontend/styles/audio-studio.css",
+    "sha256": "e3e8fa8297b281a589a56563214395954f1ef642f0406be027065e5a94ec07e2",
+    "change": "6-line :focus outline fallback for native month, no layout/data/transfer behavior changes",
+    "validation": "all three engines retain actual focus / rendered outline / label / geometry assertions; final Linux CI required"
+  }
 }

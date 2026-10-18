@@ -1495,3 +1495,9 @@
 .audio-studio #source-session-count {
   margin-top:16px;
 }
+/* Native month segments can retain keyboard focus without :focus-visible in
+   Linux WebKit. Keep their actual focused control visibly outlined as well. */
+.audio-studio .field-control > input[type="month"]:focus {
+  outline:3px solid var(--studio-form-focus);
+  outline-offset:3px;
+}
