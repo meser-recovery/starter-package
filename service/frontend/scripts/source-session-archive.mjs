@@ -19,7 +19,7 @@ const state = {
   listsLoaded: false, projects: new Map(), deleteSequence: 0, deleteBusy: false,
   sessions: [],
   allSessions: [],
-  picker: { requested: false, page: 0, pageSize: 10 },
+  picker: { requested: false, page: 0, pageSize: 10 }, listPage: null,
   resultArchive: "announcement",
   refreshSequence: 0,
   sessionSequence: 0,
@@ -326,42 +326,30 @@ function onGatewayError(error, fallback, retry = null) {
   setArchiveStatus(userError(error, fallback));
 }
 
-async function refreshSessions() {
+async function refreshSessions({ preserveSnapshot = false } = {}) {
   const sequence = ++state.refreshSequence, auth = state.authSequence;
-  state.listsLoaded = false; state.projects.clear(); state.sessions = []; state.allSessions = []; renderSessions(); renderResultArchive();
-  if (!state.authenticated) {
-    state.sessions = [];
-    state.allSessions = [];
-    renderSessions();
-    renderResultArchive();
-    setArchiveStatus(RECONNECT_MESSAGE);
-    return;
-  }
-  setArchiveStatus("Загрузка записей и сохранённых результатов…");
+  if (!state.authenticated) { setArchiveStatus(RECONNECT_MESSAGE); return; }
+  if (!state.picker.requested) return;
+  setArchiveStatus("Загрузка записей…");
+  const form = byId("filters").elements;
+  if (!preserveSnapshot) state.picker.page = 0;
+  const query = { lifecycle: 'incoming', sources: 'available', search: form.search.value, month: form.month.value,
+    page: state.picker.page, pageSize: 10, snapshot: preserveSnapshot ? state.listPage?.snapshot || '' : '', queryId: preserveSnapshot ? state.listPage?.queryId || '' : '' };
   try {
-    const [incoming, archived] = await Promise.all([gateway.listSessions("incoming"), gateway.listSessions("archived")]);
+    let result, restarted = false;
+    try { result = await gateway.querySessions(query); }
+    catch (error) {
+      if (error?.status !== 409 || !preserveSnapshot) throw error;
+      if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
+      query.page = 0; query.snapshot = ''; query.queryId = ''; state.picker.page = 0; restarted = true;
+      result = await gateway.querySessions(query);
+    }
     if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
-    state.allSessions = mergeSessions(incoming.sessions, archived.sessions);
-    const projects = await Promise.allSettled(state.allSessions.filter(session => session.workflows.speaker.currentDraft).map(async session => {
-      const result = await gateway.loadDraft(session.id, "speaker");
-      return [session.id, projectProjection(session, result.draft)];
-    }));
-    if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
-    const failure = projects.find(result => result.status === 'rejected' && result.reason?.status === 401);
-    if (failure) throw failure.reason;
-    for (const result of projects) if (result.status === 'fulfilled') state.projects.set(...result.value);
-    state.sessions = state.allSessions.filter(eligible); state.listsLoaded = true;
-    renderSessions();
-    renderResultArchive();
-    await showIncomplete();
-    if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
-    setArchiveStatus(state.sessions.length ? "" : "Нет записей, доступных для новой обработки. Все записи и управление ими доступны в Аудиоархиве.");
+    state.listPage = result; state.sessions = result.items; state.listsLoaded = true;
+    renderSessions(); renderResultArchive();
+    setArchiveStatus(restarted ? 'Архив или параметры списка изменились. Показана первая страница.' : result.total ? "" : "Нет записей, соответствующих запросу. Все записи и управление ими доступны в Аудиоархиве.");
   } catch (error) {
     if (sequence !== state.refreshSequence || auth !== state.authSequence) return;
-    state.sessions = [];
-    state.allSessions = [];
-    renderSessions();
-    renderResultArchive();
     onGatewayError(error, "Не удалось загрузить исходные записи.");
   }
 }
@@ -418,11 +406,11 @@ function beginContextSwitch(sessionId) {
   ++state.incompleteSequence; byId("recovery-list").replaceChildren(); byId("recovery-list").hidden = true;
 }
 
-async function loadSession(session) {
+async function loadSession(session, signal) {
   if (state.publicationController || state.uploadController) return;
   beginContextSwitch(session.id);
   const sequence = ++state.sessionSequence, auth = state.authSequence;
-  const current = () => sequence === state.sessionSequence && auth === state.authSequence;
+  const current = () => !signal?.aborted && sequence === state.sessionSequence && auth === state.authSequence;
   setArchiveStatus(session.lifecycle.state === "archived" ? "Открытие записи, убранной из рабочего списка…" : "Загрузка и проверка исходных дорожек…");
   try {
     // Prepare in local variables. A failed/expired load must not clear the active editor or its Blob URLs.
@@ -479,6 +467,10 @@ async function loadSession(session) {
         loadProcessorFiles(files, provenance, { sessionId: complete.id, sourceSessionRevision: complete.revision });
       }
       state.loadingArchive = false;
+      await waitProcessorIdle(signal);
+      if (!current()) return;
+      performance.mark('archive-source-announcement-waveform-ready');
+      performance.mark('archive-source-announcement-interactive');
       setArchiveStatus(`Загружено дорожек: ${files.length}. Целостность исходников проверена; запись не изменена.`);
       scrollToElement(document.getElementById("processor-heading"));
     } else {
@@ -576,16 +568,16 @@ async function renderSpeakerProjectHistory(session, sequence, auth) {
   }
 }
 
-async function loadSpeakerSession(session, intent = {}) {
+async function loadSpeakerSession(session, intent = {}, signal) {
   if (state.publicationController || state.uploadController) return;
   beginContextSwitch(session.id);
   const sequence = ++state.sessionSequence, auth = state.authSequence;
   setArchiveStatus("Загрузка состояния проекта и проверка исходников для «Спикерская»…");
   try {
     const complete = await gateway.getSession(session.id);
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence || signal?.aborted) return;
     const work = await resolveSpeakerWork(complete, intent);
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence || signal?.aborted) return;
     if (complete.lifecycle.state !== "incoming" || complete.sourceState !== "available") {
       if (work.sources?.length && work.continuation) showSpeakerRecovery(complete, work);
       else setArchiveStatus("Проект сохранён, но исходные дорожки недоступны.");
@@ -598,7 +590,7 @@ async function loadSpeakerSession(session, intent = {}) {
     }
     const files = batch.files;
     state.preparedBatch = Object.freeze({ ...batch, session: complete });
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence || signal?.aborted) return;
     const project = new ProjectSave(gateway);
     // A revision refresh of this exact loaded batch is not a competing source intent.
     const ownsSources = () => {
@@ -608,12 +600,17 @@ async function loadSpeakerSession(session, intent = {}) {
     };
     const opened = await openSpeakerEditor({
       session: complete,
-      files,
+      files, signal,
       draft: work.draft,
       projectState: work.projectState,
       initialPayload: work.initialPayload,
-      waveformProvider: ({ track, signal }) => gateway.sourceWaveform(complete.id, track.blobId, track, signal),
-      isCurrent: () => sequence === state.sessionSequence && auth === state.authSequence && (!newerSpeakerSession(complete) || ownsSources()),
+      waveformProvider: async ({ track, signal }) => {
+        performance.mark('archive-source-waveform-start');
+        const result = await gateway.sourceWaveform(complete.id, track.blobId, track, signal);
+        performance.mark('archive-source-waveform-end');
+        return result;
+      },
+      isCurrent: () => !signal?.aborted && sequence === state.sessionSequence && auth === state.authSequence && (!newerSpeakerSession(complete) || ownsSources()),
       saveDraft: ({ session, draft, payload, signal, forceLatest }) => withReconnect(() => forceLatest ? project.saveAsLatest(session, draft, payload, signal) : project.save(session, draft, payload, signal)),
       loadProjectState: async ({ session: latest, draft: latestDraft, signal }) => {
         return gateway.speakerProjectState(latest.id, latestDraft.draftRevision, signal);
@@ -627,7 +624,7 @@ async function loadSpeakerSession(session, intent = {}) {
         renderSessions();
       }
     });
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence || signal?.aborted) return;
     const newer = newerSpeakerSession(complete);
     if (!opened && newer && !ownsSources()) return loadSpeakerSession(newer, intent);
     if (opened) {
@@ -635,11 +632,14 @@ async function loadSpeakerSession(session, intent = {}) {
       closeAnnouncementWorkspace(false);
       state.activeManifest = getSpeakerSaveState().session;
       activateMode("speaker");
-      await renderSpeakerProjectHistory(getSpeakerSaveState().session, sequence, auth);
+      speakerId('project-history').hidden = false;
+      speakerId('project-history-list').textContent = 'История загружается при раскрытии.';
+      if (speakerId('project-history').open) void renderSpeakerProjectHistory(getSpeakerSaveState().session, state.sessionSequence, auth);
+      performance.mark('archive-source-speaker-interactive');
     }
     setArchiveStatus(opened ? `${work.initialPayload ? "Предыдущее состояние открыто как локальные несохранённые изменения" : "Открыта работа «Спикерская»"}: ${complete.title}. Все исходники проверены.` : "Не удалось подготовить исходники для «Спикерская».");
   } catch (error) {
-    if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
+    if (sequence !== state.sessionSequence || auth !== state.authSequence || signal?.aborted) return;
     onGatewayError(error, "Не удалось открыть запись в «Спикерская».", () => { if (sequence === state.sessionSequence) return loadSpeakerSession(session, intent); });
   }
 }
@@ -903,7 +903,7 @@ function resultArchiveItem(session, workflowName, output) {
 
 function renderResultArchive() {
   const membership = { announcement: [], speaker: [] };
-  const current = state.activeManifest && state.allSessions.find(session => session.id === state.activeManifest.id);
+  const current = state.activeManifest;
   for (const session of current ? [current] : []) {
     for (const name of Object.keys(membership)) {
       const workflow = session.workflows?.[name];
@@ -921,12 +921,12 @@ function renderResultArchive() {
   for (const name of Object.keys(membership)) {
     const unique = new Map(membership[name].map((entry) => [`${entry.session.id}:${entry.output.outputId}`, entry]));
     membership[name] = [...unique.values()].sort((left, right) => String(right.output.createdAt).localeCompare(String(left.output.createdAt)));
-    byId(`results-${name}-count`).textContent = state.listsLoaded ? String(membership[name].length) : "—";
+    byId(`results-${name}-count`).textContent = current ? String(membership[name].length) : "—";
     const list = byId(`results-${name}-list`);
     list.replaceChildren();
     if (!membership[name].length) {
       const empty = document.createElement("p");
-      empty.textContent = state.listsLoaded ? "Сохранённых результатов пока нет." : "Результаты не загружены.";
+      empty.textContent = current ? "Сохранённых результатов пока нет." : "Результаты не загружены.";
       list.append(empty);
     } else {
       for (const { session, output } of membership[name]) list.append(resultArchiveItem(session, name, output));
@@ -945,16 +945,11 @@ function renderSessions() {
   if (!state.picker.requested) {
     byId("count").hidden = false; byId("count").textContent = "Список появится после поиска."; return;
   }
-  const form = byId("filters").elements, query = form.search.value.trim().toLocaleLowerCase("ru");
-  const month = form.month.value;
-  const matches = state.sessions.filter(session => (!query || session.title.toLocaleLowerCase("ru").includes(query) ||
-    session.sourceTracks.some(track => track.originalName.toLocaleLowerCase("ru").includes(query))) &&
-    (!month || String(session.recordedAt || "").slice(0, 7) === month));
-  const pages = Math.max(1, Math.ceil(matches.length / state.picker.pageSize));
-  state.picker.page = Math.min(state.picker.page, pages - 1);
-  const start = state.picker.page * state.picker.pageSize, visible = pageItems(matches, state.picker.page, state.picker.pageSize);
+  const total = state.listPage?.total || 0, matches = state.sessions;
+  const pages = Math.max(1, Math.ceil(total / state.picker.pageSize));
+  const start = state.picker.page * state.picker.pageSize, visible = matches;
   byId("count").hidden = false;
-  byId("count").textContent = matches.length ? `Найдено: ${matches.length} · ${start + 1}–${start + visible.length}` : "Ничего не найдено. Измените запрос.";
+  byId("count").textContent = total ? `Найдено: ${total} · ${start + 1}–${start + visible.length}` : "Ничего не найдено. Измените запрос.";
   for (const session of visible) {
     const card = document.createElement("article");
     card.className = "source-session-item"; card.dataset.sessionId = session.id;
@@ -962,7 +957,7 @@ function renderSessions() {
     heading.textContent = session.title;
     const metadata = document.createElement("p");
     metadata.className = "source-session-metadata";
-    metadata.textContent = `${formatDate(session.recordedAt)} · ${session.sourceTracks.length} дорожек · Исходники доступны`;
+    metadata.textContent = `${formatDate(session.recordedAt)} · ${session.sourceTrackCount ?? session.sourceTracks.length} дорожек · Исходники доступны`;
     const body = document.createElement("div");
     body.className = "source-session-item__body";
     const summary = document.createElement("div");
@@ -976,7 +971,7 @@ function renderSessions() {
     card.append(body);
     list.append(card);
   }
-  if (matches.length > state.picker.pageSize) {
+  if (total > state.picker.pageSize) {
     byId("pagination").hidden = false; byId("page").textContent = `${state.picker.page + 1} из ${pages}`;
     byId("prev").disabled = state.picker.page === 0; byId("next").disabled = state.picker.page + 1 >= pages;
   }
@@ -990,15 +985,17 @@ async function selectSessionContext(session, { workflow = null, intent = {} } = 
   const sequence = ++state.sessionSequence, auth = state.authSequence;
   const current = () => state.preparationController === controller && sequence === state.sessionSequence && auth === state.authSequence && !controller.signal.aborted;
   setSourceLoading(true, { record: session.title, progress: 0, step: "record" });
+  performance.mark('archive-source-click');
   setArchiveStatus("Загрузка и проверка выбранной записи…");
   try {
-    const batch = await prepareRemoteSourceBatch({ gateway, sessionId: session.id, signal: controller.signal, onProgress: progress => {
+    const batch = await prepareRemoteSourceBatch({ gateway, sessionId: session.id, signal: controller.signal, reuseBatch: state.preparedBatch, onProgress: progress => {
       if (!current()) return;
       const percent = progress.totalBytes ? Math.floor(progress.verifiedBytes / progress.totalBytes * 100) : 0;
       setSourceLoading(true, { record: `${session.title} · дорожка ${progress.trackIndex}/${progress.trackCount}, часть ${progress.partNumber}/${progress.trackPartCount}`, progress: percent, step: percent === 100 ? "files" : "tracks" });
       setArchiveStatus(`Проверено ${formatBytes(progress.verifiedBytes)} из ${formatBytes(progress.totalBytes)} · частей ${progress.verifiedParts}/${progress.totalParts}.`);
     } });
     if (!current()) return;
+    performance.mark('archive-source-verified');
     setSourceLoading(true, { record: batch.session.title, progress: 100, step: "editor" });
     const replacingCurrent = !getSpeakerSaveState().session && workingFiles().length && state.activeManifest?.id !== batch.session.id;
     if (replacingCurrent && !globalThis.confirm("Заменить текущие исходники проверенной записью из аудиоархива? Несохранённый локальный результат будет потерян.")) return;
@@ -1017,12 +1014,10 @@ async function selectSessionContext(session, { workflow = null, intent = {} } = 
     state.processorProvenance = provenance; state.candidate = null;
     renderCurrentRecording(); renderResultArchive(); renderSessions();
     setArchiveStatus(`Запись готова: ${batch.session.title}. Все исходники скачаны и проверены.`);
-    state.preparationController = null;
-    setSourceLoading(false);
-    await showIncomplete();
+    void showIncomplete();
     if (sequence !== state.sessionSequence || auth !== state.authSequence) return;
-    if (workflow === "speaker") await loadSpeakerSession(batch.session, intent);
-    else if (workflow === "announcement") await loadSession(batch.session);
+    if (workflow === "speaker") await loadSpeakerSession(batch.session, intent, controller.signal);
+    else if (workflow === "announcement") await loadSession(batch.session, controller.signal);
   } catch (error) {
     if (current() || (!controller.signal.aborted && sequence === state.sessionSequence && auth === state.authSequence)) {
       onGatewayError(error, "Не удалось загрузить и проверить выбранную запись.", () => selectSessionContext(session, { workflow, intent }));
@@ -1487,7 +1482,7 @@ async function showIncomplete() {
     container.replaceChildren(); container.hidden = true; return;
   }
   try {
-    const result = await gateway.listIncomplete();
+    const result = await gateway.listAttention();
     if (sequence !== state.incompleteSequence || auth !== state.authSequence) return;
     if (state.speakerResumeController) {
       container.hidden = false;
@@ -1747,7 +1742,7 @@ document.getElementById("speaker-project-recovery-continue").addEventListener("c
 
 byId("mode-archive").addEventListener("click", () => {
   setMode("archive"); document.getElementById("import-zone").hidden = false; document.getElementById("import-zone").open = true;
-  state.picker.requested = true; state.picker.page = 0; renderSessions();
+  state.picker.requested = true; state.picker.page = 0; void refreshSessions();
   byId("mode-archive").setAttribute("aria-expanded", "true"); byId("filters").elements.search.focus();
 });
 byId("mode-device").addEventListener("click", () => {
@@ -1775,10 +1770,10 @@ document.getElementById("import-zone").addEventListener("keydown", event => {
   if (event.key !== "Escape" || !event.currentTarget.open) return;
   event.preventDefault(); byId("picker-close").click();
 });
-byId("filters").addEventListener("submit", event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; renderSessions(); });
-byId("recent").addEventListener("click", () => { byId("filters").elements.search.value = ""; byId("filters").elements.month.value = ""; state.picker.requested = true; state.picker.page = 0; renderSessions(); });
-byId("prev").addEventListener("click", () => { state.picker.page--; renderSessions(); });
-byId("next").addEventListener("click", () => { state.picker.page++; renderSessions(); });
+byId("filters").addEventListener("submit", event => { event.preventDefault(); state.picker.requested = true; state.picker.page = 0; void refreshSessions(); });
+byId("recent").addEventListener("click", () => { byId("filters").elements.search.value = ""; byId("filters").elements.month.value = ""; state.picker.requested = true; state.picker.page = 0; void refreshSessions(); });
+byId("prev").addEventListener("click", () => { state.picker.page--; void refreshSessions({ preserveSnapshot: true }); });
+byId("next").addEventListener("click", () => { state.picker.page++; void refreshSessions({ preserveSnapshot: true }); });
 byId("results-announcement").addEventListener("click", () => setResultArchive("announcement"));
 byId("results-speaker").addEventListener("click", () => setResultArchive("speaker"));
 byId("refresh").addEventListener("click", refreshSessions);
@@ -1875,7 +1870,11 @@ byId("delete-dialog").addEventListener("close", () => {
   const focus = state.deleteTarget?.focus; state.deleteTarget = null; ++state.deleteSequence;
   if (focus?.isConnected) focus.focus(); else byId("refresh").focus();
 });
-window.addEventListener("pagehide", () => { state.preparationController?.abort(); clearOutputPlayback(); });
+speakerId('project-history').addEventListener('toggle', () => {
+  const session = getSpeakerSaveState().session;
+  if (speakerId('project-history').open && session && session.kind !== 'local') void renderSpeakerProjectHistory(session, state.sessionSequence, state.authSequence);
+});
+window.addEventListener("pagehide", () => { state.preparationController?.abort(); gateway.invalidateAuthentication(); clearOutputPlayback(); });
 
 await initialize();
 
@@ -1924,9 +1923,9 @@ byId("login-dialog").addEventListener("cancel", () => { ++state.authSequence; st
 // Every archive response, including byte downloads, retains auth status. Login itself never recursively reconnects.
 const archiveFetch = gateway.fetchImpl;
 gateway.fetchImpl = async (url, options) => {
-  const auth = state.authSequence;
+  const auth = state.authSequence, generation = gateway.authGeneration;
   const response = await archiveFetch(url, options);
-  if (auth === state.authSequence && response.status === 401 && !String(url).endsWith("/session/login")) {
+  if (auth === state.authSequence && generation === gateway.authGeneration && response.status === 401 && !String(url).endsWith("/session/login")) {
     state.authenticated = false; state.reconnectNeeded = true; updateSessionStatus(); setArchiveStatus(RECONNECT_MESSAGE);
   }
   return response;

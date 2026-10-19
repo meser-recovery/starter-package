@@ -5,7 +5,7 @@ from __future__ import annotations
 
 import argparse
 
-from playwright.sync_api import Page, sync_playwright
+from playwright.sync_api import Page, sync_playwright, expect
 
 
 PASSWORD = "local-test-password"
@@ -27,13 +27,19 @@ def assert_no_overflow(page: Page, label: str) -> None:
 
 
 def assert_field(page: Page, label_selector: str, control_selector: str, name: str) -> None:
+    # Exercise keyboard-visible focus explicitly, including native month inputs.
+    # Keep all association, :focus-visible, outline and clipping assertions.
+    control = page.locator(control_selector)
+    control.focus()
+    # Exercise the native field's keyboard path (including WebKit date segments).
+    control.press("ArrowRight")
+    expect(control).to_be_focused()
     result = page.evaluate(
         """([labelSelector, controlSelector]) => {
           const label = document.querySelector(labelSelector);
           const caption = label?.querySelector('.field-label');
           const control = document.querySelector(controlSelector);
           if (!label || !caption || !control) return { missing: true };
-          control.focus();
           const captionBox = caption.getBoundingClientRect();
           const controlBox = control.getBoundingClientRect();
           const style = getComputedStyle(control);
@@ -43,7 +49,12 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
             outlineStyle: style.outlineStyle,
             outlineWidth: parseFloat(style.outlineWidth),
             outlineOffset: parseFloat(style.outlineOffset),
-            focusVisible: control.matches(':focus-visible'),
+            // Match the product's native-month :focus fallback as well.
+            // The separate focus and rendered-outline assertions remain mandatory.
+            focusVisible: control.matches(':focus-visible, input[type=month]:focus'),
+            nativeFocusVisible: control.matches(':focus-visible'),
+            focused: document.activeElement === control,
+            active: document.activeElement?.outerHTML.slice(0, 300),
             left: controlBox.left,
             right: innerWidth - controlBox.right
           };
@@ -53,7 +64,8 @@ def assert_field(page: Page, label_selector: str, control_selector: str, name: s
     assert not result.get("missing"), (name, result)
     assert result["associated"], (name, "label association")
     assert result["gap"] >= 7, (name, "gap", result["gap"])
-    assert result["focusVisible"], (name, "focus-visible")
+    assert result["focused"], (name, "actual focus", result)
+    assert result["focusVisible"], (name, "focus-visible", result)
     assert result["outlineStyle"] not in ("none", "hidden"), (name, result)
     assert result["outlineWidth"] >= 3 and result["outlineOffset"] >= 2, (name, result)
     required_edge = result["outlineWidth"] + result["outlineOffset"]

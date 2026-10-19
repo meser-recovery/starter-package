@@ -1053,15 +1053,18 @@ async function metadataFor(url, signal) {
   });
 }
 
-async function prepareSources(epoch) {
+async function prepareSources(epoch, signal, isCurrent = () => true) {
   const controller = new AbortController(); state.preparation = controller;
+  const abort = () => controller.abort(signal?.reason);
+  signal?.addEventListener('abort', abort, { once: true });
+  if (signal?.aborted) abort();
   const reader = createWaveformReader(controller.signal, null, { onDiagnostic: diagnostic => {
     state.waveformDiagnostics.push(safeWaveformDiagnostic({ waveformDiagnostic: diagnostic }, { trackIndex: diagnostic.trackIndex, sourceBytes: diagnostic.sourceBytes }));
     updateDiagnosticDisclosure();
   } });
   state.preparationError = ""; state.waveformDiagnostics = []; updateDiagnosticDisclosure(); byId("source-retry").hidden = true;
   const tracks = [...state.tracks]; const session = state.session; const archivedPayload = state.loadedPayload; const loadedCurrentDraft = state.loadedCurrentDraft; const payload = archivedPayload || state.payload;
-  const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted;
+  const current = () => state.sourceEpoch === epoch && state.session === session && !controller.signal.aborted && isCurrent();
   let activeTrack, stage = "metadata";
   try {
     const durations = []; const verifiedDurations = []; const preparedSamples = [];
@@ -1142,7 +1145,7 @@ async function prepareSources(epoch) {
     failure.cause = error;
     throw failure;
   } finally {
-    reader.dispose();
+    reader.dispose(); signal?.removeEventListener('abort', abort);
     if (state.preparation === controller) state.preparation = null;
   }
 }
@@ -1747,7 +1750,7 @@ export async function closeSpeakerEditor(force = false, isCurrent = () => true) 
   await teardown(); return true;
 }
 
-export async function openSpeakerEditor({ session, files, draft = null, projectState = null, initialPayload = null, waveformProvider = null, saveDraft: save, loadProjectState = null, onSaved, isCurrent = () => true }) {
+export async function openSpeakerEditor({ session, files, draft = null, projectState = null, initialPayload = null, waveformProvider = null, saveDraft: save, loadProjectState = null, onSaved, isCurrent = () => true, signal }) {
   if (session.kind !== "local" && (session.lifecycle.state !== "incoming" || session.sourceState !== "available")) throw new Error("Для обработки спикерской нужны доступные исходники. Верните запись для обработки.");
   if (draft && draft.payloadSchema !== SPEAKER_PAYLOAD_SCHEMA) throw new Error("Сохранённый проект имеет неподдерживаемую схему и не будет перезаписан.");
   const orderedManifest = [...session.sourceTracks].sort((left, right) => left.ordinal - right.ordinal);
@@ -1771,9 +1774,10 @@ export async function openSpeakerEditor({ session, files, draft = null, projectS
   setSelection(0, "", orderedManifest[0]?.trackId, "all"); clearCandidate();
   state.originalDuration = NaN; render();
   window.dispatchEvent(new Event("speaker-editor-opened"));
-  try { await prepareSources(epoch); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
+  try { await prepareSources(epoch, signal, isCurrent); if (!isCurrent() || state.sourceEpoch !== epoch) return false; workspace.scrollIntoView({ behavior: "smooth", block: "start" }); return true; }
   catch (error) {
     if (state.sourceEpoch !== epoch) return false;
+    if (signal?.aborted) { await teardown(); return false; }
     byId("status").textContent = userMessage(error, "Не удалось подготовить Спикерскую. Исходники остались в редакторе.");
     return false;
   }

@@ -267,7 +267,9 @@ test('S12 A17 moving physical listings and in-flight known mutation never replac
   assert.equal((await t.service.usage()).stale, true);
   t.repository.activeStorageMutations = 0; t.repository.storageMutationVersion = 1;
   t.repository.listReleaseAssets = async () => [{ id: 1, size: 50 }];
-  assert.equal((await t.service.usage()).usedBytes, 50);
+  assert.equal((await t.service.usage()).usedBytes, 20); // ordinary read retains the last complete total
+  assert.equal((await t.service.usage()).stale, true);
+  assert.equal((await t.service.usage(true)).usedBytes, 50);
 });
 
 test('S12 A03 Check searches all paginated occurrences and never masks API/download failures', async () => {

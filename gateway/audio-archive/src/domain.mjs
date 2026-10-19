@@ -1,5 +1,6 @@
 import { createHash, randomUUID, timingSafeEqual } from "node:crypto";
 import { importPath, validateImport } from "./settings.mjs";
+import { ArchiveReadModel, listQuery } from './read-model.mjs';
 import { isDeepStrictEqual } from "node:util";
 import {
   SCHEMA_VERSION, MAX_PART_BYTES, WORKFLOWS, ValidationError, assertExactKeys, assertInteger, assertSha256,
@@ -102,6 +103,10 @@ export class AudioArchiveDomain {
     this.repository = repository;
     this.acceptedPartBytes = acceptedPartBytes;
     this.clock = clock;
+    this.readModel = new ArchiveReadModel(repository);
+    this.listQueries = new Map();
+    this.attentionReads = new Map();
+    this.attentionSnapshot = null;
   }
 
   async snapshot() {
@@ -132,19 +137,33 @@ export class AudioArchiveDomain {
     return { revision: catalog.revision, sessions };
   }
 
+  async querySessions(input) {
+    const query = listQuery(input), key = JSON.stringify(query);
+    if (this.listQueries.has(key)) return structuredClone(await this.listQueries.get(key));
+    const pending = this.readModel.query(query, head => this.listAttention(head));
+    this.listQueries.set(key, pending);
+    try { return structuredClone(await pending); } finally { this.listQueries.delete(key); }
+  }
+
   async getSession(sessionId) {
     return publicSession((await this.sessionSnapshot(sessionId)).session);
   }
 
-  async downloadSourcePart(sessionId, blobId, partNumber) {
+  async downloadSourcePart(sessionId, blobId, partNumber, signal) {
+    const abort = () => { if (signal?.aborted) throw Object.assign(new Error('Source part transfer cancelled'), { name: 'AbortError', status: 499 }); };
+    abort();
     const id = assertUuid(blobId, "blobId");
     assertInteger(partNumber, 1, 9999, "partNumber");
     const session = (await this.sessionSnapshot(sessionId)).session;
+    abort();
     if (session.sourceState !== "available") throw notFound("Source Session audio is unavailable");
     const track = session.sourceTracks.find((item) => item.blobId === id);
     const part = track?.parts.find((item) => item.partNumber === partNumber);
     if (!part) throw notFound("Source Session part not found");
-    const bytes = await this.repository.downloadReleaseAsset(part.assetId);
+    let bytes;
+    try { bytes = await this.repository.downloadReleaseAsset(part.assetId, signal); }
+    catch (error) { abort(); throw error; }
+    abort();
     if (bytes.byteLength !== part.sizeBytes || !sameDigest(digestBytes(bytes), part.sha256)) {
       throw conflict("Release asset failed integrity verification");
     }
@@ -1331,11 +1350,26 @@ export class AudioArchiveDomain {
     return this.beginDelete(sessionId, body, { kind: "purge" });
   }
 
-  async listIncomplete() {
-    const head = await this.repository.getHead();
+  async listAttention(expectedHead = null) {
+    const head = expectedHead || await this.repository.getHead();
+    if (this.attentionSnapshot?.head === head) return structuredClone(this.attentionSnapshot.result);
+    if (this.attentionReads.has(head)) return structuredClone(await this.attentionReads.get(head));
+    const pending = (async () => {
+      const transactions = await this.transactionAttention(head, true);
+      if (await this.repository.getHead() !== head) throw conflict('Attention snapshot changed; reload');
+      const result = { snapshot: head, transactions };
+      if (Buffer.byteLength(JSON.stringify(result)) > 8 * 1024 * 1024) throw new Error('Attention read budget exceeded');
+      this.attentionSnapshot = { head, result };
+      return result;
+    })();
+    this.attentionReads.set(head, pending);
+    try { return structuredClone(await pending); } finally { this.attentionReads.delete(head); }
+  }
+
+  async transactionAttention(head, strict = false) {
     const transactions = [];
     for (const item of await this.repository.listJson("transactions/", head)) {
-      if (item.invalid) continue;
+      if (item.invalid) { if (strict) throw new Error('Invalid attention transaction'); continue; }
       try {
         const transaction = validateTransaction(item.data);
         if (!["finalized", "complete", "discarded"].includes(transaction.state)) {
@@ -1360,8 +1394,14 @@ export class AudioArchiveDomain {
             failure: transaction.kind === "publication" ? structuredClone(transaction.failure) : null
           });
         }
-      } catch { /* Malformed records are not actionable. */ }
+      } catch (error) { if (strict) throw new Error('Attention cannot be confirmed', { cause: error }); }
     }
+    return transactions;
+  }
+
+  async listIncomplete() {
+    const head = await this.repository.getHead();
+    const transactions = await this.transactionAttention(head);
     const manifests = new Set((await this.repository.listJson("sessions/", head)).filter((item) => !item.invalid && item.data.kind !== "deletion_tombstone").map((item) => item.data.storage?.tag));
     const releases = await this.repository.listReleases();
     const orphans = releases.filter((release) => release.tag_name?.startsWith("audio-session-") && !manifests.has(release.tag_name))

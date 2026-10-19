@@ -253,8 +253,21 @@ function notifyProcessorResult() {
 }
 
 const idleWaiters = new Set();
-export async function waitProcessorIdle() {
-  if (active) await new Promise(resolve => idleWaiters.add(resolve));
+export async function waitProcessorIdle(signal) {
+  if (signal?.aborted) throw new DOMException('cancelled', 'AbortError');
+  if (active) {
+    const operation = active;
+    await new Promise((resolve, reject) => {
+      const finish = () => { signal?.removeEventListener('abort', aborted); idleWaiters.delete(finish); resolve(); };
+      const aborted = () => {
+        idleWaiters.delete(finish); signal?.removeEventListener('abort', aborted);
+        if (active === operation && operation.kind === 'waveform') stop();
+        reject(new DOMException('cancelled', 'AbortError'));
+      };
+      idleWaiters.add(finish); signal?.addEventListener('abort', aborted, { once: true });
+    });
+  }
+  if (signal?.aborted) throw new DOMException('cancelled', 'AbortError');
 }
 export async function bindProcessorSources(files, provenance, context) {
   if (active) await new Promise(resolve => idleWaiters.add(resolve));

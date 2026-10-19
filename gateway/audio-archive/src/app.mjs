@@ -159,7 +159,7 @@ export function createApp({ config, domain, zoomArchive = null, waveformService 
       }
       if (url.pathname === "/v1/config" && request.method === "GET") {
         return apiResponse(json({ schemaVersion: 1, acceptedPartSize: config.acceptedPartBytes, maximumPartSize: 64 * 1024 * 1024,
-          maximumSessionSize: 500 * 1024 * 1024, speakerProjectHistory: 1, zoomCloudImport: 1 }));
+          maximumSessionSize: 500 * 1024 * 1024, archiveReadModel: 1, speakerProjectHistory: 1, zoomCloudImport: 1 }));
       }
       if (url.pathname.startsWith('/v1/zoom/') || url.pathname.startsWith('/v1/archive-settings') || url.pathname === '/v1/storage-usage') {
         if (!zoomArchive) throw Object.assign(new Error('Настройки Zoom пока недоступны.'), { status: 503 });
@@ -192,6 +192,14 @@ export function createApp({ config, domain, zoomArchive = null, waveformService 
           }
         }
       }
+      if (url.pathname === '/v1/archive-list' && request.method === 'GET') {
+        if ([...url.searchParams.keys()].some(key => url.searchParams.getAll(key).length !== 1)) throw new ValidationError('Duplicate list parameter');
+        return apiResponse(json(await domain.querySessions(Object.fromEntries(url.searchParams))), config.allowedOrigin);
+      }
+      if (url.pathname === '/v1/archive-attention' && request.method === 'GET') {
+        if ([...url.searchParams].length) throw new ValidationError('Unsupported attention parameter');
+        return apiResponse(json(await domain.listAttention()), config.allowedOrigin);
+      }
       if (url.pathname === "/v1/source-sessions" && request.method === "GET") {
         return apiResponse(json(await domain.listSessions(url.searchParams.get("lifecycle") || "incoming")), config.allowedOrigin);
       }
@@ -214,7 +222,7 @@ export function createApp({ config, domain, zoomArchive = null, waveformService 
         return apiResponse(json(await domain.finalizeIngestion(assertUuid(match[0], "transactionId"))), config.allowedOrigin);
       }
       if ((match = routeMatch(url.pathname, /^\/v1\/source-sessions\/([^/]+)\/blobs\/([^/]+)\/parts\/(\d+)\/content$/)) && request.method === "GET") {
-        const result = await domain.downloadSourcePart(assertUuid(match[0], "sessionId"), assertUuid(match[1], "blobId"), Number(match[2]));
+        const result = await domain.downloadSourcePart(assertUuid(match[0], "sessionId"), assertUuid(match[1], "blobId"), Number(match[2]), request.signal);
         return apiResponse(new Response(result.bytes, { status: 200, headers: {
           "Content-Type": "application/octet-stream", "Content-Length": String(result.bytes.byteLength),
           "Content-Disposition": `attachment; filename="${result.assetName}"`

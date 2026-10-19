@@ -225,8 +225,12 @@ export class ZoomArchive {
   async usage(refresh = false) {
     const { settings } = await this.settingsSnapshot(), head = await this.repository.getHead();
     const mutationVersion = this.repository.storageMutationVersion || 0;
-    let stale = false;
-    if (refresh || !this.usageCache || this.usageCache.head !== head || this.usageCache.mutationVersion !== mutationVersion || this.repository.activeStorageMutations || this.usageCache.expires < this.clock()) {
+    let stale = !this.usageCache || this.usageCache.head !== head || this.usageCache.mutationVersion !== mutationVersion ||
+      Boolean(this.repository.activeStorageMutations) || this.usageCache.expires < this.clock();
+    if (refresh) {
+      if (this.usageInFlight) { await this.usageInFlight; return this.usage(false); }
+      let complete;
+      this.usageInFlight = new Promise(resolve => { complete = resolve; });
       try {
         if (this.repository.activeStorageMutations) throw new Error();
         const scan = async () => {
@@ -244,7 +248,9 @@ export class ZoomArchive {
         const usedBytes = [...assets.values()].reduce((a, b) => a + b, 0);
         if (!Number.isSafeInteger(usedBytes) || head !== await this.repository.getHead() || this.repository.activeStorageMutations || mutationVersion !== (this.repository.storageMutationVersion || 0)) throw new Error();
         this.usageCache = { usedBytes, assetCount: assets.size, countedAt: new Date(this.clock()).toISOString(), head, mutationVersion, expires: this.clock() + 30_000 };
+        stale = false;
       } catch { stale = true; }
+      finally { complete(); this.usageInFlight = null; }
     }
     const c = this.usageCache;
     return { usedBytes: c?.usedBytes ?? null, assetCount: c?.assetCount ?? null, countedAt: c?.countedAt ?? null, stale,

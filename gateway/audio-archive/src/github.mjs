@@ -142,6 +142,28 @@ export class GitHubArchiveRepository {
     return items;
   }
 
+  async jsonIdentities(prefix, ref) {
+    if (prefix !== 'sessions/') throw new Error('Unsafe read-model prefix');
+    const tree = await this.api(`/git/trees/${encodeURIComponent(ref)}?recursive=1`);
+    if (tree.truncated || !Array.isArray(tree.tree)) throw new GitHubError('Canonical tree listing is incomplete', 502);
+    const identities = new Map();
+    for (const entry of tree.tree) {
+      if (entry.type !== 'blob' || !entry.path.startsWith(prefix) || !entry.path.endsWith('.json')) continue;
+      assertStoragePath(entry.path);
+      if (typeof entry.sha !== 'string' || !entry.sha || identities.has(entry.path)) throw new GitHubError('Invalid canonical blob identity', 502);
+      identities.set(entry.path, entry.sha);
+    }
+    return identities;
+  }
+
+  async readJsonBlob(identity) {
+    if (typeof identity !== 'string' || !/^[a-f0-9]{40,64}$/.test(identity)) throw new Error('Unsafe blob identity');
+    const blob = await this.api(`/git/blobs/${identity}`);
+    if (blob.encoding !== 'base64' || typeof blob.content !== 'string') throw new GitHubError('Invalid canonical JSON blob', 502);
+    try { return { data: JSON.parse(Buffer.from(blob.content, 'base64').toString('utf8')), blobSha: identity }; }
+    catch { throw new GitHubError('Invalid canonical JSON blob', 502); }
+  }
+
   async commitJson(expectedHead, files, message) {
     const currentHead = await this.getHead();
     if (currentHead !== expectedHead) {
@@ -231,29 +253,38 @@ export class GitHubArchiveRepository {
     return data;
   }
 
-  async downloadReleaseAsset(assetId) {
+  async downloadReleaseAsset(assetId, signal) {
+    signal?.throwIfAborted();
     if (!Number.isSafeInteger(assetId) || assetId < 1) throw new Error("Unsafe release asset ID");
     const token = await this.token();
+    signal?.throwIfAborted();
     const response = await this.fetchImpl(`https://api.github.com/repos/${this.owner}/${this.repository}/releases/assets/${assetId}`, {
-      headers: this.headers(token, { Accept: "application/octet-stream" })
+      headers: this.headers(token, { Accept: "application/octet-stream" }), signal
     });
-    if (!response.ok) throw new GitHubError("GitHub asset download failed", response.status);
+    if (!response.ok) { await response.body?.cancel().catch(() => {}); throw new GitHubError("GitHub asset download failed", response.status); }
     const declared = Number(response.headers.get("content-length"));
     if (Number.isFinite(declared) && (declared < 1 || declared > MAX_PART_BYTES)) {
+      await response.body?.cancel().catch(() => {});
       throw new GitHubError("GitHub asset download size is invalid", 502);
     }
     const reader = response.body?.getReader();
     if (!reader) throw new GitHubError('GitHub asset body is missing', 502);
     const chunks = []; let size = 0;
+    const abort = () => { void reader.cancel(signal.reason).catch(() => {}); };
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
     try {
       while (true) {
+        signal?.throwIfAborted();
         const { value, done } = await reader.read();
+        signal?.throwIfAborted();
         if (done) break;
         size += value.byteLength;
         if (size > MAX_PART_BYTES) throw new GitHubError('GitHub asset download size is invalid', 502);
         chunks.push(Buffer.from(value));
       }
     } catch (error) { await reader.cancel().catch(() => {}); throw error; }
+    finally { signal?.removeEventListener('abort', abort); reader.releaseLock(); }
     const bytes = Buffer.concat(chunks, size);
     if (bytes.byteLength < 1 || bytes.byteLength > MAX_PART_BYTES) {
       throw new GitHubError("GitHub asset download size is invalid", 502);
