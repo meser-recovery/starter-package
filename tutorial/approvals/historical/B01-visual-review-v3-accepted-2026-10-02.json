@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "block_id": "B01",
+  "status": "VISUAL_CHANGES_REQUIRED",
+  "decision_date": "2026-10-02",
+  "prior_approval_record": "approvals/historical/B01-block-approved-2026-10-02.json",
+  "prior_approval_record_sha256": "858e68936f3b2d65955ace3a3b35bc0487914492b49e065b18a99bb9aa198ee2",
+  "prior_visual_candidate": {
+    "video": "generated/b01-visual-v2-review/B01.mp4",
+    "video_sha256": "521c7a73f30b562b5b423228276cc1a3647c599cb40d5d0ad4ac6e1ca944cfc6",
+    "review_outcome": "CHANGES_REQUIRED"
+  },
+  "approved_audio_record": "approvals/B01-audio.json",
+  "approved_mp3_sha256": "93481d42dc3c722f2014ac01bd4369185d6d6991b6809e3ab7dd123f78e54377",
+  "preserved_b02_audio": {
+    "mp3": "generated/narration-blocks-v2/B02/B02-review-01.mp3",
+    "mp3_sha256": "19d93e92c574e7be09fd603390430e3ce7ce1e803752aec703087214c7ec98c4",
+    "wav": "generated/narration-blocks-v2/B02/B02-review-01.wav",
+    "wav_sha256": "c52d269952dcef0c7f766fdfa4ca57b4ee1efd66182b7588703da61bb6506351",
+    "alignment": "generated/narration-blocks-v2/B02/B02-review-01-timing.json",
+    "alignment_sha256": "bda48ae45818e2781b06fe3384eb69c0270623d8a2cfbf82aa99bbedd73ec817"
+  },
+  "review_candidate": {
+    "status": "READY FOR B01 BLOCK REVIEW",
+    "video": "generated/b01-visual-v3-review/B01.mp4",
+    "video_sha256": "8cf72d8e2b081eff6f6c4714410fa0cc901dfb09d8efa2148cb3236efa32e032",
+    "duration_seconds": 124.166667,
+    "subtitle_cues_extracted_from_mp4": 34,
+    "approved_audio_unchanged": true,
+    "tts_requests": 0
+  },
+  "next_action": "Await B01 visual review; B02 visual revision waits for the new B01 block approval"
+}

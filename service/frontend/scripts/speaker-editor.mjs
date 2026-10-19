@@ -178,13 +178,18 @@ function updateSelectionDuration() {
   }
 }
 
+function revokeObjectUrlLater(url) {
+  if (!url) return;
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
 function clearCandidate() {
   state.presentationEpoch += 1;
   state.candidate = null; state.resultSamples = null;
   byId("result").hidden = true;
   byId("result-audio").pause(); byId("result-audio").removeAttribute("src"); byId("result-audio").load();
   byId("download").removeAttribute("href"); byId("download").removeAttribute("download");
-  if (state.candidateUrl) URL.revokeObjectURL(state.candidateUrl);
+  if (state.candidateUrl) revokeObjectUrlLater(state.candidateUrl);
   state.candidateUrl = null;
 }
 
@@ -1717,6 +1722,37 @@ function updateResultPlayhead() {
   byId("result-time").textContent = `${clock(current)} / ${clock(state.resultDuration)}`;
 }
 
+function detachTrackMedia() {
+  stopMonitoringSynchronization(true);
+  const master = byId("source-audio");
+  master.pause();
+  master.removeAttribute("src");
+  master.load();
+  for (const track of state.tracks) {
+    const audio = track.audio;
+    if (audio && audio !== master) {
+      audio.pause();
+      audio.removeAttribute("src");
+      audio.load();
+    }
+    track.audio = null;
+  }
+  byId("preview-audios").replaceChildren();
+}
+
+function detachForPageHide() {
+  state.sourceEpoch += 1;
+  state.preparation?.abort();
+  state.operation?.abort();
+  detachTrackMedia();
+  const resultAudio = byId("result-audio");
+  resultAudio.pause();
+  resultAudio.removeAttribute("src");
+  resultAudio.load();
+  byId("download").removeAttribute("href");
+  byId("download").removeAttribute("download");
+}
+
 async function teardown() {
   trackPresentation = ""; syncEditPreview(null);
   meters.clear();
@@ -1724,9 +1760,10 @@ async function teardown() {
   state.cancelSelection?.(); state.selectedRegion = null; state.dragPayload = null; state.editTool = null; state.selectionScope = "track";
   state.measurementCache.clear(); state.sourceIdentities.reset(); state.lastRenderProfile = null;
   state.sourceEpoch += 1; state.preparation?.abort(); state.preparation = null; state.preparationError = ""; byId("source-retry").hidden = true;
-  await cancelRender(); state.operation = null; stopMonitoringSynchronization(true); clearCandidate(); byId("source-audio").pause(); byId("source-audio").removeAttribute("src"); byId("source-audio").load();
-  for (const track of state.tracks) { track.audio?.pause(); URL.revokeObjectURL(track.url); }
-  byId("preview-audios").replaceChildren(); state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.loadedPayload = null; state.loadedCurrentDraft = false; state.legacyInvalidCuts = []; state.history = null;
+  detachTrackMedia();
+  await cancelRender(); state.operation = null; clearCandidate();
+  for (const track of state.tracks) if (track.url) revokeObjectUrlLater(track.url);
+  state.session = null; state.filesById = new Map(); state.tracks = []; state.payload = null; state.loadedPayload = null; state.loadedCurrentDraft = false; state.legacyInvalidCuts = []; state.history = null;
   state.draft = null; state.projectState = null; state.savedFingerprint = ""; state.originalDuration = NaN; state.saveDraft = null; state.loadProjectState = null; state.onSaved = null; state.saveLocked = false; state.ready = false; workspace.hidden = true;
   state.waveformProvider = null; state.waveformDiagnostics = []; updateDiagnosticDisclosure();
   document.getElementById("announcement-processor-card").hidden = true;
@@ -1845,7 +1882,7 @@ const help = workspace.querySelector(".audio-help"), helpSummary = help?.querySe
 const syncHelpDisclosure = () => helpSummary?.setAttribute("aria-expanded", String(help.open));
 help?.addEventListener("toggle", syncHelpDisclosure); syncHelpDisclosure();
 window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { if (state.session) { updateWaveWidths(); updateResultWidth(); } });
-window.addEventListener("pagehide", () => teardown());
+window.addEventListener("pagehide", detachForPageHide);
 
 for (const kind of ["start", "end"]) byId(`set-${kind}`).addEventListener("click", () => {
   try { const value = Number(byId(`selection-${kind}`).value); commitPayload(setRecordingBoundary(state.payload, state.originalDuration, kind, value), "граница записи"); }

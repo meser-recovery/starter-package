@@ -13,6 +13,8 @@ import { WAVEFORM_ALGORITHM, WAVEFORM_PEAK_COUNT, WAVEFORM_BODY_BYTES } from '..
 
 const port = Number(process.argv[2] || 4173);
 const origin = process.argv[3] || `http://localhost:${port}`;
+const acceptedPartBytes = Number(process.env.S11_PREVIEW_PART_BYTES || 1024);
+if (!Number.isInteger(acceptedPartBytes) || acceptedPartBytes < 1024 || acceptedPartBytes > 1024 * 1024) throw new Error("Invalid preview part size");
 const frontend = resolve(import.meta.dirname, "../../service/frontend");
 const secret = "synthetic-preview-session-secret-0001";
 const previewCookie = "meser_preview_service_session";
@@ -21,22 +23,48 @@ const verifier = await createPasswordVerifier("local-test-password", Buffer.allo
 const sessions = new SessionRegistry({ maxEntries: 16 });
 // Synthetic, process-local archive. It cannot access production storage or credentials.
 const repository = new MemoryRepository();
-const domain = new AudioArchiveDomain(repository, { acceptedPartBytes: 1024 });
-const emptyPeaks = Buffer.alloc(WAVEFORM_BODY_BYTES);
-const peakDigest = createHash('sha256').update(emptyPeaks).digest('hex');
+const domain = new AudioArchiveDomain(repository, { acceptedPartBytes });
+function syntheticWavPeaks(bytes) {
+  const channels = bytes.readUInt16LE(22), bits = bytes.readUInt16LE(34), format = bytes.readUInt16LE(20);
+  if (format !== 1 || bits !== 16 || channels < 1 || channels > 2) throw new Error('Synthetic preview supports PCM16 WAV only');
+  let offset = 12, dataStart = -1, dataBytes = 0;
+  while (offset + 8 <= bytes.length) {
+    const size = bytes.readUInt32LE(offset + 4), next = offset + 8 + size + (size & 1);
+    if (next > bytes.length) throw new Error('Invalid synthetic WAV chunk');
+    if (bytes.toString('ascii', offset, offset + 4) === 'data') {
+      dataStart = offset + 8; dataBytes = size; break;
+    }
+    offset = next;
+  }
+  const frames = Math.floor(dataBytes / (channels * 2));
+  if (dataStart < 0 || frames < 1) throw new Error('Synthetic WAV has no PCM samples');
+  const peaks = new Float32Array(WAVEFORM_PEAK_COUNT);
+  for (let frame = 0; frame < frames; frame++) {
+    let value = 0;
+    for (let channel = 0; channel < channels; channel++)
+      value = Math.max(value, Math.abs(bytes.readInt16LE(dataStart + (frame * channels + channel) * 2)) / 32768);
+    const bin = Math.min(WAVEFORM_PEAK_COUNT - 1, Math.floor(frame * WAVEFORM_PEAK_COUNT / frames));
+    peaks[bin] = Math.max(peaks[bin], value);
+  }
+  const body = Buffer.allocUnsafe(WAVEFORM_BODY_BYTES);
+  for (let index = 0; index < peaks.length; index++) body.writeFloatLE(peaks[index], index * 4);
+  return { body, frames, channels };
+}
 const waveformService = { get: async (sessionId, blobId) => {
   const source = await domain.waveformSource(sessionId, blobId);
   const bytes = Buffer.concat(source.parts.map(part => repository.assetBytes.get(part.assetId)));
   if (createHash('sha256').update(bytes).digest('hex') !== source.sha256 || source.mediaType !== 'audio/wav' ||
       bytes.toString('ascii', 0, 4) !== 'RIFF' || bytes.toString('ascii', 8, 12) !== 'WAVE') throw new Error('Synthetic preview supports verified WAV waveform only');
-  const sampleRate = bytes.readUInt32LE(24), channels = bytes.readUInt16LE(22), bits = bytes.readUInt16LE(34);
-  const durationSeconds = (bytes.length - 44) / (sampleRate * channels * bits / 8);
+  const sampleRate = bytes.readUInt32LE(24);
+  const { body, frames } = syntheticWavPeaks(bytes);
+  const durationSeconds = frames / sampleRate;
   if (!(durationSeconds > 0)) throw new Error('Invalid synthetic WAV duration');
-  return { body: emptyPeaks, algorithm: WAVEFORM_ALGORITHM, peakCount: WAVEFORM_PEAK_COUNT,
-    durationSeconds, sourceSha256: source.sha256, resultSha256: peakDigest, cache: 'synthetic' };
+  return { body, algorithm: WAVEFORM_ALGORITHM, peakCount: WAVEFORM_PEAK_COUNT,
+    durationSeconds, sourceSha256: source.sha256,
+    resultSha256: createHash('sha256').update(body).digest('hex'), cache: 'synthetic' };
 } };
 const config = {
-  allowedOrigin: origin, acceptedPartBytes: 1024, sessionSigningSecret: secret,
+  allowedOrigin: origin, acceptedPartBytes, sessionSigningSecret: secret,
   sessionLifetimeSeconds: 4 * 60 * 60, activeSessionLimit: 16, sharedPasswordVerifier: verifier
 };
 const app = createApp({ config, domain, waveformService, sessionRegistry: sessions });

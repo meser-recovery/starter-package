@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B04",
+  "decision_date": "2026-10-02",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B04/B04-review-01.mp3",
+    "mp3_sha256": "6472a15a2ed87fbc654d265f54e34f0e6412bd8b3bba0214fe41f73f94214dfd",
+    "mp3_duration_seconds": 8.437551,
+    "wav": "generated/narration-blocks-v2/B04/B04-review-01.wav",
+    "wav_sha256": "e1d4ff75db4ac5e82f035984decdcc36eb73c0a1246f55538d510f97e08816a1",
+    "pcm_sha256": "bd15d1aca861503084da860697134e865a4656fb63be6b85e22d6a25d7ae70e6",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 370440,
+    "alignment": "generated/narration-blocks-v2/B04/B04-review-01-timing.json",
+    "alignment_sha256": "3fe1b93d9085b1d60a58b5f11b35c49f55c024d180a29aa195ba5ad2a3bcd242",
+    "canonical_text_sha256": "98dad99eb91de3a0572714a8849d057601124cf02eaef18450a6508b40069776"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B04/narration.mp3",
+    "mp3_sha256": "6472a15a2ed87fbc654d265f54e34f0e6412bd8b3bba0214fe41f73f94214dfd",
+    "source_alignment": "generated/narration-blocks-v2/B04/B04-review-01-source-timing.json",
+    "source_alignment_sha256": "3fe1b93d9085b1d60a58b5f11b35c49f55c024d180a29aa195ba5ad2a3bcd242",
+    "decoded_pcm_sha256": "bd15d1aca861503084da860697134e865a4656fb63be6b85e22d6a25d7ae70e6",
+    "decoded_pcm_samples": 370440
+  },
+  "insertions": [],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved audio. Build from this WAV and alignment.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B04/B04-review-01-metadata.json",
+    "sha256": "099c2819c10cd1b0021525b79d9a8ed74d57af1f2a47aef82daabde0caefefab"
+  },
+  "pause_review_qa": {
+    "path": "generated/b04-block-review/verification.json",
+    "sha256": "3f61f6b74c5e269ad092ae6c57090726f6f6be5811c61973f5cfed3ba5f1105f"
+  }
+}

@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "status": "AUDIO_APPROVED",
+  "block_id": "B12",
+  "decision_date": "2026-10-04",
+  "approved_take": {
+    "mp3": "generated/narration-blocks-v2/B12/B12-review-01.mp3",
+    "mp3_sha256": "02d54a1aed360fc8eefe6fa5e7748102efb9b52f0b2918646770fc5ea38e589b",
+    "mp3_duration_seconds": 83.565714,
+    "wav": "generated/narration-blocks-v2/B12/B12-review-01.wav",
+    "wav_sha256": "c9c32470ef22d102b240dcef3a2d7420b95cb2d4c1fa15731241e271a8a201f6",
+    "pcm_sha256": "3eb5fd60b1c7fc3fa339e8558a0fb6bbdd9e9b8bcaa74afdbca7b1b27d821486",
+    "pcm_sample_rate": 44100,
+    "pcm_format": "s16le mono",
+    "pcm_samples": 3683232,
+    "alignment": "generated/narration-blocks-v2/B12/B12-review-01-timing.json",
+    "alignment_sha256": "0260317dbd9e7bf7d6ce0b893f68b08a0b1f7d0dde647bd0c18d41f03b8c6d5e",
+    "canonical_text_sha256": "20dce43fe9efc8e04b71929481c4a7bb7c89ea309e574dc15746f5bc8a98e951"
+  },
+  "source": {
+    "mp3": "generated/narration-blocks-v2/B12/narration.mp3",
+    "mp3_sha256": "02d54a1aed360fc8eefe6fa5e7748102efb9b52f0b2918646770fc5ea38e589b",
+    "source_alignment": "generated/narration-blocks-v2/B12/B12-review-01-source-timing.json",
+    "source_alignment_sha256": "0260317dbd9e7bf7d6ce0b893f68b08a0b1f7d0dde647bd0c18d41f03b8c6d5e",
+    "decoded_pcm_sha256": "3eb5fd60b1c7fc3fa339e8558a0fb6bbdd9e9b8bcaa74afdbca7b1b27d821486",
+    "decoded_pcm_samples": 3683232
+  },
+  "insertions": [],
+  "verification": {
+    "remove_insertions_restores_source_pcm_byte_for_byte": true,
+    "new_tts_requests": 0,
+    "speed_pitch_gain_processing": false,
+    "speech_samples_modified": false
+  },
+  "review_rule": "Do not regenerate or edit this approved audio. Build from this WAV and alignment.",
+  "pause_review_metadata": {
+    "path": "generated/narration-blocks-v2/B12/B12-review-01-metadata.json",
+    "sha256": "e89dbc74e8722f5c52d23e96ab4d10e7d8f6f9ff6f8d2496a6b9dea4b6256cb1"
+  },
+  "pause_review_qa": {
+    "path": "generated/b12-block-review/verification.json",
+    "sha256": "1bec6a0d081f8576e11d1d9c11099e749898794df6b1796efab3239cea26ecfd"
+  }
+}

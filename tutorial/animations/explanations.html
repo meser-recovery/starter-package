@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Meser tutorial explanatory animation</title>
+<style>
+  :root { color-scheme: dark; font-family: Arial, sans-serif; }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; background: #0d1529; color: #f3f7ff; }
+  main { padding: 92px 126px; height: 100%; background: radial-gradient(circle at 80% 20%, #18355d 0, transparent 45%), #0d1529; }
+  h1 { font-size: 60px; margin: 0 0 22px; letter-spacing: -.025em; }
+  .sub { color: #a9bad4; font-size: 30px; margin: 0 0 82px; }
+  .flow { display: flex; align-items: center; gap: 34px; min-height: 435px; }
+  .flow.multirow { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 30px; }
+  .flow.multirow .card { min-width: 0; font-size: 29px; padding: 35px 24px; }
+  .card { min-width: 270px; padding: 42px 38px; border: 2px solid #4d6b99; border-radius: 26px; background: #172946; box-shadow: 0 22px 55px #0005; font-size: 36px; font-weight: 700; text-align: center; opacity: .35; transform: translateY(20px); transition: opacity .5s, transform .5s, border-color .5s; }
+  .card.visible { opacity: 1; transform: none; }
+  .card.active { border-color: #71d9b5; }
+  .card small { display: block; margin-top: 16px; color: #b9cae3; font-size: 24px; font-weight: 400; }
+  .arrow { font-size: 64px; color: #71d9b5; opacity: .35; transition: opacity .5s; }
+  .arrow.visible { opacity: 1; }
+  .stack { display: grid; gap: 20px; }
+  .stack .card { min-width: 345px; padding: 24px 30px; font-size: 30px; }
+  .timeline { width: 100%; display: grid; gap: 40px; margin-top: 55px; }
+  .track { display: flex; align-items: center; gap: 26px; font-size: 29px; }
+  .track-label { width: 235px; flex: none; color: #c2d4ed; }
+  .segment { height: 96px; border-radius: 16px; display: flex; align-items: center; justify-content: center; font-size: 25px; opacity: .35; transition: opacity .5s, width .6s, background .5s; }
+  .segment.visible { opacity: 1; }
+  .speech { background: #287966; }
+  .silence { background: #394967; border: 2px dashed #8293b0; }
+  .shared { background: #b97735; color: #fff; }
+  .note { position: absolute; bottom: 104px; left: 126px; right: 126px; color: #d9e6f7; font-size: 32px; opacity: .25; transition: opacity .5s; }
+  .note.visible { opacity: 1; }
+</style></head><body><main id="scene"></main>
+<script>
+const kind = new URL(location.href).searchParams.get('kind') || 'zoom-multitrack';
+const configurations = {
+ 'intro-purpose': {title:'Зачем нужна эта инструкция', sub:'От записи собрания до анонса и готовой спикерской', cards:['Спикерское собрание','Сайт «Нам по пути»','Текстовый анонс'], note:'Записи используются для публикации и подготовки анонса'},
+ 'zoom-multitrack': {title:'Поканальная запись Zoom', sub:'Одна запись — несколько отдельных дорожек', stacked:true, cards:['Запись Zoom','Спикер|отдельная дорожка','Переводчик|отдельная дорожка','Участник|отдельная дорожка'], note:'Каждую дорожку можно обработать отдельно'},
+ 'announcement-benefit': {title:'Материал для анонс-мейкера', sub:'Русский перевод вместо длинной двуязычной записи', cards:['Общая запись','Русский перевод','Длинные паузы сокращены'], note:'Получается более короткий материал для прослушивания и анализа'},
+ 'speaker-benefit': {title:'Зачем нужны отдельные дорожки', sub:'Проблемы участников можно исправлять независимо', multirow:true, cards:['Разная громкость','Гул и резкий звук','Кашель и шум','Лишний участник','Проблемы со связью','Начало и конец'], note:'Правка одной дорожки не затрагивает остальных'},
+ 'two-tools': {title:'Аудиоархив и Аудиоредактор', sub:'Получение записи и её обработка — разные действия', cards:['Zoom','Аудиоархив','Аудиоредактор','Готовые версии'], note:'Исходники, проекты и результаты связаны с одной записью'},
+ 'archive-hierarchy': {title:'Одна запись в Аудиоархиве', sub:'Все материалы собрания остаются связаны', stacked:true, cards:['Запись','Исходные дорожки','Проект и история','Версии для анонс-мейкера','Финальные версии'], note:'Исходники, проект и готовые результаты хранятся вместе'},
+ 'project-vs-final': {title:'Проект и финальная версия', sub:'Проект сохраняет монтаж; финальная версия — готовый звук', cards:['Исходные дорожки','Монтаж и настройки','Состояние проекта','Финальная версия'], note:'Сохранить проект ≠ создать MP3'},
+ 'summary': {title:'Весь процесс', sub:'От поканальной записи до готовых версий', multirow:true, cards:['Zoom','Исходные дорожки','Аудиоархив','Аудиоредактор','Анонс-мейкер / Спикерская','Проект и финальные версии'], note:'Материалы одного собрания остаются связаны'}
+};
+const timeline = {
+ 'one-translator': {title:'Один переводчик', sub:'Алгоритм сокращает длинную тишину', rows:[['До','Речь','Длинная тишина','Речь'],['После','Речь','Короткая пауза','Речь']], note:'После сокращения остаётся естественный промежуток между фразами'},
+ 'bilingual-problem': {title:'Двуязычная запись', sub:'Спикер на иврите, затем русский перевод', rows:[['Общая запись','Иврит','Перевод','Иврит'],['Для анонса','Тишина','Русский перевод','Тишина']], note:'Для анализа нужна дорожка русского перевода'},
+ 'multiple-translators': {title:'Несколько переводчиков', sub:'Сокращается только общая тишина', rows:[['Переводчик 1','Речь','Тишина','Речь'],['Переводчик 2','Тишина','Речь','Тишина'],['Общий участок','Речь','Речь','Общая тишина']], note:'Если говорит хотя бы один переводчик, участок остаётся на месте'}
+};
+const target = document.getElementById('scene');
+if (timeline[kind]) {
+ const config = timeline[kind];
+ target.innerHTML = `<h1>${config.title}</h1><p class="sub">${config.sub}</p><div class="timeline">${config.rows.map(row=>`<div class="track"><span class="track-label">${row[0]}</span>${row.slice(1).map((v,i)=>`<div class="segment ${v.toLowerCase().includes('тишина') || v.toLowerCase().includes('пауза') ? 'silence' : 'speech'} ${v.includes('Общая')?'shared':''}" style="width:${v==='Короткая пауза'?250:i===1?460:330}px">${v}</div>`).join('')}</div>`).join('')}</div><p class="note">${config.note}</p>`;
+} else {
+ const config = configurations[kind];
+ if (!config) throw new Error('Unknown animation');
+ const cards = config.cards.map(card=>`<div class="card">${card.includes('|')?card.replace('|','<small>')+'</small>':card}</div>`);
+ const flow = config.stacked ? `${cards[0]}<div class="arrow">→</div><div class="stack">${cards.slice(1).join('')}</div>`
+   : config.multirow ? cards.join('') : cards.map((card,i)=>`${i?'<div class="arrow">→</div>':''}${card}`).join('');
+ target.innerHTML = `<h1>${config.title}</h1><p class="sub">${config.sub}</p><div class="flow ${config.multirow?'multirow':''}">${flow}</div><p class="note">${config.note}</p>`;
+}
+window.setProgress = progress => {
+ const elements = [...document.querySelectorAll('.card,.segment,.arrow')];
+ elements.forEach((element,index)=>element.classList.toggle('visible', progress >= (index+1)/(elements.length+1)));
+ document.querySelector('.note').classList.toggle('visible',progress>.8);
+};
+window.setProgress(0);
+</script></body></html>

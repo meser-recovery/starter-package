@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>B01 · схема процесса</title>
+<style>
+  :root { font-family: Inter, Arial, sans-serif; color: #102844; background: #eff5fb; }
+  * { box-sizing: border-box; }
+  body { margin: 0; width: 1920px; height: 1080px; overflow: hidden; }
+  .surface { position: relative; width: 100%; height: 100%; padding: 88px 116px 72px; background: radial-gradient(circle at 80% 18%, #d9ecff, transparent 38%), linear-gradient(145deg,#f4f8fc,#dfebf5); }
+  .eyebrow { margin: 0 0 13px; color: #3f78a9; font-size: 24px; font-weight: 800; letter-spacing: .11em; text-transform: uppercase; }
+  h1 { margin: 0; max-width: 1450px; font-size: 65px; line-height: 1.11; letter-spacing: -.04em; }
+  .sub { margin-top: 21px; font-size: 28px; color: #47647f; }
+  .deck { position: relative; height: 670px; margin-top: 60px; }
+  .stage { position: absolute; inset: 0; display: grid; opacity: 0; transform: translateY(20px); transition: opacity .7s, transform .7s; pointer-events: none; }
+  .stage.active { opacity: 1; transform: none; }
+  .split { grid-template-columns: 1fr 130px 1fr; align-items: stretch; }
+  .three { grid-template-columns: 1fr 110px 1fr 110px 1fr; align-items: stretch; }
+  .card { border: 2px solid #bed4e7; background: #fff; box-shadow: 0 20px 55px #3154761c; border-radius: 30px; padding: 45px 48px; display: flex; flex-direction: column; justify-content: center; min-width: 0; }
+  .card.blue { background: #0d3555; color: #f8fcff; border-color: #0d3555; }
+  .card.accent { border-color: #3b95df; box-shadow: 0 22px 55px #2389e038; }
+  .card h2 { font-size: 41px; line-height: 1.12; margin: 0 0 28px; letter-spacing: -.03em; }
+  .card p, .card li { font-size: 26px; line-height: 1.4; }
+  .card p { margin: 0; }
+  .card ul { margin: 0; padding-left: 31px; }
+  .card li + li { margin-top: 17px; }
+  .arrow { align-self: center; color: #3385c6; font-size: 76px; text-align: center; font-weight: 200; }
+  .tag { color: #277cb9; font-size: 23px; font-weight: 800; letter-spacing: .06em; text-transform: uppercase; margin-bottom: 18px; }
+  .blue .tag { color: #8bcfff; }
+  .wave { width: 100%; height: 116px; display: flex; align-items: center; gap: 5px; margin-top: 32px; }
+  .wave span { flex: 1; height: var(--h); border-radius: 6px; background: linear-gradient(#62b8f0,#2580cb); animation: breathe 2.7s ease-in-out infinite alternate; animation-delay: var(--d); }
+  .blue .wave span { background: linear-gradient(#a1dcff,#50a8e4); }
+  @keyframes breathe { from { transform: scaleY(.78); } to { transform: scaleY(1.08); } }
+  .two-track { display: grid; gap: 23px; margin-top: 33px; }
+  .track { border-radius: 13px; background: #eaf4fc; padding: 18px 23px; font-size: 24px; font-weight: 750; color: #23577f; }
+  .track span { float: right; font-weight: 500; }
+  .blue .track { background: #164c73; color: #d9eeff; }
+  .muted { color: #6d8498; }
+  .pill { align-self: flex-start; padding: 13px 25px; border-radius: 50px; background: #d8efff; color: #075d9c; font-size: 24px; font-weight: 800; margin-top: 29px; }
+  .progress { margin-top: 36px; height: 17px; border-radius: 20px; background: #d9e6f1; overflow: hidden; }
+  .progress::before { content: ''; display: block; height: 100%; width: 80%; background: #73b9ea; border-radius: inherit; }
+  .progress.short::before { width: 35%; background: #278acb; }
+  .footer { position: absolute; bottom: 36px; right: 116px; color: #7790a5; font-size: 21px; font-weight: 600; }
+  .scene-number { position: absolute; bottom: 36px; left: 116px; color: #7895ae; font-size: 20px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main class="surface">
+  <p class="eyebrow">Запись спикерского собрания</p>
+  <h1 id="heading">От записи Zoom к готовому материалу</h1>
+  <p class="sub" id="sub">Две задачи используют одну исходную запись</p>
+  <div class="deck">
+    <section class="stage split active" data-stage="zoom">
+      <div class="card blue"><span class="tag">Источник</span><h2>Спикерская в Zoom</h2><p>Голоса участников и переводчика записываются во время собрания.</p><div class="wave" aria-hidden="true"></div></div>
+      <div class="arrow">→</div>
+      <div class="card"><span class="tag">После встречи</span><h2>Одна запись — две задачи</h2><div class="two-track"><div class="track">Готовая спикерская <span>для сайта</span></div><div class="track">Короткий анонс <span>для слушателей</span></div></div></div>
+    </section>
+    <section class="stage three" data-stage="edit">
+      <div class="card blue"><span class="tag">Исходник</span><h2>Запись Zoom</h2><div class="wave" aria-hidden="true"></div></div>
+      <div class="arrow">→</div>
+      <div class="card accent"><span class="tag">Подготовка</span><h2>Обработка звука</h2><ul><li>Начало и конец</li><li>Громкость голосов</li><li>Мешающие частоты</li></ul></div>
+      <div class="arrow">→</div>
+      <div class="card"><span class="tag">Результат</span><h2>«Нам по пути»</h2><p>Готовая запись добавляется на сайт.</p></div>
+    </section>
+    <section class="stage split" data-stage="difficulty">
+      <div class="card blue"><span class="tag">Обычный способ</span><h2>Профессиональная обработка</h2><div class="wave" aria-hidden="true"></div></div>
+      <div class="arrow">→</div>
+      <div class="card accent"><span class="tag">Сложность</span><h2>Нужны программы и опыт</h2><p>Для обычного пользователя этот этап становится препятствием.</p></div>
+    </section>
+    <section class="stage split" data-stage="announcement">
+      <div class="card blue"><span class="tag">Длинная запись</span><h2>Два языка, один файл</h2><div class="two-track"><div class="track">Голос оригинала</div><div class="track">Голос переводчика</div></div><div class="progress"></div></div>
+      <div class="arrow">→</div>
+      <div class="card"><span class="tag">Анонс-мейкер</span><h2>Прослушать и выделить мысли</h2><p>После прослушивания создаётся короткое текстовое резюме.</p></div>
+    </section>
+    <section class="stage split" data-stage="cost">
+      <div class="card blue"><span class="tag">Сейчас</span><h2>Вся двуязычная запись</h2><div class="progress"></div><p style="margin-top:26px">Половину времени занимает голос оригинала.</p></div>
+      <div class="arrow">→</div>
+      <div class="card accent"><span class="tag">Последствие</span><h2>Больше времени, меньше фокуса</h2><p>Слушателю приходится постоянно отделять нужную речь от другой.</p></div>
+    </section>
+    <section class="stage split" data-stage="new">
+      <div class="card accent"><span class="tag">Новая функция 1</span><h2>Анонс-мейкер</h2><p>В итоговой записи остаётся голос переводчика.</p><div class="progress short"></div><span class="pill">Короче для прослушивания</span></div>
+      <div class="arrow">+</div>
+      <div class="card accent"><span class="tag">Новая функция 2</span><h2>Спикерская</h2><p>Простые инструменты редактирования помогают подготовить финальную запись.</p><span class="pill">Без профессиональной программы</span></div>
+    </section>
+  </div>
+  <span class="scene-number">От исходной записи к двум задачам</span><span class="footer">Схема процесса</span>
+</main>
+<script>
+  const waveHeights=[25,45,76,52,88,60,34,72,100,64,36,82,55,94,40,71,32,62,87,48,76,29,65,92,53,78,36,58,83,44,67,32,80,51];
+  document.querySelectorAll('.wave').forEach(wave => waveHeights.forEach((height,i)=>{
+    const bar=document.createElement('span');bar.style.setProperty('--h',height+'%');bar.style.setProperty('--d',(-i*.08)+'s');wave.append(bar);
+  }));
+  window.setStage=(name)=>{
+    const stage=document.querySelector(`[data-stage="${name}"]`);
+    if(!stage)throw Error('unknown B01 visual stage: '+name);
+    document.querySelectorAll('.stage').forEach(node=>node.classList.toggle('active',node===stage));
+    const headings={zoom:['От записи Zoom к готовому материалу','Две задачи используют одну исходную запись'],edit:['Подготовка готовой спикерской','Отредактировать, обработать звук, добавить на сайт'],difficulty:['Почему это было трудно','Обычному пользователю нужны специальные средства и опыт'],announcement:['Подготовка анонса','Прослушать запись и составить краткое резюме'],cost:['Цена привычного процесса','Длинная двуязычная запись отвлекает и требует времени'],new:['Две новые возможности','Быстрее подготовить анонс и финальную спикерскую']};
+    document.getElementById('heading').textContent=headings[name][0];
+    document.getElementById('sub').textContent=headings[name][1];
+  };
+</script>
+</body>
+</html>

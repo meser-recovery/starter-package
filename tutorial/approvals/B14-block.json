@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "status": "BLOCK_APPROVED",
+  "block_id": "B14",
+  "decision_date": "2026-10-04",
+  "video": "generated/b14-outro-review/B14.mp4",
+  "video_sha256": "e64b61ebf5933796c918682babadfd049a32294bd481b25116f19982956a04a1",
+  "duration_seconds": 119.43333333333334,
+  "approved_audio_record": "approvals/B14-audio.json",
+  "approved_audio_record_sha256": "034a0f80a84065dae8f4714cfc889738f6734a0bd763d21c79a6f9f37217e9c9",
+  "approved_mp3_sha256": "ca5934f16b880b73fca530ddafcd08d53d12484063f6fd7dfe706f1490e28d38",
+  "approved_wav_sha256": "5c75588c6dd7204c0488ce547f07ef275f3231583c06a2caff22cc1b60fd331f",
+  "approved_pcm_sha256": "41d425f141ea7246770cd9d5ba0cbeed0868bc40c36be55a5dd8f959286fe83d",
+  "approved_alignment": "generated/narration-blocks-v2/B14/B14-review-01-timing.json",
+  "approved_alignment_sha256": "fd469bf39eb30e52cb24c35294497dab1a940da1c0b69ddce7d4c35dbc3fd1a9",
+  "canonical_text_sha256": "8b00f34e1ffb7f76308a42e079fa58b36ff23982ad60d6cc72519a476d16edea",
+  "subtitle_srt": "generated/b14-outro-review/B14.ru.srt",
+  "subtitle_srt_sha256": "688dee7ee6e64e63749cc70625917be77dab7324161dcccac9ec490421b90907",
+  "subtitle_vtt": "generated/b14-outro-review/B14.ru.vtt",
+  "subtitle_vtt_sha256": "1478e96c65a051378814bc004a863adc10cb140288a7f68d8f634df57369f5b3",
+  "embedded_subtitle_cues": 33,
+  "last_embedded_subtitle_end_seconds": 118.315,
+  "video_audio_timeline": "generated/b14-block-review/B14-video-timeline.wav",
+  "video_audio_timeline_sha256": "859a6a893051274bc2a37ac72353a5c659dcf90deb507daa2fcacee5710abbff",
+  "scene_sources": [
+    {
+      "path": "generated/b14-block-review/scenes/B14-052.mp4",
+      "sha256": "1634694871fb0466c53b34da66443ed7df731f4b8160cc5fe6d723ab07f47d5c"
+    },
+    {
+      "path": "generated/b14-block-review/scenes/B14-053.mp4",
+      "sha256": "b151efd52b1d07ca91508587c3b4769f5d5142071a89a60b28a89750319b94af"
+    },
+    {
+      "path": "generated/b14-block-review/scenes/B14-054.mp4",
+      "sha256": "7baea64b39e03d9b15044e608fed4be0b6d3ab0637ace528e81e38c0beea65a0"
+    },
+    {
+      "path": "generated/b14-outro-review/outro-visual.mp4",
+      "sha256": "b6b6ffefe3fcb2b5cb3634d325395b7546cc657bd76946d4a934d5df69921234"
+    }
+  ],
+  "report": "generated/b14-outro-review/report.json",
+  "report_sha256": "e716bd7600a193f740401b3f12b542713e290d81fea6c94119d20470477c245a",
+  "verification": "generated/b14-outro-review/verification.json",
+  "verification_sha256": "ef0a386e5520c321c5dd054b288a867eb754118eacbecdf9ac33bddc4cda3a94"
+}

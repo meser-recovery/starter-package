@@ -1,0 +1,14 @@
+{
+  "version": "synthetic-zoom-v1",
+  "sample_rate": 16000,
+  "duration_seconds": 18,
+  "common_silence": [10, 12],
+  "early_start": [0, 2],
+  "late_end": [16, 18],
+  "tracks": [
+    {"file": "Спикер.wav", "tone_hz": 210, "gain": 0.34, "speech": [[2, 4], [6, 8], [12, 14]], "hum_hz": 60},
+    {"file": "Переводчик 1.wav", "tone_hz": 310, "gain": 0.08, "speech": [[4, 6], [8, 9.5], [13, 15]], "cough": [8.7, 8.95]},
+    {"file": "Переводчик 2.wav", "tone_hz": 390, "gain": 0.2, "speech": [[5, 6.5], [9, 10], [14, 16]], "local_noise": [14.4, 14.8]},
+    {"file": "Участник.wav", "tone_hz": 510, "gain": 0.7, "speech": [[3, 4], [7, 8], [12.5, 13.2]]}
+  ]
+}
