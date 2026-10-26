@@ -9,7 +9,7 @@ const labels = { available: 'Доступно', reserved: 'Импорт не з�
 
 export function mountZoomArchive(gateway, openSession, onSessionExpired = () => {}) {
   let settings = null, receipt = null, calendar = null, generation = 0, usageGeneration = 0, month = moscowMonth(), selectedDay = null, controller = null, busy = false;
-  let usageRefreshPending = null, calendarController = null, settingsSequence = 0;
+  let usageRefreshPending = null, calendarController = null, settingsSequence = 0, expiredAuthGeneration = null;
   const dialog = $('archive-settings-dialog'), zoomDialog = $('archive-zoom-dialog');
   const status = text => { $('archive-settings-status').textContent = text; };
   const zoomStatus = text => { $('archive-zoom-status').textContent = text; };
@@ -29,7 +29,8 @@ export function mountZoomArchive(gateway, openSession, onSessionExpired = () => 
     $('zoom-day-title').textContent = 'Выберите день'; zoomStatus('');
   }
   function expiredSession(error, token, report = zoomStatus) {
-    if (error?.status !== 401 || token.generation !== generation) return false;
+    if (token.auth === expiredAuthGeneration || !gateway.isCurrentAuthenticationFailure(error, token.auth)) return false;
+    expiredAuthGeneration = token.auth;
     invalidate(); settings = null; busy = false;
     onSessionExpired();
     report('Служебная сессия истекла. Войдите снова.');
@@ -179,6 +180,7 @@ export function mountZoomArchive(gateway, openSession, onSessionExpired = () => 
         return loadCalendar(refresh);
       }
     } catch (error) {
+      if (expiredSession(error, token)) return;
       if (!current(token) || month !== requestedMonth) return;
       if (error.status === 409) { await reconcile('Подключение изменилось. Обновите календарь.'); return; }
       throw error;
@@ -230,6 +232,7 @@ export function mountZoomArchive(gateway, openSession, onSessionExpired = () => 
       if (op.state !== 'completed' || result.session?.origin.externalId !== row.id) throw new Error('Сохранение не подтверждено. Проверьте состояние операции.');
       zoomStatus('Запись сохранена в Аудиоархиве.'); await updateWarning(true); check(); await loadCalendar(true);
     } catch (error) {
+      if (expiredSession(error, token)) return;
       if (!current(token)) return;
       if (error.status === 409) { await reconcile('Подключение или импорт изменились. Обновите календарь.'); return; }
       throw error;

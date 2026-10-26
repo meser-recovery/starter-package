@@ -898,6 +898,7 @@ export class AudioArchiveGateway {
     this.fetchImpl = fetchImpl.bind(globalThis);
     this.csrfToken = null;
     this.authGeneration = 0;
+    this.authenticationFailures = new WeakMap();
     this.acceptedPartSize = DEFAULT_AUDIO_PART_BYTES;
     this.speakerProjectHistoryVersion = 0;
     this.archiveReadModelVersion = 0;
@@ -1005,7 +1006,18 @@ export class AudioArchiveGateway {
     throw error;
   }
   sessionStatus({ captureCsrf = true } = {}) { return this.request("/v1/session", { captureCsrf }); }
-  invalidateAuthentication(reason) { this.authGeneration += 1; this.csrfToken = null; this.readsInFlight.clear(); this.activeSourcePreparation?.controller.abort(reason); }
+  isCurrentAuthenticationFailure(error, generation) {
+    if (error?.status !== 401) return false;
+    const failure = this.authenticationFailures.get(error);
+    // Gateway 401s invalidate before throwing. Direct file responses have not
+    // invalidated yet; neither kind may expire a replacement login/session.
+    return failure ? failure.generation === generation && failure.invalidatedGeneration === this.authGeneration : generation === this.authGeneration;
+  }
+  invalidateAuthentication(reason) {
+    const generation = this.authGeneration++;
+    if (reason?.status === 401) this.authenticationFailures.set(reason, { generation, invalidatedGeneration: this.authGeneration });
+    this.csrfToken = null; this.readsInFlight.clear(); this.activeSourcePreparation?.controller.abort(reason);
+  }
   async login(password, { onState } = {}) {
     const generation = ++this.authGeneration;
     this.csrfToken = null;

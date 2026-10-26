@@ -521,6 +521,184 @@ def warning_expiry_regression(browser, url, output, engine, errors, delayed=Fals
     context.close()
 
 
+def auth_context_expiry_regression(browser, url, output, engine, case):
+    """Real Gateway requests; barriers delay responses, never forge a 401."""
+    context = browser.new_context(viewport={'width': 390, 'height': 900})
+    page = context.new_page()
+    page.clock.install(time=datetime(2026, 10, 12, 12, tzinfo=timezone.utc))
+    errors = []
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.on('dialog', lambda dialog: dialog.accept())
+    page.add_init_script("""
+      window.__authUnhandled = []; window.__fileSignals = [];
+      addEventListener('unhandledrejection', e => __authUnhandled.push(String(e.reason)));
+      const nativeFetch = window.fetch;
+      window.fetch = function(input, options) {
+        if (String(input).includes('/files/')) __fileSignals.push(options.signal);
+        return nativeFetch.call(this, input, options);
+      };
+    """)
+    context.request.post(f'{url}/__test/s12-reset')
+    login(page, url)
+    page.evaluate("""async () => {
+      const { AudioArchiveGateway } = await import('./scripts/audio-archive-client.mjs');
+      const invalidate = AudioArchiveGateway.prototype.invalidateAuthentication;
+      const perform = AudioArchiveGateway.prototype.performRequest;
+      window.__authInvalidations = []; window.__authFailures = [];
+      AudioArchiveGateway.prototype.performRequest = async function(path, options) {
+        try { return await perform.call(this, path, options); }
+        catch (error) {
+          __authFailures.push({path, status: error.status ?? null, code: error.code ?? null});
+          throw error;
+        }
+      };
+      AudioArchiveGateway.prototype.invalidateAuthentication = function(reason) {
+        const before = this.authGeneration, result = invalidate.call(this, reason);
+        __authInvalidations.push({before, after: this.authGeneration, status: reason?.status ?? null});
+        return result;
+      };
+    }""")
+
+    def open_calendar():
+        page.locator('#archive-zoom-open').click()
+        expect(page.locator('#zoom-occurrences article')).to_have_count(2)
+        page.locator('#zoom-days button.has-recordings').first.click()
+        expect(page.locator('#zoom-days button[aria-pressed=true]')).to_have_count(1)
+
+    def wait_held(held, count=1):
+        for _ in range(300):
+            if len(held) >= count:
+                return
+            page.wait_for_timeout(10)
+        raise AssertionError(f'{case}: response barrier missing')
+
+    open_calendar()
+    files, usage, refresh = [], {}, {}
+
+    def hold_file(route):
+        response = route.fetch()
+        assert response.status == 200
+        files.append({'route': route, 'response': response})
+
+    def hold_usage(route):
+        usage.update(route=route)
+
+    if case == 'calendar-refresh-401':
+        context.request.post(f'{url}/__test/expire')
+        def hold_refresh(route):
+            response = route.fetch()
+            assert response.status == 401
+            refresh.update(route=route, response=response)
+        page.route('**/v1/config', hold_refresh)
+        page.locator('#zoom-refresh').click()
+        wait_held(refresh)
+        expect(page.locator('#archive-zoom-status')).to_have_text('Загрузка календаря…')
+        refresh['route'].fulfill(response=refresh['response'])
+        page.wait_for_function("__authFailures.some(e => e.path === '/v1/config' && e.status === 401)")
+    else:
+        page.route('**/v1/zoom/imports/*/files/*', hold_file)
+        page.locator('#zoom-occurrences button').filter(has_text='Импортировать запись').first.click()
+        wait_held(files)
+        page.route('**/v1/storage-usage?refresh=1', hold_usage)
+        page.locator('#zoom-stop').click()
+        wait_held(usage)
+        if case == 'late-usage-401-new-context':
+            page.locator('#archive-zoom-close').click()
+            open_calendar()
+        else:
+            assert case == 'old-auth-401-after-login'
+            context.request.post(f'{url}/__test/expire')
+            usage['response'] = usage['route'].fetch()
+            assert usage['response'].status == 401
+            # Independent current request observes expiry, then a real new login.
+            page.dispatch_event('#refresh', 'click')
+            expect(page.locator('#zoom-occurrences article')).to_have_count(0)
+            page.locator('#archive-zoom-close').click()
+            page.locator('#login').click()
+            page.locator('#password').fill('local-test-password')
+            page.locator('#login-form button[type=submit]').click()
+            expect(page.locator('#login-dialog')).not_to_be_visible()
+            open_calendar()
+        # A new controller in the current view must be cancelled only by its own
+        # session's expiry; the old import's success/finally must never touch it.
+        page.locator('#zoom-occurrences button').filter(has_text='Проверить и продолжить').first.click()
+        wait_held(files, 2)
+        expect(page.locator('#zoom-stop')).to_be_visible()
+        assert page.evaluate('__fileSignals.length === 2 && !__fileSignals[1].aborted')
+        if case == 'late-usage-401-new-context':
+            context.request.post(f'{url}/__test/expire')
+            usage['response'] = usage['route'].fetch()
+            assert usage['response'].status == 401
+        usage['route'].fulfill(response=usage['response'])
+        page.wait_for_function("__authFailures.some(e => e.path === '/v1/storage-usage?refresh=1')")
+        files[0]['route'].fulfill(response=files[0]['response'])
+    page.wait_for_timeout(150)
+    observed = {
+        'engine': engine, 'case': case,
+        'rows': page.locator('#zoom-occurrences article').count(),
+        'dayButtons': page.locator('#zoom-days button').count(),
+        'selectedDays': page.locator('#zoom-days button[aria-pressed=true]').count(),
+        'dayTitle': page.locator('#zoom-day-title').inner_text(),
+        'statusText': page.locator('#archive-zoom-status').inner_text(),
+        'stopHidden': page.locator('#zoom-stop').is_hidden(),
+        'fileAborted': page.evaluate('__fileSignals.map(signal => signal.aborted)'),
+        'authInvalidations': page.evaluate('__authInvalidations'),
+        'authFailures': page.evaluate('__authFailures'),
+    }
+    if case == 'old-auth-401-after-login':
+        # Native old-auth response rejection must preserve the *new* controller.
+        expect(page.locator('#zoom-occurrences article')).to_have_count(2)
+        expect(page.locator('#zoom-stop')).to_be_visible()
+        assert not page.evaluate('__fileSignals[1].aborted')
+        assert len(observed['authInvalidations']) == 2, observed
+        page.unroute('**/v1/storage-usage?refresh=1', hold_usage)
+        page.locator('#zoom-stop').click()
+        expect(page.locator('#zoom-stop')).to_be_hidden()
+        files[1]['route'].fulfill(response=files[1]['response'])
+        page.wait_for_timeout(100)
+        expect(page.locator('#zoom-occurrences article')).to_have_count(2)
+    else:
+        # Release a cancelled current file too: no late result may restore UI.
+        if files:
+            files[1]['route'].fulfill(response=files[1]['response'])
+            page.wait_for_timeout(100)
+    observed['afterLateFiles'] = {
+        'rows': page.locator('#zoom-occurrences article').count(),
+        'selectedDays': page.locator('#zoom-days button[aria-pressed=true]').count(),
+        'stopHidden': page.locator('#zoom-stop').is_hidden(),
+        'statusText': page.locator('#archive-zoom-status').inner_text(),
+    }
+    if case != 'old-auth-401-after-login':
+        page.locator('#archive-zoom-close').click()
+        observed['loginVisible'] = page.locator('#login').is_visible()
+    observed['pageErrors'] = errors
+    observed['unhandledRejections'] = page.evaluate('__authUnhandled')
+    observed['assets'] = len(context.request.get(f'{url}/__test/s12-state').json()['assets'])
+    page.screenshot(path=str(output / f'{engine}-{case}.png'))
+    (output / f'{engine}-{case}.json').write_text(json.dumps(observed, indent=2) + '\n')
+    try:
+        assert not errors and not observed['unhandledRejections'] and observed['assets'] == 0, observed
+        if case != 'calendar-refresh-401':
+            failure = next(e for e in observed['authFailures'] if e['path'] == '/v1/storage-usage?refresh=1')
+            if case == 'old-auth-401-after-login':
+                assert failure['code'] == 'stale_auth_response' and failure['status'] is None, observed
+            else:
+                assert failure['status'] == 401, observed
+        if case != 'old-auth-401-after-login':
+            assert observed['rows'] == observed['dayButtons'] == observed['selectedDays'] == 0, observed
+            assert observed['dayTitle'] == 'Выберите день' and observed['stopHidden'], observed
+            assert 'сессия истекла' in observed['statusText'] and observed['loginVisible'], observed
+            assert all(observed['fileAborted']), observed
+            assert observed['afterLateFiles']['rows'] == observed['afterLateFiles']['selectedDays'] == 0, observed
+            assert observed['afterLateFiles']['stopHidden'], observed
+            # One Gateway invalidation (before throw), one existing clearSession;
+            # shared/nested catches and old finally must not expire it twice.
+            assert len(observed['authInvalidations']) == 2, observed
+        return observed
+    finally:
+        context.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', default='http://localhost:4185')
@@ -657,8 +835,10 @@ def main():
             context.close()
             warning_expiry_regression(browser, args.base_url, output, engine, errors)
             warning_expiry_regression(browser, args.base_url, output, engine, errors, delayed=True)
+            for case in ['late-usage-401-new-context', 'calendar-refresh-401', 'old-auth-401-after-login']:
+                auth_context_expiry_regression(browser, args.base_url, output, engine, case)
             assert not errors, (engine, errors)
-            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS', 'strictAttentionIndependentDiagnosticsAndFreshRefresh': 'PASS', 'zoomContextMutationsAndReconcile': 'PASS', 'lateFileBodyErrorAndControllerFinally': 'PASS', 'newAccountImport': 'PASS', 'ABAAndFocusExternalChange': 'PASS', 'lateCompletedReserveAndDetachedAction': 'PASS', 'sessionExpiryPendingFile': 'PASS', 'stopWarningObserved401ClearAndReconnect': 'PASS', 'delayedWarning401AfterNewLogin': 'PASS'})
+            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS', 'strictAttentionIndependentDiagnosticsAndFreshRefresh': 'PASS', 'zoomContextMutationsAndReconcile': 'PASS', 'lateFileBodyErrorAndControllerFinally': 'PASS', 'newAccountImport': 'PASS', 'ABAAndFocusExternalChange': 'PASS', 'lateCompletedReserveAndDetachedAction': 'PASS', 'sessionExpiryPendingFile': 'PASS', 'stopWarningObserved401ClearAndReconnect': 'PASS', 'delayedWarning401AfterNewLogin': 'PASS', 'lateUsage401NewCalendarContext': 'PASS', 'calendarRefresh401AfterAuthInvalidation': 'PASS', 'oldAuth401PreservesNewController': 'PASS'})
             browser.close()
     evidence = {'checkedHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'uncommittedTrackedChanges': bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).strip()), 'results': results}
     (output / 'results.json').write_text(json.dumps(evidence, indent=2) + '\n')

@@ -28,6 +28,20 @@ The automatic run on `8357858` failed S10B WebKit's existing page-error assertio
 
 The S10B browser suite adds a deterministic real-media barrier: hold metadata completion, dispatch `pagehide`, assert zero media consumers at every URL revocation, restore with `pageshow` and verify a fresh readable native audio URL, then cancel again. It fails the old runtime and passes the corrected runtime in Chromium/Firefox/WebKit. Existing page-error, outbound-request, source-transition, hash/identity, reconnect and geometry assertions remain. Final exact-head CI status is recorded in the PR/completion report; this paragraph is not a CI-success claim.
 
+### A09 auth-expiry across calendar UI contexts
+
+Independent ACCEPT of `d8fd5b11d8aed864294275c4f1ece9d4e523fbfe` found two further expiry defects. A real delayed usage 401 after closing/reopening the calendar was rejected by the UI-generation check. A refresh 401 was discarded by `current(token)` because the real Gateway increments `authGeneration` **before** throwing. The former retained rows/selection and a new pending import; the latter retained the loading message without reconnect.
+
+The protected Gateway now records the exact error's originating auth generation and its resulting invalidation generation. Expiry ownership requires both to match, independently of calendar UI generation; direct file 401s still require the unchanged current auth generation. A replacement login or another invalidation makes an old failure ineligible. The UI processes owned expiry before rejecting stale calendar/import results and handles each auth generation once. Existing clearSession/reconnect, native abort, body/result fencing and controller-identity checks remain in force.
+
+`auth_context_expiry_regression` in the existing S12 browser matrix uses the real Gateway and real synthetic HTTP 401s with controlled response barriers. Pass-through instrumentation observes auth invalidations, request settlement and native file AbortSignals; it does not replace Gateway methods with fake results or ignore cancellation. It verifies:
+
+- Held usage request, close/reopen, real rows plus explicit day selection and a new held import, then current-session 401: rows/day buttons/selection cleared, loading replaced by expiry, new work aborted, login visible. Releasing both old/current file successes cannot restore data.
+- Refresh held at genuine configuration 401: Gateway invalidation is observed before the UI handler; loading clears and login is available. Exactly one Gateway invalidation and one existing clearSession invalidation occur.
+- Held genuine old-session 401, independent expiry followed by successful login, rows/day selection and new held import: late old 401 becomes `stale_auth_response`; new data and native controller remain live. Old success/finally cannot alter them. Explicit Stop still cancels the new controller.
+
+The first two scenarios are RED on pristine `d8fd5b1` in Chromium/Firefox/WebKit (six expected failures); the replacement-auth scenario passes on both old and corrected runtimes. All three are GREEN on the corrected implementation in all three engines, with zero page errors/unhandled rejections and zero synthetic uploaded assets. Node tests additionally cover coalesced expiry, invalidation-before-throw, repeated clearing, direct file expiry and a real replacement login. Settings-snapshot, earlier warning-expiry, blob URL and all existing browser assertions remain. The final SHA, exact-head automatic CI result and artifact bindings are recorded in the PR/completion report.
+
 | Criterion | Evidence |
 | --- | --- |
 | A01 | Every durable state (reserved, bound, completed, discarded, effective deleted), available B rows, Moscow month exclusion, exact ownership and restart/ABA/collision cases. |
@@ -38,7 +52,7 @@ The S10B browser suite adds a deterministic real-media barrier: hold metadata co
 | A06 | Two-instance barriers at list/recording/reserve CAS/lost response/bind CAS/release creation/download stream/upload listing/finalize bytes/publish/lost response. ABA during finalization refuses before further effects. Existing concurrent reserve/lost settings/assets/finalize tests preserved. |
 | A07 | Restart with original credentials removed; actual maintenance resume/retry finishes accepted bytes without Zoom, ordinary finalize refuses and replay keeps one Session/Release. |
 | A08 | Missing/corrupt/duplicate/aliased parts, whole hash, changed linkage/plan/staged manifest, tombstone and discarding/discarded faults reject without further effects. Existing CAS discard/finalize and lost DELETE tests preserved. |
-| A09 | Real browser save/activate/disable/delete/reload/conflict readback; held calendar/file success/error and old finally cannot affect current rows/controller. Session expiry fences pending file. |
+| A09 | Real browser save/activate/disable/delete/reload/conflict readback; held calendar/file success/error and old finally cannot affect current rows/controller. Auth-owned usage/refresh 401 clears the current UI despite calendar generation changes; replaced-auth 401 preserves new data/controller. |
 | A10 | Existing held month navigation plus ABA, focus external settings observation, reopen, detached old Open action, held completed reserve and successful new-account import. |
 | A11 | Independent manual fixture keeps source, drafts, Speaker states, recipes, transactions, existing catalog entries and asset bytes exact across isolation and historical recovery. Existing S10A/S10B/S13 suites retained. |
 | A12 | New HTTP/outage/recovery regressions run against archived base runtime: actual 200 instead of 409 and missing outage rejection; candidate passes. No weakened assertions. |
