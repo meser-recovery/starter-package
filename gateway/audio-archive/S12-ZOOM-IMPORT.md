@@ -179,3 +179,20 @@ Validation commands, requirement matrix and evidence index:
 [tests/safety/S12-evidence.md](../../tests/safety/S12-evidence.md). API scope
 references: [Zoom Meetings API](https://developers.zoom.us/docs/api/meetings/)
 and [S2S OAuth](https://developers.zoom.us/docs/internal-apps/s2s-oauth/).
+
+### P0 account/revision isolation
+
+The Zoom calendar and ordinary import APIs require the verified active profile's
+exact connection ID and revision. Foreign historical imports, including deleted
+or completed ones, are excluded from the calendar and outage fallback. An opaque
+identity collision never reassigns ownership or creates a replacement Session.
+Generic Zoom ingestion upload/finalize applies the same guard; manual/device
+Archive playback and editing do not depend on an active Zoom profile.
+
+The existing maintenance resume/retry path can finalize fully accepted historical
+Zoom parts without credentials or upstream calls, after exact linkage and stored
+part/whole-file integrity checks. Missing parts require restoring the exact
+original verified active connection for new downloads; historical metadata and
+accepted parts are retained. Ordinary finalize has no client-selectable recovery
+exception. See `tests/safety/S12-FIX-isolation-evidence.md` for synthetic coverage,
+read-only inventory and separate operational/P1 limitations.

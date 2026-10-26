@@ -175,20 +175,19 @@ export function createApp({ config, domain, zoomArchive = null, waveformService 
         if (zoomMatch) {
           const [id, action, fileId] = zoomMatch;
           if (fileId && action !== 'files') throw new ValidationError('Unsupported Zoom action path');
-          if (!action && request.method === 'GET') return apiResponse(json(await zoomArchive.operation(id)));
+          if (!action && request.method === 'GET') return apiResponse(json(await zoomArchive.ordinaryOperation(id)));
           if (action === 'files' && fileId && request.method === 'GET') {
             if ([...url.searchParams].length) throw new ValidationError('Download does not accept query parameters');
             return apiResponse(await zoomArchive.download(id, fileId, request.signal));
           }
           if (action === 'plan' && request.method === 'POST') {
             const started = await zoomArchive.bind(id, await jsonBody(request));
-            return apiResponse(json({ ...started, uploadedParts: (await zoomArchive.operation(id)).uploadedParts }));
+            return apiResponse(json({ ...started, uploadedParts: (await zoomArchive.ordinaryOperation(id)).uploadedParts }));
           }
           if (['finalize', 'discard'].includes(action) && request.method === 'POST') {
             const body = await jsonBody(request); assertExactZoomAction(body);
             if (action === 'discard') return apiResponse(json(await zoomArchive.discard(id)));
-            const operation = await zoomArchive.operation(id);
-            return apiResponse(json(await domain.finalizeIngestion(operation.transactionId)));
+            return apiResponse(json(await zoomArchive.finalize(id)));
           }
         }
       }
