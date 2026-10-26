@@ -22,6 +22,12 @@ Base: `aea9f9580aafe8a0cd967d67178ea9223866d543`, tree `c1a3fabaacda4b639773ed0a
 
 These are repository/synthetic corrections. The prior ACCEPT FAIL is historical evidence; new exact-head CI and regression results are bound in the PR/completion report. This does not close operational O01–O03 or authorize activation.
 
+### A14 WebKit blob URL follow-up
+
+The automatic run on `8357858` failed S10B WebKit's existing page-error assertion for blob URL access control errors; later S12/packaging/recovery steps did not run. Tracing found a detached processor metadata audio element still holding `src` when synchronous `pagehide` revoked its track URL: cancellation only reached the promise's asynchronous `finally` cleanup. Processor operations now signal cancellation synchronously; metadata success/error/timeout/abort remove listeners, release the media source and clear the timer before settling. No error filter, browser skip, timeout relaxation, dependency pin, CI gate or DSP parameter changes.
+
+The S10B browser suite adds a deterministic real-media barrier: hold metadata completion, dispatch `pagehide`, assert zero media consumers at every URL revocation, restore with `pageshow` and verify a fresh readable native audio URL, then cancel again. It fails the old runtime and passes the corrected runtime in Chromium/Firefox/WebKit. Existing page-error, outbound-request, source-transition, hash/identity, reconnect and geometry assertions remain. Final exact-head CI status is recorded in the PR/completion report; this paragraph is not a CI-success claim.
+
 | Criterion | Evidence |
 | --- | --- |
 | A01 | Every durable state (reserved, bound, completed, discarded, effective deleted), available B rows, Moscow month exclusion, exact ownership and restart/ABA/collision cases. |

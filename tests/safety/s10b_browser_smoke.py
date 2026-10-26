@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import io
+import json
 import struct
 import wave
 
@@ -30,6 +31,54 @@ def assert_fits(page, widths):
     for width in widths:
         page.set_viewport_size({'width': width, 'height': 850})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'horizontal overflow at {width}px'
+
+
+def pending_metadata_teardown(page, base_url):
+    # Keep a real detached metadata reader pending across pagehide. A revoked
+    # source must have no live media consumer, even before promise microtasks run.
+    page.add_init_script("""(() => {
+      window.__holdMetadata = true; window.__revokedMediaConsumers = [];
+      const probes = []; window.__metadataProbes = probes;
+      const create = document.createElement.bind(document);
+      document.createElement = (tag, ...args) => {
+        const node = create(tag, ...args);
+        if (String(tag).toLowerCase() === 'audio') {
+          probes.push(node);
+          node.addEventListener('loadedmetadata', event => {
+            if (window.__holdMetadata && node.preload === 'metadata') event.stopImmediatePropagation();
+          }, true);
+        }
+        return node;
+      };
+      const revoke = URL.revokeObjectURL.bind(URL);
+      URL.revokeObjectURL = url => {
+        for (const audio of [...probes, ...document.querySelectorAll('audio')]) {
+          if (audio.getAttribute('src') === url) window.__revokedMediaConsumers.push({url, id:audio.id});
+        }
+        return revoke(url);
+      };
+    })();""")
+    page.goto(f'{base_url}/Audio-Editor.html')
+    page.locator('#source-session-mode-device').click()
+    page.locator('#processor-file').set_input_files(source('pending-metadata.wav'))
+    pending = "window.__metadataProbes.find(a => a.preload === 'metadata' && a.getAttribute('src') && a.readyState >= 1)"
+    page.wait_for_function(pending)
+    old_url = page.evaluate(f'({pending}).getAttribute("src")')
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted:true}))")
+    assert not page.evaluate('window.__revokedMediaConsumers'), 'blob URL revoked while metadata audio still owns src'
+    assert page.evaluate('(url) => window.__metadataProbes.every(a => a.getAttribute("src") !== url)', old_url)
+    # BFCache restoration must retain the File and create a usable fresh source.
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted:true}))")
+    page.wait_for_function(f'({pending}) && ({pending}).getAttribute("src") !== {json.dumps(old_url)}')
+    page.evaluate("""() => {
+      window.__holdMetadata = false;
+      for (const audio of window.__metadataProbes) if (audio.getAttribute('src') && audio.readyState >= 1) audio.dispatchEvent(new Event('loadedmetadata'));
+    }""")
+    page.wait_for_function("document.querySelector('#processor-source-audio').duration > 0")
+    assert page.locator('#import-files').inner_text().count('pending-metadata.wav') == 1
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted:false}))")
+    assert not page.evaluate('window.__revokedMediaConsumers')
+    assert page.evaluate('window.__metadataProbes.every(a => !a.getAttribute("src"))')
 
 
 def speaker_source_transition(page, base_url, writes, same_name):
@@ -178,6 +227,7 @@ def run(browser_type, base_url):
     assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 3
     speaker_source_transition(page, base_url, writes, False)
     speaker_source_transition(page, base_url, writes, True)
+    pending_metadata_teardown(page, base_url)
     assert not page_errors, page_errors
     assert not outbound, outbound
     browser.close()
@@ -192,4 +242,4 @@ if __name__ == '__main__':
         names = ('chromium', 'firefox', 'webkit') if args.browser == 'all' else (args.browser,)
         for name in names:
             run(getattr(playwright, name), args.base_url)
-            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, 320/390/768/1280px')
+            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, pending metadata pagehide cleanup/fresh restored blob URL, 320/390/768/1280px')
