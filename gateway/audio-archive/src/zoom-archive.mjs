@@ -13,8 +13,24 @@ export class ZoomArchive {
   }
   async settingsSnapshot(ref = null) {
     if (!this.key) throw settingsError('Настройки Zoom недоступны: серверный ключ не настроен.');
-    const head = ref || await this.repository.getHead(), stored = await this.repository.readJson(SETTINGS_PATH, head);
-    return { head, settings: stored ? validateSettings(decryptSettings(stored.data, this.key)) : defaultSettings() };
+    const read = async head => {
+      const stored = await this.repository.readJson(SETTINGS_PATH, head);
+      return { head, settings: stored ? validateSettings(decryptSettings(stored.data, this.key)) : defaultSettings() };
+    };
+    const snapshot = await read(ref || await this.repository.getHead());
+    let candidate = snapshot;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const currentHead = await this.repository.getHead();
+      if (currentHead === candidate.head) {
+        if (!isDeepStrictEqual(snapshot.settings, candidate.settings)) break;
+        // Keep the original coherent archive snapshot; unrelated commits are safe.
+        return snapshot;
+      }
+      // An immutable read can resolve after a settings mutation. Confirm authority
+      // after the read, including when the caller supplied an older archive HEAD.
+      candidate = await read(currentHead);
+    }
+    throw settingsError('Настройки изменились во время чтения. Перечитайте их.', 409);
   }
   active(settings) {
     const c = settings.connections.find(c => c.connectionId === settings.activeConnectionId);

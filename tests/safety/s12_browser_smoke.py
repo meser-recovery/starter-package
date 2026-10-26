@@ -449,6 +449,78 @@ def isolation_regression(page, context, url):
     assert not page.evaluate('window.__zoomUnhandled')
 
 
+def warning_expiry_regression(browser, url, output, engine, errors, delayed=False):
+    # Fresh context: use native AbortSignal, not isolation_regression's transport shim.
+    context = browser.new_context(viewport={'width': 390, 'height': 900})
+    page = context.new_page()
+    page.clock.install(time=datetime(2026, 10, 12, 12, tzinfo=timezone.utc))
+    page.on('pageerror', lambda error: errors.append(str(error)))
+    page.add_init_script("window.__warningUnhandled=[]; addEventListener('unhandledrejection', e=>window.__warningUnhandled.push(String(e.reason)))")
+    page.on('dialog', lambda dialog: dialog.accept())
+    context.request.post(f'{url}/__test/s12-reset')
+    login(page, url)
+    page.locator('#archive-zoom-open').click()
+    expect(page.locator('#zoom-occurrences article')).to_have_count(2)
+    file, warning = {}, {}
+
+    def wait_held(held):
+        for _ in range(200):
+            if held:
+                return
+            page.wait_for_timeout(10)
+        raise AssertionError('warning expiry barrier missing')
+
+    def hold_file(route):
+        file.update(route=route, response=route.fetch())
+
+    def hold_expired_warning(route):
+        response = route.fetch()
+        assert response.status == 401
+        warning.update(route=route, response=response)
+
+    page.route('**/v1/zoom/imports/*/files/*', hold_file)
+    page.locator('#zoom-occurrences button').filter(has_text='Импортировать запись').first.click()
+    wait_held(file)
+    context.request.post(f'{url}/__test/expire')
+    if delayed:
+        page.route('**/v1/config', hold_expired_warning)
+        page.locator('#zoom-stop').click()
+        wait_held(warning)
+        # Another entry observes expiry first. A new confirmed login/calendar must
+        # survive the older warning's delayed 401 and the older import's finally.
+        page.dispatch_event('#refresh', 'click')
+    else:
+        with page.expect_response(lambda r: r.url.endswith('/v1/config') and r.status == 401):
+            page.locator('#zoom-stop').click()
+    expect(page.locator('#zoom-occurrences article')).to_have_count(0)
+    expect(page.locator('#zoom-days button')).to_have_count(0)
+    expect(page.locator('#zoom-day-title')).to_have_text('Выберите день')
+    expect(page.locator('#zoom-stop')).to_be_hidden()
+    if not delayed:
+        expect(page.locator('#archive-zoom-status')).to_contain_text('сессия истекла')
+    page.locator('#archive-zoom-close').click()
+    expect(page.locator('#login')).to_be_visible()
+    if delayed:
+        page.unroute('**/v1/config', hold_expired_warning)
+    page.locator('#login').click()
+    page.locator('#password').fill('local-test-password')
+    page.locator('#login-form button[type=submit]').click()
+    expect(page.locator('#login-dialog')).not_to_be_visible()
+    page.locator('#archive-zoom-open').click()
+    expect(page.locator('#zoom-occurrences article')).to_have_count(2)
+    if delayed:
+        warning['route'].fulfill(response=warning['response'])
+    file['route'].fulfill(response=file['response'])
+    page.wait_for_timeout(100)
+    expect(page.locator('#zoom-occurrences article')).to_have_count(2)
+    expect(page.locator('#archive-zoom-status')).not_to_contain_text('сессия истекла')
+    expect(page.locator('#zoom-stop')).to_be_hidden()
+    assert not context.request.get(f'{url}/__test/s12-state').json()['assets']
+    assert not page.evaluate('window.__warningUnhandled')
+    page.screenshot(path=str(output / f'{engine}-warning-expiry-{"delayed" if delayed else "observed"}.png'))
+    context.close()
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', default='http://localhost:4185')
@@ -582,9 +654,11 @@ def main():
             discard_ui_regression(page, context, args.base_url)
             attention_diagnostics_regression(page, context, args.base_url)
             isolation_regression(page, context, args.base_url)
-            assert not errors, (engine, errors)
-            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS', 'strictAttentionIndependentDiagnosticsAndFreshRefresh': 'PASS', 'zoomContextMutationsAndReconcile': 'PASS', 'lateFileBodyErrorAndControllerFinally': 'PASS', 'newAccountImport': 'PASS', 'ABAAndFocusExternalChange': 'PASS', 'lateCompletedReserveAndDetachedAction': 'PASS', 'sessionExpiryPendingFile': 'PASS'})
             context.close()
+            warning_expiry_regression(browser, args.base_url, output, engine, errors)
+            warning_expiry_regression(browser, args.base_url, output, engine, errors, delayed=True)
+            assert not errors, (engine, errors)
+            results.append({'engine': engine, 'widths': [320, 390, 768, 1280], 'status': 'PASS', 'pageErrors': errors, 'timezone': 'America/Los_Angeles', 'sourceSessions': 2, 'lostPartAndNewContextResume': 'PASS', 'lateMonthResponse': 'PASS', 'keyboardEscapeFocus': 'PASS', 'usageRefreshAndManualThresholdBothDirections': 'PASS', 'manualAndZoomLostDeleteDiscardUI': 'PASS', 'strictAttentionIndependentDiagnosticsAndFreshRefresh': 'PASS', 'zoomContextMutationsAndReconcile': 'PASS', 'lateFileBodyErrorAndControllerFinally': 'PASS', 'newAccountImport': 'PASS', 'ABAAndFocusExternalChange': 'PASS', 'lateCompletedReserveAndDetachedAction': 'PASS', 'sessionExpiryPendingFile': 'PASS', 'stopWarningObserved401ClearAndReconnect': 'PASS', 'delayedWarning401AfterNewLogin': 'PASS'})
             browser.close()
     evidence = {'checkedHead': subprocess.check_output(['git', 'rev-parse', 'HEAD'], text=True).strip(), 'uncommittedTrackedChanges': bool(subprocess.check_output(['git', 'status', '--porcelain', '--untracked-files=no'], text=True).strip()), 'results': results}
     (output / 'results.json').write_text(json.dumps(evidence, indent=2) + '\n')

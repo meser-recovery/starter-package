@@ -61,6 +61,61 @@ function barrier(object, method, match = () => true) {
   return { waiting, release: () => release() };
 }
 
+// Hold the resolved immutable storage response, after its HEAD/data were captured.
+function settingsResponseBarrier(repository, nth) {
+  const read = repository.readJson.bind(repository); let count = 0, entered, release;
+  const waiting = new Promise(r => { entered = r; }), blocked = new Promise(r => { release = r; });
+  repository.readJson = async (path, ref) => {
+    const result = await read(path, ref);
+    if (path === SETTINGS_PATH && ++count === nth) { entered(); await blocked; }
+    return result;
+  };
+  return { waiting, release };
+}
+
+test('FIX ACCEPT F1: settings authority changes while an immutable guard read is held', async tcase => {
+  for (const phase of ['operation', 'calendar', 'download', 'upload', 'disabled-calendar']) await tcase.test(phase, { timeout: 10000 }, async () => {
+    const t = await fixture(), second = instance(t.repository), request = api(t);
+    if (phase === 'upload') await upload(t, 0);
+    if (phase === 'disabled-calendar') await t.service.discard(t.op.id);
+    const track = t.plan.tracks[0], part = track.parts[0], bytes = Buffer.from(await part.blob.arrayBuffer());
+    // Calendar's final read is #2; the other cases hold guard #3 immediately
+    // before returning the DTO, requesting metadata, or uploading an asset.
+    const gate = settingsResponseBarrier(t.repository, phase.includes('calendar') ? 2 : 3), counts = countZoom(t);
+    const before = effects(t);
+    const action = phase === 'operation' ? () => request(`/v1/zoom/imports/${t.op.id}`)
+      : phase.includes('calendar') ? () => t.service.calendar('2026-10')
+      : phase === 'download' ? () => t.service.download(t.op.id, 'file-1')
+      : () => request(`/v1/source-sessions/ingestions/${t.op.transactionId}/blobs/${track.blobId}/parts/${part.partNumber}`, 'PUT', bytes,
+        { 'content-type': 'application/octet-stream', 'x-part-sha256': part.sha256, 'idempotency-key': randomUUID() });
+    const pending = action().then(value => ({ value }), error => ({ error }));
+    await gate.waiting;
+    // Use the real settings mutation path on another Gateway instance.
+    await second.service.mutate({ revision: 1, mutationId: randomUUID(), action: phase === 'disabled-calendar' ? 'disable' : 'activate',
+      connectionId: t.profiles[phase === 'disabled-calendar' ? 0 : 1].connectionId, confirmed: true });
+    const afterMutation = effects(t);
+    assert.notEqual(afterMutation, before);
+    gate.release();
+    const { value, error } = await pending;
+    assert.equal(error?.status ?? value?.status, 409, phase);
+    if (value) assert.ok(!(await value.text()).includes('participant.m4a'));
+    assert.equal(effects(t), afterMutation, 'no archive effect after the authority switch');
+    assert.deepEqual(counts, { list: 0, recording: 0, download: 0 });
+  });
+});
+
+test('FIX ACCEPT F1: an unrelated archive commit during a settings read preserves the coherent snapshot', async () => {
+  const t = await fixture(), head = await t.repository.getHead(), gate = settingsResponseBarrier(t.repository, 1);
+  const pending = t.service.settingsSnapshot(head);
+  await gate.waiting;
+  await t.repository.commitJson(head, { 'synthetic-unrelated.json': { value: 1 } }, 'Synthetic unrelated archive commit');
+  gate.release();
+  const snapshot = await pending;
+  assert.equal(snapshot.head, head);
+  assert.equal(snapshot.settings.revision, 1);
+  assert.equal((await t.service.ordinaryOperation(t.op.id)).id, t.op.id);
+});
+
 test('FIX A01-A04: exact ownership in every durable state, Moscow months, warm cache, restart, ABA and collision', async tcase => {
   for (const state of ['reserved', 'bound', 'completed', 'discarded', 'deleted']) await tcase.test(state, async () => {
     const t = await fixture();

@@ -13,7 +13,14 @@ Base: `aea9f9580aafe8a0cd967d67178ea9223866d543`, tree `c1a3fabaacda4b639773ed0a
 
 ## Acceptance evidence
 
-`gateway/audio-archive/test/s12-isolation.test.mjs` supplies 42 checks (including nested state/fault/race cases); existing S12 assertions remain in `s12.test.mjs`. The contradictory test requiring A downloads and A fallback while B is active was replaced with refusal/isolation, same-context outage and original-file integrity checks. Separate maintenance tests preserve the all-parts recovery guarantee.
+`gateway/audio-archive/test/s12-isolation.test.mjs` supplies 49 checks (including nested state/fault/race cases); existing S12 assertions remain in `s12.test.mjs`. The contradictory test requiring A downloads and A fallback while B is active was replaced with refusal/isolation, same-context outage and original-file integrity checks. Separate maintenance tests preserve the all-parts recovery guarantee.
+
+### ACCEPT blockers found at `589bb14` and corrected
+
+- F1 (A03/A05/A06): holding the resolved immutable settings read across a real activation/disable previously allowed stale operation/calendar responses, old-profile metadata acquisition, or an asset upload before rejection. Settings reads now verify authority after the awaited read, including explicit historical refs. Bounded rechecks reject changed settings or unstable HEAD; unchanged settings permit unrelated archive commits while retaining the original coherent snapshot. Five deterministic barrier regressions fail on `589bb14` and pass with the correction, asserting 409, zero upstream calls and zero post-switch archive effects. An unrelated-commit regression remains successful.
+- F2 (A09): pending file → expire synthetic session → Stop → warning configuration GET 401 previously retained rows, selected day and loading status. Warning errors now use the same generation-scoped expiry handler as ordinary UI actions and notify the existing Archive session clearing/reconnect path. Real browser regressions use native abort, require empty rows/day buttons/selection, hidden Stop, expiry status and working same-page login. A delayed old warning 401 after a newly confirmed login must preserve the new calendar. The observed-401 regression fails with the unchanged `589bb14` Zoom UI module; both cases run in every existing Chromium/Firefox/WebKit matrix.
+
+These are repository/synthetic corrections. The prior ACCEPT FAIL is historical evidence; new exact-head CI and regression results are bound in the PR/completion report. This does not close operational O01–O03 or authorize activation.
 
 | Criterion | Evidence |
 | --- | --- |

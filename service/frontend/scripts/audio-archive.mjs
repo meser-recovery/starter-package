@@ -23,7 +23,7 @@ const state = {
   resultSort: { announcement: 'newest', speaker: 'newest' },
   picker: { open: false, requested: false, page: 0, pageSize: 10 }
 };
-const zoomArchiveUi = mountZoomArchive(gateway, id => { state.picker.requested = true; void refresh().then(() => openDetail(id, { updateUrl: true })); });
+const zoomArchiveUi = mountZoomArchive(gateway, id => { state.picker.requested = true; void refresh().then(() => openDetail(id, { updateUrl: true })); }, clearSession);
 const creation = { selection: new AudioFileSelection(), attempt: null, controller: null, pickerMode: 'replace' };
 
 function creationStatus(value, tone = '') {

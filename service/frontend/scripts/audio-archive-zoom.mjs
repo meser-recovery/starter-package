@@ -7,7 +7,7 @@ function node(tag, text) { const n = document.createElement(tag); if (text !== u
 function action(label, callback) { const b = node('button', label); b.type = 'button'; b.addEventListener('click', callback); return b; }
 const labels = { available: 'Доступно', reserved: 'Импорт не завершён', bound: 'Импорт не завершён', completed: 'В Аудиоархиве', deleted: 'Исходники удалены', discarded: 'Импорт отменён', discarding: 'Отмена не завершена', unavailable: 'Файлы недоступны' };
 
-export function mountZoomArchive(gateway, openSession) {
+export function mountZoomArchive(gateway, openSession, onSessionExpired = () => {}) {
   let settings = null, receipt = null, calendar = null, generation = 0, usageGeneration = 0, month = moscowMonth(), selectedDay = null, controller = null, busy = false;
   let usageRefreshPending = null, calendarController = null, settingsSequence = 0;
   const dialog = $('archive-settings-dialog'), zoomDialog = $('archive-zoom-dialog');
@@ -28,13 +28,18 @@ export function mountZoomArchive(gateway, openSession) {
     $('zoom-days').replaceChildren(); $('zoom-occurrences').replaceChildren();
     $('zoom-day-title').textContent = 'Выберите день'; zoomStatus('');
   }
+  function expiredSession(error, token, report = zoomStatus) {
+    if (error?.status !== 401 || token.generation !== generation) return false;
+    invalidate(); settings = null; busy = false;
+    onSessionExpired();
+    report('Служебная сессия истекла. Войдите снова.');
+    return true;
+  }
   const run = async (fn, report = status) => {
     const pending = fn(), token = stamp();
     try { await pending; }
     catch (error) {
-      if (error.status === 401 && token.generation === generation) {
-        invalidate(); settings = null; report('Служебная сессия истекла. Войдите снова.'); return;
-      }
+      if (expiredSession(error, token, report)) return;
       if (current(token)) report(error.name === 'AbortError' ? 'Передача остановлена. Операция сохранена; продолжите её из календаря.' : error.message);
     }
   };
@@ -102,7 +107,7 @@ export function mountZoomArchive(gateway, openSession) {
     finally { if (usageRefreshPending === pending) usageRefreshPending = null; }
   }
   async function renderWarning(refresh) {
-    const sequence = ++usageGeneration, auth = gateway.authGeneration;
+    const sequence = ++usageGeneration, token = stamp(), auth = token.auth;
     try {
       await available(); const result = await gateway.request(`/v1/storage-usage${refresh ? '?refresh=1' : ''}`);
       if (sequence !== usageGeneration || auth !== gateway.authGeneration) return;
@@ -110,7 +115,8 @@ export function mountZoomArchive(gateway, openSession) {
       $('archive-storage-usage').textContent = result.usedBytes === null ? 'Объём пока неизвестен.' : `${sizeLabel(result.usedBytes)} · ${result.assetCount} физических частей · ${result.stale ? 'последний полный подсчёт' : 'подсчитано'} ${new Date(result.countedAt).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow' })} МСК`;
       $('archive-storage-warning').hidden = result.warning !== true;
       $('archive-storage-warning-text').textContent = result.usedBytes === null ? '' : `${result.stale ? 'Последний полный подсчёт: ' : ''}занято ${sizeLabel(result.usedBytes)}. Рекомендуемый предел — ${sizeLabel(result.softLimitBytes)}. Импорт и сохранение доступны.`;
-    } catch {
+    } catch (error) {
+      if (expiredSession(error, token)) return;
       if (sequence !== usageGeneration || auth !== gateway.authGeneration) return;
       $('archive-storage-usage').textContent = 'Объём пока неизвестен. Повторите подсчёт.';
       // A network error does not erase the last confirmed soft-limit warning.
