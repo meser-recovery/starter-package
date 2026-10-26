@@ -71,9 +71,9 @@ test("self-hosted Compose isolates gateway ports, networks, and file secrets", (
 test("native waveform runtime is pinned, disposable and exercised at realistic load", () => {
   const manifest = Object.fromEntries(toolchainManifest.trim().split("\n").map(line => line.split("=", 2)));
   assert.equal(manifest.FFMPEG_SOURCE_IMAGE, gatewayDockerfile.match(/^FROM (.+)$/m)?.[1]);
-  assert.equal(manifest.FFMPEG_PACKAGE, "8.1.2-r0");
+  assert.equal(manifest.FFMPEG_PACKAGE, "8.1.3-r0");
   assert.equal(manifest.FFMPEG_ARCH, "x86_64");
-  assert.equal(manifest.FFMPEG_VERSION, "8.1.2");
+  assert.equal(manifest.FFMPEG_VERSION, "8.1.3");
   assert.match(manifest.FFMPEG_SHA256, /^[0-9a-f]{64}$/); assert.match(manifest.FFPROBE_SHA256, /^[0-9a-f]{64}$/);
   assert.match(gatewayDockerfile, /apk add --no-cache "ffmpeg=\$FFMPEG_PACKAGE"/);
   assert.match(gatewayDockerfile, /verify-ffmpeg-toolchain\.mjs/);
