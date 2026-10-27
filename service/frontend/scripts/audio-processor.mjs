@@ -1282,9 +1282,10 @@ async function buildWaveform(track, currentEngine, operation) {
   renderTracks();
   try {
     try { track.duration = await readTrackDuration(track, operation); } catch { /* Native playback may still be usable. */ }
+    if (active !== operation) throw new Error(CANCELLED);
     track.waveformWidth = waveformWidth(track.duration);
     renderTracks();
-    const reader = createWaveformReader(undefined, currentEngine);
+    const reader = createWaveformReader(operation.signal, currentEngine);
     try { track.samples = await operation.wait(reader.read(track.file, track.duration)); }
     finally { reader.dispose(); }
     track.waveformWidth = track.samples.length;
@@ -1368,7 +1369,9 @@ input.addEventListener("change", async () => {
   if (!files.length) { syncInputFiles(); return; }
   await waitProcessorIdle();
   if (sequence !== fileSelectionSequence) return;
-  if (await selectionGuard()) selectProcessorFiles(files); else syncInputFiles();
+  const accepted = await selectionGuard();
+  if (sequence !== fileSelectionSequence) return;
+  if (accepted) selectProcessorFiles(files); else syncInputFiles();
 });
 
 function waitForMetadata(audio, operation) {
@@ -1640,8 +1643,12 @@ run.addEventListener("click", async () => {
 });
 
 cancel.addEventListener("click", stop);
+// A provisional navigation can invalidate WebKit File backing stores before
+// pagehide. Cancel first, including continuations waiting for processor idle.
+function stopForNavigation() { fileSelectionSequence++; stop(); }
+window.addEventListener("beforeunload", stopForNavigation);
 window.addEventListener("pagehide", () => {
-  stop();
+  stopForNavigation();
   engine?.terminate();
   engine = null;
   clearResult();
