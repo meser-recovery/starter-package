@@ -17,17 +17,41 @@ jobs:
           - http://archive.ubuntu.com/ubuntu
           - https://archive.ubuntu.com/ubuntu
     steps:
-      - name: Read public Ubuntu release metadata over default and IPv4 transport
+      - name: Read actual Ubuntu package with curl and APT user agents
         env:
           MIRROR_URL: ${{ matrix.mirror }}
         run: |
           python3 - <<'PY'
           import hashlib,json,os,subprocess
           from pathlib import Path
-          for name,extra in [('default',[]),('ipv4',['-4'])]:
-              output=Path(os.environ['RUNNER_TEMP'])/('release-'+name)
-              command=['curl','--silent','--show-error','--location','--fail','--connect-timeout','4','--max-time','12',*extra,'--output',str(output),'--write-out','%{json}',os.environ['MIRROR_URL']+'/dists/noble/Release']
+          for name,extra in [('curl',[]),('apt-agent',['--user-agent','Debian APT-HTTP/1.3 (2.7.14)'])]:
+              output=Path(os.environ['RUNNER_TEMP'])/('package-'+name)
+              command=['curl','--silent','--show-error','--location','--fail','--connect-timeout','4','--max-time','12',*extra,'--output',str(output),'--write-out','%{json}',os.environ['MIRROR_URL']+'/pool/universe/f/flite/libflite1_2.2-6build3_amd64.deb']
               result=subprocess.run(command,capture_output=True,text=True)
               stats=json.loads(result.stdout) if result.stdout else {}
               print(json.dumps({'mirror':os.environ['MIRROR_URL'],'transport':name,'exit':result.returncode,'http':stats.get('http_code'),'remoteIp':stats.get('remote_ip'),'connectSeconds':stats.get('time_connect'),'firstByteSeconds':stats.get('time_starttransfer'),'totalSeconds':stats.get('time_total'),'bytes':output.stat().st_size if output.exists() else 0,'sha256':hashlib.sha256(output.read_bytes()).hexdigest() if output.exists() else None,'error':result.stderr.strip()}),flush=True)
+          PY
+  apt_probe:
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Observe original runner APT transport without installing packages
+        run: |
+          python3 - <<'PY'
+          import json,os,subprocess,time
+          from pathlib import Path
+          from urllib.parse import urlsplit
+          for name in ['/etc/apt/apt-mirrors.txt','/etc/apt/apt-mirrors-security.txt','/etc/apt/sources.list.d/ubuntu.sources']:
+              p=Path(name)
+              if p.exists():
+                  for line in p.read_text().splitlines():
+                      if line.startswith('URIs:'):print(json.dumps({'sourceFile':name,'uris':line.split()[1:]}),flush=True)
+                      elif line.startswith(('http://','https://')):
+                          u=urlsplit(line.split()[0])
+                          print(json.dumps({'mirrorFile':name,'scheme':u.scheme,'host':u.hostname,'path':u.path}),flush=True)
+          start=time.monotonic()
+          try:
+              r=subprocess.run(['apt-get','download','libflite1=2.2-6build3'],cwd=os.environ['RUNNER_TEMP'],capture_output=True,text=True,timeout=45)
+              print(json.dumps({'aptExit':r.returncode,'seconds':time.monotonic()-start,'stdout':r.stdout,'stderr':r.stderr}),flush=True)
+          except subprocess.TimeoutExpired as e:
+              print(json.dumps({'aptExit':'TIMEOUT','seconds':time.monotonic()-start,'stdout':str(e.stdout),'stderr':str(e.stderr)}),flush=True)
           PY
