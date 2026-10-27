@@ -168,14 +168,26 @@ def pending_archive_navigation(page, base_url):
     page.evaluate("async () => { await import('./scripts/audio-archive.mjs'); }")
     page.add_init_script("""(() => {
       window.__departure = false; window.__configBarrierReady = false; window.__configReleased = false;
-      if (location.pathname === '/Audio-Archive.html') sessionStorage.removeItem('__lateArchiveRequests');
+      if (location.pathname === '/Audio-Archive.html') sessionStorage.removeItem('__archiveDeparture');
       const late = []; let configs = 0;
-      addEventListener('beforeunload', () => { window.__departure = true; });
+      addEventListener('beforeunload', () => {
+        window.__departure = true;
+        // Release only after all beforeunload listeners, matching the observed
+        // late continuation. Native tasks run while the next document is held;
+        // Chromium's evaluate API waits for that document's execution context.
+        setTimeout(() => {
+          window.__releaseConfig?.();
+          setTimeout(() => {
+            sessionStorage.setItem('__archiveDeparture', JSON.stringify({departed:window.__departure, configReleased:window.__configReleased, late}));
+            console.debug('S12 archive departure barrier settled');
+          }, 0);
+        }, 0);
+      });
       const native = fetch;
       window.fetch = function(input, ...args) {
         const url = String(input?.url || input);
         if (window.__departure) {
-          late.push(url); sessionStorage.setItem('__lateArchiveRequests', JSON.stringify(late));
+          late.push(url);
         }
         return native.call(this, input, ...args);
       };
@@ -194,19 +206,18 @@ def pending_archive_navigation(page, base_url):
     documents = []
     def hold_document(route): documents.append(route)
     page.route(f'{base_url}/Audio-Editor.html', hold_document)
-    with page.expect_request(f'{base_url}/Audio-Editor.html'):
-        page.evaluate("setTimeout(() => location.assign('/Audio-Editor.html'), 0)")
+    with page.expect_console_message(lambda message: message.text == 'S12 archive departure barrier settled'):
+        with page.expect_request(f'{base_url}/Audio-Editor.html'):
+            page.evaluate("setTimeout(() => location.assign('/Audio-Editor.html'), 0)")
     page.wait_for_timeout(0)
     assert len(documents) == 1
-    assert page.evaluate('window.__departure')
-    page.evaluate('window.__releaseConfig()')
-    page.wait_for_function('window.__configReleased')
-    late = page.evaluate("JSON.parse(sessionStorage.getItem('__lateArchiveRequests') || '[]')")
     documents[0].continue_()
     page.wait_for_url('**/Audio-Editor.html')
     page.unroute(f'{base_url}/Audio-Editor.html', hold_document)
-    assert not late, late
-    assert not page.evaluate("JSON.parse(sessionStorage.getItem('__lateArchiveRequests') || '[]')")
+    record = page.evaluate("JSON.parse(sessionStorage.getItem('__archiveDeparture'))")
+    assert record['departed'], record
+    assert record['configReleased'], record
+    assert not record['late'], record
 
 
 def speaker_source_transition(page, base_url, writes, same_name):

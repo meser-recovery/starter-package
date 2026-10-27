@@ -64,7 +64,7 @@
       "baselineSource": "18b9477692b0637a0120a8358e938346b811fbae",
       "baselineFile": "audio-archive-client.mjs",
       "result": "RED",
-      "error": "['/v1/storage-usage']",
+      "error": "{'departed': True, 'configReleased': True, 'late': ['/v1/storage-usage']}",
       "pageErrors": [
         "/localhost:4196/v1/storage-usage due to access control checks."
       ]
@@ -77,5 +77,22 @@
     "browserMatrixUnchanged": true,
     "safetyBaselineWorkflowUnchanged": true
   },
-  "localWebKitGreen": "full S10B including source transitions, metadata/BFCache, real provisional navigation and late-config barrier; no page errors"
+  "localWebKitGreen": "full S10B including source transitions, metadata/BFCache, real provisional navigation and late-config barrier; no page errors",
+  "harnessFollowup": {
+    "affectedHead": "adbac3d1903fb4a63a8d6e703ca0471717af31bc",
+    "cancelledRun": 40540783908,
+    "observedLocalStack": "pending_archive_navigation: page.evaluate(window.__departure) while next document route is held",
+    "cause": "Chromium evaluate waits for the next execution context; WebKit permits old-context evaluate",
+    "fix": "release real decoded response in a native task after beforeunload listeners; wait console barrier, then continue document; assert persisted record in the new context",
+    "runtimeChange": false,
+    "timeoutsChanged": false,
+    "assertionsRemoved": false,
+    "localTargetedMatrix": {
+      "chromium": "PASS",
+      "firefox": "PASS",
+      "webkit": "PASS",
+      "instrumentation": false,
+      "pageErrors": 0
+    }
+  }
 }
