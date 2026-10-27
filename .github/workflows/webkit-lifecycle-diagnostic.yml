@@ -30,7 +30,7 @@ jobs:
         run: |
           mkdir -p "$RUNNER_TEMP/webkit-lifecycle"
           result=0
-          for trial in 1 2 3; do
+          for trial in {1..12}; do
             node tests/safety/s10b_preview_server.mjs 4174 http://localhost:4174 >"$RUNNER_TEMP/webkit-lifecycle/server-$trial.log" 2>&1 &
             server=$!
             ${{ steps.python.outputs.python-path }} tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser webkit --output "$RUNNER_TEMP/webkit-lifecycle/trial-$trial" || result=1
