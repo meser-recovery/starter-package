@@ -1,0 +1,118 @@
+{
+  "source": "18b9477692b0637a0120a8358e938346b811fbae",
+  "independentCauses": true,
+  "navigation": {
+    "run": "https://github.com/meser-recovery/starter-package/actions/runs/40539117144",
+    "artifactId": 12749727469,
+    "artifactSha256": "d56061eea80758206e1adee1f69ed2bac6e64d2e85e34774fd770f0306ee2cad",
+    "trial": 7,
+    "beforeunloadMs": 2244.825,
+    "pauseReturnedMs": 2246.655,
+    "nativeLoadEnteredMs": 2247.253,
+    "nativeLoadReturned": false,
+    "timeoutMs": 32239.637,
+    "documentRequest": false,
+    "documentResponse": false,
+    "commit": false,
+    "DOMContentLoaded": false,
+    "load": false,
+    "pendingResources": [],
+    "dialogs": [],
+    "stack": [
+      "stopForNavigation",
+      "stop",
+      "operation.cancel",
+      "AbortController.abort",
+      "metadata cleanup",
+      "clearAudio",
+      "HTMLMediaElement.load"
+    ]
+  },
+  "usage": {
+    "run": "https://github.com/meser-recovery/starter-package/actions/runs/40537274178",
+    "artifactId": 12748429136,
+    "artifactSha256": "ff2bc9b81a364370d8cb00709a10a1b0d707e8cb510dc1baa6730ce30ca57725",
+    "trial": 1,
+    "archiveCommitMs": 12525.45,
+    "archiveDOMContentLoadedMs": 12601.065,
+    "archiveLoadMs": 12600.473,
+    "archiveBeforeunloadMs": 12617.548,
+    "nextDocumentResponseMs": 12629.328,
+    "usageFetchStartMs": 12629.606,
+    "usagePageerrorMs": 12629.864,
+    "archivePagehideMs": 12630.961,
+    "nextCommitMs": 12633.417,
+    "initiator": [
+      "mountZoomArchive.renderWarning",
+      "await available/configuration",
+      "AudioArchiveGateway.request",
+      "performRequest",
+      "fetch"
+    ]
+  },
+  "targetedRed": [
+    {
+      "case": "navigation",
+      "baselineSource": "18b9477692b0637a0120a8358e938346b811fbae",
+      "baselineFile": "audio-processor.mjs",
+      "result": "RED",
+      "error": "{'beforeUnload': {'hidden': False, 'sources': [None]}, 'lateReads': [], 'lateSources': [], 'provisionalLoads': [{'id': '', 'src': None}, {'id': 'processor-result-audio', 'src': None}]}",
+      "pageErrors": []
+    },
+    {
+      "case": "usage",
+      "baselineSource": "18b9477692b0637a0120a8358e938346b811fbae",
+      "baselineFile": "audio-archive-client.mjs",
+      "result": "RED",
+      "error": "{'departed': True, 'configReleased': True, 'late': ['/v1/storage-usage']}",
+      "pageErrors": [
+        "/localhost:4196/v1/storage-usage due to access control checks."
+      ]
+    }
+  ],
+  "assertions": {
+    "originalRetained": 58,
+    "current": 63,
+    "timeoutsUnchanged": true,
+    "browserMatrixUnchanged": true,
+    "safetyBaselineWorkflowUnchanged": false,
+    "allOriginalSafetyBaselineStepsAndGatesUnchanged": true
+  },
+  "localWebKitGreen": "full S10B including source transitions, metadata/BFCache, real provisional navigation and late-config barrier; no page errors",
+  "harnessFollowup": {
+    "affectedHead": "adbac3d1903fb4a63a8d6e703ca0471717af31bc",
+    "cancelledRun": 40540783908,
+    "observedLocalStack": "pending_archive_navigation: page.evaluate(window.__departure) while next document route is held",
+    "cause": "Chromium evaluate waits for the next execution context; WebKit permits old-context evaluate",
+    "fix": "release real decoded response in a native task after beforeunload listeners; wait console barrier, then continue document; assert persisted record in the new context",
+    "runtimeChange": false,
+    "timeoutsChanged": false,
+    "assertionsRemoved": false,
+    "localTargetedMatrix": {
+      "chromium": "PASS",
+      "firefox": "PASS",
+      "webkit": "PASS",
+      "instrumentation": false,
+      "pageErrors": 0
+    }
+  },
+  "ciTransport": {
+    "probeRun": "https://github.com/meser-recovery/starter-package/actions/runs/40549269280",
+    "package": "libflite1_2.2-6build3_amd64.deb",
+    "bytes": 13601102,
+    "canonicalHttpsCompleteSha256": "367f1d0da5cd38759a0515eafc27aa133b2d7bf99308cac34831df0212e96b75",
+    "canonicalHttpsSeconds": [
+      2.509453,
+      3.081795
+    ],
+    "regionalAzureHttp": {
+      "ip": "20.106.104.242",
+      "exit": 28,
+      "seconds": 12.000881,
+      "partialBytes": 708608
+    },
+    "change": "Prefer already-configured canonical HTTPS Ubuntu mirror with priority 1; retain Azure priority 2 and security fallback. One added preparation step only; all original workflow bytes outside it unchanged. Package signatures, sources, versions, checks, timeouts, matrix and skips unchanged.",
+    "fixture": "PASS: expected three configured URLs retained, priority swap, security unchanged, idempotent",
+    "workflowYaml": "PASS (system Ruby YAML parser)"
+  }
+}

@@ -893,7 +893,7 @@ export function validateArchiveAttention(value) {
 }
 
 export class AudioArchiveGateway {
-  constructor(baseUrl, fetchImpl = fetch) {
+  constructor(baseUrl, fetchImpl = fetch, page = globalThis.window) {
     this.baseUrl = String(baseUrl || "").replace(/\/+$/, "");
     this.fetchImpl = fetchImpl.bind(globalThis);
     this.csrfToken = null;
@@ -903,12 +903,26 @@ export class AudioArchiveGateway {
     this.speakerProjectHistoryVersion = 0;
     this.archiveReadModelVersion = 0;
     this.readsInFlight = new Map();
+    this.pageGeneration = 0;
+    this.pageController = new AbortController();
+    // Navigation can invalidate WebKit's document before pagehide. Keep this
+    // lifetime separate from authentication and calendar UI generations.
+    const suspend = () => this.pageController.abort();
+    const resume = () => {
+      if (this.pageController.signal.aborted) { this.pageGeneration++; this.pageController = new AbortController(); }
+    };
+    page?.addEventListener('beforeunload', suspend);
+    page?.addEventListener('pagehide', suspend);
+    page?.addEventListener('pageshow', resume);
+    // A cancelled native beforeunload dialog keeps the document alive. Its next
+    // user action must be able to request data without reviving cancelled work.
+    for (const type of ['pointerdown', 'keydown']) page?.addEventListener(type, event => { if (event.isTrusted) resume(); }, { capture: true });
   }
 
   async request(path, { coalesce = true, ...options } = {}) {
     const shared = coalesce && !options.signal && !options.body && (!options.method || options.method === 'GET') && options.captureCsrf !== false && !path.includes('refresh=1');
     if (!shared) return this.performRequest(path, options);
-    const key = `${this.authGeneration}:${path}`;
+    const key = `${this.authGeneration}:${this.pageGeneration}:${path}`;
     if (this.readsInFlight.has(key)) return structuredClone(await this.readsInFlight.get(key));
     const pending = this.performRequest(path, options); this.readsInFlight.set(key, pending);
     try { return structuredClone(await pending); } finally { this.readsInFlight.delete(key); }
@@ -923,6 +937,7 @@ export class AudioArchiveGateway {
   async performRequest(path, options = {}) {
     const generation = this.authGeneration;
     const { captureCsrf = true, ...fetchOptions } = options;
+    fetchOptions.signal = this.requestSignal(fetchOptions.signal);
     throwIfAborted(fetchOptions.signal);
     const headers = new Headers(fetchOptions.headers || {});
     if (fetchOptions.body && !(fetchOptions.body instanceof Blob) && typeof fetchOptions.body !== "string") {
@@ -931,6 +946,7 @@ export class AudioArchiveGateway {
     }
     if (!/^(GET|HEAD|OPTIONS)$/i.test(fetchOptions.method || "GET") && this.csrfToken) headers.set("X-CSRF-Token", this.csrfToken);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, { credentials: "include", ...fetchOptions, headers });
+    throwIfAborted(fetchOptions.signal);
     this.assertCurrentAuthentication(generation, response);
     const contentType = response.headers.get("Content-Type") || "";
     if (response.status !== 204 && !contentType.toLowerCase().startsWith("application/json")) {
@@ -942,6 +958,7 @@ export class AudioArchiveGateway {
       throw error;
     }
     const payload = response.status === 204 ? null : await response.json().catch(() => null);
+    throwIfAborted(fetchOptions.signal);
     this.assertCurrentAuthentication(generation, response);
     if (!response.ok) {
       const error = new Error(payload?.error || "Операция аудиоархива не выполнена.");
@@ -954,10 +971,16 @@ export class AudioArchiveGateway {
     return payload;
   }
 
+  requestSignal(signal) {
+    return signal ? AbortSignal.any([signal, this.pageController.signal]) : this.pageController.signal;
+  }
+
   async requestBinary(path, { signal } = {}) {
+    signal = this.requestSignal(signal);
     const generation = this.authGeneration;
     throwIfAborted(signal);
     const response = await this.fetchImpl(`${this.baseUrl}${path}`, { method: "GET", credentials: "include", signal });
+    throwIfAborted(signal);
     this.assertCurrentAuthentication(generation, response);
     if (!response.ok) {
       const error = Object.assign(new Error("Операция аудиоархива не выполнена."), { status: response.status });
@@ -978,6 +1001,7 @@ export class AudioArchiveGateway {
     }
     try {
       const bytes = new Uint8Array(await response.arrayBuffer());
+      throwIfAborted(signal);
       this.assertCurrentAuthentication(generation, response);
       return { response, bytes };
     } catch (error) {

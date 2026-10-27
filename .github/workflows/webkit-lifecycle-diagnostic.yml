@@ -1,0 +1,46 @@
+name: WebKit lifecycle diagnostics
+on:
+  workflow_dispatch:
+  push:
+    branches: [codex/s12-webkit-navigation-followup]
+    paths: [.github/workflows/webkit-lifecycle-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  diagnose:
+    runs-on: ubuntu-24.04
+    container: mcr.microsoft.com/playwright/python@sha256:330d401ae23c905896a0c26c66c36fc971b621519e7b11b435a8328d7bf6e031
+    strategy:
+      fail-fast: false
+      matrix:
+        python: ['3.14.8', '3.15.1']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        id: python
+        with:
+          python-version: ${{ matrix.python }}
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.7.0'
+      - name: Install matching diagnostic browser client
+        run: ${{ steps.python.outputs.python-path }} -m pip install playwright==1.64.1
+      - name: Verify repaired teardown and original S10B WebKit scenarios without changing assertions
+        shell: bash
+        run: |
+          mkdir -p "$RUNNER_TEMP/webkit-lifecycle"
+          result=0
+          for trial in {1..12}; do
+            node tests/safety/s10b_preview_server.mjs 4174 http://localhost:4174 >"$RUNNER_TEMP/webkit-lifecycle/server-$trial.log" 2>&1 &
+            server=$!
+            ${{ steps.python.outputs.python-path }} tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser webkit --output "$RUNNER_TEMP/webkit-lifecycle/trial-$trial" || result=1
+            kill "$server"
+            wait "$server" || true
+          done
+          exit "$result"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: webkit-lifecycle-python-${{ matrix.python }}
+          path: ${{ runner.temp }}/webkit-lifecycle
+          if-no-files-found: error

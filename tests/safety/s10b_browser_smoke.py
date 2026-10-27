@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """S10B browser checks against the process-local in-memory preview only."""
 import argparse
+from pathlib import Path
+from browser_lifecycle_evidence import LifecycleEvidence
 import hashlib
 import io
 import json
@@ -87,8 +89,16 @@ def pending_navigation_teardown(page, base_url):
     page.add_init_script("""(() => {
       if (!sessionStorage.getItem('__s10bNavigationEnabled')) return;
       window.__navigationProbes = []; window.__navigationLeaving = false;
-      const record = {beforeUnload:null, lateReads:[], lateSources:[]};
+      const record = {beforeUnload:null, lateReads:[], lateSources:[], provisionalLoads:[]};
       const save = () => sessionStorage.setItem('__s10bNavigation', JSON.stringify(record));
+      let provisional = false;
+      addEventListener('beforeunload', () => { provisional = true; });
+      addEventListener('pagehide', () => { provisional = false; });
+      const load = HTMLMediaElement.prototype.load;
+      HTMLMediaElement.prototype.load = function(...args) {
+        if (provisional) { record.provisionalLoads.push({id:this.id, src:this.getAttribute('src')}); save(); }
+        return load.apply(this, args);
+      };
       const read = Blob.prototype.arrayBuffer;
       Blob.prototype.arrayBuffer = function(...args) {
         if (window.__navigationLeaving) { record.lateReads.push(this.name || '(blob)'); save(); }
@@ -148,6 +158,66 @@ def pending_navigation_teardown(page, base_url):
     assert not any(record['beforeUnload']['sources']), record
     assert not record['lateSources'], record
     assert not record['lateReads'], record
+    assert not record['provisionalLoads'], record
+
+
+def pending_archive_navigation(page, base_url):
+    # Keep the real second config response decoded but its consumption pending.
+    # Independently hold the next document so the departing continuation runs.
+    page.goto(f'{base_url}/Audio-Archive.html')
+    page.evaluate("async () => { await import('./scripts/audio-archive.mjs'); }")
+    page.add_init_script("""(() => {
+      window.__departure = false; window.__configBarrierReady = false; window.__configReleased = false;
+      if (location.pathname === '/Audio-Archive.html') sessionStorage.removeItem('__archiveDeparture');
+      const late = []; let configs = 0;
+      addEventListener('beforeunload', () => {
+        window.__departure = true;
+        // Release only after all beforeunload listeners, matching the observed
+        // late continuation. Native tasks run while the next document is held;
+        // Chromium's evaluate API waits for that document's execution context.
+        setTimeout(() => {
+          window.__releaseConfig?.();
+          setTimeout(() => {
+            sessionStorage.setItem('__archiveDeparture', JSON.stringify({departed:window.__departure, configReleased:window.__configReleased, late}));
+            console.debug('S12 archive departure barrier settled');
+          }, 0);
+        }, 0);
+      });
+      const native = fetch;
+      window.fetch = function(input, ...args) {
+        const url = String(input?.url || input);
+        if (window.__departure) {
+          late.push(url);
+        }
+        return native.call(this, input, ...args);
+      };
+      const decode = Response.prototype.json;
+      Response.prototype.json = async function(...args) {
+        const value = await decode.apply(this, args);
+        if (new URL(this.url).pathname === '/v1/config' && ++configs === 2) {
+          await new Promise(resolve => { window.__releaseConfig = resolve; window.__configBarrierReady = true; });
+          window.__configReleased = true;
+        }
+        return value;
+      };
+    })();""")
+    page.reload()
+    page.wait_for_function('window.__configBarrierReady')
+    documents = []
+    def hold_document(route): documents.append(route)
+    page.route(f'{base_url}/Audio-Editor.html', hold_document)
+    with page.expect_console_message(lambda message: message.text == 'S12 archive departure barrier settled'):
+        with page.expect_request(f'{base_url}/Audio-Editor.html'):
+            page.evaluate("setTimeout(() => location.assign('/Audio-Editor.html'), 0)")
+    page.wait_for_timeout(0)
+    assert len(documents) == 1
+    documents[0].continue_()
+    page.wait_for_url('**/Audio-Editor.html')
+    page.unroute(f'{base_url}/Audio-Editor.html', hold_document)
+    record = page.evaluate("JSON.parse(sessionStorage.getItem('__archiveDeparture'))")
+    assert record['departed'], record
+    assert record['configReleased'], record
+    assert not record['late'], record
 
 
 def speaker_source_transition(page, base_url, writes, same_name):
@@ -203,113 +273,124 @@ def speaker_source_transition(page, base_url, writes, same_name):
     assert draft['payload']['trackIds'] == [session['sourceTracks'][0]['trackId']]
 
 
-def run(browser_type, base_url):
+def run(browser_type, base_url, evidence_dir=None):
     browser = browser_type.launch(headless=True)
     page = browser.new_page(viewport={'width': 390, 'height': 850})
-    page_errors = []
-    writes = []
-    outbound = []
-    page.on('pageerror', lambda error: page_errors.append(str(error)))
-    page.on('request', lambda request: (
-        writes.append((request.method, request.url)) if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and '/v1/source-sessions' in request.url else None,
-        outbound.append(request.url) if not (request.url.startswith(base_url) or request.url.startswith(f'blob:{base_url}/')) else None
-    ))
-    login(page, base_url)
-    assert page.locator('#archive-create-open').is_visible()
-    assert page.locator('#archive-create-files').get_attribute('multiple') is not None
-    page.locator('#archive-create-open').click()
-    assert page.evaluate('document.activeElement.id') == 'archive-create-title'
-    page.keyboard.press('Tab')
-    assert page.evaluate('document.activeElement.id') == 'archive-create-name'
-    assert_fits(page, (320, 390, 768, 1280))
-    page.locator('#archive-create-files').set_input_files(source('first.wav'))
-    assert 'first.wav' in page.locator('#archive-create-list').inner_text()
-    page.locator('#archive-create-files').dispatch_event('change')  # empty input after handler reset = cancelled picker
-    assert 'first.wav' in page.locator('#archive-create-list').inner_text()
-    page.locator('#archive-create-add').click()
-    page.locator('#archive-create-files').set_input_files(source('second.wav'))
-    assert page.locator('#archive-create-list li').count() == 2
-    page.locator('#archive-create-replace').click()
-    page.locator('#archive-create-files').set_input_files(source('final.wav'))
-    assert page.locator('#archive-create-list li').count() == 1
-    assert 'final.wav' in page.locator('#archive-create-list').inner_text()
-    page.locator('#archive-create-replace').click()
-    page.locator('#archive-create-files').set_input_files({'name': 'wrong.txt', 'mimeType': 'text/plain', 'buffer': b'a'})
-    assert 'final.wav' in page.locator('#archive-create-list').inner_text()
-    assert 'MP3' in page.locator('#archive-create-status').inner_text()
-    page.locator('#archive-create-replace').click()
-    page.locator('#archive-create-files').set_input_files(source('very-long-' + 'a' * 180 + '.wav'))
-    assert_fits(page, (320, 390, 768, 1280))
-    page.locator('#archive-create-replace').click()
-    page.locator('#archive-create-files').set_input_files(source('final.wav'))
-    page.locator('#archive-create-name').fill('   ')
-    page.locator('#archive-create-submit').click()
-    assert not writes
-    assert 'название' in page.locator('#archive-create-status').inner_text().lower()
-    page.locator('#archive-create-name').fill('S10B браузер')
-    page.locator('#archive-create-cancel').click()
-    assert not writes
-    page.locator('#archive-create-open').click()
-    page.locator('#archive-create-name').fill('S10B браузер')
-    page.locator('#archive-create-files').set_input_files(source('final.wav'))
-    page.locator('#archive-create-submit').click()
-    page.locator('#detail-title').wait_for()
-    assert page.locator('#detail-title').inner_text() == 'S10B браузер'
-    assert 'Дата не указана' in page.locator('#detail-heading').inner_text()
-    assert 'final.wav' in page.locator('#detail-body').inner_text()
-    assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 1
-    assert_fits(page, (320, 390, 768, 1280))
+    evidence = LifecycleEvidence(page, Path(evidence_dir) / browser_type.name) if evidence_dir else None
+    failure = None
+    try:
+        page_errors = []
+        writes = []
+        outbound = []
+        page.on('pageerror', lambda error: page_errors.append(str(error)))
+        page.on('request', lambda request: (
+            writes.append((request.method, request.url)) if request.method in ('POST', 'PUT', 'PATCH', 'DELETE') and '/v1/source-sessions' in request.url else None,
+            outbound.append(request.url) if not (request.url.startswith(base_url) or request.url.startswith(f'blob:{base_url}/')) else None
+        ))
+        login(page, base_url)
+        assert page.locator('#archive-create-open').is_visible()
+        assert page.locator('#archive-create-files').get_attribute('multiple') is not None
+        page.locator('#archive-create-open').click()
+        assert page.evaluate('document.activeElement.id') == 'archive-create-title'
+        page.keyboard.press('Tab')
+        assert page.evaluate('document.activeElement.id') == 'archive-create-name'
+        assert_fits(page, (320, 390, 768, 1280))
+        page.locator('#archive-create-files').set_input_files(source('first.wav'))
+        assert 'first.wav' in page.locator('#archive-create-list').inner_text()
+        page.locator('#archive-create-files').dispatch_event('change')  # empty input after handler reset = cancelled picker
+        assert 'first.wav' in page.locator('#archive-create-list').inner_text()
+        page.locator('#archive-create-add').click()
+        page.locator('#archive-create-files').set_input_files(source('second.wav'))
+        assert page.locator('#archive-create-list li').count() == 2
+        page.locator('#archive-create-replace').click()
+        page.locator('#archive-create-files').set_input_files(source('final.wav'))
+        assert page.locator('#archive-create-list li').count() == 1
+        assert 'final.wav' in page.locator('#archive-create-list').inner_text()
+        page.locator('#archive-create-replace').click()
+        page.locator('#archive-create-files').set_input_files({'name': 'wrong.txt', 'mimeType': 'text/plain', 'buffer': b'a'})
+        assert 'final.wav' in page.locator('#archive-create-list').inner_text()
+        assert 'MP3' in page.locator('#archive-create-status').inner_text()
+        page.locator('#archive-create-replace').click()
+        page.locator('#archive-create-files').set_input_files(source('very-long-' + 'a' * 180 + '.wav'))
+        assert_fits(page, (320, 390, 768, 1280))
+        page.locator('#archive-create-replace').click()
+        page.locator('#archive-create-files').set_input_files(source('final.wav'))
+        page.locator('#archive-create-name').fill('   ')
+        page.locator('#archive-create-submit').click()
+        assert not writes
+        assert 'название' in page.locator('#archive-create-status').inner_text().lower()
+        page.locator('#archive-create-name').fill('S10B браузер')
+        page.locator('#archive-create-cancel').click()
+        assert not writes
+        page.locator('#archive-create-open').click()
+        page.locator('#archive-create-name').fill('S10B браузер')
+        page.locator('#archive-create-files').set_input_files(source('final.wav'))
+        page.locator('#archive-create-submit').click()
+        page.locator('#detail-title').wait_for()
+        assert page.locator('#detail-title').inner_text() == 'S10B браузер'
+        assert 'Дата не указана' in page.locator('#detail-heading').inner_text()
+        assert 'final.wav' in page.locator('#detail-body').inner_text()
+        assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 1
+        assert_fits(page, (320, 390, 768, 1280))
 
-    page.goto(f'{base_url}/Audio-Editor.html')
-    page.locator('#source-session-mode-device').click()
-    assert_fits(page, (320, 390, 768, 1280))
-    page.locator('#processor-file').set_input_files(source('one.wav'))
-    page.wait_for_function("document.querySelector('#import-files').textContent.includes('one.wav')")
-    page.locator('#processor-file').set_input_files({'name': 'bad.txt', 'mimeType': 'text/plain', 'buffer': b'a'})
-    assert 'one.wav' in page.locator('#import-files').inner_text()
-    assert 'MP3' in page.locator('#device-import-status').inner_text()
-    page.locator('#import-add-files').set_input_files(source('two.wav'))
-    page.wait_for_function("document.querySelector('#import-files').textContent.includes('two.wav')")
-    assert page.locator('#import-files li').count() == 2
-    page.locator('#processor-file').set_input_files(source('three.wav'))
-    page.wait_for_function("document.querySelector('#import-files').textContent.includes('three.wav')")
-    assert page.locator('#import-files li').count() == 1
-    assert not page.locator('#processor-file').is_visible()
+        page.goto(f'{base_url}/Audio-Editor.html')
+        page.locator('#source-session-mode-device').click()
+        assert_fits(page, (320, 390, 768, 1280))
+        page.locator('#processor-file').set_input_files(source('one.wav'))
+        page.wait_for_function("document.querySelector('#import-files').textContent.includes('one.wav')")
+        page.locator('#processor-file').set_input_files({'name': 'bad.txt', 'mimeType': 'text/plain', 'buffer': b'a'})
+        assert 'one.wav' in page.locator('#import-files').inner_text()
+        assert 'MP3' in page.locator('#device-import-status').inner_text()
+        page.locator('#import-add-files').set_input_files(source('two.wav'))
+        page.wait_for_function("document.querySelector('#import-files').textContent.includes('two.wav')")
+        assert page.locator('#import-files li').count() == 2
+        page.locator('#processor-file').set_input_files(source('three.wav'))
+        page.wait_for_function("document.querySelector('#import-files').textContent.includes('three.wav')")
+        assert page.locator('#import-files li').count() == 1
+        assert not page.locator('#processor-file').is_visible()
 
-    page.goto(f'{base_url}/Audio-Archive.html')
-    page.locator('#archive-create-open').click()
-    page.locator('#archive-create-name').fill('S10B после входа')
-    page.locator('#archive-create-files').set_input_files(source('retry.wav'))
-    page.request.post(f'{base_url}/__test/expire')
-    page.locator('#archive-create-submit').click()
-    page.get_by_text('После входа продолжите сохранение.', exact=False).wait_for()
-    assert 'retry.wav' in page.locator('#archive-create-list').inner_text()
-    assert page.locator('#archive-create-name').input_value() == 'S10B после входа'
-    page.locator('#login').click()
-    page.locator('#password').fill('local-test-password')
-    page.locator('#login-form button[type=submit]').click()
-    page.locator('#login-dialog').wait_for(state='hidden')
-    page.locator('#archive-create-submit').click()
-    page.locator('#detail-title').wait_for()
-    assert page.locator('#detail-title').inner_text() == 'S10B после входа'
-    assert 'retry.wav' in page.locator('#detail-body').inner_text()
-    assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 3
-    speaker_source_transition(page, base_url, writes, False)
-    speaker_source_transition(page, base_url, writes, True)
-    pending_navigation_teardown(page, base_url)
-    pending_metadata_teardown(page, base_url)
-    assert not page_errors, page_errors
-    assert not outbound, outbound
-    browser.close()
+        page.goto(f'{base_url}/Audio-Archive.html')
+        page.locator('#archive-create-open').click()
+        page.locator('#archive-create-name').fill('S10B после входа')
+        page.locator('#archive-create-files').set_input_files(source('retry.wav'))
+        page.request.post(f'{base_url}/__test/expire')
+        page.locator('#archive-create-submit').click()
+        page.get_by_text('После входа продолжите сохранение.', exact=False).wait_for()
+        assert 'retry.wav' in page.locator('#archive-create-list').inner_text()
+        assert page.locator('#archive-create-name').input_value() == 'S10B после входа'
+        page.locator('#login').click()
+        page.locator('#password').fill('local-test-password')
+        page.locator('#login-form button[type=submit]').click()
+        page.locator('#login-dialog').wait_for(state='hidden')
+        page.locator('#archive-create-submit').click()
+        page.locator('#detail-title').wait_for()
+        assert page.locator('#detail-title').inner_text() == 'S10B после входа'
+        assert 'retry.wav' in page.locator('#detail-body').inner_text()
+        assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 3
+        speaker_source_transition(page, base_url, writes, False)
+        speaker_source_transition(page, base_url, writes, True)
+        pending_navigation_teardown(page, base_url)
+        pending_metadata_teardown(page, base_url)
+        pending_archive_navigation(page, base_url)
+        assert not page_errors, page_errors
+        assert not outbound, outbound
+    except BaseException as error:
+        failure = error
+        raise
+    finally:
+        if evidence: evidence.finish(failure)
+        browser.close()
+
 
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--base-url', default='http://localhost:4183')
     parser.add_argument('--browser', choices=('chromium', 'firefox', 'webkit', 'all'), default='chromium')
+    parser.add_argument('--output', help='Synthetic lifecycle evidence directory; request headers/bodies are never recorded')
     args = parser.parse_args()
     with sync_playwright() as playwright:
         names = ('chromium', 'firefox', 'webkit') if args.browser == 'all' else (args.browser,)
         for name in names:
-            run(getattr(playwright, name), args.base_url)
+            run(getattr(playwright, name), args.base_url, args.output)
             print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, real navigation cancellation, pending metadata pagehide cleanup/fresh restored blob URL, 320/390/768/1280px')
