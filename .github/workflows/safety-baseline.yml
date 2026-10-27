@@ -5,6 +5,12 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
+    inputs:
+      s12_release_artifacts:
+        description: 'Export exact merged S12 FIX images; no deployment'
+        required: false
+        default: false
+        type: boolean
   schedule:
     - cron: "30 21 * * *"
 
@@ -138,6 +144,71 @@ jobs:
         run: |
           gateway/audio-archive/deploy/recovery/synthetic-docker-restore-rehearsal.sh
           MESER_S12_RECOVERY_SYNTHETIC_TEST=true gateway/audio-archive/deploy/recovery/synthetic-docker-restore-rehearsal.sh
+
+  s12-release-artifacts:
+    if: github.event_name == 'workflow_dispatch' && inputs.s12_release_artifacts == true
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout build control
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          path: control
+          persist-credentials: false
+      - name: Checkout exact merged release source
+        uses: actions/checkout@v4
+        with:
+          ref: 18b9477692b0637a0120a8358e938346b811fbae
+          fetch-depth: 0
+          path: source
+          persist-credentials: false
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24.7.0'
+      - name: Verify merge tree, accepted deployment subtrees and native builder
+        working-directory: source
+        run: |
+          test "$(git rev-parse HEAD)" = 18b9477692b0637a0120a8358e938346b811fbae
+          test "$(git rev-parse HEAD^{tree})" = 54d17f98bd8d57e109275e32f01bda1144a5dff8
+          git fetch --no-tags origin d8f64c374782cad5b7effcdd7692293ce77d6880
+          while read -r path expected; do
+            test "$(git rev-parse "HEAD:$path")" = "$expected"
+            test "$(git rev-parse "d8f64c374782cad5b7effcdd7692293ce77d6880:$path")" = "$expected"
+          done <<'BINDINGS'
+          gateway/audio-archive 1bbf4c60e1325e63467e37760a70834bc766f193
+          service/frontend cfb350cc45beda858a6f1abfbc2587c7621846a3
+          service/tools 3892a8759238ff60054e9871bc99c295ccb2e78e
+          BINDINGS
+          test "$(uname -m)" = x86_64
+          test "$(docker info --format '{{.OSType}} {{.Architecture}}')" = 'linux x86_64'
+          git diff --quiet
+          git diff --cached --quiet
+      - name: Build source archive and both images without publishing
+        working-directory: source
+        run: |
+          mkdir "$RUNNER_TEMP/s12-release"
+          service/tools/create-release.sh 18b9477692b0637a0120a8358e938346b811fbae "$RUNNER_TEMP/s12-release"
+      - name: Verify built pinned FFmpeg and Caddy configuration
+        working-directory: source
+        run: |
+          docker run --rm --network none --read-only --cap-drop ALL \
+            --env-file "$PWD/gateway/audio-archive/ffmpeg-toolchain.env" \
+            --entrypoint node meser-service-gateway:18b9477692b0637a0120a8358e938346b811fbae \
+            tools/verify-ffmpeg-toolchain.mjs
+          docker run --rm --network none --entrypoint caddy \
+            meser-service-caddy:18b9477692b0637a0120a8358e938346b811fbae \
+            validate --config /etc/caddy/Caddyfile
+      - name: Record all archive blob hashes and distinct OCI identities
+        run: python3 control/service/tools/record-s12-release-identities.py source "$RUNNER_TEMP/s12-release"
+      - name: Upload exact merge offline release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: s12-fix-release-18b9477692b0637a0120a8358e938346b811fbae
+          path: ${{ runner.temp }}/s12-release
+          if-no-files-found: error
+          retention-days: 30
 
   production-safety:
     if: github.event_name == 'push' || github.event_name == 'schedule'
