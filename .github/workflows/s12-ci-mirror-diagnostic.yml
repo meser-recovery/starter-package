@@ -1,0 +1,33 @@
+name: S12 CI mirror diagnostic
+on:
+  push:
+    branches: [codex/s12-ci-mirror-diagnostic-20261027]
+    paths: [.github/workflows/s12-ci-mirror-diagnostic.yml]
+permissions:
+  contents: read
+jobs:
+  probe:
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        mirror:
+          - http://azure.archive.ubuntu.com/ubuntu
+          - https://azure.archive.ubuntu.com/ubuntu
+          - http://archive.ubuntu.com/ubuntu
+          - https://archive.ubuntu.com/ubuntu
+    steps:
+      - name: Read public Ubuntu release metadata over default and IPv4 transport
+        env:
+          MIRROR_URL: ${{ matrix.mirror }}
+        run: |
+          python3 - <<'PY'
+          import hashlib,json,os,subprocess
+          from pathlib import Path
+          for name,extra in [('default',[]),('ipv4',['-4'])]:
+              output=Path(os.environ['RUNNER_TEMP'])/('release-'+name)
+              command=['curl','--silent','--show-error','--location','--fail','--connect-timeout','4','--max-time','12',*extra,'--output',str(output),'--write-out','%{json}',os.environ['MIRROR_URL']+'/dists/noble/Release']
+              result=subprocess.run(command,capture_output=True,text=True)
+              stats=json.loads(result.stdout) if result.stdout else {}
+              print(json.dumps({'mirror':os.environ['MIRROR_URL'],'transport':name,'exit':result.returncode,'http':stats.get('http_code'),'remoteIp':stats.get('remote_ip'),'connectSeconds':stats.get('time_connect'),'firstByteSeconds':stats.get('time_starttransfer'),'totalSeconds':stats.get('time_total'),'bytes':output.stat().st_size if output.exists() else 0,'sha256':hashlib.sha256(output.read_bytes()).hexdigest() if output.exists() else None,'error':result.stderr.strip()}),flush=True)
+          PY
