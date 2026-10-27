@@ -3,6 +3,7 @@
 import argparse
 import hashlib
 import io
+import json
 import struct
 import wave
 
@@ -30,6 +31,123 @@ def assert_fits(page, widths):
     for width in widths:
         page.set_viewport_size({'width': width, 'height': 850})
         assert page.evaluate('document.documentElement.scrollWidth <= innerWidth'), f'horizontal overflow at {width}px'
+
+
+def pending_metadata_teardown(page, base_url):
+    # Keep a real detached metadata reader pending across pagehide. A revoked
+    # source must have no live media consumer, even before promise microtasks run.
+    page.add_init_script("""(() => {
+      window.__holdMetadata = true; window.__revokedMediaConsumers = [];
+      const probes = []; window.__metadataProbes = probes;
+      const create = document.createElement.bind(document);
+      document.createElement = (tag, ...args) => {
+        const node = create(tag, ...args);
+        if (String(tag).toLowerCase() === 'audio') {
+          probes.push(node);
+          node.addEventListener('loadedmetadata', event => {
+            if (window.__holdMetadata && node.preload === 'metadata') event.stopImmediatePropagation();
+          }, true);
+        }
+        return node;
+      };
+      const revoke = URL.revokeObjectURL.bind(URL);
+      URL.revokeObjectURL = url => {
+        for (const audio of [...probes, ...document.querySelectorAll('audio')]) {
+          if (audio.getAttribute('src') === url) window.__revokedMediaConsumers.push({url, id:audio.id});
+        }
+        return revoke(url);
+      };
+    })();""")
+    page.goto(f'{base_url}/Audio-Editor.html')
+    page.locator('#source-session-mode-device').click()
+    page.locator('#processor-file').set_input_files(source('pending-metadata.wav'))
+    pending = "window.__metadataProbes.find(a => a.preload === 'metadata' && a.getAttribute('src') && a.readyState >= 1)"
+    page.wait_for_function(pending)
+    old_url = page.evaluate(f'({pending}).getAttribute("src")')
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted:true}))")
+    assert not page.evaluate('window.__revokedMediaConsumers'), 'blob URL revoked while metadata audio still owns src'
+    assert page.evaluate('(url) => window.__metadataProbes.every(a => a.getAttribute("src") !== url)', old_url)
+    # BFCache restoration must retain the File and create a usable fresh source.
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pageshow', {persisted:true}))")
+    page.wait_for_function(f'({pending}) && ({pending}).getAttribute("src") !== {json.dumps(old_url)}')
+    page.evaluate("""() => {
+      window.__holdMetadata = false;
+      for (const audio of window.__metadataProbes) if (audio.getAttribute('src') && audio.readyState >= 1) audio.dispatchEvent(new Event('loadedmetadata'));
+    }""")
+    page.wait_for_function("document.querySelector('#processor-source-audio').duration > 0")
+    assert page.locator('#import-files').inner_text().count('pending-metadata.wav') == 1
+    page.evaluate("window.dispatchEvent(new PageTransitionEvent('pagehide', {persisted:false}))")
+    assert not page.evaluate('window.__revokedMediaConsumers')
+    assert page.evaluate('window.__metadataProbes.every(a => !a.getAttribute("src"))')
+
+
+def pending_navigation_teardown(page, base_url):
+    # Hold real native metadata and the next document response independently.
+    # Observe cancellation at beforeunload, before pagehide can clean up.
+    page.add_init_script("""(() => {
+      if (!sessionStorage.getItem('__s10bNavigationEnabled')) return;
+      window.__navigationProbes = []; window.__navigationLeaving = false;
+      const record = {beforeUnload:null, lateReads:[], lateSources:[]};
+      const save = () => sessionStorage.setItem('__s10bNavigation', JSON.stringify(record));
+      const read = Blob.prototype.arrayBuffer;
+      Blob.prototype.arrayBuffer = function(...args) {
+        if (window.__navigationLeaving) { record.lateReads.push(this.name || '(blob)'); save(); }
+        return read.apply(this, args);
+      };
+      const make = URL.createObjectURL.bind(URL);
+      URL.createObjectURL = file => {
+        if (window.__navigationLeaving) { record.lateSources.push(file.name || '(blob)'); save(); }
+        return make(file);
+      };
+      const create = document.createElement.bind(document);
+      document.createElement = (tag, ...args) => {
+        const node = create(tag, ...args);
+        if (String(tag).toLowerCase() === 'audio') {
+          window.__navigationProbes.push(node);
+          node.addEventListener('loadedmetadata', event => {
+            if (node.preload === 'metadata') event.stopImmediatePropagation();
+          }, true);
+        }
+        return node;
+      };
+      window.__observeNavigation = () => {
+        let hidden = false;
+        addEventListener('pagehide', () => { hidden = true; });
+        addEventListener('beforeunload', () => {
+          window.__navigationLeaving = true;
+          record.beforeUnload = {hidden, sources:window.__navigationProbes.map(a => a.getAttribute('src'))};
+          save();
+        });
+      };
+    })();""")
+    page.evaluate("sessionStorage.setItem('__s10bNavigationEnabled', '1')")
+    page.goto(f'{base_url}/Audio-Editor.html')
+    page.locator('#source-session-mode-device').click()
+    page.locator('#processor-file').set_input_files(source('navigation-pending.wav'))
+    page.wait_for_function("window.__navigationProbes.some(a => a.preload === 'metadata' && a.getAttribute('src') && a.readyState >= 1)")
+    page.locator('#processor-file').set_input_files(source('navigation-queued.wav'))
+    page.evaluate('window.__observeNavigation()')
+    assert page.evaluate('!window.__navigationLeaving')
+    assert page.evaluate("window.__navigationProbes.some(a => a.getAttribute('src'))")
+    held = []
+    def hold_document(route):
+        held.append(route)
+    page.route(f'{base_url}/Audio-Archive.html', hold_document)
+    with page.expect_request(f'{base_url}/Audio-Archive.html'):
+        page.evaluate("setTimeout(() => location.assign('/Audio-Archive.html'), 0)")
+    # Initial state was checked before navigation; drain route delivery without
+    # evaluating in a context whose next document response is intentionally held.
+    page.wait_for_timeout(0)
+    assert len(held) == 1
+    held[0].continue_()
+    page.wait_for_url('**/Audio-Archive.html')
+    page.unroute(f'{base_url}/Audio-Archive.html', hold_document)
+    record = page.evaluate("JSON.parse(sessionStorage.getItem('__s10bNavigation'))")
+    page.evaluate("sessionStorage.removeItem('__s10bNavigationEnabled')")
+    assert record['beforeUnload'] and not record['beforeUnload']['hidden']
+    assert not any(record['beforeUnload']['sources']), record
+    assert not record['lateSources'], record
+    assert not record['lateReads'], record
 
 
 def speaker_source_transition(page, base_url, writes, same_name):
@@ -178,6 +296,8 @@ def run(browser_type, base_url):
     assert len([x for x in writes if x[0] == 'POST' and x[1].endswith('/ingestions')]) == 3
     speaker_source_transition(page, base_url, writes, False)
     speaker_source_transition(page, base_url, writes, True)
+    pending_navigation_teardown(page, base_url)
+    pending_metadata_teardown(page, base_url)
     assert not page_errors, page_errors
     assert not outbound, outbound
     browser.close()
@@ -192,4 +312,4 @@ if __name__ == '__main__':
         names = ('chromium', 'firefox', 'webkit') if args.browser == 'all' else (args.browser,)
         for name in names:
             run(getattr(playwright, name), args.base_url)
-            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, 320/390/768/1280px')
+            print(f'PASS S10B {name}: Archive create/cancel/save/reconnect, Editor A→B transition, real navigation cancellation, pending metadata pagehide cleanup/fresh restored blob URL, 320/390/768/1280px')

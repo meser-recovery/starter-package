@@ -11,6 +11,9 @@ import {
   validateSourceSession, validateTombstone, validateTransaction
 } from "./validation.mjs";
 
+// Only the existing maintenance entry point can grant historical finalization.
+const ACCEPTED_ZOOM_RECOVERY = Symbol("accepted Zoom parts recovery");
+
 function conflict(message = "Canonical state changed; reload and retry") {
   const error = new Error(message);
   error.status = 409;
@@ -605,7 +608,21 @@ export class AudioArchiveDomain {
     return this.publicPublicationJob(transaction);
   }
 
-  async beginIngestion(body, zoomImportId = null) {
+  async assertZoomIngestion(transaction, head, recovery = null, revision = undefined) {
+    if (transaction.origin !== 'zoom_cloud') return;
+    const stored = await this.repository.readJson(importPath(transaction.zoomImportId), head);
+    const r = stored && validateImport(stored.data);
+    if (!r || r.transactionId !== transaction.transactionId || transaction.sessionId !== r.transactionId ||
+        transaction.idempotencyHash !== hashIdempotencyKey(r.idempotencyKey) || transaction.title !== r.title ||
+        transaction.recordedAt !== r.recordedAt || transaction.supersedesSessionId !== null ||
+        !isDeepStrictEqual(transaction.plan, r.plan) || !['bound', 'completed'].includes(r.state)) throw conflict('Zoom import linkage is invalid');
+    if (recovery !== ACCEPTED_ZOOM_RECOVERY) {
+      if (!this.zoomContextGuard) throw conflict('Active Zoom connection cannot be verified');
+      return this.zoomContextGuard(r, head, revision);
+    }
+  }
+
+  async beginIngestion(body, zoomImportId = null, settingsRevision = undefined) {
     assertExactKeys(body, ["schemaVersion", "idempotencyKey", "title", "recordedAt", "origin", "supersedesSessionId", "plan"], "begin ingestion");
     if (body.schemaVersion !== SCHEMA_VERSION) throw new ValidationError("Unsupported ingestion schema");
     const idempotencyHash = hashIdempotencyKey(body.idempotencyKey);
@@ -614,14 +631,21 @@ export class AudioArchiveDomain {
     const title = safeTitle(body.title);
     const recordedAt = body.recordedAt === null ? null : assertTimestamp(body.recordedAt, "recordedAt");
     if (!["manual", "device"].includes(body.origin) && !(body.origin === "zoom_cloud" && zoomImportId)) throw new ValidationError("Browser ingestion origin is invalid");
+    if (zoomImportId && (body.origin !== "zoom_cloud" || body.supersedesSessionId !== null)) throw new ValidationError("Zoom ingestion origin/linkage is invalid");
     const supersedesSessionId = body.supersedesSessionId === null ? null : assertUuid(body.supersedesSessionId, "supersedesSessionId");
     const plan = validateIngestionPlan(body.plan, this.acceptedPartBytes);
     const immutableRequest = { title, recordedAt, origin: body.origin, supersedesSessionId, plan };
     let head = await this.repository.getHead();
+    let zoomSettingsRevision = settingsRevision;
     const assertZoomReservation = async ref => {
       if (!zoomImportId) return;
       const record = await this.repository.readJson(importPath(zoomImportId), ref);
       const r = record && validateImport(record.data);
+      if (r) {
+        if (!this.zoomContextGuard) throw conflict('Active Zoom connection cannot be verified');
+        const context = await this.zoomContextGuard(r, ref, zoomSettingsRevision);
+        zoomSettingsRevision = context.settings.revision;
+      }
       if (!r || !['bound', 'completed'].includes(r.state) || r.idempotencyKey !== body.idempotencyKey ||
           r.transactionId !== transactionId || !isDeepStrictEqual(r.plan, plan) || r.title !== title || r.recordedAt !== recordedAt) throw conflict('Zoom reservation does not match ingestion');
     };
@@ -632,10 +656,12 @@ export class AudioArchiveDomain {
       if (transaction.idempotencyHash !== idempotencyHash || !sameIngestionRequest(transaction, immutableRequest)) {
         throw conflict("Idempotency transaction request mismatch");
       }
+      await assertZoomReservation(await this.repository.getHead());
       return { transactionId, sessionId: transaction.sessionId, releaseId: transaction.releaseId, state: transaction.state };
     }
     const sessionId = transactionId;
     const releaseTag = `audio-session-${sessionId}`;
+    await assertZoomReservation(await this.repository.getHead());
     const release = await this.repository.createDraftRelease(releaseTag);
     head = await this.repository.getHead();
     await assertZoomReservation(head);
@@ -645,6 +671,7 @@ export class AudioArchiveDomain {
       if (transaction.idempotencyHash !== idempotencyHash || !sameIngestionRequest(transaction, immutableRequest)) {
         throw conflict("Idempotency transaction request mismatch");
       }
+      await assertZoomReservation(await this.repository.getHead());
       return { transactionId, sessionId: transaction.sessionId, releaseId: transaction.releaseId, state: transaction.state };
     }
     const timestamp = nowIso(this.clock);
@@ -654,7 +681,9 @@ export class AudioArchiveDomain {
       plan, uploadedParts: [], stagedManifest: null, createdAt: timestamp, updatedAt: timestamp,
       ...(zoomImportId ? { zoomImportId } : {})
     };
+    await assertZoomReservation(await this.repository.getHead());
     await this.repository.commitJson(head, { [path]: transaction }, `Begin audio ingestion ${sessionId}`);
+    await assertZoomReservation(await this.repository.getHead());
     return { transactionId, sessionId, releaseId: release.id, state: transaction.state };
   }
 
@@ -675,6 +704,9 @@ export class AudioArchiveDomain {
     const actual = digestBytes(bytes);
     if (!sameDigest(hash, actual)) throw new ValidationError("Part SHA-256 does not match its bytes");
     let { head, path, transaction } = await this.ingestionSnapshot(transactionId);
+    const context = await this.assertZoomIngestion(transaction, head);
+    const guard = async () => this.assertZoomIngestion(transaction, await this.repository.getHead(), null, context?.settings.revision);
+    await guard();
     if (!["uploading", "staged"].includes(transaction.state)) {
       if (transaction.state === "finalized") return { uploaded: true, finalized: true };
       throw conflict("Ingestion is not accepting parts");
@@ -698,6 +730,7 @@ export class AudioArchiveDomain {
         throw conflict("Existing release asset does not match the planned part");
       }
     } else {
+      await guard();
       asset = await this.repository.uploadReleaseAsset(transaction.releaseId, name, bytes);
     }
     if (!Number.isSafeInteger(asset.id) || asset.id < 1 || asset.name !== name || asset.size !== bytes.byteLength ||
@@ -710,7 +743,9 @@ export class AudioArchiveDomain {
     transaction.updatedAt = nowIso(this.clock);
     transaction.uploadedParts.push({ blobId: id, partNumber, assetName: name, sizeBytes: bytes.byteLength, sha256: hash, assetId: asset.id, downloadUrl });
     transaction.uploadedParts.sort((left, right) => left.blobId.localeCompare(right.blobId) || left.partNumber - right.partNumber);
+    await guard();
     await this.repository.commitJson(head, { [path]: transaction }, `Record audio part ${transaction.sessionId} ${name}`);
+    await guard();
     return { uploaded: true, assetId: asset.id, downloadUrl };
   }
 
@@ -738,17 +773,35 @@ export class AudioArchiveDomain {
     };
   }
 
-  async finalizeIngestion(transactionId) {
+  async finalizeIngestion(transactionId, recovery = null, settingsRevision = undefined) {
     let { head, path, transaction } = await this.ingestionSnapshot(transactionId);
+    const context = await this.assertZoomIngestion(transaction, head, recovery, settingsRevision);
+    const guard = async () => this.assertZoomIngestion(transaction, await this.repository.getHead(), recovery, context?.settings.revision);
+    await guard();
     const existing = await this.repository.readJson(sessionPath(transaction.sessionId), head);
-    if (existing && existing.data?.kind !== "deletion_tombstone") return { session: publicSession(existing.data), idempotent: true };
+    if (existing && existing.data?.kind !== "deletion_tombstone") {
+      const session = validateSourceSession(existing.data);
+      if (transaction.origin === 'zoom_cloud' && (session.id !== transaction.sessionId || session.origin.kind !== 'zoom_cloud' || session.origin.externalId !== transaction.zoomImportId || session.sourceState !== 'available')) throw conflict('Zoom source linkage is invalid');
+      await guard();
+      return { session: publicSession(session), idempotent: true };
+    }
     if (existing?.data?.kind === 'deletion_tombstone' || !['uploading', 'staged'].includes(transaction.state)) throw conflict('Ingestion cannot be finalized');
     const requiredCount = transaction.plan.tracks.reduce((sum, track) => sum + track.parts.length, 0);
     if (transaction.uploadedParts.length !== requiredCount) throw conflict("All planned parts must upload before finalization");
+    // Count alone cannot establish completeness or exact accepted-part linkage.
+    const slots = new Set(), assetIds = new Set();
+    for (const uploaded of transaction.uploadedParts) {
+      const track = transaction.plan.tracks.find(t => t.blobId === uploaded.blobId);
+      const part = track?.parts.find(p => p.partNumber === uploaded.partNumber);
+      const slot = `${uploaded.blobId}:${uploaded.partNumber}`;
+      if (!part || slots.has(slot) || assetIds.has(uploaded.assetId) || part.sizeBytes !== uploaded.sizeBytes || part.sha256 !== uploaded.sha256 ||
+          uploaded.assetName !== assetName(uploaded.blobId, uploaded.partNumber) || uploaded.downloadUrl !== canonicalReleaseAssetUrl(transaction.releaseTag, uploaded.assetName)) throw conflict('Accepted parts do not match the exact plan');
+      slots.add(slot); assetIds.add(uploaded.assetId);
+    }
     const assets = await this.repository.listReleaseAssets(transaction.releaseId);
     for (const uploaded of transaction.uploadedParts) {
       const asset = assets.find((item) => item.id === uploaded.assetId && item.name === uploaded.assetName);
-      if (!asset || asset.size !== uploaded.sizeBytes ||
+      if (!asset || assets.filter(a => a.name === uploaded.assetName).length !== 1 || asset.size !== uploaded.sizeBytes ||
           (asset.digest && !sameDigest(String(asset.digest).replace(/^sha256:/, ""), uploaded.sha256))) {
         throw conflict("Release assets failed final integrity verification");
       }
@@ -772,15 +825,22 @@ export class AudioArchiveDomain {
       transaction.revision++;
       transaction.updatedAt = nowIso(this.clock);
       transaction.stagedManifest = this.buildManifest(transaction);
+      await guard();
       await this.repository.commitJson(head, { [path]: transaction }, `Stage audio session ${transaction.sessionId}`);
       ({ head, transaction } = await this.ingestionSnapshot(transactionId));
     }
     if (transaction.state !== 'staged') throw conflict('Ingestion finalization no longer owns this transaction');
+    const session = validateSourceSession(transaction.stagedManifest || this.buildManifest(transaction));
+    if (transaction.origin === 'zoom_cloud') {
+      const expected = this.buildManifest(transaction);
+      if (!isDeepStrictEqual({ ...session, updatedAt: null }, { ...expected, updatedAt: null })) throw conflict('Staged Zoom manifest differs from the accepted plan');
+    }
+    await guard();
     await this.repository.publishRelease(transaction.releaseId);
     const catalogStored = await this.repository.readJson("catalog.json", head);
     const catalog = catalogStored ? validateCatalog(catalogStored.data) : emptyCatalog();
-    const session = validateSourceSession(transaction.stagedManifest || this.buildManifest(transaction));
     const nextCatalog = this.catalogWithSession(catalog, session);
+    await guard();
     transaction = { ...transaction, state: "finalized", revision: transaction.revision + 1, updatedAt: nowIso(this.clock), stagedManifest: null };
     await this.repository.commitJson(head, {
       [sessionPath(session.id)]: session,
@@ -791,6 +851,7 @@ export class AudioArchiveDomain {
         state: 'completed', revision: (await this.repository.readJson(importPath(transaction.zoomImportId), head)).data.revision + 1
       } } : {})
     }, `Finalize audio session ${session.id}`);
+    await guard();
     return { session: publicSession(session), idempotent: false };
   }
 
@@ -1423,11 +1484,15 @@ export class AudioArchiveDomain {
       return this.finalizePublication(transactionId, transaction.workflow);
     }
     const ingest = await this.repository.readJson(transactionPath("ingest", transactionId), await this.repository.getHead());
+    if (ingest && validateTransaction(ingest.data).state === 'finalized' && ingest.data.origin === 'zoom_cloud' && action !== 'discard') {
+      return this.finalizeIngestion(transactionId, ACCEPTED_ZOOM_RECOVERY);
+    }
     if (ingest && validateTransaction(ingest.data).state !== "finalized") {
       const transaction = validateTransaction(ingest.data);
       if (action === "discard") {
         let { head, path, transaction: current } = await this.ingestionSnapshot(transactionId);
         if (current.state === 'discarded') return { discarded: true, transactionId };
+        await this.assertZoomIngestion(current, head, ACCEPTED_ZOOM_RECOVERY);
         // Staging claims finalization. Discard and finalize cannot both own the Release.
         if (!['uploading', 'discarding'].includes(current.state)) throw conflict('Finish finalization before attempting discard');
         if (current.state === 'uploading') {
@@ -1452,7 +1517,7 @@ export class AudioArchiveDomain {
       if (transaction.uploadedParts.length !== requiredCount) {
         throw conflict("Original files are required to continue this incomplete ingestion safely");
       }
-      return this.finalizeIngestion(transactionId);
+      return this.finalizeIngestion(transactionId, ACCEPTED_ZOOM_RECOVERY);
     }
     const pending = await this.repository.readJson(transactionPath("delete", transactionId), await this.repository.getHead());
     if (pending && pending.data.kind === "pending_delete") {

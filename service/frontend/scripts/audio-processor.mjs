@@ -1206,9 +1206,11 @@ function moveTrack(id, offset) {
 function createOperation(kind) {
   let cancelOperation;
   const cancelled = new Promise((resolve) => { cancelOperation = resolve; });
+  const controller = new AbortController();
   const operation = {
     kind,
-    cancel: () => cancelOperation({ cancelled: true }),
+    signal: controller.signal,
+    cancel: () => { controller.abort(); cancelOperation({ cancelled: true }); },
     wait: async (promise) => {
       const value = await Promise.race([promise, cancelled]);
       if (active !== operation) throw new Error(CANCELLED);
@@ -1251,18 +1253,27 @@ async function ensureEngine(operation) {
 function readTrackDuration(track, operation) {
   const probe = document.createElement("audio");
   probe.preload = "metadata";
-  probe.src = track.sourceURL;
-  let timer;
-  return operation.wait(new Promise((resolve, reject) => {
-    const done = () => Number.isFinite(probe.duration) && probe.duration > 0 ? resolve(probe.duration) : reject(new Error("metadata"));
-    probe.addEventListener("loadedmetadata", done, { once: true });
-    probe.addEventListener("error", () => reject(new Error("metadata")), { once: true });
-    timer = setTimeout(() => reject(new Error("metadata")), 30000);
-  })).finally(() => {
-    clearTimeout(timer);
-    probe.removeAttribute("src");
-    probe.load();
+  let timer, done, failed, aborted, cleaned = false;
+  const cleanup = () => {
+    if (cleaned) return;
+    cleaned = true; clearTimeout(timer);
+    probe.removeEventListener("loadedmetadata", done); probe.removeEventListener("error", failed);
+    operation.signal.removeEventListener("abort", aborted);
+    clearAudio(probe);
+  };
+  const metadata = new Promise((resolve, reject) => {
+    const finish = error => { const duration = probe.duration; cleanup(); error ? reject(error) : resolve(duration); };
+    done = () => finish(Number.isFinite(probe.duration) && probe.duration > 0 ? null : new Error("metadata"));
+    failed = () => finish(new Error("metadata"));
+    aborted = () => finish(new Error(CANCELLED));
+    probe.addEventListener("loadedmetadata", done); probe.addEventListener("error", failed);
+    // pagehide revokes track URLs synchronously; cancellation must first detach
+    // this separate metadata consumer, without waiting for promise cleanup.
+    operation.signal.addEventListener("abort", aborted, { once: true });
+    timer = setTimeout(failed, 30000);
+    if (operation.signal.aborted) aborted(); else probe.src = track.sourceURL;
   });
+  return operation.wait(metadata).finally(cleanup);
 }
 
 async function buildWaveform(track, currentEngine, operation) {
@@ -1271,9 +1282,10 @@ async function buildWaveform(track, currentEngine, operation) {
   renderTracks();
   try {
     try { track.duration = await readTrackDuration(track, operation); } catch { /* Native playback may still be usable. */ }
+    if (active !== operation) throw new Error(CANCELLED);
     track.waveformWidth = waveformWidth(track.duration);
     renderTracks();
-    const reader = createWaveformReader(undefined, currentEngine);
+    const reader = createWaveformReader(operation.signal, currentEngine);
     try { track.samples = await operation.wait(reader.read(track.file, track.duration)); }
     finally { reader.dispose(); }
     track.waveformWidth = track.samples.length;
@@ -1357,7 +1369,9 @@ input.addEventListener("change", async () => {
   if (!files.length) { syncInputFiles(); return; }
   await waitProcessorIdle();
   if (sequence !== fileSelectionSequence) return;
-  if (await selectionGuard()) selectProcessorFiles(files); else syncInputFiles();
+  const accepted = await selectionGuard();
+  if (sequence !== fileSelectionSequence) return;
+  if (accepted) selectProcessorFiles(files); else syncInputFiles();
 });
 
 function waitForMetadata(audio, operation) {
@@ -1629,8 +1643,12 @@ run.addEventListener("click", async () => {
 });
 
 cancel.addEventListener("click", stop);
+// A provisional navigation can invalidate WebKit File backing stores before
+// pagehide. Cancel first, including continuations waiting for processor idle.
+function stopForNavigation() { fileSelectionSequence++; stop(); }
+window.addEventListener("beforeunload", stopForNavigation);
 window.addEventListener("pagehide", () => {
-  stop();
+  stopForNavigation();
   engine?.terminate();
   engine = null;
   clearResult();

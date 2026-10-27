@@ -23,7 +23,7 @@ const state = {
   resultSort: { announcement: 'newest', speaker: 'newest' },
   picker: { open: false, requested: false, page: 0, pageSize: 10 }
 };
-const zoomArchiveUi = mountZoomArchive(gateway, id => { state.picker.requested = true; void refresh().then(() => openDetail(id, { updateUrl: true })); });
+const zoomArchiveUi = mountZoomArchive(gateway, id => { state.picker.requested = true; void refresh().then(() => openDetail(id, { updateUrl: true })); }, clearSession);
 const creation = { selection: new AudioFileSelection(), attempt: null, controller: null, pickerMode: 'replace' };
 
 function creationStatus(value, tone = '') {
@@ -178,6 +178,7 @@ function closeDetail({ updateUrl = true } = {}) {
   openRecordPicker();
 }
 function clearSession() {
+  zoomArchiveUi.invalidate();
   for (const generation of Object.values(generations)) generation.next();
   clearPlayback(); state.authenticated = false; state.sessions = null; state.listPage = null; state.attention = null; state.maintenance = null; gateway.invalidateAuthentication(); state.detail = null; state.detailInput = null; state.target = null;
   $('attention-status').textContent = 'Незавершённые операции: требуется подтверждение служебной сессии.';
@@ -192,6 +193,7 @@ function updateControls() {
 const authController = new ServiceSessionController({
   gateway,
   onState: ({ state: authState, detail }) => {
+    if (authState !== 'connected') zoomArchiveUi.invalidate();
     const labels = {
       'checking-password': 'Проверка пароля…',
       'verifying-session': 'Подтверждаем служебную сессию…',

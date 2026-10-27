@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 from io import BytesIO
 from pathlib import Path
 import re
@@ -46,6 +47,20 @@ def main() -> int:
         assert request.get(base + "/internal/auth-check", max_redirects=0).status == 404
 
         page = context.new_page()
+        page_errors = []
+        page.on('pageerror', lambda error: page_errors.append(str(error)))
+        page.add_init_script("""
+          window.__caddySelectionEvents = []; window.__caddyUnhandled = [];
+          addEventListener('unhandledrejection', e => __caddyUnhandled.push(String(e.reason)));
+          document.addEventListener('change', e => {
+            if (e.target.id === 'processor-file') __caddySelectionEvents.push({
+              event: 'change', files: [...e.target.files].map(f => f.name), disabled: e.target.disabled
+            });
+          }, true);
+          addEventListener('audio-processor-selection', e => __caddySelectionEvents.push({
+            event: 'selection', files: e.detail.files.map(f => f.name)
+          }));
+        """)
         response = page.goto(base + redirect.headers["location"], wait_until="domcontentloaded")
         assert response is not None
         csp = response.headers.get("content-security-policy", "")
@@ -77,7 +92,21 @@ def main() -> int:
         page.locator("#processor-file").set_input_files({
             "name": "caddy-wasm.wav", "mimeType": "audio/wav", "buffer": wav_fixture()
         })
-        page.locator("#source-session-use-local").wait_for(state="visible", timeout=30_000)
+        try:
+            page.locator("#source-session-use-local").wait_for(state="visible", timeout=30_000)
+        except Exception:
+            print('CADDY_LOCAL_SELECTION_FAILURE ' + json.dumps(page.evaluate("""() => ({
+              readyState: document.readyState,
+              processorReady: document.querySelector('#processor-heading').dataset.ready ?? null,
+              inputDisabled: document.querySelector('#processor-file').disabled,
+              inputFiles: [...document.querySelector('#processor-file').files].map(f => f.name),
+              events: __caddySelectionEvents, unhandled: __caddyUnhandled,
+              processorStatus: document.querySelector('#processor-status').textContent,
+              deviceStatus: document.querySelector('#device-import-status').textContent,
+              importSummary: document.querySelector('#import-summary').textContent
+            })"""), ensure_ascii=False), flush=True)
+            print('CADDY_PAGE_ERRORS ' + json.dumps(page_errors), flush=True)
+            raise
         expect(page.locator("#source-session-use-local")).to_be_enabled(timeout=30_000)
         page.locator("#source-session-use-local").click()
         page.locator("#workflow-choice").wait_for(state="visible", timeout=30_000)
@@ -93,6 +122,8 @@ def main() -> int:
         result = page.evaluate("() => window.__lastCaddyWasmResult || ({ href: document.getElementById('processor-download').href, status: document.getElementById('processor-status').textContent })")
         assert result["href"].startswith("blob:"), result
         assert result["status"] in ("Готово.", "Длинные паузы не найдены. Файл не изменён."), result
+        assert not page_errors, page_errors
+        assert not page.evaluate('window.__caddyUnhandled')
 
         page.locator("#service-logout").click()
         page.wait_for_url("**/login")

@@ -222,37 +222,37 @@ test('S12 A10-A14 two Gateway instances reserve concurrently and recover actual 
   assert.equal((await second.service.operation(op.id)).state, 'completed');
 });
 
-test('S12 A03/A07/A11/A13 calendar preserves durable operations during outage and active switch; original file set required', async () => {
+test('S12 FIX isolates active switch and preserves original file set checks and unconfirmed verification', async () => {
   const t = await configured(), op = await reserve(t), plan = await planFor(op);
   const another = { ...CONNECTION, connectionId: randomUUID(), name: 'Another profile', accountId: 'another-account', clientId: 'another-client' };
   const checked = await t.service.check({ revision: 2, connection: another });
   await t.service.mutate(mutation(2, 'save', { connection: another, receipt: checked.receipt }));
   await t.service.mutate(mutation(3, 'activate', { connectionId: another.connectionId, confirmed: true }));
-  let downloadAccount;
-  const download = t.zoom.download.bind(t.zoom);
-  t.zoom.download = async (c, ...args) => { downloadAccount = c.accountId; return download(c, ...args); };
-  assert.deepEqual(Buffer.from(await (await t.service.download(op.id, 'file-1')).arrayBuffer()), A);
-  assert.equal(downloadAccount, CONNECTION.accountId);
+  await assert.rejects(() => t.service.download(op.id, 'file-1'), e => e.status === 409);
+  t.zoom.fail = true;
+  await assert.rejects(() => t.service.calendar('2026-10', true), /outage/);
+  await t.service.mutate(mutation(4, 'activate', { connectionId: CONNECTION.connectionId, confirmed: true }));
+  const fallback = await t.service.calendar('2026-10', true);
+  assert.match(fallback.warning, /неполный/); assert.equal(fallback.recordings[0].id, op.id);
+  t.zoom.fail = false;
   const recording = t.zoom.recording.bind(t.zoom);
   t.zoom.recording = async (...args) => { const value = await recording(...args); value.participant_audio_files.pop(); return value; };
   await assert.rejects(() => t.service.download(op.id, 'file-1'), e => e.status === 409);
   t.zoom.recording = recording; await upload(t, op, plan);
-  t.zoom.fail = true;
-  const calendar = await t.service.calendar('2026-10', true);
-  assert.match(calendar.warning, /неполный/); assert.equal(calendar.recordings.find(r => r.id === op.id).state, 'bound');
   assert.equal((await t.service.operation(op.id)).canFinalize, true);
   await t.domain.finalizeIngestion(op.transactionId);
+  t.zoom.fail = true;
   assert.equal((await t.service.calendar('2026-10', true)).recordings[0].state, 'completed');
   const noSample = new ZoomClient({ clock: () => Date.parse('2026-10-12T00:00:00Z') });
   noSample.list = async () => []; let downloads = 0; noSample.download = async () => { downloads++; };
   assert.equal((await noSample.check(CONNECTION)).tracks, 'unconfirmed'); assert.equal(downloads, 0);
   t.zoom.fail = false; t.zoom.check = c => noSample.check(c);
   const unconfirmed = { ...CONNECTION, connectionId: randomUUID() };
-  const check = await t.service.check({ revision: 4, connection: unconfirmed });
-  await t.service.mutate(mutation(4, 'save', { connection: unconfirmed, receipt: check.receipt }));
-  assert.equal((await t.service.mutate(mutation(5, 'activate', { connectionId: unconfirmed.connectionId, confirmed: true }))).activeConnectionId, unconfirmed.connectionId);
+  const check = await t.service.check({ revision: 5, connection: unconfirmed });
+  await t.service.mutate(mutation(5, 'save', { connection: unconfirmed, receipt: check.receipt }));
+  assert.equal((await t.service.mutate(mutation(6, 'activate', { connectionId: unconfirmed.connectionId, confirmed: true }))).activeConnectionId, unconfirmed.connectionId);
   const before = [...t.repository.files.keys()];
-  await assert.rejects(() => t.service.check({ revision: 6, connection: { ...unconfirmed, clientSecret: 'invalid' }, verified: true }));
+  await assert.rejects(() => t.service.check({ revision: 7, connection: { ...unconfirmed, clientSecret: 'invalid' }, verified: true }));
   assert.deepEqual([...t.repository.files.keys()], before);
 });
 

@@ -9,11 +9,48 @@ export class ZoomArchive {
   constructor(domain, { key = null, zoom = new ZoomClient(), clock = () => Date.now() } = {}) {
     this.domain = domain; this.repository = domain.repository; this.key = key; this.zoom = zoom; this.clock = clock;
     this.calendarCache = new Map(); this.usageCache = null;
+    domain.zoomContextGuard = (record, head, revision) => this.requireContext(record, revision, head);
   }
-  async settingsSnapshot() {
+  async settingsSnapshot(ref = null) {
     if (!this.key) throw settingsError('Настройки Zoom недоступны: серверный ключ не настроен.');
-    const head = await this.repository.getHead(), stored = await this.repository.readJson(SETTINGS_PATH, head);
-    return { head, settings: stored ? validateSettings(decryptSettings(stored.data, this.key)) : defaultSettings() };
+    const read = async head => {
+      const stored = await this.repository.readJson(SETTINGS_PATH, head);
+      return { head, settings: stored ? validateSettings(decryptSettings(stored.data, this.key)) : defaultSettings() };
+    };
+    const snapshot = await read(ref || await this.repository.getHead());
+    let candidate = snapshot;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const currentHead = await this.repository.getHead();
+      if (currentHead === candidate.head) {
+        if (!isDeepStrictEqual(snapshot.settings, candidate.settings)) break;
+        // Keep the original coherent archive snapshot; unrelated commits are safe.
+        return snapshot;
+      }
+      // An immutable read can resolve after a settings mutation. Confirm authority
+      // after the read, including when the caller supplied an older archive HEAD.
+      candidate = await read(currentHead);
+    }
+    throw settingsError('Настройки изменились во время чтения. Перечитайте их.', 409);
+  }
+  active(settings) {
+    const c = settings.connections.find(c => c.connectionId === settings.activeConnectionId);
+    return c && c.verification?.fingerprint === connectionFingerprint(c) ? c : null;
+  }
+  owns(record, c) { return Boolean(c && record.connectionId === c.connectionId && record.connectionRevision === c.revision); }
+  async requireContext(record = null, revision = undefined, ref = null) {
+    const snapshot = await this.settingsSnapshot(ref), c = this.active(snapshot.settings);
+    if (!c || (revision !== undefined && snapshot.settings.revision !== revision) || (record && !this.owns(record, c))) {
+      throw settingsError('Подключение изменилось или импорт недоступен в активном подключении. Перечитайте настройки.', 409);
+    }
+    return { ...snapshot, c };
+  }
+  async ordinaryOperation(id, revision = undefined) {
+    const { head, settings } = await this.requireContext(null, revision);
+    const r = await this.record(id, head);
+    await this.requireContext(r, settings.revision, head);
+    const op = await this.operation(id, head);
+    await this.requireContext(r, settings.revision);
+    return op;
   }
   async settings() { return settingsDto((await this.settingsSnapshot()).settings); }
   draft(body, settings) {
@@ -102,8 +139,8 @@ export class ZoomArchive {
     if (record.id !== id) throw settingsError('Идентификатор импорта не совпал.', 409);
     return record;
   }
-  async operation(id) {
-    const head = await this.repository.getHead(), r = await this.record(id, head);
+  async operation(id, ref = null) {
+    const head = ref || await this.repository.getHead(), r = await this.record(id, head);
     const source = await this.repository.readJson(`sessions/${r.transactionId}.json`, head);
     const t = await this.repository.readJson(`transactions/ingest-${r.transactionId}.json`, head);
     if (t) {
@@ -125,51 +162,64 @@ export class ZoomArchive {
       canFinalize: Boolean(state !== 'deleted' && t && ['uploading', 'staged'].includes(t.data.state) && accepted.length === t.data.plan.tracks.reduce((s, f) => s + f.parts.length, 0)) };
   }
   async calendar(month, refresh = false) {
-    const range = monthRange(month), { settings } = await this.settingsSnapshot(), c = settings.connections.find(c => c.connectionId === settings.activeConnectionId);
-    const durable = (await this.repository.listJson(IMPORT_PREFIX, await this.repository.getHead())).map(entry => validateImport(entry.data))
-      .filter(r => Date.parse(r.recordedAt) >= range.start && Date.parse(r.recordedAt) < range.end);
-    const key = `${c?.connectionId}:${c?.revision}:${month}`;
-    let cached = this.calendarCache.get(key);
-    let warning = null;
-    if (c && (!cached || refresh || cached.expires < this.clock())) {
-      const recordings = [];
+    const range = monthRange(month), { head, settings } = await this.settingsSnapshot(), c = this.active(settings);
+    const assertCurrent = async () => {
+      if ((await this.settingsSnapshot()).settings.revision !== settings.revision) throw settingsError('Подключение изменилось. Обновите календарь.', 409);
+    };
+    if (!c) {
+      await assertCurrent();
+      return { month, settingsRevision: settings.revision, state: 'unconfigured', warning: null, recordings: [] };
+    }
+    const all = (await this.repository.listJson(IMPORT_PREFIX, head)).map(entry => validateImport(entry.data));
+    const durable = all.filter(r => this.owns(r, c) && Date.parse(r.recordedAt) >= range.start && Date.parse(r.recordedAt) < range.end);
+    const key = `${c.connectionId}:${c.revision}:${month}`;
+    let cached = this.calendarCache.get(key), warning = null;
+    if (!cached || refresh || cached.expires < this.clock()) {
+      let recordings = [];
       try {
-      const records = await this.zoom.list(c, range);
-      for (const row of records) {
-        const recording = await this.zoom.recording(c, row.uuid);
-        if (recording.uuid !== row.uuid || String(recording.id) !== c.meetingId) throw settingsError('Zoom: occurrence не совпал.', 502);
-        const id = opaqueIdentity(c.accountId, c.meetingId, row.uuid);
-        let files = [], state = 'available', reason = null;
-        try { files = participantFiles(recording); } catch (error) { state = 'unavailable'; reason = error.message; }
-        recordings.push({ id, occurrenceUuid: row.uuid, startTime: recording.start_time, files, state, reason });
-      }
+        await assertCurrent();
+        const records = await this.zoom.list(c, range);
+        for (const row of records) {
+          await assertCurrent();
+          const id = opaqueIdentity(c.accountId, c.meetingId, row.uuid);
+          // The durable dedup identity cannot be reassigned, even for the same account.
+          if (all.some(r => r.id === id && !this.owns(r, c))) continue;
+          const recording = await this.zoom.recording(c, row.uuid);
+          await assertCurrent();
+          if (recording.uuid !== row.uuid || String(recording.id) !== c.meetingId) throw settingsError('Zoom: occurrence не совпал.', 502);
+          let files = [], state = 'available', reason = null;
+          try { files = participantFiles(recording); } catch (error) { state = 'unavailable'; reason = error.message; }
+          recordings.push({ id, occurrenceUuid: row.uuid, startTime: recording.start_time, files, state, reason });
+        }
       } catch (error) {
+        await assertCurrent();
         if (!durable.length) throw error;
+        recordings = [];
         warning = 'Zoom сейчас недоступен. Показаны только сохранённые операции; список новых записей неполный.';
       }
       cached = { expires: this.clock() + 30_000, recordings };
       if (this.calendarCache.size >= 64) this.calendarCache.delete(this.calendarCache.keys().next().value);
       if (!warning) this.calendarCache.set(key, cached);
     }
-    const rows = new Map((cached?.recordings || []).map(row => [row.id, row]));
+    const rows = new Map(cached.recordings.filter(row => !all.some(r => r.id === row.id && !this.owns(r, c))).map(row => [row.id, row]));
     for (const r of durable) rows.set(r.id, { id: r.id, startTime: r.recordedAt, files: r.files, state: r.state, reason: null });
     const recordings = [];
     for (const row of rows.values()) {
       const { occurrenceUuid, ...safe } = row;
-      let operation = null; try { operation = await this.operation(row.id); } catch (e) { if (e.status !== 404) throw e; }
+      let operation = null; try { operation = await this.operation(row.id, head); } catch (e) { if (e.status !== 404) throw e; }
+      if (operation && !this.owns(operation, c)) continue;
       recordings.push({ ...safe, state: operation?.state || row.state, trackCount: row.files.length, sizeBytes: row.files.reduce((n, f) => n + f.sizeBytes, 0), sessionId: operation?.transactionId || null });
     }
-    if ((await this.settingsSnapshot()).settings.revision !== settings.revision) throw settingsError('Подключение изменилось. Обновите календарь.', 409);
-    return { month, settingsRevision: settings.revision, state: c ? 'ready' : 'unconfigured', warning, recordings };
+    await assertCurrent();
+    return { month, settingsRevision: settings.revision, state: 'ready', warning, recordings };
   }
   async reserve(body) {
     assertExactKeys(body, ['id', 'month', 'settingsRevision'], 'reserve Zoom import'); importPath(body.id);
-    // An existing durable identity wins even after active profile changes / upstream expiry.
-    try { return await this.operation(body.id); } catch (e) { if (e.status !== 404) throw e; }
+    await this.requireContext(null, body.settingsRevision);
+    try { return await this.ordinaryOperation(body.id, body.settingsRevision); } catch (e) { if (e.status !== 404) throw e; }
     await this.calendar(body.month);
-    const { head, settings } = await this.settingsSnapshot();
+    const { head, settings, c } = await this.requireContext(null, body.settingsRevision);
     if (settings.revision !== body.settingsRevision) throw settingsError('Подключение изменилось. Обновите календарь.', 409);
-    const c = settings.connections.find(c => c.connectionId === settings.activeConnectionId);
     const candidate = this.calendarCache.get(`${c?.connectionId}:${c?.revision}:${body.month}`)?.recordings.find(r => r.id === body.id);
     if (!c || !candidate || candidate.state !== 'available') throw settingsError('Запись недоступна. Обновите календарь.', 409);
     const fresh = await this.zoom.recording(c, candidate.occurrenceUuid), files = participantFiles(fresh);
@@ -178,47 +228,65 @@ export class ZoomArchive {
       occurrenceUuid: candidate.occurrenceUuid, recordedAt: fresh.start_time,
       title: `Zoom · ${new Date(fresh.start_time).toLocaleString('ru-RU', { timeZone: 'Europe/Moscow', dateStyle: 'short', timeStyle: 'short' })} МСК`,
       files, idempotencyKey: `zoom:${candidate.id}`, transactionId: uuidFromIdempotencyKey(`zoom:${candidate.id}`), state: 'reserved', plan: null });
+    await this.requireContext(record, settings.revision);
     try { await this.repository.commitJson(head, { [importPath(record.id)]: record }, 'Reserve Zoom occurrence'); }
-    catch (e) { try { return await this.operation(record.id); } catch { throw e; } }
-    return this.operation(record.id);
+    catch (e) { try { return await this.ordinaryOperation(record.id, body.settingsRevision); } catch { throw e; } }
+    return this.ordinaryOperation(record.id, body.settingsRevision);
   }
   async bind(id, body) {
     assertExactKeys(body, ['plan'], 'Zoom plan');
     const plan = validateIngestionPlan(body.plan, this.domain.acceptedPartBytes);
     for (let attempt = 0; attempt < 3; attempt++) {
-      const head = await this.repository.getHead(), r = await this.record(id, head);
+      const { head, settings } = await this.requireContext(), r = await this.record(id, head);
+      await this.requireContext(r, settings.revision, head);
       if (r.plan && !isDeepStrictEqual(r.plan, plan)) throw settingsError('Дорожки отличаются от неизменяемого плана импорта.', 409);
       if (['completed', 'discarded'].includes(r.state)) throw settingsError('Импорт уже завершён или отменён.', 409);
       if (plan.tracks.length !== r.files.length || plan.tracks.some((t, i) => t.originalName !== r.files[i].name || t.sizeBytes !== r.files[i].sizeBytes || t.mediaType !== 'audio/mp4')) throw new ValidationError('План не совпадает с полным составом Zoom.');
       if (!r.plan) {
+        await this.requireContext(r, settings.revision);
         try { await this.repository.commitJson(head, { [importPath(id)]: { ...r, revision: r.revision + 1, plan, state: 'bound' } }, 'Bind exact Zoom ingestion plan'); }
-        catch (e) { if (e.status === 409) continue; const readback = await this.record(id); if (!isDeepStrictEqual(readback.plan, plan)) throw e; }
+        catch (e) { if (e.status === 409) continue; const readback = await this.record(id); await this.requireContext(readback, settings.revision); if (!isDeepStrictEqual(readback.plan, plan)) throw e; }
       }
-      return this.domain.beginIngestion({ schemaVersion: 1, idempotencyKey: r.idempotencyKey, title: r.title, recordedAt: r.recordedAt, origin: 'zoom_cloud', supersedesSessionId: null, plan }, id);
+      await this.requireContext(r, settings.revision);
+      return this.domain.beginIngestion({ schemaVersion: 1, idempotencyKey: r.idempotencyKey, title: r.title, recordedAt: r.recordedAt, origin: 'zoom_cloud', supersedesSessionId: null, plan }, id, settings.revision);
     }
     throw settingsError('Импорт изменился. Проверьте его состояние.', 409);
   }
+  async finalize(id) {
+    const { settings } = await this.requireContext();
+    const op = await this.ordinaryOperation(id, settings.revision);
+    return this.domain.finalizeIngestion(op.transactionId, null, settings.revision);
+  }
   async download(id, fileId, signal) {
-    const r = await this.record(id), op = await this.operation(id);
+    const { head, settings, c } = await this.requireContext();
+    const r = await this.record(id, head);
+    await this.requireContext(r, settings.revision);
+    const op = await this.operation(id, head);
     if (!['reserved', 'bound'].includes(op.state) || !r.files.some(f => f.id === fileId)) throw settingsError('Импорт не принимает дорожки.', 409);
-    const { settings } = await this.settingsSnapshot(), c = settings.connections.find(c => c.connectionId === r.connectionId && c.revision === r.connectionRevision);
-    if (!c) throw settingsError('Исходное подключение больше недоступно.', 409);
+    await this.requireContext(r, settings.revision);
     const fresh = await this.zoom.recording(c, r.occurrenceUuid), files = participantFiles(fresh);
     if (fresh.uuid !== r.occurrenceUuid || opaqueIdentity(c.accountId, c.meetingId, fresh.uuid) !== r.id || files.length !== r.files.length || r.files.some(f => !files.some(x => isDeepStrictEqual(f, x)))) throw settingsError('Состав дорожек изменился. Продолжение заблокировано.', 409);
-    return this.zoom.download(c, fresh, fileId, signal);
+    await this.requireContext(r, settings.revision);
+    const response = await this.zoom.download(c, fresh, fileId, signal);
+    try { await this.requireContext(r, settings.revision); signal?.throwIfAborted(); }
+    catch (error) { await response.body?.cancel(); throw error; }
+    return response;
   }
   async discard(id) {
+    const { settings } = await this.requireContext();
     for (let attempt = 0; attempt < 3; attempt++) {
-      const head = await this.repository.getHead(), r = await this.record(id, head), op = await this.operation(id);
+      const { head } = await this.requireContext(null, settings.revision), r = await this.record(id, head);
+      await this.requireContext(r, settings.revision);
+      const op = await this.operation(id, head);
       if (['completed', 'deleted'].includes(op.state)) throw settingsError('Завершённую запись нельзя отменить.', 409);
-      if (op.state === 'discarded') return op;
+      if (op.state === 'discarded') return this.ordinaryOperation(id, settings.revision);
       const t = await this.repository.readJson(`transactions/ingest-${r.transactionId}.json`, head);
       if (t) await this.domain.recoverIncomplete(r.transactionId, 'discard');
       else {
         try { await this.repository.commitJson(head, { [importPath(id)]: { ...r, state: 'discarded', revision: r.revision + 1 } }, 'Discard reserved Zoom occurrence'); }
         catch (e) { if (e.status === 409) continue; throw e; }
       }
-      return this.operation(id);
+      return this.ordinaryOperation(id, settings.revision);
     }
     throw settingsError('Импорт изменился. Перечитайте состояние.', 409);
   }
