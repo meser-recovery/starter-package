@@ -17,13 +17,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+        id: python
         with:
           python-version: ${{ matrix.python }}
       - uses: actions/setup-node@v4
         with:
           node-version: '24.7.0'
       - name: Install matching diagnostic browser client
-        run: pip install playwright==1.64.1
+        run: ${{ steps.python.outputs.python-path }} -m pip install playwright==1.64.1
       - name: Observe original S10B WebKit scenarios without changing assertions
         shell: bash
         run: |
@@ -32,7 +33,7 @@ jobs:
           for trial in 1 2 3; do
             node tests/safety/s10b_preview_server.mjs 4174 http://localhost:4174 >"$RUNNER_TEMP/webkit-lifecycle/server-$trial.log" 2>&1 &
             server=$!
-            python3 tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser webkit --output "$RUNNER_TEMP/webkit-lifecycle/trial-$trial" || result=1
+            ${{ steps.python.outputs.python-path }} tests/safety/s10b_browser_smoke.py --base-url http://localhost:4174 --browser webkit --output "$RUNNER_TEMP/webkit-lifecycle/trial-$trial" || result=1
             kill "$server"
             wait "$server" || true
           done
