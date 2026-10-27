@@ -1,6 +1,9 @@
 name: WebKit lifecycle diagnostics
 on:
   workflow_dispatch:
+  push:
+    branches: [codex/s12-webkit-navigation-followup]
+    paths: [.github/workflows/webkit-lifecycle-diagnostic.yml]
 permissions:
   contents: read
 jobs:
