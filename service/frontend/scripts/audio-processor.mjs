@@ -314,10 +314,20 @@ const supported = typeof WebAssembly === "object" && typeof WebAssembly.instanti
   typeof File === "function" && typeof File.prototype.arrayBuffer === "function" &&
   typeof URL.createObjectURL === "function" && typeof URL.revokeObjectURL === "function";
 
+let provisionalNavigation = false;
+const deferredAudioLoads = new Set();
+function finishAudioNavigation() {
+  provisionalNavigation = false;
+  for (const audio of deferredAudioLoads) audio.load();
+  deferredAudioLoads.clear();
+}
 function clearAudio(audio) {
   audio.pause();
   audio.removeAttribute("src");
-  audio.load();
+  // WebKit can block load() while aborting a native metadata probe inside
+  // beforeunload. Detach now; reset the native decoder after that boundary.
+  if (provisionalNavigation) deferredAudioLoads.add(audio);
+  else audio.load();
 }
 
 function clearResult() {
@@ -1646,9 +1656,13 @@ cancel.addEventListener("click", stop);
 // A provisional navigation can invalidate WebKit File backing stores before
 // pagehide. Cancel first, including continuations waiting for processor idle.
 function stopForNavigation() { fileSelectionSequence++; stop(); }
-window.addEventListener("beforeunload", stopForNavigation);
+window.addEventListener("beforeunload", () => { provisionalNavigation = true; stopForNavigation(); });
+for (const type of ["pointerdown", "keydown"]) window.addEventListener(type, event => {
+  if (event.isTrusted && provisionalNavigation) finishAudioNavigation();
+}, { capture: true });
 window.addEventListener("pagehide", () => {
   stopForNavigation();
+  finishAudioNavigation();
   engine?.terminate();
   engine = null;
   clearResult();
@@ -1656,6 +1670,7 @@ window.addEventListener("pagehide", () => {
   for (const track of tracks) revokeTrackURLs(track);
 });
 window.addEventListener("pageshow", (event) => {
+  finishAudioNavigation();
   if (event.persisted && tracks.length) {
     for (const track of tracks) {
       track.sourceURL = URL.createObjectURL(track.file);

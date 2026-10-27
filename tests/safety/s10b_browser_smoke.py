@@ -89,8 +89,16 @@ def pending_navigation_teardown(page, base_url):
     page.add_init_script("""(() => {
       if (!sessionStorage.getItem('__s10bNavigationEnabled')) return;
       window.__navigationProbes = []; window.__navigationLeaving = false;
-      const record = {beforeUnload:null, lateReads:[], lateSources:[]};
+      const record = {beforeUnload:null, lateReads:[], lateSources:[], provisionalLoads:[]};
       const save = () => sessionStorage.setItem('__s10bNavigation', JSON.stringify(record));
+      let provisional = false;
+      addEventListener('beforeunload', () => { provisional = true; });
+      addEventListener('pagehide', () => { provisional = false; });
+      const load = HTMLMediaElement.prototype.load;
+      HTMLMediaElement.prototype.load = function(...args) {
+        if (provisional) { record.provisionalLoads.push({id:this.id, src:this.getAttribute('src')}); save(); }
+        return load.apply(this, args);
+      };
       const read = Blob.prototype.arrayBuffer;
       Blob.prototype.arrayBuffer = function(...args) {
         if (window.__navigationLeaving) { record.lateReads.push(this.name || '(blob)'); save(); }
@@ -150,6 +158,55 @@ def pending_navigation_teardown(page, base_url):
     assert not any(record['beforeUnload']['sources']), record
     assert not record['lateSources'], record
     assert not record['lateReads'], record
+    assert not record['provisionalLoads'], record
+
+
+def pending_archive_navigation(page, base_url):
+    # Keep the real second config response decoded but its consumption pending.
+    # Independently hold the next document so the departing continuation runs.
+    page.goto(f'{base_url}/Audio-Archive.html')
+    page.evaluate("async () => { await import('./scripts/audio-archive.mjs'); }")
+    page.add_init_script("""(() => {
+      window.__departure = false; window.__configBarrierReady = false; window.__configReleased = false;
+      if (location.pathname === '/Audio-Archive.html') sessionStorage.removeItem('__lateArchiveRequests');
+      const late = []; let configs = 0;
+      addEventListener('beforeunload', () => { window.__departure = true; });
+      const native = fetch;
+      window.fetch = function(input, ...args) {
+        const url = String(input?.url || input);
+        if (window.__departure) {
+          late.push(url); sessionStorage.setItem('__lateArchiveRequests', JSON.stringify(late));
+        }
+        return native.call(this, input, ...args);
+      };
+      const decode = Response.prototype.json;
+      Response.prototype.json = async function(...args) {
+        const value = await decode.apply(this, args);
+        if (new URL(this.url).pathname === '/v1/config' && ++configs === 2) {
+          await new Promise(resolve => { window.__releaseConfig = resolve; window.__configBarrierReady = true; });
+          window.__configReleased = true;
+        }
+        return value;
+      };
+    })();""")
+    page.reload()
+    page.wait_for_function('window.__configBarrierReady')
+    documents = []
+    def hold_document(route): documents.append(route)
+    page.route(f'{base_url}/Audio-Editor.html', hold_document)
+    with page.expect_request(f'{base_url}/Audio-Editor.html'):
+        page.evaluate("setTimeout(() => location.assign('/Audio-Editor.html'), 0)")
+    page.wait_for_timeout(0)
+    assert len(documents) == 1
+    assert page.evaluate('window.__departure')
+    page.evaluate('window.__releaseConfig()')
+    page.wait_for_function('window.__configReleased')
+    late = page.evaluate("JSON.parse(sessionStorage.getItem('__lateArchiveRequests') || '[]')")
+    documents[0].continue_()
+    page.wait_for_url('**/Audio-Editor.html')
+    page.unroute(f'{base_url}/Audio-Editor.html', hold_document)
+    assert not late, late
+    assert not page.evaluate("JSON.parse(sessionStorage.getItem('__lateArchiveRequests') || '[]')")
 
 
 def speaker_source_transition(page, base_url, writes, same_name):
@@ -303,6 +360,7 @@ def run(browser_type, base_url, evidence_dir=None):
         speaker_source_transition(page, base_url, writes, True)
         pending_navigation_teardown(page, base_url)
         pending_metadata_teardown(page, base_url)
+        pending_archive_navigation(page, base_url)
         assert not page_errors, page_errors
         assert not outbound, outbound
     except BaseException as error:

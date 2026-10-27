@@ -1,0 +1,81 @@
+{
+  "source": "18b9477692b0637a0120a8358e938346b811fbae",
+  "independentCauses": true,
+  "navigation": {
+    "run": "https://github.com/meser-recovery/starter-package/actions/runs/40539117144",
+    "artifactId": 12749727469,
+    "artifactSha256": "d56061eea80758206e1adee1f69ed2bac6e64d2e85e34774fd770f0306ee2cad",
+    "trial": 7,
+    "beforeunloadMs": 2244.825,
+    "pauseReturnedMs": 2246.655,
+    "nativeLoadEnteredMs": 2247.253,
+    "nativeLoadReturned": false,
+    "timeoutMs": 32239.637,
+    "documentRequest": false,
+    "documentResponse": false,
+    "commit": false,
+    "DOMContentLoaded": false,
+    "load": false,
+    "pendingResources": [],
+    "dialogs": [],
+    "stack": [
+      "stopForNavigation",
+      "stop",
+      "operation.cancel",
+      "AbortController.abort",
+      "metadata cleanup",
+      "clearAudio",
+      "HTMLMediaElement.load"
+    ]
+  },
+  "usage": {
+    "run": "https://github.com/meser-recovery/starter-package/actions/runs/40537274178",
+    "artifactId": 12748429136,
+    "artifactSha256": "ff2bc9b81a364370d8cb00709a10a1b0d707e8cb510dc1baa6730ce30ca57725",
+    "trial": 1,
+    "archiveCommitMs": 12525.45,
+    "archiveDOMContentLoadedMs": 12601.065,
+    "archiveLoadMs": 12600.473,
+    "archiveBeforeunloadMs": 12617.548,
+    "nextDocumentResponseMs": 12629.328,
+    "usageFetchStartMs": 12629.606,
+    "usagePageerrorMs": 12629.864,
+    "archivePagehideMs": 12630.961,
+    "nextCommitMs": 12633.417,
+    "initiator": [
+      "mountZoomArchive.renderWarning",
+      "await available/configuration",
+      "AudioArchiveGateway.request",
+      "performRequest",
+      "fetch"
+    ]
+  },
+  "targetedRed": [
+    {
+      "case": "navigation",
+      "baselineSource": "18b9477692b0637a0120a8358e938346b811fbae",
+      "baselineFile": "audio-processor.mjs",
+      "result": "RED",
+      "error": "{'beforeUnload': {'hidden': False, 'sources': [None]}, 'lateReads': [], 'lateSources': [], 'provisionalLoads': [{'id': '', 'src': None}, {'id': 'processor-result-audio', 'src': None}]}",
+      "pageErrors": []
+    },
+    {
+      "case": "usage",
+      "baselineSource": "18b9477692b0637a0120a8358e938346b811fbae",
+      "baselineFile": "audio-archive-client.mjs",
+      "result": "RED",
+      "error": "['/v1/storage-usage']",
+      "pageErrors": [
+        "/localhost:4196/v1/storage-usage due to access control checks."
+      ]
+    }
+  ],
+  "assertions": {
+    "originalRetained": 58,
+    "current": 63,
+    "timeoutsUnchanged": true,
+    "browserMatrixUnchanged": true,
+    "safetyBaselineWorkflowUnchanged": true
+  },
+  "localWebKitGreen": "full S10B including source transitions, metadata/BFCache, real provisional navigation and late-config barrier; no page errors"
+}
