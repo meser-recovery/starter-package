@@ -25,7 +25,7 @@ jobs:
           node-version: '24.7.0'
       - name: Install matching diagnostic browser client
         run: ${{ steps.python.outputs.python-path }} -m pip install playwright==1.64.1
-      - name: Observe original S10B WebKit scenarios without changing assertions
+      - name: Observe teardown calls and original S10B WebKit scenarios without changing assertions
         shell: bash
         run: |
           mkdir -p "$RUNNER_TEMP/webkit-lifecycle"

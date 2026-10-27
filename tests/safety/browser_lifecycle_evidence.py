@@ -38,6 +38,15 @@ JS=r'''(() => {
  const snapshot=()=>[...new Set([...audios,...document.querySelectorAll('audio,video')])].map(a=>({id:a.id,src:a.getAttribute('src'),readyState:a.readyState,networkState:a.networkState,paused:a.paused,preload:a.preload}));
  const create=document.createElement.bind(document);document.createElement=(tag,...args)=>{const n=create(tag,...args);if(String(tag).toLowerCase()==='audio')audios.push(n);return n;};
  const nativeFetch=window.fetch;window.fetch=function(input,...args){const url=String(input?.url||input);if(url.includes('storage-usage'))send('usage-fetch-start',{url,stack:new Error().stack});return nativeFetch.call(this,input,...args);};
+ for (const [prototype,names] of [[AbortController.prototype,['abort']],[HTMLMediaElement.prototype,['pause','load']],[Worker.prototype,['terminate']]]) {
+  for (const name of names) { const native=prototype[name];prototype[name]=function(...args) {
+   const data={call:name,id:this.id||'',src:this.getAttribute?.('src')||null,stack:new Error().stack};
+   if(leaving)send('teardown-enter',data);
+   const result=native.apply(this,args);
+   if(leaving)send('teardown-exit',data);
+   return result;
+  }; }
+ }
  const read=Blob.prototype.arrayBuffer;Blob.prototype.arrayBuffer=function(...args){if(leaving)send('late-file-read',{name:this.name||'(blob)'});return read.apply(this,args);};
  window.addEventListener('beforeunload',()=>{leaving=true;send('beforeunload-early',{audios:snapshot()});});
  window.addEventListener('pagehide',e=>send('pagehide-early',{persisted:e.persisted,audios:snapshot()}));
