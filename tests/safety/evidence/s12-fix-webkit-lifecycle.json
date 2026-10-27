@@ -75,7 +75,8 @@
     "current": 63,
     "timeoutsUnchanged": true,
     "browserMatrixUnchanged": true,
-    "safetyBaselineWorkflowUnchanged": true
+    "safetyBaselineWorkflowUnchanged": false,
+    "allOriginalSafetyBaselineStepsAndGatesUnchanged": true
   },
   "localWebKitGreen": "full S10B including source transitions, metadata/BFCache, real provisional navigation and late-config barrier; no page errors",
   "harnessFollowup": {
@@ -94,5 +95,24 @@
       "instrumentation": false,
       "pageErrors": 0
     }
+  },
+  "ciTransport": {
+    "probeRun": "https://github.com/meser-recovery/starter-package/actions/runs/40549269280",
+    "package": "libflite1_2.2-6build3_amd64.deb",
+    "bytes": 13601102,
+    "canonicalHttpsCompleteSha256": "367f1d0da5cd38759a0515eafc27aa133b2d7bf99308cac34831df0212e96b75",
+    "canonicalHttpsSeconds": [
+      2.509453,
+      3.081795
+    ],
+    "regionalAzureHttp": {
+      "ip": "20.106.104.242",
+      "exit": 28,
+      "seconds": 12.000881,
+      "partialBytes": 708608
+    },
+    "change": "Prefer already-configured canonical HTTPS Ubuntu mirror with priority 1; retain Azure priority 2 and security fallback. One added preparation step only; all original workflow bytes outside it unchanged. Package signatures, sources, versions, checks, timeouts, matrix and skips unchanged.",
+    "fixture": "PASS: expected three configured URLs retained, priority swap, security unchanged, idempotent",
+    "workflowYaml": "PASS (system Ruby YAML parser)"
   }
 }

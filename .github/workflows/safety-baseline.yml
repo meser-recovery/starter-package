@@ -61,6 +61,24 @@ jobs:
             tests/safety/s10a_realistic_waveform_load.mjs /fixture
       - name: Install browser test dependency
         run: pip install -r requirements-test.txt
+      - name: Prefer configured canonical Ubuntu mirror
+        run: |
+          sudo python3 - <<'PYMIRROR'
+          from pathlib import Path
+          path = Path('/etc/apt/apt-mirrors.txt')
+          lines = path.read_text().splitlines()
+          priorities = {'https://archive.ubuntu.com/ubuntu/': 1, 'http://azure.archive.ubuntu.com/ubuntu/': 2}
+          canonical = 'https://archive.ubuntu.com/ubuntu/'
+          assert sum(bool(line.split()) and line.split()[0] == canonical for line in lines) == 1, 'Expected configured official Ubuntu fallback'
+          for index, line in enumerate(lines):
+              fields = line.split()
+              if fields and fields[0] in priorities:
+                  fields = [field for field in fields if not field.startswith('priority:')]
+                  fields.append('priority:' + str(priorities[fields[0]]))
+                  lines[index] = ' '.join(fields)
+          path.write_text('\n'.join(lines) + '\n')
+          print('Canonical Ubuntu HTTPS mirror preferred; existing fallbacks and package verification preserved')
+          PYMIRROR
       - name: Install Chromium, Firefox and WebKit
         run: python3 -m playwright install --with-deps chromium firefox webkit
       - name: Run local browser smoke suite
